@@ -151,9 +151,12 @@ not in advance.
    `getCurrentSelection`, `checkDocumentDirty` and `saveDocument` answer from the open
    tabs. Verified against 2.1.288 in the running app and through a terminal `claude --ide`;
    the document's disk handling by hosted tests, since nothing can type into the text view
-   without synthetic input. Not yet: syntax highlighting, line numbers, quick open and
-   search across files, closing a window with unsaved tabs (it does not ask), Cmd-W for a
-   tab, `at_mentioned`, diagnostics, and editing a proposal before accepting it.
+   without synthetic input. ⌘P finds a file by a few letters of its name (dependencies and
+   build output skipped). Closing a window or quitting with unsaved tabs asks first; the
+   window's guard stands in front of SwiftUI's delegate and forwards the rest (a clean
+   close checked live, the question by hosted tests: it needs typing to provoke). Not yet:
+   syntax highlighting, line numbers, search inside files, Cmd-W for a tab,
+   `at_mentioned`, diagnostics, and editing a proposal before accepting it.
 
 ## 5. Distribution
 

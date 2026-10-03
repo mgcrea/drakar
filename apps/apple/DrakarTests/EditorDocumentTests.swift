@@ -126,3 +126,70 @@ struct EditorDocumentTests {
     #expect(workspace.problem == "b.bin is not a text file.")
   }
 }
+
+/// The guard in front of SwiftUI's window delegate: it must ask only when a tab is unsaved,
+/// and pass everything else through untouched, or SwiftUI's own window handling breaks.
+@MainActor
+@Suite("Closing a window with unsaved tabs")
+struct WindowCloseGuardTests {
+
+  /// Stands in for SwiftUI's delegate.
+  private final class Original: NSObject, NSWindowDelegate {
+    var askedToClose = 0
+    var resized = 0
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+      askedToClose += 1
+      return true
+    }
+    func windowDidResize(_ notification: Notification) { resized += 1 }
+  }
+
+  private func setUp() throws -> (NSWindow, Original, Workspace, URL) {
+    let folder = FileManager.default.temporaryDirectory.appending(
+      path: "drakar-close-\(UUID().uuidString)", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    let file = folder.appending(path: "a.txt")
+    try "one\n".write(to: file, atomically: false, encoding: .utf8)
+    let window = NSWindow(
+      contentRect: NSRect(x: 0, y: 0, width: 400, height: 300), styleMask: [.titled, .closable],
+      backing: .buffered, defer: true)
+    window.isReleasedWhenClosed = false
+    let original = Original()
+    window.delegate = original
+    let workspace = Workspace(folder: folder)
+    WindowCloseGuard.install(on: window, for: workspace)
+    return (window, original, workspace, file)
+  }
+
+  @Test func forwardsWhatItDoesNotHandle() throws {
+    let (window, original, workspace, _) = try setUp()
+    #expect(window.delegate is WindowCloseGuard)
+    #expect(workspace.closeGuard != nil)
+    let delegate = try #require(window.delegate)
+    #expect(delegate.responds(to: #selector(NSWindowDelegate.windowDidResize(_:))))
+    NotificationCenter.default.post(name: NSWindow.didResizeNotification, object: window)
+    delegate.windowDidResize?(Notification(name: NSWindow.didResizeNotification, object: window))
+    #expect(original.resized >= 1)
+    // Installing twice must not stack a guard in front of the guard.
+    WindowCloseGuard.install(on: window, for: workspace)
+    #expect(delegate === window.delegate)
+  }
+
+  @Test func letsACleanWindowCloseAsSwiftUISays() throws {
+    let (window, original, workspace, file) = try setUp()
+    workspace.open(file)
+    #expect(window.delegate?.windowShouldClose?(window) == true)
+    #expect(original.askedToClose == 1)
+  }
+
+  @Test func holdsAWindowWithUnsavedTabsAndAsks() throws {
+    let (window, original, workspace, file) = try setUp()
+    let document = try #require(workspace.open(file))
+    document.storage.replaceCharacters(in: NSRange(location: 0, length: 0), with: "x")
+    document.edited()
+    #expect(window.delegate?.windowShouldClose?(window) == false)
+    // Held back, and SwiftUI never asked. The sheet itself needs the window on screen,
+    // which a test does not do.
+    #expect(original.askedToClose == 0)
+  }
+}

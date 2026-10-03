@@ -205,6 +205,15 @@ struct CodeTextView: NSViewRepresentable {
 
   func updateNSView(_ scrollView: NSScrollView, context: Context) {}
 
+  /// Any size it is offered. Left to itself SwiftUI measures the scroll view's current
+  /// frame and keeps it as a minimum, so the pane would not narrow with the window and the
+  /// split pushed the sidebar off the window's edge instead.
+  func sizeThatFits(_ proposal: ProposedViewSize, nsView: NSScrollView, context: Context)
+    -> CGSize?
+  {
+    proposal.replacingUnspecifiedDimensions(by: CGSize(width: 320, height: 240))
+  }
+
   static func dismantleNSView(_ scrollView: NSScrollView, coordinator: Coordinator) {
     // A storage keeps every layout manager added to it, and lays each one out on every edit.
     if let layoutManager = coordinator.layoutManager {

@@ -11,28 +11,37 @@ struct ContentView: View {
   /// Names this window to `OpenSessions`, which keeps each window's folder.
   @State private var windowID = UUID()
   @Environment(\.appearsActive) private var appearsActive
+  /// The editor's share of the window beside the session, kept per window.
+  @SceneStorage("drakar.editorFraction") private var editorFraction = 0.5
 
   var body: some View {
     Group {
       if let session, let workspace {
         NavigationSplitView {
           FileTreeView(workspace: workspace)
-            .navigationSplitViewColumnWidth(min: 160, ideal: 220, max: 400)
+            .navigationSplitViewColumnWidth(220)
         } detail: {
           // The editor appears with the first open file. The session's view must survive
           // it appearing, which is why the session is stopped by this window closing and
           // not by its own view going away.
-          HSplitView {
-            if !workspace.documents.isEmpty {
-              EditorView(workspace: workspace)
-                .frame(minWidth: 260, idealWidth: 560, maxWidth: .infinity, maxHeight: .infinity)
-            }
+          SplitPanes(fraction: $editorFraction, showsLeading: !workspace.documents.isEmpty) {
+            EditorView(workspace: workspace)
+          } trailing: {
             SessionView(session: session, workspace: workspace)
-              .frame(minWidth: 320, idealWidth: 480, maxWidth: .infinity, maxHeight: .infinity)
           }
         }
-        .background(WindowReader { workspace.window = $0 })
+        .background(
+          WindowReader { window in
+            workspace.window = window
+            WindowCloseGuard.install(on: window, for: workspace)
+          }
+        )
+        // The dot in the close button, as in every document window.
+        .onChange(of: workspace.unsavedDocuments.isEmpty, initial: true) { _, clean in
+          workspace.window?.isDocumentEdited = !clean
+        }
         .focusedSceneValue(\.workspace, workspace)
+        .sheet(isPresented: quickOpenShown(workspace)) { QuickOpenView(workspace: workspace) }
         .onChange(of: appearsActive, initial: true) { _, active in
           if active { workspace.becameActive() }
         }
@@ -42,7 +51,9 @@ struct ContentView: View {
     }
     .frame(minWidth: 560, minHeight: 440)
     .navigationTitle(windowTitle)
-    .navigationSubtitle(session.map { Self.abbreviated($0.folder) } ?? "")
+    // Short, because the title bar does not truncate it: a long path widened the detail
+    // column past the window and pushed the sidebar off its leading edge.
+    .navigationSubtitle(session.map { Self.shortened($0.folder) } ?? "")
     .onChange(of: route, initial: true) { show(route) }
     // A new session becomes a resumable one once it has an id and a transcript, so that
     // reopening the app resumes it instead of starting over in its folder.
@@ -71,6 +82,10 @@ struct ContentView: View {
   private struct Registration: Equatable {
     var id: String
     var route: SessionRoute
+  }
+
+  private func quickOpenShown(_ workspace: Workspace) -> Binding<Bool> {
+    Binding(get: { workspace.isQuickOpenShown }, set: { workspace.isQuickOpenShown = $0 })
   }
 
   private var windowTitle: String {
@@ -127,6 +142,14 @@ struct ContentView: View {
     }
   }
 
+  /// The folder's path as `abbreviated` writes it, or only its last two folders when
+  /// that is long: `…/scratchpad/editor-probe`.
+  static func shortened(_ url: URL) -> String {
+    let path = abbreviated(url)
+    guard path.count > 40 else { return path }
+    return "…/" + url.pathComponents.suffix(2).joined(separator: "/")
+  }
+
   /// `~/Projects` rather than `/Users/me/Projects`, as the Finder and the shell write it.
   static func abbreviated(_ url: URL) -> String {
     let path = url.path(percentEncoded: false)
@@ -141,7 +164,8 @@ struct ContentView: View {
   /// `-drakar.debugModel <id>` picks a cheap model for a new session, and
   /// `-drakar.debugSettingSources project` keeps the user's own permission rules and
   /// hooks out of one that needs a permission prompt to appear. `-drakar.debugOpen
-  /// <path>` opens a file of the folder in the editor. Values, not flags:
+  /// <path>` opens a file of the folder in the editor, and `-drakar.debugQuickOpen
+  /// <query>` shows quick open with that query typed. Values, not flags:
   /// UserDefaults reads a value starting with `-` as the next key and drops it.
   /// Debug builds only: a shipped binary takes no instructions from its launch arguments.
   private func openFromLaunchArguments() {
@@ -170,6 +194,9 @@ struct ContentView: View {
       start(ClaudeSession(folder: folder), command: command)
       if let file = defaults.string(forKey: "drakar.debugOpen") {
         workspace?.open(URL(filePath: file, relativeTo: folder))
+      }
+      if let query = defaults.string(forKey: "drakar.debugQuickOpen") {
+        workspace?.showQuickOpen(query: query)
       }
       if let prompt { Task { await send(prompt) } }
     #endif

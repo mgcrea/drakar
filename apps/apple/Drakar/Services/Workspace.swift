@@ -16,6 +16,11 @@ final class Workspace {
   private(set) var selection: EditorSelection?
   /// Why the last file could not be opened or saved.
   var problem: String?
+  var isQuickOpenShown = false
+  /// What quick open starts with, for the debug launch argument.
+  @ObservationIgnored private(set) var quickOpenQuery = ""
+  /// The folder's files for quick open, relative to it; nil while they are being read.
+  private(set) var quickOpenFiles: [String]?
 
   /// The window, to bring forward for `openFile`.
   @ObservationIgnored weak var window: NSWindow?
@@ -28,8 +33,9 @@ final class Workspace {
 
   init(folder: URL) {
     self.folder = folder
-    tree = FileTree(root: folder)
-    resolvedRoot = FileTree.normalized(folder.resolvingSymlinksInPath().path(percentEncoded: false))
+    let tree = FileTree(root: folder)
+    self.tree = tree
+    resolvedRoot = FileTree.realPath(tree.root)
     watcher = FolderWatcher(folder: folder) { [weak self] paths in self?.filesChanged(paths) }
     Self.open.append(Weak(self))
   }
@@ -39,6 +45,12 @@ final class Workspace {
   }
 
   var active: EditorDocument? { documents.first { $0.id == activeID } }
+
+  var unsavedDocuments: [EditorDocument] { documents.filter(\.isDirty) }
+
+  /// Asks before the window closes with unsaved tabs; kept here, since a window holds its
+  /// delegate weakly.
+  @ObservationIgnored var closeGuard: WindowCloseGuard?
 
   // MARK: - Tabs
 
@@ -88,6 +100,23 @@ final class Workspace {
       problem = String(
         localized: "\(document.name) could not be saved: \(error.localizedDescription)")
     }
+  }
+
+  /// Shows quick open with the folder read afresh, off the main thread: a large project
+  /// takes a moment to walk.
+  func showQuickOpen(query: String = "") {
+    quickOpenQuery = query
+    isQuickOpenShown = true
+    quickOpenFiles = nil
+    let root = folder
+    Task {
+      let files = await Task.detached { QuickOpen.files(under: root) }.value
+      quickOpenFiles = files
+    }
+  }
+
+  func saveAll() {
+    for document in unsavedDocuments { save(document) }
   }
 
   func toggle(_ row: FileTree.Row) {
@@ -293,4 +322,79 @@ final class EditorDocument: Identifiable {
 extension FocusedValues {
   /// The focused window's workspace, for Save.
   @Entry var workspace: Workspace?
+}
+
+/// "Save changes?" for one window's unsaved tabs, or every window's at quit.
+enum UnsavedChanges {
+  enum Choice { case save, discard, cancel }
+
+  static func alert(for documents: [EditorDocument]) -> NSAlert {
+    let alert = NSAlert()
+    alert.messageText =
+      documents.count == 1
+      ? String(localized: "Do you want to save the changes you made to \(documents[0].name)?")
+      : String(localized: "Do you want to save the changes you made to \(documents.count) files?")
+    alert.informativeText = String(localized: "Your changes will be lost if you don’t save them.")
+    alert.addButton(
+      withTitle: documents.count == 1 ? String(localized: "Save") : String(localized: "Save All"))
+    alert.addButton(withTitle: String(localized: "Cancel"))
+    let discard = alert.addButton(withTitle: String(localized: "Don’t Save"))
+    discard.hasDestructiveAction = true
+    return alert
+  }
+
+  static func choice(_ response: NSApplication.ModalResponse) -> Choice {
+    switch response {
+    case .alertFirstButtonReturn: .save
+    case .alertThirdButtonReturn: .discard
+    default: .cancel
+    }
+  }
+}
+
+/// Stands in front of the delegate SwiftUI gives a window, to ask before it closes with
+/// unsaved tabs, and forwards every other message to SwiftUI's.
+final class WindowCloseGuard: NSObject, NSWindowDelegate {
+  /// Read by the runtime's forwarding, which is nonisolated in its signature but only
+  /// ever asked on the main thread, where window delegates are messaged.
+  nonisolated(unsafe) private weak var original: NSWindowDelegate?
+  private weak var workspace: Workspace?
+
+  static func install(on window: NSWindow, for workspace: Workspace) {
+    guard !(window.delegate is WindowCloseGuard) else { return }
+    let closeGuard = WindowCloseGuard(original: window.delegate, workspace: workspace)
+    workspace.closeGuard = closeGuard
+    window.delegate = closeGuard
+  }
+
+  private init(original: NSWindowDelegate?, workspace: Workspace) {
+    self.original = original
+    self.workspace = workspace
+  }
+
+  nonisolated override func responds(to selector: Selector!) -> Bool {
+    super.responds(to: selector) || original?.responds(to: selector) == true
+  }
+
+  nonisolated override func forwardingTarget(for selector: Selector!) -> Any? {
+    original
+  }
+
+  func windowShouldClose(_ window: NSWindow) -> Bool {
+    let unsaved = workspace?.unsavedDocuments ?? []
+    guard let workspace, !unsaved.isEmpty else {
+      return original?.windowShouldClose?(window) ?? true
+    }
+    UnsavedChanges.alert(for: unsaved).beginSheetModal(for: window) { response in
+      switch UnsavedChanges.choice(response) {
+      case .save:
+        workspace.saveAll()
+        // A save that failed keeps the window, and says why.
+        if workspace.unsavedDocuments.isEmpty { window.close() }
+      case .discard: window.close()
+      case .cancel: break
+      }
+    }
+    return false
+  }
 }
