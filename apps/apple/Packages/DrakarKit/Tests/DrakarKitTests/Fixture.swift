@@ -3,6 +3,11 @@ import Foundation
 import Testing
 
 /// A capture from the real CLI, trimmed (docs/claude-stream-json.md, "Raw captures").
+///
+/// The captures were made while the app was still called Amiral, so the prompts, the
+/// commands and the model's replies say `amiral` (`echo amiral`, `amiral-probe.txt`,
+/// "Amiral."), and so do the tests that quote them. That is what the CLI wrote; renaming
+/// it would make the fixtures a fiction. Leave it.
 enum Fixture: String {
   /// `echo amiral` through Bash, under `--include-partial-messages`: two assistant
   /// messages, a tool call with its result, the streamed text "Amiral.".

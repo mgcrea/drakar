@@ -42,7 +42,8 @@ Core promises, in priority order:
    permission prompts with their "always allow" suggestions, plan mode, todos.
 3. Your Claude Code, not ours. The `claude` you installed, your settings, hooks, skills,
    MCP servers and accounts, unchanged. Sessions resume from either side (§2.3).
-4. Drakar itself talks to nothing (§5, the checkable claim).
+4. Drakar itself reaches nothing: its one socket listens on 127.0.0.1 for terminal
+   sessions holding its token, and it opens no connection (§5, the checkable claim).
 
 ## 2. How it drives Claude
 
@@ -58,8 +59,10 @@ writes, every structured tool result, every control message.
 
 ACP (the Agent Client Protocol Zed defined) would let one UI drive Claude, Gemini and
 Codex, through an adapter that maps Claude Code onto a common set of concepts. Drakar is
-Claude-first, so the adapter only loses information. The decoder sits behind DrakarKit's
-own `AgentEvent` vocabulary, so an ACP backend can be added later without the UI knowing.
+Claude-first, so the adapter only loses information. The UI consumes DrakarKit's
+`StreamMessage` and `Transcript`, which are stream-json shaped; an ACP backend would have
+to map onto them, or a neutral event type would have to be introduced first. None exists
+today.
 
 ### 2.2 Not the extension's webview
 
@@ -77,23 +80,25 @@ wrote them, and `--resume=<id>` continues any of them. Drakar lists and resumes 
 sessions the extension and the terminal do; it does not keep a store of its own. Armada's
 `docs/claude-code-sessions.md` mapped that layout and its traps on 2026-09-10.
 
-### 2.4 Later: Drakar as "the IDE"
+### 2.4 Drakar as "the IDE"
 
-A running `claude` looks for `~/.claude/ide/<port>.lock` (`workspaceFolders`, `ideName`,
-`transport: ws`, `authToken`) and connects to that WebSocket as an MCP client, calling the
-editor's tools: open a diff, read diagnostics, read the selection. An Drakar that writes
-the lock file becomes the editor of every `claude` on the Mac, including one started in a
-terminal. That is phase 3 and the bridge to the editor.
+An **interactive** `claude` looks for `<config>/ide/<port>.lock` and connects to that
+WebSocket as an MCP client, sending every edit as an `openDiff` for the editor to accept
+or reject. Drakar writes the lock file, so a `claude --ide` in a terminal, in a folder
+Drakar has open, uses it as its editor (phase 3). Headless sessions, Drakar's own among
+them, never connect. `docs/claude-ide-bridge.md` has the contract and its traps.
 
 ## 3. Architecture
 
 ```text
 DrakarKit      Foundation only, zero dependencies, offline tests in under a second. The
-               stream-json codec (both directions), the AgentEvent vocabulary, and the
-               reducer that folds events into a transcript: merging per-block `assistant`
-               lines by message id, applying deltas, pairing tool_use with tool_result.
-App target     Process supervision (spawn, stdin/stdout pipes, interrupt, exit), binary
-               resolution, the session window, the permission prompt, settings.
+               stream-json codec (both directions) and the reducer that folds it into a
+               transcript; process supervision over pipes (AgentProcess, tested against
+               /bin/cat); finding `claude` and the login shell's environment; the
+               session index and history replay; line diffs; the IDE bridge's protocol
+               and lock files.
+App target     The session model and windows, the permission sheet, the review window,
+               settings, and the bridge's WebSocket server (Network framework).
 ```
 
 The rule is calque's: everything that can be argued about in a unit test lives in the
@@ -175,15 +180,19 @@ armada's did.
 ## 7. Open questions
 
 1. **Which `claude`.** Two are on this Mac's PATH (`~/.local/bin` and Homebrew), and an
-   app launched from the Finder does not inherit the shell's PATH at all. Proposal: probe
-   the known install locations, show the one found with its `--version` in Settings, let
-   the user pick, and run it through a login shell only if nothing is found.
+   app launched from the Finder does not inherit the shell's PATH at all. What exists:
+   the login shell's environment is read once per launch (`$SHELL -l -i`, so `.zshrc`
+   additions count), and `claude` is the first executable on that PATH, then in the
+   installers' locations (`ClaudeLocator`). Still open: showing which one runs (the footer
+   only has it as a tooltip) and letting the user pick another in Settings.
 2. **Which account.** `CLAUDE_CONFIG_DIR` selects one; this Mac has more than one config
-   directory. A session window needs to know which it runs under, and the session list
-   should read all of them, as Armada does.
-3. **Protocol drift.** Record the Claude Code version each fixture came from, fail
-   loudly in the UI (not silently) on a `system/init` from a version outside the tested
-   range, and re-capture on every minor.
+   directory. Settled for existing sessions: the list reads every account and a resume
+   runs under the one that wrote the session. Still open: a new session runs under
+   whatever the login shell selects, with no way to choose another.
+3. **Protocol drift.** Each fixture's version is in its own lines (2.1.284 for the
+   stream captures, 2.1.288 for history and the IDE bridge). Still open: failing loudly
+   in the UI on a `system/init` from a version outside the tested range, and the habit of
+   re-capturing on every minor.
 4. **The Sparkle key.** The trio share one EdDSA key, and one leak updates all three. A
    new app has no installed base, so its own key (`generate_keys --account drakar`) costs
    nothing today and a rotation later. Recommended; the owner decides.

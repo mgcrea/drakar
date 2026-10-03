@@ -86,3 +86,27 @@ From the extension's registrations: `openFile` (`filePath`, `preview`, `startTex
 editor found"}` without one), `checkDocumentDirty` and `saveDocument` (`filePath`),
 `closeAllDiffTabs`, and a Jupyter `executeCode` an editor without notebooks leaves out.
 Every result is MCP `content` holding one text block, usually JSON.
+
+## Re-checking it
+
+Worth doing on a new Claude Code minor, since none of this is a promised interface. The
+spike's throwaway scripts were not kept; Drakar itself is now the editor to test against.
+
+1. Pick a folder **outside every VS Code workspace** (a temporary directory). A folder
+   two editors claim gives `claude --ide` two matches, and it then connects to neither.
+2. Open a Drakar session there. A window counts as soon as it shows a session, prompt or
+   not: `make run ARGS='-drakar.debugFolder <dir> -drakar.debugModel
+   claude-haiku-4-5-20251001 -drakar.debugSettingSources project'`.
+3. `make audit-running`: loopback only, lock files 0600, the upgrade refused without the
+   token (400 on 2026-10-03) and accepted with it.
+4. Run an **interactive** `claude --ide --setting-sources project` in that folder. From
+   an agent there is no terminal, so give it one: Python's `pty.fork()`, then about six
+   seconds later a `\r` to accept the folder-trust prompt, then the prompt text and its
+   own `\r`. Ask for an edit; the Review Changes window shows it (`review.accept`,
+   `review.reject` through accessibility), and the file changes only after Accept.
+5. If it does not connect, type `/ide` in the session: it lists the editors it can use
+   and, for every other lock file, why not ("their workspace or project directories don't
+   match the current directory").
+6. Leave no lock behind: quit Drakar normally, and check `grep -l '"ideName":"Drakar"'
+   ~/.claude/ide/*.lock` comes back empty. A process killed without cleanup leaves its
+   lock until the next Drakar launch sweeps it.
