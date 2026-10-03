@@ -29,6 +29,9 @@ struct ReviewView: View {
 private struct PendingDiffCard: View {
   let pendingDiff: IDEBridge.PendingDiff
   let bridge: IDEBridge
+  @State private var isEditing = false
+  /// The change as last shown, recomputed when editing ends.
+  @State private var change: FileChange?
 
   private var fileURL: URL { URL(filePath: pendingDiff.diff.newFilePath) }
 
@@ -46,6 +49,18 @@ private struct PendingDiffCard: View {
             .foregroundStyle(.secondary)
         }
         Spacer()
+        if pendingDiff.proposal.isDirty, !isEditing {
+          Text("Edited").font(.caption).foregroundStyle(.secondary)
+        }
+        Button(isEditing ? "Show Changes" : "Edit") {
+          if isEditing { change = pendingDiff.change }
+          isEditing.toggle()
+        }
+        .help(
+          isEditing
+            ? "Back to the diff, with your edits" : "Change the proposal before accepting it"
+        )
+        .accessibilityIdentifier("review.edit")
         Button("Reject") { bridge.reject(pendingDiff) }
           .accessibilityIdentifier("review.reject")
         Button("Accept") { bridge.accept(pendingDiff) }
@@ -53,8 +68,14 @@ private struct PendingDiffCard: View {
           .keyboardShortcut(pendingDiff.id == bridge.pending.first?.id ? .defaultAction : nil)
           .accessibilityIdentifier("review.accept")
       }
-      FileChangeView(change: pendingDiff.change)
-        .environment(\.sessionFolder, fileURL.deletingLastPathComponent())
+      if isEditing {
+        CodeTextView(document: pendingDiff.proposal) {}
+          .frame(minHeight: 220, maxHeight: 420)
+          .clipShape(RoundedRectangle(cornerRadius: 6))
+      } else {
+        FileChangeView(change: change ?? pendingDiff.change)
+          .environment(\.sessionFolder, fileURL.deletingLastPathComponent())
+      }
     }
     .padding(14)
     .background(.background.secondary, in: RoundedRectangle(cornerRadius: 10))

@@ -15,7 +15,9 @@ struct SessionView: View {
       Divider()
       ComposerView(
         canSend: session.canSend, isRunning: session.transcript.isRunning,
-        context: workspace.selection, send: session.send, stop: session.interrupt)
+        context: workspace.selection, mention: workspace.pendingMention,
+        mentionInserted: { workspace.pendingMention = nil }, send: session.send,
+        stop: session.interrupt)
       SessionFooter(session: session)
     }
     .sheet(item: pendingPermission) { pending in

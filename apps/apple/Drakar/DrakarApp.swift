@@ -19,6 +19,7 @@ struct DrakarApp: App {
         CloseCommands()
         SaveCommand()
       }
+      CommandGroup(after: .textEditing) { MentionCommands() }
       // ⌘P, as in VS Code and Zed: Drakar prints nothing.
       CommandGroup(replacing: .printItem) { QuickOpenCommand() }
     }
@@ -104,5 +105,23 @@ private struct CloseCommands: View {
     .keyboardShortcut("w")
     Button("Close Window") { NSApp.keyWindow?.performClose(nil) }
       .keyboardShortcut("w", modifiers: [.command, .shift])
+  }
+}
+
+/// The extension's two shortcuts: ⌥K puts `@file#L3-5` into the prompt being written here,
+/// ⌘⌥K into a terminal `claude`'s.
+private struct MentionCommands: View {
+  @FocusedValue(\.workspace) private var workspace
+
+  var body: some View {
+    Divider()
+    Button("Mention in Prompt") { workspace?.mentionInComposer() }
+      .keyboardShortcut("k", modifiers: .option)
+      .disabled(workspace?.active == nil)
+    Button("Mention in Terminal Session") {
+      if workspace?.mentionInTerminal() != true { NSSound.beep() }
+    }
+    .keyboardShortcut("k", modifiers: [.command, .option])
+    .disabled(workspace?.active == nil)
   }
 }

@@ -10,6 +10,9 @@ struct ComposerView: View {
   let canSend: Bool
   let isRunning: Bool
   let context: EditorSelection?
+  /// A reference to put into the text (⌥K in the editor), then report as done.
+  let mention: String?
+  let mentionInserted: () -> Void
   let send: (String, EditorSelection?) -> Void
   let stop: () -> Void
 
@@ -30,6 +33,13 @@ struct ComposerView: View {
     .onAppear { isFocused = true }
     // A new selection is attached again, whatever happened to the last one.
     .onChange(of: context) { leavesContextOut = false }
+    .onChange(of: mention, initial: true) { _, mention in
+      guard let mention else { return }
+      let separator = text.isEmpty || text.hasSuffix(" ") || text.hasSuffix("\n") ? "" : " "
+      text += separator + mention + " "
+      isFocused = true
+      mentionInserted()
+    }
   }
 
   private var field: some View {

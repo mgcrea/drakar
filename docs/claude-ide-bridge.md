@@ -72,7 +72,10 @@ requires that; Drakar serves several.
    The call **blocks until the user decides**. The answer is two text blocks:
    `FILE_SAVED` and the contents to write (the extension returns what the user saved,
    edits included), or `DIFF_REJECTED` and the tab name. The CLI writes the file itself on
-   `FILE_SAVED`; on `DIFF_REJECTED` the file was left untouched (both verified).
+   `FILE_SAVED`; on `DIFF_REJECTED` the file was left untouched (both verified). It writes
+   the contents it is **sent back**, not the ones it proposed: a spike editor that appended
+   a line to its `FILE_SAVED` answer got that line in the file (2.1.288). That is what
+   lets the user edit a proposal before accepting it.
 5. Then `close_tab` with the tab name (twice), answered `TAB_CLOSED`, and
    `getDiagnostics` for the file and for everything, answered with a JSON array.
 
@@ -97,8 +100,10 @@ The editor sends it unasked, as a notification, to every connected `claude`:
   "In main.swift" (the extension's `attachOpenFile`, on by default).
 - The extension debounces it 300 ms, sends it only when it changed, and sends the latest
   one 500 ms after a client connects. Drakar does the same.
-- `at_mentioned` (`{filePath, lineStart?, lineEnd?}`) is the extension's "insert
-  @-mention" shortcut. Drakar does not send it yet.
+- `at_mentioned` (`{filePath, lineStart?, lineEnd?}`, lines from 0, only with a
+  selection) is the extension's ⌘⌥K: it asks the CLI to put a reference into the prompt
+  being written. Drakar sends it from the same shortcut. Its ⌥K is the chat's own
+  `@src/main.swift#L3-5`, which Drakar puts into its composer.
 
 ## The other tools
 

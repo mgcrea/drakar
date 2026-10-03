@@ -126,6 +126,26 @@ final class Workspace {
     }
   }
 
+  /// A reference waiting to be put into this window's composer.
+  var pendingMention: String?
+
+  /// ⌥K: the active tab's file and selected lines into the composer, as `@path#L3-5`.
+  func mentionInComposer() {
+    guard let document = active else { return }
+    guard let mention = document.selection.mention(relativeTo: tree.root) else {
+      problem = String(localized: "\(document.name) cannot be mentioned: its path holds # or \".")
+      return
+    }
+    pendingMention = mention
+  }
+
+  /// ⌘⌥K: the same, to every `claude` in a terminal connected to Drakar. False when none is.
+  @discardableResult
+  func mentionInTerminal() -> Bool {
+    guard let document = active else { return false }
+    return IDEBridge.shared.mention(document.selection) > 0
+  }
+
   func showSearch(query: String = "") {
     searchQuery = query
     isSearchShown = true

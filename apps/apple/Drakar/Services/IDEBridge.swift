@@ -23,8 +23,16 @@ final class IDEBridge {
     let connection: IDEConnection
     let requestID: JSONValue
     let diff: OpenDiff
-    let change: FileChange
+    /// The file as it was when the edit was proposed; nil when it does not exist yet.
+    let existing: String?
+    /// The proposed contents, which the user may edit before accepting: what Accept
+    /// sends is what `claude` writes.
+    let proposal: EditorDocument
     let claudePID: Int32?
+
+    var change: FileChange {
+      FileChange(path: diff.newFilePath, old: existing, new: proposal.storage.string)
+    }
   }
 
   private(set) var port: UInt16?
@@ -93,8 +101,11 @@ final class IDEBridge {
     writeLocks()
   }
 
+  /// Answers `FILE_SAVED` with the proposal as it stands, edits included: the CLI writes
+  /// the contents it is sent back, not the ones it proposed.
   func accept(_ pendingDiff: PendingDiff) {
-    resolve(pendingDiff, with: IDEReply.diffAccepted(contents: pendingDiff.diff.newContents))
+    resolve(
+      pendingDiff, with: IDEReply.diffAccepted(contents: pendingDiff.proposal.storage.string))
   }
 
   func reject(_ pendingDiff: PendingDiff) {
@@ -107,6 +118,13 @@ final class IDEBridge {
   }
 
   // MARK: - Selection
+
+  /// Sends `at_mentioned` to every connected `claude`; how many there were.
+  func mention(_ selection: EditorSelection) -> Int {
+    let clients = server?.clients ?? []
+    for client in clients { client.send(IDEReply.atMentioned(selection)) }
+    return clients.count
+  }
 
   /// The active window's selection moved. Sent to every connected `claude` 300 ms after
   /// the last change, as the extension debounces it, and only when it differs.
@@ -203,11 +221,11 @@ final class IDEBridge {
   {
     switch tool {
     case .openDiff(let diff):
-      let existing = Self.contents(of: diff.oldFilePath)
       pending.append(
         PendingDiff(
           connection: connection, requestID: id, diff: diff,
-          change: diff.change(existing: existing),
+          existing: Self.contents(of: diff.oldFilePath),
+          proposal: EditorDocument(url: URL(filePath: diff.newFilePath), text: diff.newContents),
           claudePID: connection.claudePID))
       review.show()
       return nil
