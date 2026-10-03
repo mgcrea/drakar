@@ -3,12 +3,12 @@
 #
 # Why forwarding is safe: `make -C` chdirs *before reading the makefile* (man make: "Change
 # to directory dir before reading the makefiles or doing anything else"), so every relative
-# path in apps/apple/Makefile — .build/, Packages/, Amiral.xcodeproj — resolves exactly as
+# path in apps/apple/Makefile — .build/, Packages/, Drakar.xcodeproj — resolves exactly as
 # it does when you cd there yourself. That matters more than it looks: xcodebuild has no
 # notion of a project root and resolves every path against the process working directory.
 #
 # Command-line variables reach the sub-make through MAKEFLAGS, so `make run
-# ARGS='-amiral.settingsPane about'` works from here.
+# ARGS='-drakar.settingsPane about'` works from here.
 #
 # No deploy block yet: there is no apps/website half. When one arrives, fleet-ship-conventions
 # owns what goes below.
@@ -34,7 +34,7 @@ APPLE_TARGETS := $(filter-out help,\
 
 help: ## Show this help
 	@echo ""
-	@echo "  \033[1mamiral\033[0m"
+	@echo "  \033[1mdrakar\033[0m"
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(firstword $(MAKEFILE_LIST)) \
 		| awk 'BEGIN {FS = ":.*?## "}; {printf "    \033[36m%-18s\033[0m %s\n", $$1, $$2}'
 	@echo ""

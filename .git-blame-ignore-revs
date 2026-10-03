@@ -1,7 +1,7 @@
 # Commits that changed formatting and nothing else. Listed here so `git blame`
 # attributes lines to whoever wrote them rather than to the reformat.
 #
-# Empty for now, and on purpose. amiral was formatted from its first Swift commit
+# Empty for now, and on purpose. drakar was formatted from its first Swift commit
 # (.swift-format arrived with the code), so no commit has been formatting only. The
 # next one goes here, typically a new Swift toolchain added to SWIFT_FORMAT_VERSIONS
 # that rewraps code nobody touched. Keep it its own commit and merge it --ff-only: a squash or rebase rewrites

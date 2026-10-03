@@ -1,4 +1,4 @@
-# Amiral
+# Drakar
 
 A native macOS app to drive Claude Code: the conversation, the tool calls, the permission
 prompts and the diffs, in a window as light as Zed. It runs the `claude` you installed over
@@ -23,8 +23,8 @@ later, in the same places as every sibling under `~/Projects/apps`.
 ```sh
 make help          # every target, from the root or from apps/apple
 make build         # Debug
-make test          # AmiralKit: offline, no Xcode, under a second
-make test-all      # AmiralKit, then the app's hosted suite
+make test          # DrakarKit: offline, no Xcode, under a second
+make test-all      # DrakarKit, then the app's hosted suite
 make run           # build, quit the old copy, launch the app
 ```
 

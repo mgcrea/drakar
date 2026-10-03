@@ -2,7 +2,7 @@
 
 Findings from a spike run on 2026-10-03 against Claude Code 2.1.284 (CLI) and the VS Code
 extension 2.1.287. Written so another agent can pick the protocol up cold, and so the
-fixtures in `AmiralKit`'s tests have a record of where they came from.
+fixtures in `DrakarKit`'s tests have a record of where they came from.
 
 ## Verdict
 
@@ -11,7 +11,7 @@ fixtures in `AmiralKit`'s tests have a record of where they came from.
   out of reach of another app.
 - **The whole loop works from outside:** initialize, send a prompt, stream the answer,
   answer a permission request, receive the result. Verified end to end: a `touch` the CLI
-  asked permission for ran after Amiral's `allow`, and the file existed afterwards.
+  asked permission for ran after Drakar's `allow`, and the file existed afterwards.
 - **None of this is documented as a protocol.** The Agent SDK (TypeScript, Python) wraps
   it, and the extension uses it, so it is stable in practice, but any release can add a
   field or a message type. Decode leniently, keep unknown messages, never crash on one.
@@ -109,7 +109,7 @@ the transcript file, `<config>/projects/<encoded cwd>/<id>.jsonl`, whose `user` 
 live), plus `ai-title` entries for the title. One id can have a transcript under two
 config directories, when a session was resumed after switching `CLAUDE_CONFIG_DIR`.
 
-`--fork-session` with `--resume` continues a copy under a new id, which is how Amiral
+`--fork-session` with `--resume` continues a copy under a new id, which is how Drakar
 opens a session another process has open (the registry at `<config>/sessions/<pid>.json`
 says which; Armada's `docs/claude-code-sessions.md` describes it).
 
@@ -119,7 +119,7 @@ Read off its running processes on 2026-10-03, beyond the arguments above:
 `--setting-sources=user,project,local`, `--thinking-display summarized`,
 `--max-thinking-tokens 31999`, `--replay-user-messages` (the CLI echoes prompts back),
 `--enable-auth-status`, `--no-chrome`, `--debug --debug-to-stderr`, and the user's
-permission mode. Amiral passes `--thinking-display summarized`: without it thinking
+permission mode. Drakar passes `--thinking-display summarized`: without it thinking
 blocks arrive with their text withheld; with it they stream as `thinking_delta` text
 (checked on 2.1.288). It passes none of the others yet.
 
@@ -129,5 +129,5 @@ total. Two consecutive turns read 0.00096 then 0.0063, consistent with either.
 ## Raw captures
 
 The captures this was written from are trimmed into
-`apps/apple/Packages/AmiralKit/Tests/AmiralKitTests/Fixtures/`. Signatures, the init
+`apps/apple/Packages/DrakarKit/Tests/DrakarKitTests/Fixtures/`. Signatures, the init
 payload's tool and server lists, and local paths were cut; the shapes were not.

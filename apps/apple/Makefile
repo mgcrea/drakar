@@ -1,15 +1,15 @@
-PROJECT = Amiral.xcodeproj
+PROJECT = Drakar.xcodeproj
 DERIVED_DATA = .build
-BUNDLE_ID = io.mgcrea.Amiral
+BUNDLE_ID = io.mgcrea.Drakar
 
-# The local packages, cheapest and most load-bearing first. AmiralKit is the only one today;
+# The local packages, cheapest and most load-bearing first. DrakarKit is the only one today;
 # later ones join this list, `test-all` and SWIFT_SRC as they arrive.
-KIT = Packages/AmiralKit
+KIT = Packages/DrakarKit
 
 # Mac only: a Developer ID app, never on the store, so there is no iOS destination and no
 # `build-ios` (fleet-direct-conventions). DESTINATION stays a variable for an arm64/x86_64 pin.
-SCHEME      ?= Amiral
-APP_NAME    ?= Amiral
+SCHEME      ?= Drakar
+APP_NAME    ?= Drakar
 DESTINATION ?= platform=macOS
 
 .DEFAULT_GOAL := help
@@ -30,11 +30,11 @@ build-release: ## Build the app in Release
 
 # ── Tests ─────────────────────────────────────────────────────────────────────
 #
-# `test` is the package suite and resolves nothing: AmiralKit has no dependencies and no
+# `test` is the package suite and resolves nothing: DrakarKit has no dependencies and no
 # networking, and its tests are where the model is argued about. `test-app` is the hosted
 # suite, which needs Xcode and launches the app.
 
-test: ## Run the AmiralKit tests (offline, no network, no Xcode)
+test: ## Run the DrakarKit tests (offline, no network, no Xcode)
 	swift test --package-path $(KIT)
 
 # `xcodebuild test` on the app scheme does NOT run the local SPM test targets -- it reports
@@ -92,9 +92,9 @@ quit: ## Quit the running app and wait for the process to go
 # resolves its bundle with `xcodebuild -showBuildSettings` instead of a literal path would
 # otherwise run xcodebuild a second time just to retry the `open`.
 # ARGS reaches the app as launch arguments, which UserDefaults reads ahead of anything
-# stored: `make run ARGS='-amiral.settingsPane about'` opens Settings on a pane without
+# stored: `make run ARGS='-drakar.settingsPane about'` opens Settings on a pane without
 # touching the stored defaults, so a forced pane never outlives the launch that forced it.
-run: build quit ## Build and launch the app (ARGS='-amiral.settingsPane about')
+run: build quit ## Build and launch the app (ARGS='-drakar.settingsPane about')
 	@app="$(APP_BUNDLE)"; open "$$app" --args $(ARGS) 2>/dev/null \
 		|| { sleep 1; open "$$app" --args $(ARGS); }
 
@@ -113,8 +113,8 @@ run: build quit ## Build and launch the app (ARGS='-amiral.settingsPane about')
 # code. The list is what `swift_src.py apps/apple` in fleet-apple-conventions computes;
 # rerun it when a package is added.
 SWIFT_SRC := \
-	Amiral \
-	AmiralTests \
+	Drakar \
+	DrakarTests \
 	$(KIT)/Package.swift \
 	$(KIT)/Sources \
 	$(KIT)/Tests
@@ -164,7 +164,7 @@ format-swift-check: ## Fail on unformatted Swift
 	@xcrun swift-format lint --recursive --parallel --strict $(SWIFT_SRC)
 
 # `git blame` walks straight into a reformat commit unless told not to, and the file that
-# says so is per-clone config the repo cannot set for you. Empty until Amiral has one.
+# says so is per-clone config the repo cannot set for you. Empty until Drakar has one.
 blame-setup: ## Teach git blame to skip the formatting-only commits
 	@git -C ../.. config blame.ignoreRevsFile .git-blame-ignore-revs
 	@echo "git blame will skip the commits in .git-blame-ignore-revs"
