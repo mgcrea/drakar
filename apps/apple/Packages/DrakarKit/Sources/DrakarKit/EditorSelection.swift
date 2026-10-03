@@ -87,6 +87,18 @@ public struct EditorSelection: Sendable, Equatable {
       "<ide_selection>The user selected the lines \(start.line + 1) to \(end.line + 1) from \(filePath):\n\(text)\n\nThis may or may not be related to the current task.</ide_selection>"
   }
 
+  /// `@src/main.swift#L3-5`, as the extension's ⌥K writes into its chat (webview 2.1.288,
+  /// `GH1`): the path from the folder, or whole outside it, and the lines from 1 when
+  /// something is selected. Nil for a path holding `#` or `"`, which a reference cannot carry.
+  public func mention(relativeTo root: String) -> String? {
+    let prefix = root.hasSuffix("/") ? root : root + "/"
+    let path = filePath.hasPrefix(prefix) ? String(filePath.dropFirst(prefix.count)) : filePath
+    guard !path.contains("#"), !path.contains("\"") else { return nil }
+    guard !isEmpty else { return "@\(path)" }
+    let (first, last) = (start.line + 1, end.line + 1)
+    return first == last ? "@\(path)#L\(first)" : "@\(path)#L\(first)-\(last)"
+  }
+
   /// How the context shows beside the prompt: `notes.md`, `notes.md:3` or `notes.md:3–5`.
   public var label: String {
     Self.label(path: filePath, lines: isEmpty ? nil : (start.line + 1, end.line + 1))

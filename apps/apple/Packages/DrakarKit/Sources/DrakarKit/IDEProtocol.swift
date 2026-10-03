@@ -327,6 +327,19 @@ public enum IDEReply {
     ])
   }
 
+  /// ⌘⌥K in the extension: asks a connected `claude` to put a reference to the file, and
+  /// its selected lines (from 0) when there are some, into the prompt being written.
+  public static func atMentioned(_ selection: EditorSelection) -> JSONValue {
+    var params: [String: JSONValue] = ["filePath": .string(selection.filePath)]
+    if !selection.isEmpty {
+      params["lineStart"] = .number(Double(selection.start.line))
+      params["lineEnd"] = .number(Double(selection.end.line))
+    }
+    return .object([
+      "jsonrpc": .string("2.0"), "method": .string("at_mentioned"), "params": .object(params),
+    ])
+  }
+
   /// Sent unasked to every connected `claude`, which shows the file or the line count in
   /// its prompt and attaches the selection to the next message.
   public static func selectionChanged(_ selection: EditorSelection) -> JSONValue {

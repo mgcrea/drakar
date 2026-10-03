@@ -171,6 +171,26 @@ struct EditorSelectionTests {
     #expect(transcript.entries.first?.context == "a.txt:1–2")
   }
 
+  /// The extension's ⌥K reference and ⌘⌥K notification.
+  @Test func mentionsASelection() {
+    let lines = EditorSelection(filePath: "/p/src/a.txt", contents: contents, range: 0..<10)
+    #expect(lines.mention(relativeTo: "/p") == "@src/a.txt#L1-2")
+    let one = EditorSelection(filePath: "/p/src/a.txt", contents: contents, range: 0..<3)
+    #expect(one.mention(relativeTo: "/p/") == "@src/a.txt#L1")
+    let caret = EditorSelection(filePath: "/p/src/a.txt", contents: contents, range: 3..<3)
+    #expect(caret.mention(relativeTo: "/p") == "@src/a.txt")
+    #expect(caret.mention(relativeTo: "/elsewhere") == "@/p/src/a.txt")
+    #expect(
+      EditorSelection(filePath: "/p/a#b.txt", contents: contents, range: 0..<0)
+        .mention(relativeTo: "/p") == nil)
+
+    let notification = IDEReply.atMentioned(lines)
+    #expect(notification["method"] == .string("at_mentioned"))
+    #expect(notification["params"]?["lineStart"] == .number(0))
+    #expect(notification["params"]?["lineEnd"] == .number(1))
+    #expect(IDEReply.atMentioned(caret)["params"]?["lineStart"] == nil)
+  }
+
   @Test func selectsWhatOpenFileAsksFor() {
     let text = "func a() {\n  return 1\n}\nfunc b() {}\n"
     func selected(_ open: OpenFile) -> String? {
