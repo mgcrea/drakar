@@ -62,8 +62,7 @@ struct EntryView: View, Equatable {
           .padding(.vertical, 8)
           .background(.quaternary.opacity(0.6), in: RoundedRectangle(cornerRadius: 8))
       case .text(let text):
-        Text(Self.markdown(text))
-          .textSelection(.enabled)
+        MarkdownView(text: text)
       case .thinking(let text):
         ThinkingView(text: text)
       case .tool(let call):
@@ -78,14 +77,6 @@ struct EntryView: View, Equatable {
       }
     }
     .padding(.leading, entry.parentToolUseID == nil ? 0 : 20)
-  }
-
-  /// Inline Markdown with line breaks kept. Block syntax (headings, lists, code fences)
-  /// shows as written until the transcript gets a real Markdown renderer.
-  private static func markdown(_ text: String) -> AttributedString {
-    (try? AttributedString(
-      markdown: text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
-      ?? AttributedString(text)
   }
 }
 

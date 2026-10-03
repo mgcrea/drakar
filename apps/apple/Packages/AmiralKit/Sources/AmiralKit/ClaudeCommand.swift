@@ -11,6 +11,9 @@ public struct ClaudeCommand: Sendable, Equatable {
   public var permissionMode: String?
   /// Stream text as it is written rather than block by block.
   public var includesPartialMessages = true
+  /// `summarized` makes thinking arrive as text; without it the CLI sends thinking blocks
+  /// with the text withheld (checked against 2.1.288). The extension passes `summarized`.
+  public var thinkingDisplay: String? = "summarized"
   /// Appended as given, after everything else.
   public var extraArguments: [String] = []
 
@@ -33,6 +36,7 @@ public struct ClaudeCommand: Sendable, Equatable {
       "--permission-prompt-tool", "stdio",
     ]
     if includesPartialMessages { arguments.append("--include-partial-messages") }
+    if let thinkingDisplay { arguments += ["--thinking-display", thinkingDisplay] }
     if let model { arguments += ["--model", model] }
     if let permissionMode { arguments += ["--permission-mode", permissionMode] }
     // One argument, `--resume=<id>`, as the extension passes it, so an id can never be

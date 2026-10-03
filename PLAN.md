@@ -110,8 +110,8 @@ not in advance.
 1. **One session, one window.** Pick a folder, spawn `claude`, stream text and thinking,
    tool calls as collapsible cards with their results, the permission prompt as a sheet
    with its suggestions, interrupt, cost and context in a footer. *Done 2026-10-03*,
-   except context usage. Still plain: block Markdown (headings, lists, fences) shows as
-   written, and thinking is a collapsed label until `--thinking-display` is passed.
+   except context usage. Block Markdown (headings, lists, fences, quotes, tables) and
+   summarized thinking followed the same day.
 2. **Sessions.** The list from disk, resume, several windows, Edit and Write calls shown
    as diffs to accept or reject.
 3. **The IDE bridge.** The lock file and the MCP-over-WebSocket server (§2.4).

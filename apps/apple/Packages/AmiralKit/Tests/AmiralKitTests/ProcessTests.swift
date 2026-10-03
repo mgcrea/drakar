@@ -10,6 +10,7 @@ struct ClaudeCommandTests {
       ClaudeCommand().arguments == [
         "--output-format", "stream-json", "--verbose", "--input-format", "stream-json",
         "--permission-prompt-tool", "stdio", "--include-partial-messages",
+        "--thinking-display", "summarized",
       ])
   }
 

@@ -104,8 +104,9 @@ Read off its running processes on 2026-10-03, beyond the arguments above:
 `--setting-sources=user,project,local`, `--thinking-display summarized`,
 `--max-thinking-tokens 31999`, `--replay-user-messages` (the CLI echoes prompts back),
 `--enable-auth-status`, `--no-chrome`, `--debug --debug-to-stderr`, and the user's
-permission mode. Amiral passes none of these yet; `--thinking-display summarized` is the
-likely reason its thinking blocks arrive empty.
+permission mode. Amiral passes `--thinking-display summarized`: without it thinking
+blocks arrive with their text withheld; with it they stream as `thinking_delta` text
+(checked on 2.1.288). It passes none of the others yet.
 
 Unsettled: whether `result.total_cost_usd` is the turn's cost or the process's running
 total. Two consecutive turns read 0.00096 then 0.0063, consistent with either.
