@@ -106,7 +106,7 @@ public enum IDEToolCall: Sendable, Equatable {
   case getLatestSelection
   case checkDocumentDirty(filePath: String)
   case saveDocument(filePath: String)
-  case openFile(filePath: String)
+  case openFile(OpenFile)
   case unknown(name: String)
 
   init(_ params: JSONValue) {
@@ -128,7 +128,13 @@ public enum IDEToolCall: Sendable, Equatable {
     case "getLatestSelection": self = .getLatestSelection
     case "checkDocumentDirty": self = .checkDocumentDirty(filePath: string("filePath"))
     case "saveDocument": self = .saveDocument(filePath: string("filePath"))
-    case "openFile": self = .openFile(filePath: string("filePath"))
+    case "openFile":
+      self = .openFile(
+        OpenFile(
+          filePath: string("filePath"), startText: arguments["startText"]?.stringValue,
+          endText: arguments["endText"]?.stringValue,
+          selectToEndOfLine: arguments["selectToEndOfLine"]?.boolValue ?? false,
+          makeFrontmost: arguments["makeFrontmost"]?.boolValue ?? true))
     default: self = .unknown(name: name)
     }
   }
@@ -181,8 +187,8 @@ public enum IDEReply {
     ])
   }
 
-  /// The tools a Drakar without a text editor can honour. The CLI exposes them to the
-  /// model as `mcp__ide__<name>`, so no tool is listed that would only ever fail.
+  /// The tools Drakar honours. The CLI exposes them to the model as `mcp__ide__<name>`, so
+  /// none is listed that would only ever fail: not the extension's Jupyter `executeCode`.
   public static var tools: JSONValue {
     func tool(_ name: String, _ description: String, _ properties: [String: String] = [:])
       -> JSONValue
@@ -207,6 +213,12 @@ public enum IDEReply {
         tool("close_tab", "Close a diff", ["tab_name": "string"]),
         tool("closeAllDiffTabs", "Close all diffs"),
         tool("getDiagnostics", "Get language diagnostics", ["uri": "string"]),
+        tool(
+          "openFile", "Open a file in the editor and optionally select a range of text",
+          [
+            "filePath": "string", "preview": "boolean", "startText": "string",
+            "endText": "string", "selectToEndOfLine": "boolean", "makeFrontmost": "boolean",
+          ]),
         tool("getWorkspaceFolders", "Get the folders open in the editor"),
         tool("getOpenEditors", "Get the files open in the editor"),
         tool("getCurrentSelection", "Get the current text selection"),
@@ -256,6 +268,71 @@ public enum IDEReply {
 
   public static var noSelection: JSONValue {
     json(.object(["success": .bool(false), "message": .string("No active editor found")]))
+  }
+
+  /// `getCurrentSelection`: the active editor's, which is the caret when nothing is
+  /// selected (the extension's default, `attachOpenFile`, sends the file either way).
+  public static func currentSelection(_ selection: EditorSelection?) -> JSONValue {
+    guard let selection, case .object(var object) = selection.json else { return noSelection }
+    object["success"] = .bool(true)
+    return json(.object(object))
+  }
+
+  /// `getLatestSelection`: the last one sent, wherever it was.
+  public static func latestSelection(_ selection: EditorSelection?) -> JSONValue {
+    json(
+      selection?.json
+        ?? .object(["success": .bool(false), "message": .string("No selection available")]))
+  }
+
+  /// `openFile` with `makeFrontmost: false` and nothing to select: the extension answers
+  /// with what it opened rather than a sentence.
+  public static func openedInBackground(_ tab: EditorTab) -> JSONValue {
+    json(
+      .object([
+        "success": .bool(true), "filePath": .string(tab.filePath),
+        "fileUrl": .string(URL(filePath: tab.filePath).absoluteString),
+        "message": .string("Opened file: \(tab.filePath)"),
+        "lineCount": .number(Double(tab.lineCount)), "isDirty": .bool(tab.isDirty),
+        "isUntitled": .bool(false), "isClosed": .bool(false),
+      ]))
+  }
+
+  public static func openEditors(_ tabs: [EditorTab]) -> JSONValue {
+    json(.object(["tabs": .array(tabs.map(\.json))]))
+  }
+
+  public static func documentDirty(_ filePath: String, isDirty: Bool) -> JSONValue {
+    json(
+      .object([
+        "success": .bool(true), "filePath": .string(filePath), "isDirty": .bool(isDirty),
+        "isUntitled": .bool(false),
+      ]))
+  }
+
+  public static func documentSaved(_ filePath: String, saved: Bool) -> JSONValue {
+    json(
+      .object([
+        "success": .bool(true), "filePath": .string(filePath), "saved": .bool(saved),
+        "message": .string(
+          saved ? "Document saved successfully" : "Document was not dirty or save failed"),
+      ]))
+  }
+
+  /// A tool that failed, as the MCP SDK reports a handler that threw: the message, flagged.
+  public static func toolError(_ message: String) -> JSONValue {
+    .object([
+      "content": .array([.object(["type": .string("text"), "text": .string(message)])]),
+      "isError": .bool(true),
+    ])
+  }
+
+  /// Sent unasked to every connected `claude`, which shows the file or the line count in
+  /// its prompt and attaches the selection to the next message.
+  public static func selectionChanged(_ selection: EditorSelection) -> JSONValue {
+    .object([
+      "jsonrpc": .string("2.0"), "method": .string("selection_changed"), "params": selection.json,
+    ])
   }
 
   public static func notOpen(_ filePath: String) -> JSONValue {

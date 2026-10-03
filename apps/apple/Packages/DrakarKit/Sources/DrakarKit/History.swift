@@ -11,6 +11,8 @@ import Foundation
 enum UserText: Equatable {
   case prompt(String)
   case notice(String)
+  /// The open file or the selection an editor put ahead of the prompt, as its label.
+  case context(String)
   case hidden
 
   static let contextTags = [
@@ -21,6 +23,7 @@ enum UserText: Equatable {
   static func classify(_ raw: String) -> UserText {
     let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
     if text.isEmpty { return .hidden }
+    if let label = EditorSelection.label(context: text) { return .context(label) }
     if contextTags.contains(where: text.hasPrefix) { return .hidden }
     if text.hasPrefix("<task-notification>") {
       let summary = element("summary", in: text) ?? element("status", in: text) ?? "finished"
@@ -96,14 +99,18 @@ extension Transcript {
         return nil
       }
       var prompt: [String] = []
+      var context: String?
       for text in texts {
         switch UserText.classify(text) {
         case .prompt(let part): prompt.append(part)
         case .notice(let note): addNotice(note, parent: user.parentToolUseID)
+        case .context(let label): context = label
         case .hidden: break
         }
       }
-      if !prompt.isEmpty { addPrompt(prompt.joined(separator: "\n\n"), running: false) }
+      if !prompt.isEmpty {
+        addPrompt(prompt.joined(separator: "\n\n"), context: context, running: false)
+      }
       // Tool results go through the live path, which pairs them with their calls.
       let results = user.content.filter {
         if case .toolResult = $0 { return true }

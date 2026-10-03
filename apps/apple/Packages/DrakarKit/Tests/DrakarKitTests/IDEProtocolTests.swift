@@ -54,8 +54,8 @@ struct IDEProtocolTests {
     let names = IDEReply.tools["tools"]?.arrayValue?.compactMap { $0["name"]?.stringValue } ?? []
     #expect(names.contains("openDiff"))
     #expect(names.contains("close_tab"))
+    #expect(names.contains("openFile"))
     #expect(!names.contains("executeCode"))
-    #expect(!names.contains("openFile"))
   }
 
   @Test func describesTheWorkspace() throws {

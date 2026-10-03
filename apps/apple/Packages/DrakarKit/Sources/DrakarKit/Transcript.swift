@@ -17,6 +17,8 @@ public struct Transcript: Sendable, Equatable {
     public var kind: Kind
     /// Non-nil inside a subagent, naming the `Task` call it runs under.
     public var parentToolUseID: String?
+    /// On a prompt, what the editor attached to it: `notes.md:3–5`.
+    public var context: String?
   }
 
   public enum Kind: Sendable, Equatable {
@@ -83,10 +85,11 @@ public struct Transcript: Sendable, Equatable {
   public init() {}
 
   /// `running: false` for a prompt replayed from history, whose turn ended long ago.
-  public mutating func addPrompt(_ text: String, running: Bool = true) {
+  /// `context` labels what the editor attached (`EditorSelection.label`).
+  public mutating func addPrompt(_ text: String, context: String? = nil, running: Bool = true) {
     revision += 1
     promptCount += 1
-    upsert(Entry(id: "prompt#\(promptCount)", kind: .prompt(text)))
+    upsert(Entry(id: "prompt#\(promptCount)", kind: .prompt(text), context: context))
     isRunning = running
   }
 
@@ -131,7 +134,7 @@ public struct Transcript: Sendable, Equatable {
       for case .text(let text) in user.content {
         switch UserText.classify(text) {
         case .prompt(let note), .notice(let note): addNotice(note, parent: user.parentToolUseID)
-        case .hidden: break
+        case .context, .hidden: break
         }
       }
       for case .toolResult(let id, let content, let isError) in user.content {

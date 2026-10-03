@@ -5,8 +5,9 @@ public enum ClientMessage: Sendable, Equatable {
   /// First, before any prompt. The answer is a `control_response` carrying the slash
   /// commands, skills and models.
   case initialize(requestID: String)
-  /// A user turn.
-  case prompt(String)
+  /// A user turn. `context` blocks go ahead of the text, as the extension's chat sends
+  /// the open file or the selection (`EditorSelection.promptContext`).
+  case prompt(String, context: [String] = [])
   /// The answer to a `can_use_tool` request.
   case permission(requestID: String, PermissionDecision)
   /// Stop the turn in progress. Sent by the VS Code extension; not yet exercised against
@@ -17,12 +18,18 @@ public enum ClientMessage: Sendable, Equatable {
     switch self {
     case .initialize(let id):
       Self.controlRequest(id, ["subtype": .string("initialize"), "hooks": .null])
-    case .prompt(let text):
+    case .prompt(let text, let context):
       .object([
         "type": .string("user"),
         "session_id": .string(""),
         "parent_tool_use_id": .null,
-        "message": .object(["role": .string("user"), "content": .string(text)]),
+        "message": .object([
+          "role": .string("user"),
+          "content": context.isEmpty
+            ? .string(text)
+            : .array(
+              (context + [text]).map { .object(["type": .string("text"), "text": .string($0)]) }),
+        ]),
       ])
     case .permission(let id, let decision):
       .object([
