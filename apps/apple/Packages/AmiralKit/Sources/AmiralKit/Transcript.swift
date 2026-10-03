@@ -24,6 +24,8 @@ public struct Transcript: Sendable, Equatable {
     case text(String)
     case thinking(String)
     case tool(ToolCall)
+    /// Text the CLI writes as a user turn, such as `[Request interrupted by user]`.
+    case notice(String)
   }
 
   public struct ToolCall: Sendable, Equatable {
@@ -63,6 +65,9 @@ public struct Transcript: Sendable, Equatable {
   public private(set) var lastResult: TurnResult?
   /// True from a prompt until its `result`.
   public private(set) var isRunning = false
+  /// Bumped by every change, so a view can react to "something changed" without
+  /// comparing the whole history.
+  public private(set) var revision = 0
 
   private var indexByID: [String: Int] = [:]
   /// Blocks seen per assistant message, which is how a per-block `assistant` line learns
@@ -71,10 +76,12 @@ public struct Transcript: Sendable, Equatable {
   /// The message a stream event belongs to, per subagent (nil key: the main thread).
   private var streamingMessage: [String?: String] = [:]
   private var promptCount = 0
+  private var noticeCount = 0
 
   public init() {}
 
   public mutating func addPrompt(_ text: String) {
+    revision += 1
     promptCount += 1
     upsert(Entry(id: "prompt#\(promptCount)", kind: .prompt(text)))
     isRunning = true
@@ -82,10 +89,20 @@ public struct Transcript: Sendable, Equatable {
 
   /// Call after answering a permission request, so it leaves the pending list.
   public mutating func resolvePermission(requestID: String) {
+    revision += 1
     pendingPermissions.removeAll { $0.requestID == requestID }
   }
 
+  /// The process died. Nothing is running any more and nothing can still be answered,
+  /// whatever the last line said.
+  public mutating func processExited() {
+    revision += 1
+    isRunning = false
+    pendingPermissions.removeAll()
+  }
+
   public mutating func apply(_ message: StreamMessage) {
+    revision += 1
     switch message {
     case .system(.initialized(let info)):
       session = info
@@ -100,6 +117,13 @@ public struct Transcript: Sendable, Equatable {
     case .streamEvent(let event, let parent):
       apply(event, parent: parent)
     case .user(let user):
+      for case .text(let text) in user.content where !text.isEmpty {
+        noticeCount += 1
+        upsert(
+          Entry(
+            id: "notice#\(noticeCount)", kind: .notice(text), parentToolUseID: user.parentToolUseID)
+        )
+      }
       for case .toolResult(let id, let content, let isError) in user.content {
         guard let index = indexByID[id], case .tool(var call) = entries[index].kind else {
           continue
@@ -180,7 +204,7 @@ public struct Transcript: Sendable, Equatable {
   private static func isEmptyText(_ kind: Kind) -> Bool {
     switch kind {
     case .text(let text), .thinking(let text): text.isEmpty
-    case .prompt, .tool: false
+    case .prompt, .tool, .notice: false
     }
   }
 

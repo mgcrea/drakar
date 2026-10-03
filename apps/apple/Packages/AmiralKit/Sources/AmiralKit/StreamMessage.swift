@@ -237,6 +237,12 @@ public struct TurnResult: Sendable, Equatable {
   public var durationMS: Int?
   public var numTurns: Int?
   public var stopReason: String?
+  /// Why the turn ended: `completed`, or `aborted_streaming` after an interrupt.
+  public var terminalReason: String?
+
+  /// An interrupt ends the turn as `error_during_execution` with `is_error: true`; it is
+  /// the user's own doing and must not be shown as a failure.
+  public var wasInterrupted: Bool { terminalReason == "aborted_streaming" }
 
   init?(_ json: JSONValue) {
     guard let subtype = json["subtype"]?.stringValue else { return nil }
@@ -248,6 +254,7 @@ public struct TurnResult: Sendable, Equatable {
     durationMS = json["duration_ms"]?.intValue
     numTurns = json["num_turns"]?.intValue
     stopReason = json["stop_reason"]?.stringValue
+    terminalReason = json["terminal_reason"]?.stringValue
   }
 }
 

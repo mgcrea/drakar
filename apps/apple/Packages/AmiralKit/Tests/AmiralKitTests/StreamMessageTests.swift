@@ -7,7 +7,7 @@ struct StreamMessageTests {
 
   /// The property everything else rests on: every line the real CLI wrote decodes into a
   /// message this package models. An `.unknown` here means a capture outgrew the decoder.
-  @Test(arguments: [Fixture.turnWithTool, .permissionRequest])
+  @Test(arguments: [Fixture.turnWithTool, .permissionRequest, .interruptThenTurn])
   func decodesEveryCapturedLine(_ fixture: Fixture) throws {
     let messages = try fixture.messages
     #expect(!messages.isEmpty)

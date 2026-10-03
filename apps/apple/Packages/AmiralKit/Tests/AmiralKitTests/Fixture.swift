@@ -10,6 +10,10 @@ enum Fixture: String {
   /// `touch amiral-probe.txt`, without partial messages: a `can_use_tool` request that
   /// was answered `allow`, then the tool ran.
   case permissionRequest = "permission-request"
+  /// A story interrupted after its first words, then a second turn ("ready") on the same
+  /// process: the interrupt's acknowledgement, the CLI's `[Request interrupted by user]`
+  /// note, and a result that is an error by its fields and an interrupt by its reason.
+  case interruptThenTurn = "interrupt-then-turn"
 
   var lines: [Data] {
     get throws {

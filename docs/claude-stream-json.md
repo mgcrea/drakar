@@ -69,7 +69,21 @@ Every line after init carries `session_id` and a `uuid`; model output carries
 The process stays alive between turns; closing stdin after a `result` ends it cleanly
 (exit 0).
 
-Other control subtypes the extension sends, unverified here: `interrupt`,
+## Interrupting (verified 2026-10-03)
+
+```jsonc
+{"type":"control_request","request_id":"req_int","request":{"subtype":"interrupt"}}
+```
+
+The CLI answers within milliseconds with `control_response` success
+(`{"still_queued":[]}`), flushes the block it was writing as an `assistant` line, writes
+a user turn whose content is the text `[Request interrupted by user]`, and ends the turn
+with a `result` whose `subtype` is `error_during_execution` and `is_error` true. Only
+`terminal_reason: "aborted_streaming"` says it was an interrupt, not a failure. The
+process stays up and takes the next prompt normally (`terminal_reason: "completed"`).
+Captured as the `interrupt-then-turn` fixture.
+
+Other control subtypes the extension sends, unverified here:
 `set_permission_mode`, `set_model`, `set_max_thinking_tokens`, `rewind_files`,
 `mcp_status`, `mcp_toggle`, `get_usage`, `rename_session`, and the CLI may send
 `control_cancel_request` to withdraw a pending `can_use_tool`.
@@ -84,8 +98,20 @@ Other control subtypes the extension sends, unverified here: `interrupt`,
 - `--setting-sources project` keeps user-level hooks and plugins out of a spike run. A
   real session must not pass it: the user's settings are the point.
 
+## What the extension passes as of 2.1.288
+
+Read off its running processes on 2026-10-03, beyond the arguments above:
+`--setting-sources=user,project,local`, `--thinking-display summarized`,
+`--max-thinking-tokens 31999`, `--replay-user-messages` (the CLI echoes prompts back),
+`--enable-auth-status`, `--no-chrome`, `--debug --debug-to-stderr`, and the user's
+permission mode. Amiral passes none of these yet; `--thinking-display summarized` is the
+likely reason its thinking blocks arrive empty.
+
+Unsettled: whether `result.total_cost_usd` is the turn's cost or the process's running
+total. Two consecutive turns read 0.00096 then 0.0063, consistent with either.
+
 ## Raw captures
 
-The two captures this was written from are trimmed into
+The captures this was written from are trimmed into
 `apps/apple/Packages/AmiralKit/Tests/AmiralKitTests/Fixtures/`. Signatures, the init
 payload's tool and server lists, and local paths were cut; the shapes were not.
