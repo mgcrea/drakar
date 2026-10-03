@@ -51,7 +51,7 @@ struct InterruptTests {
     }
     #expect(sawInterruptedResult)
     let kinds = transcript.entries.map(\.kind)
-    #expect(kinds.contains(.notice("[Request interrupted by user]")))
+    #expect(kinds.contains(.notice("Request interrupted by user")))
     #expect(kinds.contains(.text("# The Last Command")))
     #expect(kinds.last == .text("ready"))
     #expect(!transcript.isRunning)

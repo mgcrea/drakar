@@ -14,6 +14,9 @@ enum Fixture: String {
   /// process: the interrupt's acknowledgement, the CLI's `[Request interrupted by user]`
   /// note, and a result that is an error by its fields and an interrupt by its reason.
   case interruptThenTurn = "interrupt-then-turn"
+  /// A transcript file as Claude Code 2.1.288 wrote it for a session Amiral ran (`touch
+  /// ahoy.txt`, then "done"), cut to its user, assistant and title entries.
+  case historyWithTool = "history-with-tool"
 
   var lines: [Data] {
     get throws {

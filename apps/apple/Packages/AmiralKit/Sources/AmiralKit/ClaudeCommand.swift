@@ -14,6 +14,9 @@ public struct ClaudeCommand: Sendable, Equatable {
   /// `summarized` makes thinking arrive as text; without it the CLI sends thinking blocks
   /// with the text withheld (checked against 2.1.288). The extension passes `summarized`.
   public var thinkingDisplay: String? = "summarized"
+  /// With `resumeSessionID`: continue a copy under a new id, leaving the original to
+  /// whoever has it open.
+  public var forksSession = false
   /// Appended as given, after everything else.
   public var extraArguments: [String] = []
 
@@ -41,7 +44,10 @@ public struct ClaudeCommand: Sendable, Equatable {
     if let permissionMode { arguments += ["--permission-mode", permissionMode] }
     // One argument, `--resume=<id>`, as the extension passes it, so an id can never be
     // read as a flag.
-    if let resumeSessionID { arguments.append("--resume=\(resumeSessionID)") }
+    if let resumeSessionID {
+      arguments.append("--resume=\(resumeSessionID)")
+      if forksSession { arguments.append("--fork-session") }
+    }
     return arguments + extraArguments
   }
 }

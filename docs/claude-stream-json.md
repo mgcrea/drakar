@@ -98,6 +98,21 @@ Other control subtypes the extension sends, unverified here:
 - `--setting-sources project` keeps user-level hooks and plugins out of a spike run. A
   real session must not pass it: the user's settings are the point.
 
+## Resuming (verified 2026-10-03, 2.1.288)
+
+`--resume=<id>`, run from the session's own folder (the id is resolved against that
+folder's project directory), keeps the **same** session id under stream-json and appends
+to the same transcript; the model has the earlier turns. It does **not** replay the
+history on stdout: no `user` or `assistant` lines for past turns. A UI draws the past from
+the transcript file, `<config>/projects/<encoded cwd>/<id>.jsonl`, whose `user` and
+`assistant` entries have the stream's shapes (assistant entries one block per line, as
+live), plus `ai-title` entries for the title. One id can have a transcript under two
+config directories, when a session was resumed after switching `CLAUDE_CONFIG_DIR`.
+
+`--fork-session` with `--resume` continues a copy under a new id, which is how Amiral
+opens a session another process has open (the registry at `<config>/sessions/<pid>.json`
+says which; Armada's `docs/claude-code-sessions.md` describes it).
+
 ## What the extension passes as of 2.1.288
 
 Read off its running processes on 2026-10-03, beyond the arguments above:

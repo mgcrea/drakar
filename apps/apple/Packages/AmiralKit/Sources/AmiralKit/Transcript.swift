@@ -63,6 +63,8 @@ public struct Transcript: Sendable, Equatable {
   public private(set) var session: SessionInfo?
   public private(set) var pendingPermissions: [PendingPermission] = []
   public private(set) var lastResult: TurnResult?
+  /// The session's title, from the newest `ai-title` in its history.
+  public internal(set) var title: String?
   /// True from a prompt until its `result`.
   public private(set) var isRunning = false
   /// Bumped by every change, so a view can react to "something changed" without
@@ -80,11 +82,18 @@ public struct Transcript: Sendable, Equatable {
 
   public init() {}
 
-  public mutating func addPrompt(_ text: String) {
+  /// `running: false` for a prompt replayed from history, whose turn ended long ago.
+  public mutating func addPrompt(_ text: String, running: Bool = true) {
     revision += 1
     promptCount += 1
     upsert(Entry(id: "prompt#\(promptCount)", kind: .prompt(text)))
-    isRunning = true
+    isRunning = running
+  }
+
+  mutating func addNotice(_ text: String, parent: String? = nil) {
+    revision += 1
+    noticeCount += 1
+    upsert(Entry(id: "notice#\(noticeCount)", kind: .notice(text), parentToolUseID: parent))
   }
 
   /// Call after answering a permission request, so it leaves the pending list.
@@ -117,12 +126,13 @@ public struct Transcript: Sendable, Equatable {
     case .streamEvent(let event, let parent):
       apply(event, parent: parent)
     case .user(let user):
-      for case .text(let text) in user.content where !text.isEmpty {
-        noticeCount += 1
-        upsert(
-          Entry(
-            id: "notice#\(noticeCount)", kind: .notice(text), parentToolUseID: user.parentToolUseID)
-        )
+      // Live, the CLI never echoes our prompts, so any text it writes as a user turn is a
+      // note of its own: an interrupt, a background task finishing.
+      for case .text(let text) in user.content {
+        switch UserText.classify(text) {
+        case .prompt(let note), .notice(let note): addNotice(note, parent: user.parentToolUseID)
+        case .hidden: break
+        }
       }
       for case .toolResult(let id, let content, let isError) in user.content {
         guard let index = indexByID[id], case .tool(var call) = entries[index].kind else {
