@@ -6,11 +6,13 @@ Amiral drives one. A native macOS app to work with a coding agent: as light and 
 Zed, with the conversation, the tool calls, the permission prompts and the diffs as first
 class UI. An editor later, but never the centre.
 
-Status: written 2026-10-03, the day the repo was bootstrapped. **What exists is phase 0's
-first step**: AmiralKit decodes the stream-json protocol from captured fixtures, and the
-app is the fleet's scaffold with its settings window. Nothing spawns `claude` yet. Every
-section below the architecture is a proposal, and §7 lists what has to be decided before
-it stops being one.
+Status: written 2026-10-03, the day the repo was bootstrapped; phase 1 landed the same
+day. **What exists**: AmiralKit decodes and encodes the stream-json protocol against
+captured fixtures and supervises the process; the app opens a folder, runs your `claude`
+in it, streams the transcript with tool cards, asks permission in a sheet with the CLI's
+"always allow" suggestions, and stops a turn. All three were checked against the real CLI
+(2.1.288) in the running app. One window, one session, no resume yet. Everything from
+phase 2 on is a proposal, and §7 lists what has to be decided before it stops being one.
 
 ---
 
@@ -104,10 +106,12 @@ not in advance.
 ## 4. Phases
 
 0. **Protocol core.** AmiralKit decodes every message type in the spike's captures and
-   encodes `initialize`, a prompt and a permission answer. *Started 2026-10-03.*
+   encodes `initialize`, a prompt and a permission answer. *Done 2026-10-03.*
 1. **One session, one window.** Pick a folder, spawn `claude`, stream text and thinking,
    tool calls as collapsible cards with their results, the permission prompt as a sheet
-   with its suggestions, interrupt, cost and context in a footer.
+   with its suggestions, interrupt, cost and context in a footer. *Done 2026-10-03*,
+   except context usage. Still plain: block Markdown (headings, lists, fences) shows as
+   written, and thinking is a collapsed label until `--thinking-display` is passed.
 2. **Sessions.** The list from disk, resume, several windows, Edit and Write calls shown
    as diffs to accept or reject.
 3. **The IDE bridge.** The lock file and the MCP-over-WebSocket server (§2.4).
