@@ -4,8 +4,8 @@ import Synchronization
 /// A `claude` process speaking stream-json over its pipes.
 ///
 /// Start it, read `events` (decoded off the main thread, in batches as the pipe delivers
-/// them), `send` messages. The stream ends after `.exited`, which comes only once stdout has
-/// been drained, so no message the process wrote before dying is lost.
+/// them), `send` messages. The stream ends after `.exited`, which comes only once stdout and
+/// stderr have been drained, so no message and no last error line is lost.
 ///
 /// `@unchecked Sendable` because `Process` and `FileHandle` are not marked Sendable; the
 /// operations used across threads here (`write`, `terminate`, `isRunning`) are thread-safe,
@@ -49,7 +49,9 @@ public final class AgentProcess: @unchecked Sendable {
   private struct State {
     var lines = LineBuffer()
     var stdoutClosed = false
+    var stderrClosed = false
     var exitStatus: Int32?
+    var isWaitingForStderr = false
     var continuation: AsyncStream<Event>.Continuation?
   }
 
@@ -86,10 +88,11 @@ public final class AgentProcess: @unchecked Sendable {
       let messages = lines.map(Self.decode)
       if !messages.isEmpty { continuation.yield(.messages(messages)) }
     }
-    errors.fileHandleForReading.readabilityHandler = { handle in
+    errors.fileHandleForReading.readabilityHandler = { [weak self] handle in
       let chunk = handle.availableData
       if chunk.isEmpty {
         handle.readabilityHandler = nil
+        self?.finish { $0.stderrClosed = true }
         return
       }
       continuation.yield(.stderr(String(decoding: chunk, as: UTF8.self)))
@@ -123,18 +126,41 @@ public final class AgentProcess: @unchecked Sendable {
     if process.isRunning { process.terminate() }
   }
 
-  /// Emits `.exited` once both stdout has closed and the exit status is known, whichever
-  /// comes last, then ends the stream.
+  /// Emits `.exited` once stdout has closed, stderr has closed and the exit status is
+  /// known, whichever comes last, then ends the stream.
+  ///
+  /// Stderr is waited for because its last chunk can still be in flight when the exit is
+  /// seen, and it is the line that says why (a flaky test caught it: `echo oops >&2; exit 3`
+  /// lost the `oops` about one run in two). But a child the CLI started may hold stderr
+  /// open after the CLI itself is gone, so that wait ends after 200 ms.
   private func finish(_ update: (inout State) -> Void) {
-    let ended: (AsyncStream<Event>.Continuation, Int32, Data)? = state.withLock { state in
+    enum Next {
+      case wait, waitForStderr
+      case end(AsyncStream<Event>.Continuation, Int32, Data)
+    }
+    let next: Next = state.withLock { state in
       update(&state)
       guard state.stdoutClosed, let status = state.exitStatus,
         let continuation = state.continuation
-      else { return nil }
+      else { return .wait }
+      if !state.stderrClosed {
+        if state.isWaitingForStderr { return .wait }
+        state.isWaitingForStderr = true
+        return .waitForStderr
+      }
       state.continuation = nil
-      return (continuation, status, state.lines.remainder)
+      return .end(continuation, status, state.lines.remainder)
     }
-    guard let (continuation, status, remainder) = ended else { return }
+    switch next {
+    case .wait: return
+    case .waitForStderr:
+      DispatchQueue.global().asyncAfter(deadline: .now() + 0.2) { [weak self] in
+        self?.finish { $0.stderrClosed = true }
+      }
+      return
+    case .end: break
+    }
+    guard case .end(let continuation, let status, let remainder) = next else { return }
     continuation.yield(.exited(status: status, remainder: remainder))
     continuation.finish()
   }
