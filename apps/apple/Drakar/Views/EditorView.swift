@@ -5,12 +5,11 @@ import SwiftUI
 /// The open files as tabs over a plain-text editor.
 struct EditorView: View {
   let workspace: Workspace
-  @State private var closing: EditorDocument?
 
   var body: some View {
     VStack(spacing: 0) {
       TabStrip(workspace: workspace) { document in
-        if document.isDirty { closing = document } else { workspace.close(document) }
+        workspace.requestClose(document)
       }
       Divider()
       if let document = workspace.active {
@@ -22,7 +21,8 @@ struct EditorView: View {
       }
     }
     .confirmationDialog(
-      "Save changes to \(closing?.name ?? "")?", isPresented: isClosing, presenting: closing
+      "Save changes to \(workspace.closing?.name ?? "")?", isPresented: isClosing,
+      presenting: workspace.closing
     ) { document in
       Button("Save") {
         workspace.save(document)
@@ -43,7 +43,7 @@ struct EditorView: View {
   }
 
   private var isClosing: Binding<Bool> {
-    Binding(get: { closing != nil }, set: { if !$0 { closing = nil } })
+    Binding(get: { workspace.closing != nil }, set: { if !$0 { workspace.closing = nil } })
   }
 
   private var hasProblem: Binding<Bool> {
@@ -140,109 +140,5 @@ private struct DiskBanner: View {
     .padding(.horizontal, 10)
     .padding(.vertical, 6)
     .background(.orange.opacity(0.08))
-  }
-}
-
-/// An `NSTextView` over the document's own text storage: plain text, monospaced, no
-/// wrapping and none of the substitutions meant for prose.
-struct CodeTextView: NSViewRepresentable {
-  let document: EditorDocument
-  let selectionMoved: () -> Void
-
-  func makeCoordinator() -> Coordinator {
-    Coordinator(document: document, selectionMoved: selectionMoved)
-  }
-
-  func makeNSView(context: Context) -> NSScrollView {
-    let layoutManager = NSLayoutManager()
-    layoutManager.allowsNonContiguousLayout = true
-    document.storage.addLayoutManager(layoutManager)
-    let container = NSTextContainer(
-      size: NSSize(width: CGFloat.greatestFiniteMagnitude, height: .greatestFiniteMagnitude))
-    container.widthTracksTextView = false
-    layoutManager.addTextContainer(container)
-
-    let textView = NSTextView(frame: .zero, textContainer: container)
-    textView.isRichText = false
-    textView.importsGraphics = false
-    textView.allowsUndo = true
-    textView.usesFindBar = true
-    textView.isIncrementalSearchingEnabled = true
-    textView.isAutomaticQuoteSubstitutionEnabled = false
-    textView.isAutomaticDashSubstitutionEnabled = false
-    textView.isAutomaticTextReplacementEnabled = false
-    textView.isAutomaticSpellingCorrectionEnabled = false
-    textView.isContinuousSpellCheckingEnabled = false
-    textView.isAutomaticLinkDetectionEnabled = false
-    textView.smartInsertDeleteEnabled = false
-    textView.font = EditorDocument.font
-    textView.typingAttributes = EditorDocument.attributes
-    textView.textContainerInset = NSSize(width: 4, height: 6)
-    textView.isHorizontallyResizable = true
-    textView.isVerticallyResizable = true
-    textView.maxSize = NSSize(
-      width: CGFloat.greatestFiniteMagnitude, height: .greatestFiniteMagnitude)
-    textView.autoresizingMask = [.width, .height]
-    textView.delegate = context.coordinator
-    textView.setAccessibilityIdentifier("editor.text")
-
-    let scrollView = NSScrollView()
-    scrollView.hasVerticalScroller = true
-    scrollView.hasHorizontalScroller = true
-    scrollView.autohidesScrollers = true
-    scrollView.documentView = textView
-    context.coordinator.layoutManager = layoutManager
-
-    let range = NSIntersectionRange(
-      document.selectedRange, NSRange(location: 0, length: document.storage.length))
-    textView.setSelectedRange(range)
-    DispatchQueue.main.async {
-      textView.scrollRangeToVisible(range)
-      textView.window?.makeFirstResponder(textView)
-    }
-    return scrollView
-  }
-
-  func updateNSView(_ scrollView: NSScrollView, context: Context) {}
-
-  /// Any size it is offered. Left to itself SwiftUI measures the scroll view's current
-  /// frame and keeps it as a minimum, so the pane would not narrow with the window and the
-  /// split pushed the sidebar off the window's edge instead.
-  func sizeThatFits(_ proposal: ProposedViewSize, nsView: NSScrollView, context: Context)
-    -> CGSize?
-  {
-    proposal.replacingUnspecifiedDimensions(by: CGSize(width: 320, height: 240))
-  }
-
-  static func dismantleNSView(_ scrollView: NSScrollView, coordinator: Coordinator) {
-    // A storage keeps every layout manager added to it, and lays each one out on every edit.
-    if let layoutManager = coordinator.layoutManager {
-      coordinator.document.storage.removeLayoutManager(layoutManager)
-    }
-  }
-
-  final class Coordinator: NSObject, NSTextViewDelegate {
-    let document: EditorDocument
-    let selectionMoved: () -> Void
-    var layoutManager: NSLayoutManager?
-
-    init(document: EditorDocument, selectionMoved: @escaping () -> Void) {
-      self.document = document
-      self.selectionMoved = selectionMoved
-    }
-
-    func textDidChange(_ notification: Notification) {
-      document.edited()
-    }
-
-    func textViewDidChangeSelection(_ notification: Notification) {
-      guard let textView = notification.object as? NSTextView else { return }
-      document.selectionDidChange(textView.selectedRange())
-      selectionMoved()
-    }
-
-    func undoManager(for view: NSTextView) -> UndoManager? {
-      document.undoManager
-    }
   }
 }

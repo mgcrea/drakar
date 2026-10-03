@@ -1,3 +1,4 @@
+import AppKit
 import SupportKitUI
 import SwiftUI
 
@@ -13,7 +14,11 @@ struct DrakarApp: App {
     }
     .commands {
       SupportCommands(app: Support.app, preferIssueTracker: Support.preferIssueTracker)
-      CommandGroup(replacing: .saveItem) { SaveCommand() }
+      // Replacing the save group takes File > Close with it, so both closes come back here.
+      CommandGroup(replacing: .saveItem) {
+        CloseCommands()
+        SaveCommand()
+      }
       // ⌘P, as in VS Code and Zed: Drakar prints nothing.
       CommandGroup(replacing: .printItem) { QuickOpenCommand() }
     }
@@ -76,5 +81,28 @@ private struct QuickOpenCommand: View {
     Button("Open Quickly…") { workspace?.showQuickOpen() }
       .keyboardShortcut("p")
       .disabled(workspace == nil)
+    Button("Search in Folder…") { workspace?.showSearch() }
+      .keyboardShortcut("f", modifiers: [.command, .shift])
+      .disabled(workspace == nil)
+  }
+}
+
+/// ⌘W closes the active tab, then the window once no tab is left, as in Xcode and VS Code;
+/// ⇧⌘W closes the window whatever it holds. Both go through the questions about unsaved
+/// work: the tab's, and the window's guard.
+private struct CloseCommands: View {
+  @FocusedValue(\.workspace) private var workspace
+
+  var body: some View {
+    Button(workspace?.active == nil ? "Close" : "Close Tab") {
+      if let workspace, let document = workspace.active {
+        workspace.requestClose(document)
+      } else {
+        NSApp.keyWindow?.performClose(nil)
+      }
+    }
+    .keyboardShortcut("w")
+    Button("Close Window") { NSApp.keyWindow?.performClose(nil) }
+      .keyboardShortcut("w", modifiers: [.command, .shift])
   }
 }

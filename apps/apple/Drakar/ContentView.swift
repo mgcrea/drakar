@@ -42,6 +42,7 @@ struct ContentView: View {
         }
         .focusedSceneValue(\.workspace, workspace)
         .sheet(isPresented: quickOpenShown(workspace)) { QuickOpenView(workspace: workspace) }
+        .sheet(isPresented: searchShown(workspace)) { ProjectSearchView(workspace: workspace) }
         .onChange(of: appearsActive, initial: true) { _, active in
           if active { workspace.becameActive() }
         }
@@ -86,6 +87,10 @@ struct ContentView: View {
 
   private func quickOpenShown(_ workspace: Workspace) -> Binding<Bool> {
     Binding(get: { workspace.isQuickOpenShown }, set: { workspace.isQuickOpenShown = $0 })
+  }
+
+  private func searchShown(_ workspace: Workspace) -> Binding<Bool> {
+    Binding(get: { workspace.isSearchShown }, set: { workspace.isSearchShown = $0 })
   }
 
   private var windowTitle: String {
@@ -165,7 +170,8 @@ struct ContentView: View {
   /// `-drakar.debugSettingSources project` keeps the user's own permission rules and
   /// hooks out of one that needs a permission prompt to appear. `-drakar.debugOpen
   /// <path>` opens a file of the folder in the editor, and `-drakar.debugQuickOpen
-  /// <query>` shows quick open with that query typed. Values, not flags:
+  /// <query>` shows quick open with that query typed, `-drakar.debugSearch <query>` the
+  /// folder search. Values, not flags:
   /// UserDefaults reads a value starting with `-` as the next key and drops it.
   /// Debug builds only: a shipped binary takes no instructions from its launch arguments.
   private func openFromLaunchArguments() {
@@ -197,6 +203,9 @@ struct ContentView: View {
       }
       if let query = defaults.string(forKey: "drakar.debugQuickOpen") {
         workspace?.showQuickOpen(query: query)
+      }
+      if let query = defaults.string(forKey: "drakar.debugSearch") {
+        workspace?.showSearch(query: query)
       }
       if let prompt { Task { await send(prompt) } }
     #endif

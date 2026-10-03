@@ -154,9 +154,12 @@ not in advance.
    without synthetic input. ⌘P finds a file by a few letters of its name (dependencies and
    build output skipped). Closing a window or quitting with unsaved tabs asks first; the
    window's guard stands in front of SwiftUI's delegate and forwards the rest (a clean
-   close checked live, the question by hosted tests: it needs typing to provoke). Not yet:
-   syntax highlighting, line numbers, search inside files, Cmd-W for a tab,
-   `at_mentioned`, diagnostics, and editing a proposal before accepting it.
+   close checked live, the question by hosted tests: it needs typing to provoke). ⌘W
+   closes the active tab, then the window. Line numbers, and colours from a lexer per
+   language family (comments, strings, numbers, keywords, types, attributes; no grammar,
+   no dependency), applied as layout attributes so they never touch the text or its undo.
+   Not yet: search inside files, `at_mentioned`, diagnostics, and editing a proposal
+   before accepting it.
 
 ## 5. Distribution
 

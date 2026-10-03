@@ -17,6 +17,9 @@ final class Workspace {
   /// Why the last file could not be opened or saved.
   var problem: String?
   var isQuickOpenShown = false
+  var isSearchShown = false
+  /// What the search starts with, for the debug launch argument.
+  @ObservationIgnored private(set) var searchQuery = ""
   /// What quick open starts with, for the debug launch argument.
   @ObservationIgnored private(set) var quickOpenQuery = ""
   /// The folder's files for quick open, relative to it; nil while they are being read.
@@ -84,6 +87,14 @@ final class Workspace {
     selectionMoved()
   }
 
+  /// The tab waiting on "Save changes?".
+  var closing: EditorDocument?
+
+  /// Closes a saved tab at once, and asks about an unsaved one.
+  func requestClose(_ document: EditorDocument) {
+    if document.isDirty { closing = document } else { close(document) }
+  }
+
   func close(_ document: EditorDocument) {
     guard let index = documents.firstIndex(where: { $0.id == document.id }) else { return }
     documents.remove(at: index)
@@ -113,6 +124,11 @@ final class Workspace {
       let files = await Task.detached { QuickOpen.files(under: root) }.value
       quickOpenFiles = files
     }
+  }
+
+  func showSearch(query: String = "") {
+    searchQuery = query
+    isSearchShown = true
   }
 
   func saveAll() {
