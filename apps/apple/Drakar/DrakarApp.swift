@@ -119,7 +119,11 @@ private struct MentionCommands: View {
       .keyboardShortcut("k", modifiers: .option)
       .disabled(workspace?.active == nil)
     Button("Mention in Terminal Session") {
-      if workspace?.mentionInTerminal() != true { NSSound.beep() }
+      guard let workspace, !workspace.mentionInTerminal() else { return }
+      workspace.problem = String(
+        localized:
+          "No Claude Code in a terminal is connected to Drakar. Run claude --ide in \(workspace.folder.lastPathComponent), or /ide in a running session, then try again."
+      )
     }
     .keyboardShortcut("k", modifiers: [.command, .option])
     .disabled(workspace?.active == nil)

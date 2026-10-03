@@ -193,3 +193,29 @@ struct WindowCloseGuardTests {
     #expect(original.askedToClose == 0)
   }
 }
+
+/// ⌥K is caught by the editor, not left to the menu, which never sees an ⌥-only shortcut.
+@MainActor
+@Suite("⌥K in the editor")
+struct MentionKeyTests {
+
+  private func key(_ flags: NSEvent.ModifierFlags, characters: String) throws -> NSEvent {
+    try #require(
+      NSEvent.keyEvent(
+        with: .keyDown, location: .zero, modifierFlags: flags, timestamp: 0, windowNumber: 0,
+        context: nil, characters: characters, charactersIgnoringModifiers: "k",
+        isARepeat: false, keyCode: CodeNSTextView.kKeyCode))
+  }
+
+  @Test func mentionsOnOptionKWhateverItWouldType() throws {
+    let textView = CodeNSTextView()
+    var mentions = 0
+    textView.mention = { mentions += 1 }
+    // "È" is what ⌥K types on a French layout; the key's position is what counts.
+    textView.keyDown(with: try key(.option, characters: "È"))
+    #expect(mentions == 1)
+    #expect(textView.string.isEmpty)
+    textView.keyDown(with: try key([.option, .shift], characters: "K"))
+    #expect(mentions == 1)
+  }
+}

@@ -6,6 +6,8 @@ import SwiftUI
 /// wrapping and none of the substitutions meant for prose, with line numbers and colours.
 struct CodeTextView: NSViewRepresentable {
   let document: EditorDocument
+  /// ⌥K in this text view; nil where there is no prompt to mention into.
+  var mention: (() -> Void)? = nil
   let selectionMoved: () -> Void
 
   func makeCoordinator() -> Coordinator {
@@ -21,7 +23,8 @@ struct CodeTextView: NSViewRepresentable {
     container.widthTracksTextView = false
     layoutManager.addTextContainer(container)
 
-    let textView = NSTextView(frame: .zero, textContainer: container)
+    let textView = CodeNSTextView(frame: .zero, textContainer: container)
+    textView.mention = mention
     textView.isRichText = false
     textView.importsGraphics = false
     textView.allowsUndo = true
@@ -49,6 +52,9 @@ struct CodeTextView: NSViewRepresentable {
     scrollView.hasVerticalScroller = true
     scrollView.hasHorizontalScroller = true
     scrollView.autohidesScrollers = true
+    // Views no longer clip by default, and the ruler's edge line would run on up through
+    // the tab strip and the title bar.
+    scrollView.clipsToBounds = true
     scrollView.documentView = textView
     let ruler = LineNumberRuler(textView: textView)
     scrollView.verticalRulerView = ruler
@@ -259,5 +265,25 @@ final class LineNumberRuler: NSRulerView {
       draw(line + 1, at: fragment.minY + inset + offset, height: fragment.height)
       line += 1
     }
+  }
+}
+
+/// Catches ⌥K by the key's position before it is typed. AppKit offers the menus only key
+/// equivalents that include ⌘; an ⌥ shortcut reaches the text view as text (on a French
+/// layout ⌥K types a character), so the menu's ⌥K never fires from the editor.
+final class CodeNSTextView: NSTextView {
+  var mention: (() -> Void)?
+
+  /// The K key, wherever the layout puts its letter.
+  static let kKeyCode: UInt16 = 40
+
+  override func keyDown(with event: NSEvent) {
+    if let mention, event.keyCode == Self.kKeyCode,
+      event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .option
+    {
+      mention()
+      return
+    }
+    super.keyDown(with: event)
   }
 }

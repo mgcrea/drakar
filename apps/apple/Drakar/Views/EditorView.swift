@@ -14,8 +14,10 @@ struct EditorView: View {
       Divider()
       if let document = workspace.active {
         DiskBanner(document: document)
-        CodeTextView(document: document) { workspace.selectionMoved() }
-          .id(document.id)
+        CodeTextView(document: document, mention: { workspace.mentionInComposer() }) {
+          workspace.selectionMoved()
+        }
+        .id(document.id)
       } else {
         Spacer()
       }
