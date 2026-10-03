@@ -7,7 +7,7 @@ Mac; Drakar is the one ship you steer. A native macOS app to work with a coding 
 Zed, with the conversation, the tool calls, the permission prompts and the diffs as first
 class UI. An editor later, but never the centre.
 
-Status: written 2026-10-03, the day the repo was bootstrapped; phases 1 to 3 landed the
+Status: written 2026-10-03, the day the repo was bootstrapped; phases 1 to 4 landed the
 same day. **What exists**: DrakarKit decodes and encodes the stream-json protocol against
 captured fixtures and supervises the process; the app opens a folder, runs your `claude`
 in it, streams the transcript with tool cards, asks permission in a sheet with the CLI's
@@ -15,8 +15,9 @@ in it, streams the transcript with tool cards, asks permission in a sheet with t
 (2.1.288) in the running app. Phase 2 added the session list across accounts, resume
 with history, one window per session, and diffs for Edit and Write in the cards and the
 permission sheet. Phase 3 made Drakar the editor of `claude` run in a terminal: its edits
-arrive as diffs to accept or reject. Phase 4 on is a proposal, and §7 lists what has to be
-decided before it stops being one.
+arrive as diffs to accept or reject. Phase 4 added a plain-text editor beside the session,
+whose selection goes with the next prompt, Drakar's or a terminal `claude`'s. What comes
+after is a proposal, and §7 lists what has to be decided before it stops being one.
 
 ---
 
@@ -85,8 +86,10 @@ sessions the extension and the terminal do; it does not keep a store of its own.
 An **interactive** `claude` looks for `<config>/ide/<port>.lock` and connects to that
 WebSocket as an MCP client, sending every edit as an `openDiff` for the editor to accept
 or reject. Drakar writes the lock file, so a `claude --ide` in a terminal, in a folder
-Drakar has open, uses it as its editor (phase 3). Headless sessions, Drakar's own among
-them, never connect. `docs/claude-ide-bridge.md` has the contract and its traps.
+Drakar has open, uses it as its editor (phase 3), and hears what is selected in Drakar's
+editor (phase 4). Headless sessions, Drakar's own among them, never connect; they get the
+selection the way the extension's chat gives it, as a block ahead of the prompt.
+`docs/claude-ide-bridge.md` has the contract and its traps.
 
 ## 3. Architecture
 
@@ -96,9 +99,12 @@ DrakarKit      Foundation only, zero dependencies, offline tests in under a seco
                transcript; process supervision over pipes (AgentProcess, tested against
                /bin/cat); finding `claude` and the login shell's environment; the
                session index and history replay; line diffs; the IDE bridge's protocol
-               and lock files.
+               and lock files; the file tree, what a text file is and how it is folded
+               back after a change on disk, and selections as `claude` counts them.
 App target     The session model and windows, the permission sheet, the review window,
-               settings, and the bridge's WebSocket server (Network framework).
+               the editor (an NSTextView over each document's own text storage, FSEvents
+               for the folder), settings, and the bridge's WebSocket server (Network
+               framework).
 ```
 
 The rule is calque's: everything that can be argued about in a unit test lives in the
@@ -135,7 +141,19 @@ not in advance.
    Lock files per account, swept after a crash; `scripts/audit-network.sh` landed with the
    socket. Headless sessions never connect, so Drakar's own windows keep their sheet. Not
    yet: editing the proposal before accepting it, diagnostics, selections.
-4. **The editor.** A file tree and a text view, grown out of the diff view.
+4. **The editor.** *Done 2026-10-03.* A session window is the folder's files in the
+   sidebar, open files as tabs over a plain-text editor, and the session beside them. The
+   folder is watched (FSEvents): a file the agent edits reloads in its tab, and one the user
+   has edited too asks which version to keep. Save writes in place, through links, keeping
+   the file's permissions. The active tab's selection (or only its file) goes with the next
+   prompt as the extension's chat sends it, and a chip above the composer leaves it out;
+   terminal sessions get it as `selection_changed`, and `openFile`, `getOpenEditors`,
+   `getCurrentSelection`, `checkDocumentDirty` and `saveDocument` answer from the open
+   tabs. Verified against 2.1.288 in the running app and through a terminal `claude --ide`;
+   the document's disk handling by hosted tests, since nothing can type into the text view
+   without synthetic input. Not yet: syntax highlighting, line numbers, quick open and
+   search across files, closing a window with unsaved tabs (it does not ask), Cmd-W for a
+   tab, `at_mentioned`, diagnostics, and editing a proposal before accepting it.
 
 ## 5. Distribution
 

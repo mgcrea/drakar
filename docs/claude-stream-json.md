@@ -69,6 +69,24 @@ Every line after init carries `session_id` and a `uuid`; model output carries
 The process stays alive between turns; closing stdin after a `result` ends it cleanly
 (exit 0).
 
+**Editor context.** The extension's chat sends what the editor shows as a text block ahead
+of the prompt, in the same `content` array (webview 2.1.288, `LC1`): the selection with its
+lines counted from 1, or only the open file when nothing is selected.
+
+```text
+<ide_selection>The user selected the lines 3 to 5 from /p/main.swift:
+<the selected text>
+
+This may or may not be related to the current task.</ide_selection>
+
+<ide_opened_file>The user opened the file /p/main.swift in the IDE. This may or may not be related to the current task.</ide_opened_file>
+```
+
+Drakar sends the same (`EditorSelection.promptContext`). Verified on 2026-10-03 with
+2.1.288: with `src/main.swift` open and nothing else said, "Which file do I have open in my
+editor?" got `main.swift`; without the block the model says it cannot know. The transcript
+keeps both blocks, and history shows them as a label on the prompt.
+
 ## Interrupting (verified 2026-10-03)
 
 ```jsonc

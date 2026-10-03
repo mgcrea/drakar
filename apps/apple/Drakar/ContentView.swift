@@ -1,17 +1,41 @@
+import AppKit
 import DrakarKit
 import SwiftUI
 
-/// A window: the session list until a route is chosen, then that session.
+/// A window: the session list until a route is chosen, then that session beside its
+/// folder's files and the editor.
 struct ContentView: View {
   @Binding var route: SessionRoute?
   @State private var session: ClaudeSession?
+  @State private var workspace: Workspace?
   /// Names this window to `OpenSessions`, which keeps each window's folder.
   @State private var windowID = UUID()
+  @Environment(\.appearsActive) private var appearsActive
 
   var body: some View {
     Group {
-      if let session {
-        SessionView(session: session)
+      if let session, let workspace {
+        NavigationSplitView {
+          FileTreeView(workspace: workspace)
+            .navigationSplitViewColumnWidth(min: 160, ideal: 220, max: 400)
+        } detail: {
+          // The editor appears with the first open file. The session's view must survive
+          // it appearing, which is why the session is stopped by this window closing and
+          // not by its own view going away.
+          HSplitView {
+            if !workspace.documents.isEmpty {
+              EditorView(workspace: workspace)
+                .frame(minWidth: 260, idealWidth: 560, maxWidth: .infinity, maxHeight: .infinity)
+            }
+            SessionView(session: session, workspace: workspace)
+              .frame(minWidth: 320, idealWidth: 480, maxWidth: .infinity, maxHeight: .infinity)
+          }
+        }
+        .background(WindowReader { workspace.window = $0 })
+        .focusedSceneValue(\.workspace, workspace)
+        .onChange(of: appearsActive, initial: true) { _, active in
+          if active { workspace.becameActive() }
+        }
       } else {
         SessionsView { route = $0 }
       }
@@ -31,6 +55,7 @@ struct ContentView: View {
       OpenSessions.shared.setFolder(folder, forWindow: windowID)
     }
     .onDisappear {
+      session?.stop()
       if let id = registration?.id { OpenSessions.shared.unregister(id) }
       OpenSessions.shared.setFolder(nil, forWindow: windowID)
     }
@@ -65,6 +90,7 @@ struct ContentView: View {
   private func start(_ session: ClaudeSession, command: ClaudeCommand = ClaudeCommand()) {
     self.session?.stop()
     self.session = session
+    if workspace?.folder != session.folder { workspace = Workspace(folder: session.folder) }
     Task { await session.start(command: command) }
   }
 
@@ -114,7 +140,8 @@ struct ContentView: View {
   /// from the index instead, through the same route a double-click takes.
   /// `-drakar.debugModel <id>` picks a cheap model for a new session, and
   /// `-drakar.debugSettingSources project` keeps the user's own permission rules and
-  /// hooks out of one that needs a permission prompt to appear. Values, not flags:
+  /// hooks out of one that needs a permission prompt to appear. `-drakar.debugOpen
+  /// <path>` opens a file of the folder in the editor. Values, not flags:
   /// UserDefaults reads a value starting with `-` as the next key and drops it.
   /// Debug builds only: a shipped binary takes no instructions from its launch arguments.
   private func openFromLaunchArguments() {
@@ -139,19 +166,47 @@ struct ContentView: View {
         extraArguments: defaults.string(forKey: "drakar.debugSettingSources").map {
           ["--setting-sources", $0]
         } ?? [])
-      start(
-        ClaudeSession(folder: URL(filePath: path, directoryHint: .isDirectory)), command: command)
+      let folder = URL(filePath: path, directoryHint: .isDirectory)
+      start(ClaudeSession(folder: folder), command: command)
+      if let file = defaults.string(forKey: "drakar.debugOpen") {
+        workspace?.open(URL(filePath: file, relativeTo: folder))
+      }
       if let prompt { Task { await send(prompt) } }
     #endif
   }
 
   #if DEBUG
-    /// Waits for whichever session this window ends up with to be ready, then sends.
+    /// Waits for whichever session this window ends up with to be ready, then sends, with
+    /// the editor's context attached as the composer would.
     private func send(_ prompt: String) async {
       while session == nil || session?.phase == .starting || session?.phase == .idle {
         try? await Task.sleep(for: .milliseconds(100))
       }
-      session?.send(prompt)
+      session?.send(prompt, context: workspace?.active?.selection)
     }
   #endif
+}
+
+/// Hands over the window a view is in, once it is in one.
+private struct WindowReader: NSViewRepresentable {
+  let found: (NSWindow) -> Void
+
+  func makeNSView(context: Context) -> NSView { WindowView(found: found) }
+  func updateNSView(_ view: NSView, context: Context) {}
+
+  private final class WindowView: NSView {
+    let found: (NSWindow) -> Void
+
+    init(found: @escaping (NSWindow) -> Void) {
+      self.found = found
+      super.init(frame: .zero)
+    }
+
+    required init?(coder: NSCoder) { nil }
+
+    override func viewDidMoveToWindow() {
+      super.viewDidMoveToWindow()
+      if let window { found(window) }
+    }
+  }
 }

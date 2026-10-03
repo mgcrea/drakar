@@ -39,6 +39,9 @@ final class IDEServer {
 
   var connectionCount: Int { connections.count }
 
+  /// Every connected `claude` that has finished its handshake.
+  var clients: [IDEConnection] { connections.values.filter(\.isInitialized) }
+
   /// Starts listening on a free loopback port; `ready` gets the port.
   func start(
     ready: @escaping @MainActor (UInt16) -> Void, failed: @escaping @MainActor (String) -> Void
@@ -112,6 +115,8 @@ final class IDEConnection {
   private let connection: NWConnection
   /// The CLI's pid, from its `ide_connected` notification.
   var claudePID: Int32?
+  /// Past `notifications/initialized`: it may be sent notifications.
+  var isInitialized = false
   private var isClosed = false
 
   init(_ connection: NWConnection) {

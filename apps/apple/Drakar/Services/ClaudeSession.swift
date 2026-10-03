@@ -90,11 +90,13 @@ final class ClaudeSession {
     }
   }
 
-  func send(_ prompt: String) {
+  /// `context` is the editor's open file or selection, sent ahead of the text as the
+  /// extension's chat sends it.
+  func send(_ prompt: String, context: EditorSelection? = nil) {
     let text = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
     guard canSend, !text.isEmpty else { return }
-    transcript.addPrompt(text)
-    write(.prompt(text))
+    transcript.addPrompt(text, context: context?.label)
+    write(.prompt(text, context: context.map { [$0.promptContext] } ?? []))
   }
 
   func answer(_ pending: Transcript.PendingPermission, _ decision: PermissionDecision) {

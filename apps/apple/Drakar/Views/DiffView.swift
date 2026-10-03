@@ -6,6 +6,7 @@ import SwiftUI
 struct FileChangeView: View {
   let change: FileChange
   @Environment(\.sessionFolder) private var sessionFolder
+  @Environment(\.openInEditor) private var openInEditor
 
   /// Inside the session's folder, the path from there; elsewhere, from home.
   private var displayedPath: String {
@@ -28,6 +29,14 @@ struct FileChangeView: View {
         Spacer()
         Text("+\(change.addedCount)").foregroundStyle(.green)
         Text("−\(change.removedCount)").foregroundStyle(.red)
+        if let openInEditor {
+          Button("Open", systemImage: "arrow.up.forward.square") {
+            openInEditor(URL(filePath: change.path))
+          }
+          .labelStyle(.iconOnly)
+          .buttonStyle(.borderless)
+          .help("Open in the editor")
+        }
       }
       .font(.callout)
       ForEach(Array(change.diffs.enumerated()), id: \.offset) { _, lines in

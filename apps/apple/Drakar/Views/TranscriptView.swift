@@ -56,11 +56,18 @@ struct EntryView: View, Equatable {
     Group {
       switch entry.kind {
       case .prompt(let text):
-        Text(text)
-          .textSelection(.enabled)
-          .padding(.horizontal, 12)
-          .padding(.vertical, 8)
-          .background(.quaternary.opacity(0.6), in: RoundedRectangle(cornerRadius: 8))
+        VStack(alignment: .leading, spacing: 4) {
+          if let context = entry.context {
+            Label(context, systemImage: "doc.text")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+          }
+          Text(text)
+            .textSelection(.enabled)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(.quaternary.opacity(0.6), in: RoundedRectangle(cornerRadius: 8))
+        }
       case .text(let text):
         MarkdownView(text: text)
       case .thinking(let text):
@@ -137,8 +144,15 @@ struct ToolCallView: View {
     .padding(10)
     .background(.background.secondary, in: RoundedRectangle(cornerRadius: 8))
     .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(.separator))
+    .contextMenu {
+      if let path = call.input["file_path"]?.stringValue, let openInEditor {
+        Button("Open in Editor") { openInEditor(URL(filePath: path)) }
+      }
+    }
     .accessibilityIdentifier("tool.\(call.id)")
   }
+
+  @Environment(\.openInEditor) private var openInEditor
 
   @Environment(\.sessionFolder) private var sessionFolder
 
@@ -182,4 +196,16 @@ struct CodeBlock: View {
 extension EnvironmentValues {
   /// The folder the session in this window works in, for showing paths relative to it.
   @Entry var sessionFolder: URL?
+  /// Opens a file in this window's editor; nil where there is none (the review window).
+  @Entry var openInEditor: OpenInEditorAction?
+}
+
+/// Equal per workspace rather than a bare closure, which SwiftUI cannot compare: every
+/// tool card reads it, and a new closure on each update would redraw them all.
+struct OpenInEditorAction: Equatable {
+  let workspace: Workspace
+
+  func callAsFunction(_ url: URL) { workspace.open(url) }
+
+  static func == (a: Self, b: Self) -> Bool { a.workspace === b.workspace }
 }

@@ -16,6 +16,14 @@ window, and writes the file only if you accept it there. Settings › General pi
 folders: those open in Drakar (the default), any folder in your home folder, or none. How
 it works, and what was verified: [docs/claude-ide-bridge.md](docs/claude-ide-bridge.md).
 
+## The editor
+
+A session window shows its folder's files in the sidebar and opens them as tabs beside
+the conversation: plain text, monospaced, saved with ⌘S. When the agent changes an open
+file, its tab reloads; if you had edited it too, Drakar asks which version to keep. What
+you select (or the file you have open) goes with your next prompt, as in the VS Code
+extension, and with a terminal `claude --ide`'s too.
+
 `make audit` checks the network claim against the sources (one listener, on 127.0.0.1,
 token-gated, nothing outgoing), and `make audit-running` against the running app.
 

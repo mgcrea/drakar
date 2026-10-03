@@ -4,6 +4,7 @@ import SwiftUI
 /// The transcript, what stopped it if anything did, the composer and the footer.
 struct SessionView: View {
   let session: ClaudeSession
+  let workspace: Workspace
 
   var body: some View {
     VStack(spacing: 0) {
@@ -14,14 +15,14 @@ struct SessionView: View {
       Divider()
       ComposerView(
         canSend: session.canSend, isRunning: session.transcript.isRunning,
-        send: session.send, stop: session.interrupt)
+        context: workspace.selection, send: session.send, stop: session.interrupt)
       SessionFooter(session: session)
     }
     .sheet(item: pendingPermission) { pending in
       PermissionSheet(pending: pending) { decision in session.answer(pending, decision) }
     }
-    .onDisappear { session.stop() }
     .environment(\.sessionFolder, session.folder)
+    .environment(\.openInEditor, OpenInEditorAction(workspace: workspace))
   }
 
   /// The first request waiting; answering it shows the next. Never dismissed except by

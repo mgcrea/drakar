@@ -14,6 +14,9 @@ The requests are kept as the `ide-requests` fixture in DrakarKit's tests.
 - **Only interactive sessions connect.** A headless `claude -p` (stream-json or not)
   never connected, with `--ide` and with `CLAUDE_CODE_SSE_PORT`. Drakar's own sessions
   keep their permission sheet; the bridge is for `claude` run in a terminal.
+- **The editor's selection reaches it.** Sent as `selection_changed`, it shows in the
+  CLI's prompt ("⧉ 3 lines selected") and goes with the next message ("⧉ Selected 3 lines
+  from src/main.swift in Drakar"); asked to quote it, the model did (2026-10-03).
 - **Undocumented, like the rest.** It is what the VS Code and JetBrains integrations use,
   so it is stable in practice, but the shapes below are observed, not promised.
 
@@ -77,15 +80,44 @@ The terminal shows its own permission prompt while the diff is open. If the user
 there, the CLI sends `close_tab`; the extension resolves the pending `openDiff` as
 `DIFF_REJECTED` when its tab closes, and Drakar does the same.
 
+## The selection
+
+The editor sends it unasked, as a notification, to every connected `claude`:
+
+```json
+{"jsonrpc": "2.0", "method": "selection_changed",
+ "params": {"text": "func greet…}", "filePath": "/p/src/main.swift",
+            "fileUrl": "file:///p/src/main.swift",
+            "selection": {"start": {"line": 2, "character": 0},
+                          "end": {"line": 4, "character": 1}, "isEmpty": false}}}
+```
+
+- Lines and characters count from 0, characters in UTF-16 code units, as VS Code counts
+  them. An empty selection is the caret, and still names the file: the CLI then shows
+  "In main.swift" (the extension's `attachOpenFile`, on by default).
+- The extension debounces it 300 ms, sends it only when it changed, and sends the latest
+  one 500 ms after a client connects. Drakar does the same.
+- `at_mentioned` (`{filePath, lineStart?, lineEnd?}`) is the extension's "insert
+  @-mention" shortcut. Drakar does not send it yet.
+
 ## The other tools
 
-From the extension's registrations: `openFile` (`filePath`, `preview`, `startText`,
-`endText`, `selectToEndOfLine`, `makeFrontmost`), `getOpenEditors`, `getWorkspaceFolders`
-(`{"success": true, "folders": [{name, uri, path, index}], "rootPath", "workspaceFile"}`),
-`getCurrentSelection` and `getLatestSelection` (`{"success": false, "message": "No active
-editor found"}` without one), `checkDocumentDirty` and `saveDocument` (`filePath`),
-`closeAllDiffTabs`, and a Jupyter `executeCode` an editor without notebooks leaves out.
-Every result is MCP `content` holding one text block, usually JSON.
+Read out of the extension's handlers (`extension.js` 2.1.288). Every result is MCP
+`content` holding one text block, JSON unless noted; a handler that throws comes back
+with `isError: true`.
+
+| Tool | Answer |
+| --- | --- |
+| `openFile` (`filePath`, `preview`, `startText`, `endText`, `selectToEndOfLine`, `makeFrontmost`) | A sentence: "Opened file: <path>", or which text it selected. With `makeFrontmost: false` and no `startText`, JSON: `success`, `filePath`, `fileUrl`, `lineCount`, `isDirty`… A relative path is relative to the first workspace folder; a missing file throws "File not found: <path>". |
+| `getCurrentSelection` | The `selection_changed` params plus `success: true`, or `{"success": false, "message": "No active editor found"}`. |
+| `getLatestSelection` | The last params sent, or `{"success": false, "message": "No selection available"}`. |
+| `getOpenEditors` | `{"tabs": [{uri, isActive, isPinned, isPreview, isDirty, label, groupIndex, viewColumn, isGroupActive, fileName, languageId, lineCount, isUntitled, selection?}]}`; only the active tab carries its selection. |
+| `checkDocumentDirty` | `{success, filePath, isDirty, isUntitled}`, or "Document not open: <path>". |
+| `saveDocument` | `{success, filePath, saved, message}`. |
+| `getWorkspaceFolders` | `{"success": true, "folders": [{name, uri, path, index}], "rootPath", "workspaceFile"}`. |
+
+Drakar answers all of them from its open windows, and leaves out the Jupyter
+`executeCode`. `getDiagnostics` answers an empty list: Drakar has no language service.
 
 ## Re-checking it
 
@@ -99,14 +131,17 @@ spike's throwaway scripts were not kept; Drakar itself is now the editor to test
    claude-haiku-4-5-20251001 -drakar.debugSettingSources project'`.
 3. `make audit-running`: loopback only, lock files 0600, the upgrade refused without the
    token (400 on 2026-10-03) and accepted with it.
-4. Run an **interactive** `claude --ide --setting-sources project` in that folder. From
+4. The editor tools need no `claude` at all: any WebSocket client holding the lock's
+   token can call them, which is the quickest check of their shapes. `openFile` with a
+   `startText` also moves the selection, so the notification follows.
+5. Run an **interactive** `claude --ide --setting-sources project` in that folder. From
    an agent there is no terminal, so give it one: Python's `pty.fork()`, then about six
    seconds later a `\r` to accept the folder-trust prompt, then the prompt text and its
    own `\r`. Ask for an edit; the Review Changes window shows it (`review.accept`,
    `review.reject` through accessibility), and the file changes only after Accept.
-5. If it does not connect, type `/ide` in the session: it lists the editors it can use
+6. If it does not connect, type `/ide` in the session: it lists the editors it can use
    and, for every other lock file, why not ("their workspace or project directories don't
    match the current directory").
-6. Leave no lock behind: quit Drakar normally, and check `grep -l '"ideName":"Drakar"'
+7. Leave no lock behind: quit Drakar normally, and check `grep -l '"ideName":"Drakar"'
    ~/.claude/ide/*.lock` comes back empty. A process killed without cleanup leaves its
    lock until the next Drakar launch sweeps it.

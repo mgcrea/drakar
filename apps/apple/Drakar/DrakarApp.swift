@@ -13,6 +13,7 @@ struct DrakarApp: App {
     }
     .commands {
       SupportCommands(app: Support.app, preferIssueTracker: Support.preferIssueTracker)
+      CommandGroup(replacing: .saveItem) { SaveCommand() }
     }
 
     // A real Settings scene: Drakar is a windowed app with a Dock icon and menus, unlike
@@ -33,5 +34,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   func applicationWillTerminate(_ notification: Notification) {
     IDEBridge.shared.stop()
+  }
+}
+
+/// File > Save: the focused window's active tab.
+private struct SaveCommand: View {
+  @FocusedValue(\.workspace) private var workspace
+
+  var body: some View {
+    Button("Save") {
+      if let workspace, let document = workspace.active { workspace.save(document) }
+    }
+    .keyboardShortcut("s")
+    .disabled(workspace?.active?.isDirty != true)
   }
 }
