@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  Everything else is INFOPLIST_KEY_* build settings merged in at build time;
+	  GENERATE_INFOPLIST_FILE stays YES. This file is where Sparkle's keys land
+	  (SUFeedURL, SUPublicEDKey and the update defaults, present and false), because
+	  SUPublicEDKey has no INFOPLIST_KEY_ spelling. armada's Armada-Info.plist is the
+	  model, comments included.
+
+	  No ITSAppUsesNonExemptEncryption: that answers TestFlight's export-compliance
+	  question, and a Developer ID app never goes through TestFlight.
+	-->
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.developer-tools</string>
+</dict>
+</plist>

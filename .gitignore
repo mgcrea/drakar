@@ -1,0 +1,17 @@
+.DS_Store
+.idea/
+.build/
+.swiftpm/
+DerivedData/
+build/
+buildServer.json
+xcuserdata/
+node_modules/
+.env
+*.xcodeproj/project.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
+
+# Cloudflare
+.wrangler/
+.dev.vars
+.prod.vars
