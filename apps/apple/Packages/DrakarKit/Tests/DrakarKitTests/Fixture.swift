@@ -17,6 +17,9 @@ enum Fixture: String {
   /// A transcript file as Claude Code 2.1.288 wrote it for a session Drakar ran (`touch
   /// ahoy.txt`, then "done"), cut to its user, assistant and title entries.
   case historyWithTool = "history-with-tool"
+  /// What an interactive claude 2.1.288 sent a spike editor over the IDE bridge while
+  /// editing one file (docs/claude-ide-bridge.md), the editor's path and pids scrubbed.
+  case ideRequests = "ide-requests"
 
   var lines: [Data] {
     get throws {
