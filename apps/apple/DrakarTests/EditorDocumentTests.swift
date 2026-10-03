@@ -125,6 +125,17 @@ struct EditorDocumentTests {
     #expect(workspace.open(binary) == nil)
     #expect(workspace.problem == "b.bin is not a text file.")
   }
+
+  @Test func pinsEachSelectionOnce() throws {
+    let workspace = Workspace(folder: folder)
+    let document = try #require(workspace.open(try file("a.txt", "alpha\nbeta\n")))
+    document.select(NSRange(location: 0, length: 5))
+    workspace.pinSelection()
+    workspace.pinSelection()
+    document.select(NSRange(location: 6, length: 4))
+    workspace.pinSelection()
+    #expect(workspace.pinned.map(\.label) == ["a.txt:1", "a.txt:2"])
+  }
 }
 
 /// The guard in front of SwiftUI's window delegate: it must ask only when a tab is unsaved,
@@ -197,7 +208,7 @@ struct WindowCloseGuardTests {
 /// ⌥K is caught by the editor, not left to the menu, which never sees an ⌥-only shortcut.
 @MainActor
 @Suite("⌥K in the editor")
-struct MentionKeyTests {
+struct PinKeyTests {
 
   private func key(_ flags: NSEvent.ModifierFlags, characters: String) throws -> NSEvent {
     try #require(
@@ -207,15 +218,15 @@ struct MentionKeyTests {
         isARepeat: false, keyCode: CodeNSTextView.kKeyCode))
   }
 
-  @Test func mentionsOnOptionKWhateverItWouldType() throws {
+  @Test func pinsOnOptionKWhateverItWouldType() throws {
     let textView = CodeNSTextView()
-    var mentions = 0
-    textView.mention = { mentions += 1 }
+    var pins = 0
+    textView.pin = { pins += 1 }
     // "È" is what ⌥K types on a French layout; the key's position is what counts.
     textView.keyDown(with: try key(.option, characters: "È"))
-    #expect(mentions == 1)
+    #expect(pins == 1)
     #expect(textView.string.isEmpty)
     textView.keyDown(with: try key([.option, .shift], characters: "K"))
-    #expect(mentions == 1)
+    #expect(pins == 1)
   }
 }

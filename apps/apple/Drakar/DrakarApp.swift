@@ -108,14 +108,14 @@ private struct CloseCommands: View {
   }
 }
 
-/// The extension's two shortcuts: ⌥K puts `@file#L3-5` into the prompt being written here,
-/// ⌘⌥K into a terminal `claude`'s.
+/// ⌥K keeps the selection for the next prompt here, beside the live one; ⌘⌥K, as in the
+/// extension, puts a reference to it into a terminal `claude`'s prompt.
 private struct MentionCommands: View {
   @FocusedValue(\.workspace) private var workspace
 
   var body: some View {
     Divider()
-    Button("Mention in Prompt") { workspace?.mentionInComposer() }
+    Button("Pin Selection to Prompt") { workspace?.pinSelection() }
       .keyboardShortcut("k", modifiers: .option)
       .disabled(workspace?.active == nil)
     Button("Mention in Terminal Session") {

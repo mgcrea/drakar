@@ -20,11 +20,11 @@ it works, and what was verified: [docs/claude-ide-bridge.md](docs/claude-ide-bri
 
 A session window shows its folder's files in the sidebar and opens them as tabs beside
 the conversation, with line numbers and colours, saved with ⌘S, found by name with ⌘P,
-and searched with ⇧⌘F. When
-the agent changes an open file, its tab reloads; if you had edited it too, Drakar asks
-which version to keep, and it asks before a window with unsaved tabs closes. What you
-select (or the file you have open) goes with your next prompt, as in the VS Code
-extension, and with a terminal `claude --ide`'s too.
+and searched with ⇧⌘F. When the agent changes an open file, its tab reloads; if you had
+edited it too, Drakar asks which version to keep, and it asks before a window with
+unsaved tabs closes. What you select (or the file you have open) goes with your next
+prompt, as in the VS Code extension, and with a terminal `claude --ide`'s too. ⌥K pins a
+selection so the next one can be added beside it.
 
 `make audit` checks the network claim against the sources (one listener, on 127.0.0.1,
 token-gated, nothing outgoing), and `make audit-running` against the running app.

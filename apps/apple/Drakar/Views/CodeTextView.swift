@@ -6,8 +6,8 @@ import SwiftUI
 /// wrapping and none of the substitutions meant for prose, with line numbers and colours.
 struct CodeTextView: NSViewRepresentable {
   let document: EditorDocument
-  /// ⌥K in this text view; nil where there is no prompt to mention into.
-  var mention: (() -> Void)? = nil
+  /// ⌥K in this text view; nil where there is no prompt to pin the selection to.
+  var pin: (() -> Void)? = nil
   let selectionMoved: () -> Void
 
   func makeCoordinator() -> Coordinator {
@@ -24,7 +24,7 @@ struct CodeTextView: NSViewRepresentable {
     layoutManager.addTextContainer(container)
 
     let textView = CodeNSTextView(frame: .zero, textContainer: container)
-    textView.mention = mention
+    textView.pin = pin
     textView.isRichText = false
     textView.importsGraphics = false
     textView.allowsUndo = true
@@ -272,16 +272,16 @@ final class LineNumberRuler: NSRulerView {
 /// equivalents that include ⌘; an ⌥ shortcut reaches the text view as text (on a French
 /// layout ⌥K types a character), so the menu's ⌥K never fires from the editor.
 final class CodeNSTextView: NSTextView {
-  var mention: (() -> Void)?
+  var pin: (() -> Void)?
 
   /// The K key, wherever the layout puts its letter.
   static let kKeyCode: UInt16 = 40
 
   override func keyDown(with event: NSEvent) {
-    if let mention, event.keyCode == Self.kKeyCode,
+    if let pin, event.keyCode == Self.kKeyCode,
       event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .option
     {
-      mention()
+      pin()
       return
     }
     super.keyDown(with: event)

@@ -159,30 +159,26 @@ struct EditorSelectionTests {
     #expect(blocks == [caret.promptContext, "Fix it"])
   }
 
-  /// A prompt sent with a selection reads back with its label, from Drakar or from VS Code.
+  /// A prompt sent with selections reads back with their labels, from Drakar or from VS
+  /// Code.
   @Test func readsTheContextBackFromHistory() throws {
     let selection = EditorSelection(filePath: "/p/a.txt", contents: contents, range: 0..<10)
-    let message = ClientMessage.prompt("Explain", context: [selection.promptContext]).json
+    let pinned = EditorSelection(filePath: "/p/b.txt", contents: contents, range: 0..<3)
+    let message = ClientMessage.prompt(
+      "Explain", context: [pinned.promptContext, selection.promptContext]
+    ).json
     let line = try JSONValue.object([
       "type": .string("user"), "message": message["message"] ?? .null,
     ]).line()
     let transcript = Transcript.history(lines: [line])
     #expect(transcript.entries.map(\.kind) == [.prompt("Explain")])
-    #expect(transcript.entries.first?.context == "a.txt:1–2")
+    #expect(transcript.entries.first?.context == "b.txt:1, a.txt:1–2")
   }
 
-  /// The extension's ⌥K reference and ⌘⌥K notification.
+  /// The extension's ⌘⌥K notification.
   @Test func mentionsASelection() {
     let lines = EditorSelection(filePath: "/p/src/a.txt", contents: contents, range: 0..<10)
-    #expect(lines.mention(relativeTo: "/p") == "@src/a.txt#L1-2")
-    let one = EditorSelection(filePath: "/p/src/a.txt", contents: contents, range: 0..<3)
-    #expect(one.mention(relativeTo: "/p/") == "@src/a.txt#L1")
     let caret = EditorSelection(filePath: "/p/src/a.txt", contents: contents, range: 3..<3)
-    #expect(caret.mention(relativeTo: "/p") == "@src/a.txt")
-    #expect(caret.mention(relativeTo: "/elsewhere") == "@/p/src/a.txt")
-    #expect(
-      EditorSelection(filePath: "/p/a#b.txt", contents: contents, range: 0..<0)
-        .mention(relativeTo: "/p") == nil)
 
     let notification = IDEReply.atMentioned(lines)
     #expect(notification["method"] == .string("at_mentioned"))

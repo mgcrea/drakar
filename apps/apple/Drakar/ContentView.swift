@@ -218,7 +218,7 @@ struct ContentView: View {
       while session == nil || session?.phase == .starting || session?.phase == .idle {
         try? await Task.sleep(for: .milliseconds(100))
       }
-      session?.send(prompt, context: workspace?.active?.selection)
+      session?.send(prompt, context: workspace?.active.map { [$0.selection] } ?? [])
     }
   #endif
 }

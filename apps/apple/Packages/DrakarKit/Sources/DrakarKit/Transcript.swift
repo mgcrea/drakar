@@ -85,7 +85,8 @@ public struct Transcript: Sendable, Equatable {
   public init() {}
 
   /// `running: false` for a prompt replayed from history, whose turn ended long ago.
-  /// `context` labels what the editor attached (`EditorSelection.label`).
+  /// `context` labels what the editor attached (`EditorSelection.label`, several
+  /// separated by commas).
   public mutating func addPrompt(_ text: String, context: String? = nil, running: Bool = true) {
     revision += 1
     promptCount += 1

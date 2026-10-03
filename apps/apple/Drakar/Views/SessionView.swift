@@ -15,8 +15,12 @@ struct SessionView: View {
       Divider()
       ComposerView(
         canSend: session.canSend, isRunning: session.transcript.isRunning,
-        context: workspace.selection, mention: workspace.pendingMention,
-        mentionInserted: { workspace.pendingMention = nil }, send: session.send,
+        context: workspace.selection, pinned: workspace.pinned,
+        unpin: { selection in workspace.pinned.removeAll { $0 == selection } },
+        send: { text, context in
+          session.send(text, context: context)
+          workspace.pinned = []
+        },
         stop: session.interrupt)
       SessionFooter(session: session)
     }

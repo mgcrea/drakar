@@ -159,8 +159,9 @@ not in advance.
    language family (comments, strings, numbers, keywords, types, attributes; no grammar,
    no dependency), applied as layout attributes so they never touch the text or its undo.
    ⇧⌘F searches the folder's text (smart case), each hit opening its file with the match
-   selected. Not yet: `at_mentioned`, diagnostics, find-and-replace across files, and
-   editing a proposal before accepting it.
+   selected. ⌥K pins the selection to the next prompt, so one prompt can carry several;
+   ⌘⌥K sends `at_mentioned` to a terminal `claude`. A proposal can be edited before it is
+   accepted. Not yet: diagnostics, find-and-replace across files.
 
 ## 5. Distribution
 

@@ -126,20 +126,17 @@ final class Workspace {
     }
   }
 
-  /// A reference waiting to be put into this window's composer.
-  var pendingMention: String?
+  /// Selections kept for the next prompt, beside the live one, until it is sent.
+  var pinned: [EditorSelection] = []
 
-  /// ⌥K: the active tab's file and selected lines into the composer, as `@path#L3-5`.
-  func mentionInComposer() {
-    guard let document = active else { return }
-    guard let mention = document.selection.mention(relativeTo: tree.root) else {
-      problem = String(localized: "\(document.name) cannot be mentioned: its path holds # or \".")
-      return
-    }
-    pendingMention = mention
+  /// ⌥K: keeps the active tab's selection for the next prompt, so another can be made.
+  func pinSelection() {
+    guard let selection = active?.selection, !pinned.contains(selection) else { return }
+    pinned.append(selection)
   }
 
-  /// ⌘⌥K: the same, to every `claude` in a terminal connected to Drakar. False when none is.
+  /// ⌘⌥K: a reference to the selection into the prompt of every `claude` in a terminal
+  /// connected to Drakar. False when none is.
   @discardableResult
   func mentionInTerminal() -> Bool {
     guard let document = active else { return false }

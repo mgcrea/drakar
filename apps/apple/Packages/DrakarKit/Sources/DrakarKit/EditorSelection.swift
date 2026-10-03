@@ -2,7 +2,7 @@ import Foundation
 
 /// A place in a file as VS Code counts it, which is what `claude` expects: lines and
 /// characters from 0, characters in UTF-16 code units (the unit of `NSString` ranges).
-public struct TextPosition: Sendable, Equatable {
+public struct TextPosition: Sendable, Hashable {
   public var line: Int
   public var character: Int
 
@@ -19,7 +19,7 @@ public struct TextPosition: Sendable, Equatable {
 /// What is selected in the editor, or where the caret is when nothing is: what the
 /// extension sends a terminal `claude` as `selection_changed`, and what its own chat puts
 /// ahead of a prompt as `<ide_selection>` or `<ide_opened_file>`.
-public struct EditorSelection: Sendable, Equatable {
+public struct EditorSelection: Sendable, Hashable {
   public var filePath: String
   public var text: String
   public var start: TextPosition
@@ -85,18 +85,6 @@ public struct EditorSelection: Sendable, Equatable {
     }
     return
       "<ide_selection>The user selected the lines \(start.line + 1) to \(end.line + 1) from \(filePath):\n\(text)\n\nThis may or may not be related to the current task.</ide_selection>"
-  }
-
-  /// `@src/main.swift#L3-5`, as the extension's ⌥K writes into its chat (webview 2.1.288,
-  /// `GH1`): the path from the folder, or whole outside it, and the lines from 1 when
-  /// something is selected. Nil for a path holding `#` or `"`, which a reference cannot carry.
-  public func mention(relativeTo root: String) -> String? {
-    let prefix = root.hasSuffix("/") ? root : root + "/"
-    let path = filePath.hasPrefix(prefix) ? String(filePath.dropFirst(prefix.count)) : filePath
-    guard !path.contains("#"), !path.contains("\"") else { return nil }
-    guard !isEmpty else { return "@\(path)" }
-    let (first, last) = (start.line + 1, end.line + 1)
-    return first == last ? "@\(path)#L\(first)" : "@\(path)#L\(first)-\(last)"
   }
 
   /// How the context shows beside the prompt: `notes.md`, `notes.md:3` or `notes.md:3–5`.

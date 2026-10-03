@@ -102,8 +102,10 @@ The editor sends it unasked, as a notification, to every connected `claude`:
   one 500 ms after a client connects. Drakar does the same.
 - `at_mentioned` (`{filePath, lineStart?, lineEnd?}`, lines from 0, only with a
   selection) is the extension's ⌘⌥K: it asks the CLI to put a reference into the prompt
-  being written. Drakar sends it from the same shortcut. Its ⌥K is the chat's own
-  `@src/main.swift#L3-5`, which Drakar puts into its composer.
+  being written. Drakar sends it from the same shortcut. The extension's ⌥K types
+  `@src/main.swift#L3-5` into its chat; Drakar's pins the selection as a context block
+  instead, since the live selection already goes with the prompt and a typed reference
+  would repeat it.
 
 ## The other tools
 

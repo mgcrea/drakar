@@ -99,17 +99,19 @@ extension Transcript {
         return nil
       }
       var prompt: [String] = []
-      var context: String?
+      var context: [String] = []
       for text in texts {
         switch UserText.classify(text) {
         case .prompt(let part): prompt.append(part)
         case .notice(let note): addNotice(note, parent: user.parentToolUseID)
-        case .context(let label): context = label
+        case .context(let label): context.append(label)
         case .hidden: break
         }
       }
       if !prompt.isEmpty {
-        addPrompt(prompt.joined(separator: "\n\n"), context: context, running: false)
+        addPrompt(
+          prompt.joined(separator: "\n\n"),
+          context: context.isEmpty ? nil : context.joined(separator: ", "), running: false)
       }
       // Tool results go through the live path, which pairs them with their calls.
       let results = user.content.filter {

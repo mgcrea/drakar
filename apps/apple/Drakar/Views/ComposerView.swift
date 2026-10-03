@@ -5,15 +5,15 @@ import SwiftUI
 /// turn runs, the button stops it.
 ///
 /// The editor's open file or selection goes with the prompt, as the extension's
-/// `attachOpenFile` does by default; a click on it leaves it out of this one.
+/// `attachOpenFile` does by default; a click on it leaves it out of this one. Selections
+/// pinned with ⌥K go too, until a click takes one off.
 struct ComposerView: View {
   let canSend: Bool
   let isRunning: Bool
   let context: EditorSelection?
-  /// A reference to put into the text (⌥K in the editor), then report as done.
-  let mention: String?
-  let mentionInserted: () -> Void
-  let send: (String, EditorSelection?) -> Void
+  let pinned: [EditorSelection]
+  let unpin: (EditorSelection) -> Void
+  let send: (String, [EditorSelection]) -> Void
   let stop: () -> Void
 
   @State private var text = ""
@@ -22,9 +22,18 @@ struct ComposerView: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 6) {
-      if let context {
-        ContextChip(label: context.label, isIncluded: !leavesContextOut) {
-          leavesContextOut.toggle()
+      if !pinned.isEmpty || live != nil {
+        ScrollView(.horizontal, showsIndicators: false) {
+          HStack(spacing: 6) {
+            ForEach(pinned, id: \.self) { selection in
+              PinnedChip(label: selection.label) { unpin(selection) }
+            }
+            if let live {
+              ContextChip(label: live.label, isIncluded: !leavesContextOut) {
+                leavesContextOut.toggle()
+              }
+            }
+          }
         }
       }
       field
@@ -33,13 +42,12 @@ struct ComposerView: View {
     .onAppear { isFocused = true }
     // A new selection is attached again, whatever happened to the last one.
     .onChange(of: context) { leavesContextOut = false }
-    .onChange(of: mention, initial: true) { _, mention in
-      guard let mention else { return }
-      let separator = text.isEmpty || text.hasSuffix(" ") || text.hasSuffix("\n") ? "" : " "
-      text += separator + mention + " "
-      isFocused = true
-      mentionInserted()
-    }
+  }
+
+  /// The live selection, unless it is pinned already.
+  private var live: EditorSelection? {
+    guard let context, !pinned.contains(context) else { return nil }
+    return context
   }
 
   private var field: some View {
@@ -68,7 +76,7 @@ struct ComposerView: View {
 
   private func submit() {
     guard canSend else { return }
-    send(text, leavesContextOut ? nil : context)
+    send(text, pinned + (leavesContextOut ? [] : live.map { [$0] } ?? []))
     text = ""
   }
 }
@@ -93,5 +101,24 @@ private struct ContextChip: View {
       isIncluded ? "Sent with the prompt. Click to leave it out." : "Left out. Click to send it."
     )
     .accessibilityIdentifier("composer.context")
+  }
+}
+
+private struct PinnedChip: View {
+  let label: String
+  let unpin: () -> Void
+
+  var body: some View {
+    Button(action: unpin) {
+      Label(label, systemImage: "pin.fill")
+        .font(.caption)
+        .padding(.horizontal, 7)
+        .padding(.vertical, 3)
+        .background(.quaternary.opacity(0.8), in: Capsule())
+    }
+    .buttonStyle(.plain)
+    .help("Pinned with ⌥K, sent with the prompt. Click to unpin.")
+    .accessibilityLabel("Pinned \(label)")
+    .accessibilityIdentifier("composer.pinned.\(label)")
   }
 }
