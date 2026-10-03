@@ -5,6 +5,8 @@ import SwiftUI
 struct ContentView: View {
   @Binding var route: SessionRoute?
   @State private var session: ClaudeSession?
+  /// Names this window to `OpenSessions`, which keeps each window's folder.
+  @State private var windowID = UUID()
 
   var body: some View {
     Group {
@@ -25,7 +27,13 @@ struct ContentView: View {
       if let id = old?.id { OpenSessions.shared.unregister(id) }
       if let new { OpenSessions.shared.register(new.route, for: new.id) }
     }
-    .onDisappear { if let id = registration?.id { OpenSessions.shared.unregister(id) } }
+    .onChange(of: session?.folder, initial: true) { _, folder in
+      OpenSessions.shared.setFolder(folder, forWindow: windowID)
+    }
+    .onDisappear {
+      if let id = registration?.id { OpenSessions.shared.unregister(id) }
+      OpenSessions.shared.setFolder(nil, forWindow: windowID)
+    }
     .task { openFromLaunchArguments() }
   }
 

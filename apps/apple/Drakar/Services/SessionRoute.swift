@@ -68,4 +68,20 @@ final class OpenSessions {
   func register(_ route: SessionRoute, for sessionID: String) { routes[sessionID] = route }
 
   func unregister(_ sessionID: String) { routes[sessionID] = nil }
+
+  /// Each window's session folder, from the moment it shows one: a new session has no id
+  /// until its first prompt, but its folder is open all the same.
+  private(set) var windowFolders: [UUID: String] = [:]
+
+  func setFolder(_ folder: URL?, forWindow window: UUID) {
+    windowFolders[window] = folder.map { url in
+      let path = url.path(percentEncoded: false)
+      // The lock file lists folders as the CLI compares them: no trailing slash.
+      return path.count > 1 && path.hasSuffix("/") ? String(path.dropLast()) : path
+    }
+    IDEBridge.shared.refreshFolders()
+  }
+
+  /// The folders the open sessions work in, which Drakar is the editor for by default.
+  var folders: [String] { Array(windowFolders.values) }
 }

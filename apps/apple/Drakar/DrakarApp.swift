@@ -3,6 +3,8 @@ import SwiftUI
 
 @main
 struct DrakarApp: App {
+  @NSApplicationDelegateAdaptor private var delegate: AppDelegate
+
   var body: some Scene {
     // One window per session, keyed by its route: a window opened without one shows the
     // session list, and SwiftUI reopens each session's window at the next launch.
@@ -19,5 +21,17 @@ struct DrakarApp: App {
     Settings {
       SettingsView()
     }
+  }
+}
+
+/// Starts the editor bridge at launch and takes its lock files down at quit: a lock left
+/// behind beside a live one stops `claude --ide` from connecting to either.
+final class AppDelegate: NSObject, NSApplicationDelegate {
+  func applicationDidFinishLaunching(_ notification: Notification) {
+    IDEBridge.shared.start()
+  }
+
+  func applicationWillTerminate(_ notification: Notification) {
+    IDEBridge.shared.stop()
   }
 }

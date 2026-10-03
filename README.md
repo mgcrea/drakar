@@ -8,6 +8,17 @@ plan is [PLAN.md](PLAN.md); the protocol is [docs/claude-stream-json.md](docs/cl
 Distributed directly (Developer ID, Sparkle), never through the Mac App Store: it spawns
 processes that work on your files, which App Sandbox forbids.
 
+## Drakar as the editor of `claude` in a terminal
+
+While Drakar runs, a `claude` started with `claude --ide` in a folder Drakar has open (or
+connected with `/ide` in a running session) sends every edit to Drakar's Review Changes
+window, and writes the file only if you accept it there. Settings › General picks the
+folders: those open in Drakar (the default), any folder in your home folder, or none. How
+it works, and what was verified: [docs/claude-ide-bridge.md](docs/claude-ide-bridge.md).
+
+`make audit` checks the network claim against the sources (one listener, on 127.0.0.1,
+token-gated, nothing outgoing), and `make audit-running` against the running app.
+
 ## Layout
 
 | Path         | What it is                                                                          |

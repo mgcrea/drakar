@@ -41,6 +41,12 @@ help: ## Show this help
 	@echo "  \033[1mapp\033[0m — forwarded to $(APPLE), so 'make test' here is 'make test' there"
 	@$(MAKE) --no-print-directory -C $(APPLE) help
 
+audit: ## Check the network claim against the sources (scripts/audit-network.sh)
+	@scripts/audit-network.sh
+
+audit-running: ## The same, plus the running app: its sockets, lock files and token
+	@scripts/audit-network.sh --running
+
 # Explicit targets rather than a `%:` catch-all. A match-anything rule prints "'X' is up to
 # date" instead of forwarding whenever the goal happens to name a file or directory at the
 # root — and apps/ and docs/ are both real paths. Silent success is the one failure a
@@ -48,4 +54,4 @@ help: ## Show this help
 $(APPLE_TARGETS):
 	@$(MAKE) --no-print-directory -C $(APPLE) $@
 
-.PHONY: help $(APPLE_TARGETS)
+.PHONY: help audit audit-running $(APPLE_TARGETS)

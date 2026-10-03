@@ -7,14 +7,15 @@ Mac; Drakar is the one ship you steer. A native macOS app to work with a coding 
 Zed, with the conversation, the tool calls, the permission prompts and the diffs as first
 class UI. An editor later, but never the centre.
 
-Status: written 2026-10-03, the day the repo was bootstrapped; phases 1 and 2 landed the
+Status: written 2026-10-03, the day the repo was bootstrapped; phases 1 to 3 landed the
 same day. **What exists**: DrakarKit decodes and encodes the stream-json protocol against
 captured fixtures and supervises the process; the app opens a folder, runs your `claude`
 in it, streams the transcript with tool cards, asks permission in a sheet with the CLI's
 "always allow" suggestions, and stops a turn. All three were checked against the real CLI
 (2.1.288) in the running app. Phase 2 added the session list across accounts, resume
 with history, one window per session, and diffs for Edit and Write in the cards and the
-permission sheet. Everything from phase 3 on is a proposal, and §7 lists what has to be
+permission sheet. Phase 3 made Drakar the editor of `claude` run in a terminal: its edits
+arrive as diffs to accept or reject. Phase 4 on is a proposal, and §7 lists what has to be
 decided before it stops being one.
 
 ---
@@ -122,7 +123,13 @@ not in advance.
    session already in an Drakar window brings that window forward. Not yet: following a
    rewound branch of a transcript (history is read in file order), and watching the list
    for changes (it refreshes on demand).
-3. **The IDE bridge.** The lock file and the MCP-over-WebSocket server (§2.4).
+3. **The IDE bridge.** The lock file and the MCP-over-WebSocket server (§2.4). *Done
+   2026-10-03*, spiked first against a fake editor (`docs/claude-ide-bridge.md`): a
+   terminal `claude --ide` in a folder Drakar has open sends its edits to a Review Changes
+   window, Accept writes and Reject does not (both verified), several terminals at once.
+   Lock files per account, swept after a crash; `scripts/audit-network.sh` landed with the
+   socket. Headless sessions never connect, so Drakar's own windows keep their sheet. Not
+   yet: editing the proposal before accepting it, diagnostics, selections.
 4. **The editor.** A file tree and a text view, grown out of the diff view.
 
 ## 5. Distribution
@@ -147,8 +154,11 @@ the release job, the appcast and the site redirects, the licence and trial, the 
 Worker (copied from **armada's**, whose price guard fails closed, not bastion's), and the
 audit script.
 
-**The checkable claim (proposed):** *Drakar makes no network connection of its own;
-everything that reaches the network is the `claude` you installed, or Sparkle.* That is
+**The checkable claim:** *Drakar opens one socket, a listener on 127.0.0.1 that answers
+only a client holding this launch's token, and makes no connection of its own; everything
+that reaches the network is the `claude` you installed, or Sparkle.* `make audit` asserts
+the sources half and `make audit-running` the live half since phase 3; the binary sweep
+below arrives with Sparkle. That is
 cupertino's `audit-network.sh` model: an `nm -u`/`otool -L` sweep over every Mach-O in
 the bundle, with Sparkle the one named allowance. Phase 3's WebSocket is a listening
 socket on loopback, and lands with its own Loopback check in the same commit, as
