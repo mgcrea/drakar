@@ -72,6 +72,13 @@ struct FileTreeTests {
     #expect(!tree.isRelevant(tree.root + "/.git/index"))
     #expect(!tree.isRelevant("/elsewhere/x"))
   }
+
+  /// FSEvents names `/tmp/x` as `/private/tmp/x`; `resolvingSymlinksInPath` does not.
+  @Test func namesAPathAsTheKernelDoes() {
+    #expect(FileTree.realPath("/tmp") == "/private/tmp")
+    #expect(FileTree.realPath("/tmp/") == "/private/tmp")
+    #expect(FileTree.realPath("/nonexistent/drakar") == "/nonexistent/drakar")
+  }
 }
 
 @Suite("Opening and reloading a file")

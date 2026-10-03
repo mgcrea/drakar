@@ -123,6 +123,15 @@ public struct FileTree: Sendable, Equatable {
     }
   }
 
+  /// The path as the kernel names it, every link resolved: how FSEvents and the directory
+  /// walker report it (`/tmp/x` is `/private/tmp/x`). Not `resolvingSymlinksInPath`, which
+  /// strips `/private` back off and so names neither.
+  public static func realPath(_ path: String) -> String {
+    guard let pointer = realpath(path, nil) else { return path }
+    defer { free(pointer) }
+    return normalized(String(cString: pointer))
+  }
+
   /// Without a trailing slash, as every path in the tree is.
   public static func normalized(_ path: String) -> String {
     path.count > 1 && path.hasSuffix("/") ? String(path.dropLast()) : path
