@@ -19,7 +19,8 @@ it works, and what was verified: [docs/claude-ide-bridge.md](docs/claude-ide-bri
 ## The editor
 
 A session window shows its folder's files in the sidebar and opens them as tabs beside
-the conversation, with line numbers and colours, saved with ⌘S and found by name with ⌘P. When
+the conversation, with line numbers and colours, saved with ⌘S, found by name with ⌘P,
+and searched with ⇧⌘F. When
 the agent changes an open file, its tab reloads; if you had edited it too, Drakar asks
 which version to keep, and it asks before a window with unsaved tabs closes. What you
 select (or the file you have open) goes with your next prompt, as in the VS Code

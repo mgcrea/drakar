@@ -158,8 +158,9 @@ not in advance.
    closes the active tab, then the window. Line numbers, and colours from a lexer per
    language family (comments, strings, numbers, keywords, types, attributes; no grammar,
    no dependency), applied as layout attributes so they never touch the text or its undo.
-   Not yet: search inside files, `at_mentioned`, diagnostics, and editing a proposal
-   before accepting it.
+   ⇧⌘F searches the folder's text (smart case), each hit opening its file with the match
+   selected. Not yet: `at_mentioned`, diagnostics, find-and-replace across files, and
+   editing a proposal before accepting it.
 
 ## 5. Distribution
 
