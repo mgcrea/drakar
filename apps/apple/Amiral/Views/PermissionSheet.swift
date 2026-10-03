@@ -9,15 +9,28 @@ struct PermissionSheet: View {
 
   private var request: PermissionRequest { pending.request }
 
+  /// An edit shown as the diff it would make; a Write is diffed against the file as it
+  /// is now, read once when the sheet appears.
+  @State private var change: FileChange?
+
+  private var isEdit: Bool { change != nil }
+
   var body: some View {
     VStack(alignment: .leading, spacing: 14) {
-      Text("Allow \(request.displayName ?? request.toolName)?")
-        .font(.title3.weight(.semibold))
+      Text(
+        isEdit
+          ? "Apply this change?" : "Allow \(request.displayName ?? request.toolName)?"
+      )
+      .font(.title3.weight(.semibold))
       if let description = request.description, !description.isEmpty {
         Text(description)
       }
-      CodeBlock(text: request.summary.isEmpty ? request.input.prettyPrinted : request.summary)
-      if let path = request.blockedPath {
+      if let change {
+        FileChangeView(change: change)
+      } else {
+        CodeBlock(text: request.summary.isEmpty ? request.input.prettyPrinted : request.summary)
+      }
+      if !isEdit, let path = request.blockedPath {
         Label(path, systemImage: "folder")
           .font(.callout)
           .foregroundStyle(.secondary)
@@ -35,17 +48,30 @@ struct PermissionSheet: View {
       }
       HStack {
         Spacer()
-        Button("Deny") { answer(.deny(message: "The user denied this.")) }
+        Button(isEdit ? "Reject" : "Deny") { answer(.deny(message: "The user denied this.")) }
           .keyboardShortcut(.cancelAction)
           .accessibilityIdentifier("permission.deny")
-        Button("Allow") { answer(.allow(updatedInput: request.input)) }
+        Button(isEdit ? "Accept" : "Allow") { answer(.allow(updatedInput: request.input)) }
           .keyboardShortcut(.defaultAction)
           .accessibilityIdentifier("permission.allow")
       }
     }
     .padding(20)
-    .frame(width: 460)
+    .frame(width: isEdit ? 680 : 460)
     .interactiveDismissDisabled()
+    .task(id: pending.requestID) { change = Self.change(for: request) }
+  }
+
+  private static func change(for request: PermissionRequest) -> FileChange? {
+    var existing: String?
+    if request.toolName == "Write", let path = request.input["file_path"]?.stringValue {
+      let url = URL(filePath: path)
+      // A diff against a huge file is unreadable anyway; past 1 MB it shows as a new file.
+      if let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize, size < 1_000_000 {
+        existing = try? String(contentsOf: url, encoding: .utf8)
+      }
+    }
+    return FileChange(toolName: request.toolName, input: request.input, existing: existing)
   }
 
   private static func title(_ suggestion: PermissionSuggestion) -> String {

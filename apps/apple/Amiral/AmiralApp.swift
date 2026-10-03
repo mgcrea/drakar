@@ -4,8 +4,10 @@ import SwiftUI
 @main
 struct AmiralApp: App {
   var body: some Scene {
-    WindowGroup {
-      ContentView()
+    // One window per session, keyed by its route: a window opened without one shows the
+    // session list, and SwiftUI reopens each session's window at the next launch.
+    WindowGroup(for: SessionRoute.self) { $route in
+      ContentView(route: $route)
     }
     .commands {
       SupportCommands(app: Support.app, preferIssueTracker: Support.preferIssueTracker)

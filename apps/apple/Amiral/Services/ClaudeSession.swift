@@ -17,6 +17,9 @@ final class ClaudeSession {
   }
 
   let folder: URL
+  /// The account and session to resume, or nil for a new session under the shell's own
+  /// configuration directory.
+  let resuming: ResumeTarget?
   private(set) var transcript = Transcript()
   private(set) var phase: Phase = .idle
   /// The binary this session runs, for the footer and for bug reports.
@@ -28,16 +31,42 @@ final class ClaudeSession {
   @ObservationIgnored private var events: Task<Void, Never>?
   @ObservationIgnored private var requestCount = 0
 
-  init(folder: URL) {
+  init(folder: URL, resuming: ResumeTarget? = nil) {
     self.folder = folder
+    self.resuming = resuming
   }
+
+  /// The session's id once known: the resumed one at once, a new one or a fork's from
+  /// `system/init`. A fork never answers with the original's id, which another process owns.
+  var sessionID: String? {
+    transcript.session?.sessionID ?? (resuming?.forks == true ? nil : resuming?.sessionID)
+  }
+
+  /// The title Claude Code gave the session, from its history.
+  var title: String? { transcript.title }
 
   var canSend: Bool { phase == .ready && !transcript.isRunning }
 
   func start(command: ClaudeCommand = ClaudeCommand()) async {
     guard phase == .idle else { return }
     phase = .starting
-    let environment = await Self.environment.value
+    var command = command
+    var environment = await Self.environment.value
+    guard FileManager.default.fileExists(atPath: folder.path(percentEncoded: false)) else {
+      phase = .failed(String(localized: "The folder \(folder.lastPathComponent) no longer exists."))
+      return
+    }
+    if let resuming {
+      // `--resume` continues the session but does not replay it, so the past comes from
+      // the transcript file, read off the main thread: they run to megabytes.
+      let file = resuming.transcriptFile
+      transcript =
+        (try? await Task.detached { try Transcript.history(contentsOf: file) }.value)
+        ?? Transcript()
+      command.resumeSessionID = resuming.sessionID
+      command.forksSession = resuming.forks == true
+      environment = resuming.account.environment(environment)
+    }
     guard let claude = ClaudeLocator.locate(path: environment["PATH"]) else {
       phase = .failed(
         String(localized: "Claude Code was not found. Install it, then open the folder again."))
@@ -116,7 +145,7 @@ final class ClaudeSession {
   /// The login shell's environment, read once per launch and shared by every window: a
   /// terminal `claude` sees the user's PATH, and so must this one and the tools it runs.
   /// Without it, launchd's PATH plus the usual install directories.
-  private static let environment = Task<[String: String], Never> {
+  static let environment = Task<[String: String], Never> {
     if let environment = await ShellEnvironment.read() { return environment }
     var environment = ProcessInfo.processInfo.environment
     let home = FileManager.default.homeDirectoryForCurrentUser.path

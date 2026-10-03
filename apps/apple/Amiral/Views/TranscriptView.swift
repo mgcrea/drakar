@@ -111,7 +111,10 @@ struct ToolCallView: View {
   var body: some View {
     DisclosureGroup(isExpanded: $isExpanded) {
       VStack(alignment: .leading, spacing: 8) {
-        if call.name != "Bash" || call.summary.isEmpty {
+        // After the fact a Write's previous content is gone, so it shows as all added.
+        if let change = FileChange(toolName: call.name, input: call.input) {
+          FileChangeView(change: change)
+        } else if call.name != "Bash" || call.summary.isEmpty {
           CodeBlock(text: call.input.prettyPrinted)
         }
         if let result = call.result {
@@ -124,7 +127,7 @@ struct ToolCallView: View {
       HStack(spacing: 8) {
         statusIcon
         Text(call.name).fontWeight(.semibold)
-        Text(call.summary)
+        Text(displayedSummary)
           .font(.callout.monospaced())
           .foregroundStyle(.secondary)
           .lineLimit(1)
@@ -135,6 +138,18 @@ struct ToolCallView: View {
     .background(.background.secondary, in: RoundedRectangle(cornerRadius: 8))
     .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(.separator))
     .accessibilityIdentifier("tool.\(call.id)")
+  }
+
+  @Environment(\.sessionFolder) private var sessionFolder
+
+  /// A file inside the session's folder by its path from there, as the extension shows it.
+  private var displayedSummary: String {
+    guard call.input["file_path"]?.stringValue == call.summary, let folder = sessionFolder
+    else { return call.summary }
+    let base = folder.path(percentEncoded: false)
+    let prefix = base.hasSuffix("/") ? base : base + "/"
+    return call.summary.hasPrefix(prefix)
+      ? String(call.summary.dropFirst(prefix.count)) : call.summary
   }
 
   @ViewBuilder private var statusIcon: some View {
@@ -162,4 +177,9 @@ struct CodeBlock: View {
     .fixedSize(horizontal: false, vertical: true)
     .background(.background.tertiary, in: RoundedRectangle(cornerRadius: 6))
   }
+}
+
+extension EnvironmentValues {
+  /// The folder the session in this window works in, for showing paths relative to it.
+  @Entry var sessionFolder: URL?
 }

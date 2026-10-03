@@ -21,6 +21,7 @@ struct SessionView: View {
       PermissionSheet(pending: pending) { decision in session.answer(pending, decision) }
     }
     .onDisappear { session.stop() }
+    .environment(\.sessionFolder, session.folder)
   }
 
   /// The first request waiting; answering it shows the next. Never dismissed except by

@@ -6,13 +6,15 @@ Amiral drives one. A native macOS app to work with a coding agent: as light and 
 Zed, with the conversation, the tool calls, the permission prompts and the diffs as first
 class UI. An editor later, but never the centre.
 
-Status: written 2026-10-03, the day the repo was bootstrapped; phase 1 landed the same
-day. **What exists**: AmiralKit decodes and encodes the stream-json protocol against
+Status: written 2026-10-03, the day the repo was bootstrapped; phases 1 and 2 landed the
+same day. **What exists**: AmiralKit decodes and encodes the stream-json protocol against
 captured fixtures and supervises the process; the app opens a folder, runs your `claude`
 in it, streams the transcript with tool cards, asks permission in a sheet with the CLI's
 "always allow" suggestions, and stops a turn. All three were checked against the real CLI
-(2.1.288) in the running app. One window, one session, no resume yet. Everything from
-phase 2 on is a proposal, and §7 lists what has to be decided before it stops being one.
+(2.1.288) in the running app. Phase 2 added the session list across accounts, resume
+with history, one window per session, and diffs for Edit and Write in the cards and the
+permission sheet. Everything from phase 3 on is a proposal, and §7 lists what has to be
+decided before it stops being one.
 
 ---
 
@@ -113,7 +115,12 @@ not in advance.
    except context usage. Block Markdown (headings, lists, fences, quotes, tables) and
    summarized thinking followed the same day.
 2. **Sessions.** The list from disk, resume, several windows, Edit and Write calls shown
-   as diffs to accept or reject.
+   as diffs to accept or reject. *Done 2026-10-03.* The list reads every account
+   (`~/.claude`, `~/.claude-*`) and marks sessions live in another process from the CLI's
+   own registry; those open as a fork (`--fork-session`), never as a second writer, and a
+   session already in an Amiral window brings that window forward. Not yet: following a
+   rewound branch of a transcript (history is read in file order), and watching the list
+   for changes (it refreshes on demand).
 3. **The IDE bridge.** The lock file and the MCP-over-WebSocket server (§2.4).
 4. **The editor.** A file tree and a text view, grown out of the diff view.
 
