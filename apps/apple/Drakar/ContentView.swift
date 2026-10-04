@@ -64,6 +64,7 @@ struct ContentView: View {
         }
         .onChange(of: project.stored, initial: true) { _, stored in
           storedProject = (try? String(decoding: JSONEncoder().encode(stored), as: UTF8.self)) ?? ""
+          ProjectMemory.remember(stored, for: project.folder)
         }
       } else {
         HomeView(pick: pick, enter: enter)
@@ -112,12 +113,15 @@ struct ContentView: View {
     Binding(get: { workspace.isSearchShown }, set: { workspace.isSearchShown = $0 })
   }
 
-  /// The project for `route`, restored from scene storage the first time.
+  /// The project for `route`, restored the first time from scene storage, or from what the
+  /// app remembers of the folder when the window comes back without it.
   private func open(_ route: WindowRoute?) {
     guard let folder = route?.folder else { return }
     ProjectList.shared.track(folder)
     if project?.folder.standardizedFileURL != folder.standardizedFileURL {
-      let stored = try? JSONDecoder().decode(StoredProject.self, from: Data(storedProject.utf8))
+      let stored =
+        (try? JSONDecoder().decode(StoredProject.self, from: Data(storedProject.utf8)))
+        ?? ProjectMemory.stored(for: folder)
       let project = Project(folder: folder, restoring: stored)
       self.project = project
       OpenSessions.shared.register(project, window: windowID)

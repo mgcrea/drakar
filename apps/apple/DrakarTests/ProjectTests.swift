@@ -227,4 +227,24 @@ struct ProjectTests {
     OpenSessions.shared.liveChanged(["a"])
     #expect(!item.session.isReadOnly)
   }
+
+  /// A window opened after a relaunch, without its scene storage, gets its rows back; one
+  /// left with none forgets the folder.
+  @Test func theAppRemembersEachFoldersSessions() throws {
+    let suite = "drakar-tests-\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let stored = StoredProject(sessions: [target("a"), target("b")], selected: "b")
+    ProjectMemory.remember(stored, for: folder, in: defaults)
+    let other = folder.appending(path: "other", directoryHint: .isDirectory)
+    #expect(ProjectMemory.stored(for: folder.appending(path: "."), in: defaults) == stored)
+    #expect(ProjectMemory.stored(for: other, in: defaults) == nil)
+
+    let project = Project(folder: folder, restoring: ProjectMemory.stored(for: folder, in: defaults))
+    #expect(project.sessions.map(\.sessionID) == ["a", "b"])
+    #expect(project.selected?.sessionID == "b")
+
+    ProjectMemory.remember(StoredProject(), for: folder, in: defaults)
+    #expect(ProjectMemory.stored(for: folder, in: defaults) == nil)
+  }
 }

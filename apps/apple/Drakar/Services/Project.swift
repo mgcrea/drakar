@@ -94,6 +94,36 @@ struct StoredProject: Codable, Equatable {
   var selected: String?
 }
 
+/// Each project's `StoredProject`, app-wide in `UserDefaults` by folder. A window's scene
+/// storage comes back only when macOS restores windows at launch, which quitting closes by
+/// default: without this, a window opened after a relaunch lost its sessions to Ended.
+/// Removing a row from the window is what lets it go.
+enum ProjectMemory {
+  static let key = "drakar.projectSessions"
+
+  static func stored(for folder: URL, in defaults: UserDefaults = .standard) -> StoredProject? {
+    all(in: defaults)[path(of: folder)]
+  }
+
+  static func remember(
+    _ stored: StoredProject, for folder: URL, in defaults: UserDefaults = .standard
+  ) {
+    var all = all(in: defaults)
+    all[path(of: folder)] = stored.sessions.isEmpty ? nil : stored
+    defaults.set(try? JSONEncoder().encode(all), forKey: key)
+  }
+
+  private static func all(in defaults: UserDefaults) -> [String: StoredProject] {
+    defaults.data(forKey: key).flatMap {
+      try? JSONDecoder().decode([String: StoredProject].self, from: $0)
+    } ?? [:]
+  }
+
+  private static func path(of folder: URL) -> String {
+    ProjectPath.normalize(folder.path(percentEncoded: false))
+  }
+}
+
 /// A project window: a folder, its editor, and the sessions attached to it.
 @Observable
 final class Project {
