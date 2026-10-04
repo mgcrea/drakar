@@ -28,6 +28,20 @@ public struct ClaudeAccount: Sendable, Hashable {
     return environment
   }
 
+  /// The `.claude.json` holding the login and the cached plan usage: beside `~/.claude` for
+  /// the default directory, inside every other one.
+  public var configFile: URL {
+    isDefault
+      ? directory.deletingLastPathComponent().appending(path: ".claude.json")
+      : directory.appending(path: ".claude.json")
+  }
+
+  /// The directory as one path: a resumed session's account and a discovered one name the
+  /// same folder with and without a trailing slash.
+  public var key: String {
+    ProjectPath.normalize(directory.standardizedFileURL.path(percentEncoded: false))
+  }
+
   /// `~/.claude`, every `~/.claude-*` holding a `projects` folder, and any `extra`
   /// directories (the shell's own `CLAUDE_CONFIG_DIR`), without duplicates.
   public static func discover(
