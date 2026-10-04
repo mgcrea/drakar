@@ -46,6 +46,8 @@ final class ClaudeSession {
   /// The accounts a new session's transcript is looked for in; the discovered ones, or a
   /// test's.
   @ObservationIgnored var accounts: () -> [ClaudeAccount] = { ClaudeAccount.discover() }
+  /// Where the session's `rate_limit_event`s go; tests give it their own.
+  @ObservationIgnored var accountStore: AccountStore = .shared
 
   /// For the window's attention: a turn ended, a permission request arrived, the process
   /// stopped on its own.
@@ -313,6 +315,9 @@ final class ClaudeSession {
   }
 
   private func apply(_ message: StreamMessage) {
+    if case .rateLimit(let info) = message, let account {
+      accountStore.record(info, for: account)
+    }
     if case .controlResponse(let response) = message, response.requestID.hasPrefix("context-") {
       if response.isSuccess, let reply = ContextUsageReply(response.response) {
         reportedContext = reply

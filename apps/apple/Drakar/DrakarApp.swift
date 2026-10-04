@@ -113,6 +113,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // relaunch must still land. Setting it does not prompt.
     UNUserNotificationCenter.current().delegate = Attention.shared
     Task { await SessionMonitor.shared.start() }
+    Task { await AccountStore.shared.start() }
   }
 
   /// Every window's sessions are stopped, not left to the windows closing: a `claude` must
