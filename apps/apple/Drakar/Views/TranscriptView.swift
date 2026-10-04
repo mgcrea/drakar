@@ -24,12 +24,16 @@ struct TranscriptView: View {
   /// The entries with any part on screen, for the bar: a prompt taller than the view is never
   /// 60% visible, yet it is in sight.
   @State private var onScreenIDs: Set<String> = []
+  /// The bar stays up even while the prompt is in view, instead of only once it scrolled away.
+  @AppStorage(PreferenceKey.pinsLastPrompt) private var pinsLastPrompt = false
 
   var body: some View {
     ScrollView {
       LazyVStack(alignment: .leading, spacing: 14) {
         ForEach(transcript.entries) { entry in
           EntryView(entry: entry).equatable()
+            // Inside the row, so a jump to the prompt stops short of its bubble.
+            .padding(.top, entry.isPrompt ? 12 : 0)
         }
         if transcript.isRunning {
           ProgressView()
@@ -43,6 +47,9 @@ struct TranscriptView: View {
       .frame(maxWidth: .infinity)
     }
     .scrollPosition($position)
+    .onScrollTargetVisibilityChange(idType: String.self, threshold: 0.01) { visible in
+      onScreenIDs = Set(visible)
+    }
     .onScrollTargetVisibilityChange(idType: String.self, threshold: 0.6) { visible in
       visibleIDs = visible
       if !isFollowing { anchor = visible.first }
@@ -67,16 +74,26 @@ struct TranscriptView: View {
       if isFollowing { position.scrollTo(edge: .bottom) }
     }
     .accessibilityIdentifier("transcript")
+    // Always up, it takes its own room so it covers nothing; up only while the prompt is
+    // away, it floats, so coming and going does not shift the transcript under the reader.
+    .safeAreaInset(edge: .top, spacing: 0) {
+      if pinsLastPrompt, let prompt = transcript.lastPrompt { bar(for: prompt) }
+    }
     .overlay(alignment: .top) {
-      if let prompt = offScreenPrompt, let headline = prompt.headline {
-        LastPromptBar(prompt: prompt, headline: headline) {
-          isFollowing = false
-          position.scrollTo(id: prompt.id, anchor: .top)
-        }
-        .transition(.opacity)
+      if !pinsLastPrompt, let prompt = offScreenPrompt {
+        bar(for: prompt).transition(.opacity)
       }
     }
     .animation(.easeOut(duration: 0.15), value: offScreenPrompt?.id)
+  }
+
+  @ViewBuilder private func bar(for prompt: Transcript.Entry) -> some View {
+    if let headline = prompt.headline {
+      LastPromptBar(prompt: prompt, headline: headline) {
+        isFollowing = false
+        position.scrollTo(id: prompt.id, anchor: .top)
+      }
+    }
   }
 
   /// The newest prompt while none of it is on screen. Nothing on screen is the view before it
@@ -88,8 +105,8 @@ struct TranscriptView: View {
   }
 }
 
-/// The newest prompt, pinned over the transcript while it is out of view: a long turn pushes
-/// what was asked far above what is being done about it. Clicking scrolls back to it.
+/// The newest prompt, pinned over the transcript: a long turn pushes what was asked far above
+/// what is being done about it. Clicking scrolls back to it.
 private struct LastPromptBar: View {
   let prompt: Transcript.Entry
   let headline: String
@@ -114,7 +131,7 @@ private struct LastPromptBar: View {
           .truncationMode(.tail)
           .layoutPriority(1)
         Spacer(minLength: 0)
-        Image(systemName: "chevron.up")
+        Image(systemName: "arrow.up.to.line")
       }
       .font(.callout)
       .foregroundStyle(.secondary)
@@ -138,6 +155,13 @@ private struct LastPromptBar: View {
   private var promptText: String {
     guard case .prompt(let text) = prompt.kind else { return headline }
     return String(text.prefix(1000))
+  }
+}
+
+extension Transcript.Entry {
+  fileprivate var isPrompt: Bool {
+    if case .prompt = kind { return true }
+    return false
   }
 }
 

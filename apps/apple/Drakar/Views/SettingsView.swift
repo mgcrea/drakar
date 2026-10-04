@@ -16,11 +16,13 @@ import SwiftUI
 /// open.
 enum SettingsPane: String, SupportKitSettings.SettingsPane {
   case general
+  case transcript
   case about
 
   var title: LocalizedStringKey {
     switch self {
     case .general: "General"
+    case .transcript: "Transcript"
     case .about: "About"
     }
   }
@@ -28,6 +30,7 @@ enum SettingsPane: String, SupportKitSettings.SettingsPane {
   var systemImage: String {
     switch self {
     case .general: "gearshape"
+    case .transcript: "text.bubble"
     case .about: "info.circle"
     }
   }
@@ -48,6 +51,8 @@ enum PreferenceKey {
   static let newSessionAccount = "drakar.newSessionAccount"
   /// Whether a session that finishes its turn while Drakar is in the background says so.
   static let notifiesTurnEnds = "drakar.notifiesTurnEnds"
+  /// Whether the last prompt stays pinned over the transcript even while it is in view.
+  static let pinsLastPrompt = "drakar.pinsLastPrompt"
 }
 
 /// What Settings picked for the sessions Drakar starts.
@@ -109,6 +114,7 @@ struct SettingsView: View {
     SettingsScaffold(selection: Support.settings) { pane in
       switch pane {
       case .general: GeneralPane()
+      case .transcript: TranscriptPane()
       case .about:
         AboutSettingsPane(app: Support.app, preferIssueTracker: Support.preferIssueTracker)
       }
@@ -147,6 +153,24 @@ struct GeneralPane: View {
     }
     .formStyle(.grouped)
     .onChange(of: editorScope) { IDEBridge.shared.refreshFolders() }
+  }
+}
+
+struct TranscriptPane: View {
+  @AppStorage(PreferenceKey.pinsLastPrompt) private var pinsLastPrompt = false
+
+  var body: some View {
+    Form {
+      Section {
+        Toggle("Always show your last message", isOn: $pinsLastPrompt)
+          .accessibilityIdentifier("settings.pinsLastPrompt")
+      } footer: {
+        Text(
+          "Pinned at the top of the transcript; click it to scroll back to the message. When off, it shows only once the message has scrolled out of view."
+        )
+      }
+    }
+    .formStyle(.grouped)
   }
 }
 
