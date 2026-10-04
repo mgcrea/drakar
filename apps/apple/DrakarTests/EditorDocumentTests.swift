@@ -168,7 +168,7 @@ struct WindowCloseGuardTests {
     let original = Original()
     window.delegate = original
     let workspace = Workspace(folder: folder)
-    WindowCloseGuard.install(on: window, for: workspace)
+    WindowCloseGuard.install(on: window, for: workspace, running: { 0 })
     return (window, original, workspace, file)
   }
 
@@ -182,7 +182,7 @@ struct WindowCloseGuardTests {
     delegate.windowDidResize?(Notification(name: NSWindow.didResizeNotification, object: window))
     #expect(original.resized >= 1)
     // Installing twice must not stack a guard in front of the guard.
-    WindowCloseGuard.install(on: window, for: workspace)
+    WindowCloseGuard.install(on: window, for: workspace, running: { 0 })
     #expect(delegate === window.delegate)
   }
 

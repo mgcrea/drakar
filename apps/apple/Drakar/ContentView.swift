@@ -45,7 +45,8 @@ struct ContentView: View {
         .background(
           WindowReader { window in
             workspace.window = window
-            WindowCloseGuard.install(on: window, for: workspace)
+            WindowCloseGuard.install(
+              on: window, for: workspace, running: { [weak project] in project?.runningCount ?? 0 })
           }
         )
         // The dot in the close button, as in every document window.

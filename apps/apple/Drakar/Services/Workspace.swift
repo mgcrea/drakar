@@ -359,7 +359,25 @@ extension FocusedValues {
   @Entry var project: Project?
 }
 
-/// "Save changes?" for one window's unsaved tabs, or every window's at quit.
+/// The question before a close or a quit stops sessions mid-turn.
+enum RunningSessions {
+  static func note(count: Int) -> String {
+    count == 1
+      ? String(localized: "A session is still working. Closing stops it.")
+      : String(localized: "\(count) sessions are still working. Closing stops them.")
+  }
+
+  static func alert(count: Int) -> NSAlert {
+    let alert = NSAlert()
+    alert.messageText = String(localized: "Close while sessions are working?")
+    alert.informativeText = note(count: count)
+    alert.addButton(withTitle: String(localized: "Close"))
+    alert.addButton(withTitle: String(localized: "Cancel"))
+    return alert
+  }
+}
+
+/// "Save changes?" for one window’s unsaved tabs, or every window’s at quit.
 enum UnsavedChanges {
   enum Choice { case save, discard, cancel }
 
@@ -394,17 +412,20 @@ final class WindowCloseGuard: NSObject, NSWindowDelegate {
   /// ever asked on the main thread, where window delegates are messaged.
   nonisolated(unsafe) private weak var original: NSWindowDelegate?
   private weak var workspace: Workspace?
+  private let running: () -> Int
 
-  static func install(on window: NSWindow, for workspace: Workspace) {
+  static func install(on window: NSWindow, for workspace: Workspace, running: @escaping () -> Int) {
     guard !(window.delegate is WindowCloseGuard) else { return }
-    let closeGuard = WindowCloseGuard(original: window.delegate, workspace: workspace)
+    let closeGuard = WindowCloseGuard(
+      original: window.delegate, workspace: workspace, running: running)
     workspace.closeGuard = closeGuard
     window.delegate = closeGuard
   }
 
-  private init(original: NSWindowDelegate?, workspace: Workspace) {
+  private init(original: NSWindowDelegate?, workspace: Workspace, running: @escaping () -> Int) {
     self.original = original
     self.workspace = workspace
+    self.running = running
   }
 
   nonisolated override func responds(to selector: Selector!) -> Bool {
@@ -417,14 +438,24 @@ final class WindowCloseGuard: NSObject, NSWindowDelegate {
 
   func windowShouldClose(_ window: NSWindow) -> Bool {
     let unsaved = workspace?.unsavedDocuments ?? []
-    guard let workspace, !unsaved.isEmpty else {
+    let runningCount = running()
+    guard let workspace, !unsaved.isEmpty || runningCount > 0 else {
       return original?.windowShouldClose?(window) ?? true
     }
-    UnsavedChanges.alert(for: unsaved).beginSheetModal(for: window) { response in
+    if unsaved.isEmpty {
+      RunningSessions.alert(count: runningCount).beginSheetModal(for: window) { response in
+        if response == .alertFirstButtonReturn { window.close() }
+      }
+      return false
+    }
+    let alert = UnsavedChanges.alert(for: unsaved)
+    if runningCount > 0 {
+      alert.informativeText += "\n\n" + RunningSessions.note(count: runningCount)
+    }
+    alert.beginSheetModal(for: window) { response in
       switch UnsavedChanges.choice(response) {
       case .save:
         workspace.saveAll()
-        // A save that failed keeps the window, and says why.
         if workspace.unsavedDocuments.isEmpty { window.close() }
       case .discard: window.close()
       case .cancel: break

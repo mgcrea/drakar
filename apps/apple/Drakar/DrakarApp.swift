@@ -80,9 +80,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   /// Quitting with unsaved tabs in any window asks first, once for all of them.
   func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
     let workspaces = Workspace.all.filter { !$0.unsavedDocuments.isEmpty }
-    guard !workspaces.isEmpty else { return .terminateNow }
-    switch UnsavedChanges.choice(
-      UnsavedChanges.alert(for: workspaces.flatMap(\.unsavedDocuments)).runModal())
+    let running = OpenSessions.shared.runningCount
+    if workspaces.isEmpty {
+      guard running > 0 else { return .terminateNow }
+      return RunningSessions.alert(count: running).runModal() == .alertFirstButtonReturn
+        ? .terminateNow : .terminateCancel
+    }
+    let alert = UnsavedChanges.alert(for: workspaces.flatMap(\.unsavedDocuments))
+    if running > 0 { alert.informativeText += "\n\n" + RunningSessions.note(count: running) }
+    switch UnsavedChanges.choice(alert.runModal())
     {
     case .save:
       for workspace in workspaces { workspace.saveAll() }
