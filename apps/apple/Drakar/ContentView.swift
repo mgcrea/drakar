@@ -56,6 +56,7 @@ struct ContentView: View {
         }
         .focusedSceneValue(\.workspace, workspace)
         .focusedSceneValue(\.project, project)
+        .focusedSceneValue(\.closeProject, closeProject)
         .sheet(isPresented: quickOpenShown(workspace)) { QuickOpenView(workspace: workspace) }
         .sheet(isPresented: searchShown(workspace)) { ProjectSearchView(workspace: workspace) }
         .onChange(of: appearsActive, initial: true) { _, active in
@@ -71,10 +72,10 @@ struct ContentView: View {
     .frame(minWidth: 680, minHeight: 440)
     .toolbar {
       if project != nil {
-        ToolbarItem(placement: .primaryAction) {
-          Button("Projects", systemImage: "square.grid.2x2") { WindowTabs.showHome() }
-            .help("Show the projects (⇧⌘H)")
-            .accessibilityIdentifier("window.showProjects")
+        ToolbarItem(placement: .navigation) {
+          Button("Projects", systemImage: "square.grid.2x2") { closeProject() }
+            .help("Close this project and go back to the projects (⇧⌘H)")
+            .accessibilityIdentifier("window.closeProject")
         }
       }
       ToolbarItem(placement: .primaryAction) {
@@ -126,6 +127,48 @@ struct ContentView: View {
       project.attach(target)
     }
     if project.sessions.isEmpty { project.newSession() }
+  }
+
+  /// Back to home in this window: the questions a close asks (unsaved tabs, sessions mid-turn),
+  /// then the project's sessions stop and the window shows the projects. Nothing reopens
+  /// it but a click on home.
+  private func closeProject() {
+    guard let project else { return }
+    let workspace = project.workspace
+    let unsaved = workspace.unsavedDocuments
+    let running = project.runningCount
+    guard let window = workspace.window, !unsaved.isEmpty || running > 0 else {
+      return leaveProject()
+    }
+    if unsaved.isEmpty {
+      RunningSessions.alert(count: running, action: .closeProject).beginSheetModal(for: window) {
+        if $0 == .alertFirstButtonReturn { leaveProject() }
+      }
+      return
+    }
+    let alert = UnsavedChanges.alert(for: unsaved)
+    if running > 0 {
+      alert.informativeText += "\n\n" + RunningSessions.note(count: running)
+    }
+    alert.beginSheetModal(for: window) { response in
+      switch UnsavedChanges.choice(response) {
+      case .save:
+        workspace.saveAll()
+        if workspace.unsavedDocuments.isEmpty { leaveProject() }
+      case .discard: leaveProject()
+      case .cancel: break
+      }
+    }
+  }
+
+  private func leaveProject() {
+    project?.stopAll()
+    project?.workspace.window?.isDocumentEdited = false
+    OpenSessions.shared.unregister(window: windowID)
+    // The next project this window opens must not restore this one's sessions.
+    storedProject = ""
+    project = nil
+    route = .picker()
   }
 
   /// A project clicked on home: its open window comes forward, or this one becomes it.
@@ -261,18 +304,13 @@ private struct WindowLevel: NSViewRepresentable {
   }
 }
 
-/// Windows opened as tabs of the key window, and home found among them.
+/// Windows opened as tabs of the key window.
 @MainActor enum WindowTabs {
   /// The scene's action, handed over by the first window to appear: menus and rows open
   /// windows through it.
   static var openWindow: OpenWindowAction?
   /// The window the next one to appear joins as a tab.
   private static weak var tabHost: NSWindow?
-  private static var windows: [WeakWindow] = []
-
-  private struct WeakWindow {
-    weak var window: NSWindow?
-  }
 
   /// A window for `route`, as a tab of the key window when `asTab`. A project already
   /// open comes forward instead: one window per folder.
@@ -290,33 +328,15 @@ private struct WindowLevel: NSViewRepresentable {
 
   /// A Drakar window appeared: it joins the tab group it was opened for.
   static func adopt(_ window: NSWindow) {
-    windows.removeAll { $0.window == nil }
-    if !windows.contains(where: { $0.window === window }) {
-      windows.append(WeakWindow(window: window))
-    }
     guard let host = tabHost, host !== window else { return }
     tabHost = nil
     if host.tabbedWindows?.contains(window) != true {
+      // A tab group shows each tab at its own frame: a new window's default size would
+      // resize the window the moment its tab is selected.
+      window.setFrame(host.frame, display: false)
       host.addTabbedWindow(window, ordered: .above)
     }
     window.makeKeyAndOrderFront(nil)
-  }
-
-  /// Home in the key window's tab group, brought forward, or opened as a new tab there.
-  static func showHome() {
-    let key = NSApp.keyWindow
-    let projectWindows = OpenSessions.shared.projects.values.compactMap(\.workspace.window)
-    let homes = windows.compactMap(\.window).filter { window in
-      !projectWindows.contains { $0 === window }
-    }
-    let group = key.map { $0.tabbedWindows ?? [$0] } ?? []
-    if let home = homes.first(where: { home in group.contains { $0 === home } })
-      ?? (key == nil ? homes.first : nil)
-    {
-      home.makeKeyAndOrderFront(nil)
-      return
-    }
-    open(.picker(), asTab: key != nil)
   }
 }
 

@@ -28,7 +28,7 @@ Settled with the person on 2026-10-04.
 | Which stats | Ones that mean something per project: sessions, how many are running and waiting, last activity, the newest session's gauge. Not a sum of context gauges |
 | Worktrees | Count under the main repo |
 | Tabs or windows | Both, as native window tabs: one window (or tab) per project, as phase 5 has it |
-| Going home from a project | Home is opened, not navigated back to: a project window never turns back into home, which would stop its sessions |
+| Going home from a project | The Projects button (⇧⌘H) closes the project in place: the close questions, its sessions stop, and the window shows home. Only ⌘T opens another home |
 
 Phase 5's spec ruled out native window tabs because they would have kept a `Workspace` per
 *session*. A tab per *project* keeps one `Workspace` per project, which is what phase 5
@@ -129,7 +129,7 @@ No tracked projects and no suggestions: "Add a project to start", with Add Proje
 | New Session | ⌘N | Disabled | As today |
 | New Tab | ⌘T | Home, in a new tab of this window | Home, in a new tab of this window |
 | New Window | ⇧⌘N | A home window | A home window |
-| Show Projects | ⇧⌘H, and a toolbar button in project windows | Nothing to do | Brings forward a home in this window's tab group, or opens one as a new tab |
+| Close Project | ⇧⌘H, and the Projects button in project windows | Disabled | Asks what a close asks, stops the sessions, and shows home in this window |
 | Open Project… | ⌘O | Tracks the folder and opens it in a new tab | The same |
 
 A new tab is a new window of the same `WindowGroup`, merged into the key window's tab group.
