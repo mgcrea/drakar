@@ -256,4 +256,19 @@ struct UrgencyTests {
     let old = try JSONDecoder().decode(StoredProject.self, from: Data(#"{"sessions":[]}"#.utf8))
     #expect(old.dismissedQuestions == nil)
   }
+
+  @Test func theBadgeCountsTheLevelsItIsToldTo() async throws {
+    let (project, item) = try await session(Self.asking)
+    defer { project.stopAll() }
+    #expect(Attention.count([item], badges: { _ in true }) == 1)
+    #expect(Attention.count([item], badges: { $0 != .question }) == 0)
+  }
+
+  /// Notified unless it is the row the person is looking at, in the window they are in.
+  @Test func notifiesUnlessInView() {
+    #expect(Attention.isInView(appIsActive: true, windowIsKey: true, rowIsSelected: true))
+    #expect(!Attention.isInView(appIsActive: true, windowIsKey: false, rowIsSelected: true))
+    #expect(!Attention.isInView(appIsActive: true, windowIsKey: true, rowIsSelected: false))
+    #expect(!Attention.isInView(appIsActive: false, windowIsKey: true, rowIsSelected: true))
+  }
 }
