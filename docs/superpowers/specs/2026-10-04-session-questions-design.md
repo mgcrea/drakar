@@ -1,18 +1,20 @@
-# Sessions that asked a question
+# Sessions that want the person, by urgency
 
-A session that ends its turn on a question ("Want me to build it that way?") is waiting for
-the person as surely as one waiting on a permission request, but today it looks finished.
-After this, Drakar recognises the question, marks the row "Asked you" with the question on
-its second line, counts it in the badges and notifies, until the person answers or
-dismisses it.
+A session can want the person in several ways: a tool waiting on a permission, an
+`AskUserQuestion` waiting on a choice, a turn that ended on a question ("Want me to build it
+that way?"), or one that ended on an offer ("Say the word and I'll add it"). Today only the
+first is seen; a question in prose looks like a finished turn. After this, Drakar tells the
+four apart, gives each its own mark on the row and its own feedback (header count, Dock
+badge, notification), and lets the person answer an `AskUserQuestion` properly.
 
 ## Why
 
 The person runs several sessions and goes round them in turn. A model often replies within
 seconds with a confirmation question instead of `AskUserQuestion`, and the person finds it
-twenty minutes later. That lost time is where Drakar costs them the most today. Permission
-requests already get a blue row, the Dock badge and a notification; a question in prose gets
-an unread dot that clears as soon as the row is glanced at.
+twenty minutes later. That lost time is where Drakar costs them the most today. Not every
+ending wants them equally, though: an offer at the end of a report can wait, a question
+should not, and a tool blocked mid-turn least of all. One loudness for all of them would
+either miss questions or nag about offers.
 
 ## Decisions
 
@@ -20,149 +22,181 @@ Settled with the person on 2026-10-04.
 
 | Question | Decision |
 | --- | --- |
-| How loud a question is | As loud as a permission request: row, group header, Dock badge, notification |
-| Which sessions | Drakar's own (attached rows). Sessions live in a terminal or VS Code are not read for questions; Armada covers them, and Drakar is meant to replace them |
-| How a question is recognised | Rules over the turn's last text, in DrakarKit. No model call: Drakar makes no outgoing connection (`make audit`) |
-| What clears it | A prompt sent to the session, Dismiss, or the session ending. Not looking at it |
+| How many kinds | Four urgency levels, most urgent first: permission, choice (`AskUserQuestion`), question, offer. A plain finished turn stays as it is (unread) |
+| How loud each is | A question is as loud as a permission request. An offer is marked on its row only. Each level's feedback is a setting |
+| Which sessions | Drakar's own (attached rows). Sessions live in a terminal or VS Code are not read; Armada covers them, and Drakar is meant to replace them |
+| How questions and offers are recognised | Rules over the turn's closing text, in DrakarKit, measured on 100 labelled real endings. No model call: Drakar makes no outgoing connection (`make audit`) |
+| What clears a question or an offer | A prompt sent to the session, Dismiss, or the session ending. Not looking at it |
+| `AskUserQuestion` | Answered in its own sheet with its options, the picked labels sent back |
 | Where it is configured | A new Attention pane in Settings |
 | Pinning, priorities, sorting | A separate spec, after this one |
 
-## Recognising a question
+## The levels
 
-`ClosingQuestion.detect(_ text: String) -> String?` in DrakarKit: pure, given the text of the
-turn's last assistant message, returns the question to show, or nil.
+| Level | When | Row mark | Row label | Second line |
+| --- | --- | --- | --- | --- |
+| Permission | A `can_use_tool` request waits, for any tool but `AskUserQuestion` | blue dot | Waiting for you | "Bash: make test" (as today) |
+| Choice | A `can_use_tool` request for `AskUserQuestion` waits | blue dot | Asks you to choose | its first question |
+| Question | The newest turn ended on a question or an ask | blue ring | Asked you | the question |
+| Offer | The newest turn ended on an offer | grey ring | Offered | the offer |
 
-1. **Strip** fenced code blocks, block quotes and inline code spans, so a `?` in a regex,
-   a URL or a shell glob does not count.
-2. **Take the closing paragraph**: the last non-empty one. When it is a list (every line
-   starts with `-`, `*`, or `1.`-style numbering), take the paragraph before it, and the list
-   is the options.
-3. **It is a question when** one of its last two sentences ends with `?`, or it contains a
-   direct ask without one, matched case-insensitively at a sentence start: "want me to",
-   "should I", "shall I", "would you like", "do you want", "ready to proceed", "go ahead
-   with", "which (one|option|approach) do you".
-4. **It is not a question** when the only ask is a sign-off: a sentence starting "let me
-   know if", "feel free to", "happy to", "if you('d) like, I can". These close half of all
-   turns and would badge every one.
-5. **What is shown** is the matched sentence, whitespace collapsed, cut at 140 characters
-   on a word boundary with an ellipsis.
+A row has one level, the most urgent that applies. A question or an offer exists only once
+the turn ended, so it never coexists with a waiting request on the same row.
 
-The `?` rule holds in any language; the phrase lists start in English.
+Default feedback, each a switch in the Attention pane:
+
+| Level | Counts (header, ⌥⌘↓) | Dock badge | Notification |
+| --- | --- | --- | --- |
+| Permission | on | on | on |
+| Choice | on | on | on |
+| Question | on | on | on |
+| Offer | off | off | off |
+| Finished turn | (unread, unchanged) | – | off (`drakar.notifiesTurnEnds`) |
+
+## Recognising questions and offers
+
+`ClosingAsk.detect(_ text: String) -> ClosingAsk?` in DrakarKit: pure, given the text of the
+turn's last assistant message, returns `.question` or `.offer` with the sentence to show, or
+nil.
+
+1. **Strip** fenced code blocks (an unclosed fence runs to the end), block quotes, inline
+   code spans and URLs, so a `?` in a regex, a URL or a quoted message does not count.
+2. **Read the closing paragraphs**: the last two non-empty ones. Each line is its own
+   sentence boundary, list items included.
+3. **A question** is a sentence there that ends with `?` (or `？`), or starts with a direct
+   ask ("want me to", "should I", "shall I", "would you like", "do you want", "which option
+   do you"…), or asks the person to act ("tell me when", "…, tell me, and…", "waiting on
+   your go-ahead"). Sign-offs ("let me know if", "feel free to") are never a question, even
+   with a `?`. The last question found is the one shown.
+4. **An offer**, when there is no question: a sentence there that offers without asking
+   ("let me know if you'd like", "if you want…", "say the word", "say if you want", "I can …
+   if you want", "happy to"). The last one found is shown.
+5. **What is shown** is that sentence, markdown emphasis removed, whitespace collapsed, cut
+   at 140 characters on a word boundary with an ellipsis.
+
+The phrase lists start in English; the `?` rule holds in any language.
+
+**Targets**, on the labelled fixture: of the endings marked as questions, at most 1 in 20
+is wrong (labelled offer or nothing); fewer than 1 real question in 10 is missed; at least 2
+offers in 3 are recognised as offers.
 
 ### When it runs
 
-Only on a turn that **ended**: a `result` that is not an error and not an interruption, with
-no permission request pending. A turn the person stopped is never "asked". The text is that
-of the last assistant message after the last prompt; a turn whose last message is a tool call
-has no closing text and no question.
+Only on a turn that **ended**: a `result` that is not an error and not an interruption, or
+in history (which has no `result`) an assistant message with `stop_reason: end_turn`; with
+no permission request pending. A turn the person stopped is never asking. The text is that
+of the last main-thread assistant message after the last prompt; a turn whose last message
+is a tool call has no closing text.
 
 ## The state
 
-"Asked" is derived, never stored as a flag, so it cannot drift from the transcript the way
-the badge did before ddcbbc9.
+A row's level is derived, never stored as a flag, so it cannot drift from the transcript the
+way the badge did before ddcbbc9.
 
-`ProjectSession.question: String?` is the detected question when all hold:
+`ProjectSession.closingAsk: ClosingAsk?` is the detected ask when all hold:
 
-- the newest turn ended and its closing text has a question;
+- the newest turn ended and its closing text has a question or an offer;
 - no prompt was sent after it;
 - its assistant message id (`message.id`) is not the one dismissed for this session;
-- the process has not ended.
+- the process has not ended, and the row is not held read-only.
 
 **Before the history is read** (a restored row that was never shown), the same comes from
-the transcript's tail: `TranscriptTail` gains the newest assistant message's id, text and
-`stop_reason`, and `SessionSummary` gains `closingQuestion` and `closingMessageID`, set when
-that message ended the turn (`end_turn`) and no user prompt follows it. A restored row is
-marked at launch.
+the transcript's tail: `TranscriptTail` gains the closing text of a turn that ended
+(`end_turn`) with no user prompt after it, and `SessionSummary` gains `closingAsk` and
+`closingMessageID`. A restored row is marked at launch.
 
 **Dismiss** stores the message id: `StoredProject.dismissedQuestions: [String: String]`,
-session id to message id, decoded with `decodeIfPresent` so windows saved before this load.
-A later question in the same session has a new id and marks the row again. An entry goes
-when its session leaves the window.
+session id to message id, optional so windows saved before this load. A later ask in the
+same session has a new id and marks the row again. An entry goes when its session leaves the
+window.
 
 **`isUnread` is unchanged**: it still clears on selection. A row can be asked and read.
 
 ## What the person sees
 
-- **The row**: a new `RowState.asked`, "Asked you", blue like `.waiting`, drawn as a ring
-  instead of a dot so the two read apart. Its second line leads with the question, in place
-  of `waitingFor`. A pending permission request outranks it: such a row is `.waiting`.
-- **The group header** counts rows that want the person: waiting or asked.
-- **⌥⌘↓ Next Session Needing You** goes to waiting rows, then asked ones, then unread.
-- **Dismiss Question**, ⌥⌘D, in the Session menu and the row's context menu, enabled when
-  the selected (menu) or clicked (context menu) row is asked.
-- **The Dock badge** counts, across every window, what the Attention pane says it counts:
-  permission requests and questions by default.
-- **A notification** for a question has the session's title as its title and the question
-  as its body. It shares the session's identifier with permission notifications, so a newer
-  one replaces it, and it is withdrawn when the question clears, the way
-  `permissionsChanged` withdraws a permission's.
+- **The row**: its level's mark and label, and the second line above. Dot and ring are the
+  same size, so a row does not shift when its level changes.
+- **The group header** counts rows whose level counts.
+- **⌥⌘↓ Next Session Needing You** goes to the most urgent counting row after the selected
+  one (wrapping), then to unread rows.
+- **Dismiss**, ⌥⌘D, in the Session menu and the row's context menu, enabled for a question or
+  an offer.
+- **The Dock badge** counts, across every window, the rows whose level badges.
+- **A notification**: the session's title, and as body "Wants to use Bash: make test", the
+  choice's first question, the question, or the offer. It shares the session's identifier,
+  so a newer one replaces it, and it is withdrawn when the row no longer wants the person.
 
 ### When a notification is posted
 
 Today a notification is posted only while Drakar is not the active app. That misses the case
 this spec exists for: the person is in Drakar, in another project's window. The rule
-becomes: **post unless the session is the one shown in the key window.** It applies to
-permission requests and to ended turns as well as to questions, so all three follow one
-rule.
+becomes: **post unless the session is the one shown in the key window.** It applies to every
+level and to ended turns.
+
+## Answering `AskUserQuestion`
+
+Verified on 2026-10-04 (`docs/claude-stream-json.md`, "AskUserQuestion"): the request is a
+`can_use_tool` with `requires_user_interaction: true`; a plain `allow` gives the model "The
+user did not answer the questions", and an `allow` whose `updatedInput` adds
+`answers: {"<question>": "<label>"}` reaches it. Several questions each get an entry; a
+multi-select answer is its labels joined with ", ", as the CLI's own picker writes it.
+
+When the waiting request is for `AskUserQuestion`, the session shows a **choice sheet**
+instead of the permission sheet: each question with its header, its options as radio
+buttons (checkboxes when `multiSelect`), each option's description under its label, and an
+"Other" field for a typed answer. **Answer** (the default button) is enabled once every
+question has an answer and sends `allow` with the input plus `answers`. **Skip** sends
+`deny` with "The user chose not to answer."
 
 ## The Attention pane
 
-A new Attention pane in the settings pane list (`Support.settings`), between General and
-About. The ended-turn toggle moves here
-from General; its key does not change.
+A new pane between General and About. The ended-turn toggle moves here from General; its key
+does not change.
 
-| Event | Dock badge | Notification |
-| --- | --- | --- |
-| A permission request | on | on |
-| A question at the end of a turn | on | on |
-| A finished turn | not offered | off (`drakar.notifiesTurnEnds`) |
-
-Keys: `drakar.badges.permissions`, `drakar.badges.questions`,
-`drakar.notifies.permissions`, `drakar.notifies.questions`, all defaulting to true when
-absent. Above the table, "Recognise questions at the end of a turn", on by default,
-turns the detection itself off: no "Asked you" rows, and the question row greyed.
+- "Recognise questions and offers at the end of a turn", on by default: off, no row is ever
+  a question or an offer.
+- One row per level, with three switches: Counts, Dock badge, Notification. Defaults as in
+  the table above. Keys: `drakar.attention.<level>.<feedback>`, level one of `permission`,
+  `choice`, `question`, `offer`, feedback one of `counts`, `badges`, `notifies`.
+- "Finished turn": a notification switch only (`drakar.notifiesTurnEnds`).
 
 ## Kit changes
 
-- `ClosingQuestion` (new), with its rules as data so the tests can list them.
-- `Transcript` keeps the assistant `message.id` on text entries and records how the newest
-  turn ended (`result` subtype, interrupted or not).
-- `TranscriptTail` / `SessionSummary`: the closing message and question, as above.
+- `ClosingAsk` (new): the rules, their phrase lists as data, and `ClosingText`.
+- `AssistantMessage.stopReason`; `Transcript.turnEnd` and `Transcript.closingText`.
+- `TranscriptTail.closingText`; `SessionSummary.closingAsk` / `closingMessageID`.
+- `PermissionRequest.requiresUserInteraction`; `UserQuestion` (parsed from an
+  `AskUserQuestion` input) and building the answered input.
 
-## Spike first
+## Spike (done 2026-10-04)
 
-Before any UI:
-
-1. **`AskUserQuestion` under `--permission-prompt-tool stdio`.** Confirm it arrives as a
-   `can_use_tool` request (so it is already a waiting row) and what Drakar must answer for
-   the question to reach the model with the person's choice. If it does not arrive that way,
-   it is a bug of its own, recorded and fixed before this work.
-2. **The rules against real endings.** Read the closing text of every ended turn in the
-   person's transcripts under `~/.claude/projects` (read-only, nothing leaves the Mac),
-   label a sample of 100, and measure the rules: the target is no more than 1 in 20 marks
-   wrong, and fewer than 1 in 10 real questions missed. The labelled endings, trimmed to
-   their closing paragraph, become the test fixtures.
+1. `AskUserQuestion` under `--permission-prompt-tool stdio`: recorded in
+   `docs/claude-stream-json.md`, as above.
+2. 100 closing texts from the person's own transcripts, scrubbed, labelled question, offer
+   or nothing, trimmed to their last three paragraphs: the fixture the rules are measured on.
 
 ## Testing
 
-- `ClosingQuestionTests` (DrakarKit): the labelled fixture table, both ways, plus the
-  stripping cases: `?` in code, in a URL, in a quote; a closing list of options; a sign-off
-  after a real question (the question wins, it is one of the last two sentences); a
-  sign-off alone.
-- `TranscriptTests`: the turn-end record, an interrupted turn, a turn ending on a tool call.
-- `SessionIndex` tail: a transcript ending on an `end_turn` question; one where a prompt
-  follows it.
-- `AttentionTests`: the badge counts questions when the setting says so and not otherwise;
-  a prompt clears the question and withdraws its notification; Dismiss clears it and it
-  stays cleared after `StoredProject` round-trips; a newer question after a dismissal marks
-  the row again; the notification rule (key window, shown session).
-- `SettingsPaneTests`: the Attention pane and its defaults; the moved toggle keeps its value.
+- `ClosingAskTests` (DrakarKit): the labelled fixture against the targets; the stripping
+  cases (`?` in code, a URL, a quote; an unclosed fence); a question followed by an
+  explanation; a sign-off alone (an offer, not a question); a full-width `？` and a French
+  "continue ?"; a long reply read quickly.
+- `TranscriptTests` / `HistoryTests`: the turn end, interrupted and failed turns, a turn
+  ending on a tool call, a subagent's text, history with and without `stop_reason`.
+- `ContextUsageTests` (tail): a turn ending on an ask; answered; a tool call; a synthetic
+  turn; a sidechain; a summary carrying the ask.
+- `UserQuestion` tests: parsing the captured input; single, multi-select, "Other" and several
+  questions answered into `updatedInput`.
+- `AttentionTests`: the level of a row for each kind; looking keeps it, a prompt, Dismiss and
+  ending clear it; a restored row is marked unless that message was dismissed; counting and
+  badging follow the switches per level; the notification rule; next row by urgency.
+- `SettingsPaneTests`: the Attention pane, its defaults, the moved toggle keeps its key.
 
 ## Out of scope
 
 - Pinning, priorities and sort orders: the next spec.
-- Questions in sessions live elsewhere (terminal, VS Code).
-- Asking a model to judge unclear endings, on-device or otherwise. The spike's numbers say
-  whether it is needed.
+- Questions and offers in sessions live elsewhere (terminal, VS Code).
+- Asking a model to judge unclear endings, on-device or otherwise.
 - Phrase lists in other languages than English.
 - Answering from the notification (a text reply action).
+- `AskUserQuestion`'s optional `annotations` (notes per answer).
