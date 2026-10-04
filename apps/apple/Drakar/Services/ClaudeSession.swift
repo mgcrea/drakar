@@ -189,9 +189,9 @@ final class ClaudeSession {
       command.resumeSessionID = resuming.sessionID
       command.forksSession = resuming.forks == true
     }
-    // A resume under the account that wrote it; a new session under the one picked in
-    // Settings, else left to the shell.
-    let chosen = resuming?.account ?? ClaudeChoice.newSessionAccount
+    // A resume under the account that wrote it; a new session under its folder's pick, else
+    // the one in Settings, else left to the shell.
+    let chosen = resuming?.account ?? ClaudeChoice.account(forNewSessionIn: folder)
     if let chosen { environment = chosen.environment(environment) }
     account =
       chosen

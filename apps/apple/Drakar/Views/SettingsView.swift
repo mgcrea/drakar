@@ -49,6 +49,9 @@ enum PreferenceKey {
   static let claudePath = "drakar.claudePath"
   /// The configuration directory a new session runs under; empty for the login shell's.
   static let newSessionAccount = "drakar.newSessionAccount"
+  /// Folder path → account directory, as a JSON object: the account a folder's new sessions
+  /// start under. A string so a view can observe it with `@AppStorage`.
+  static let accountForFolder = "drakar.accountForFolder"
   /// Whether a session that finishes its turn while Drakar is in the background says so.
   static let notifiesTurnEnds = "drakar.notifiesTurnEnds"
   /// Whether the last prompt stays pinned over the transcript even while it is in view.
@@ -57,8 +60,14 @@ enum PreferenceKey {
 
 /// What Settings picked for the sessions Drakar starts.
 enum ClaudeChoice {
-  /// Where the choices are read from; a scratch suite in tests, never the real one.
-  static var defaults = UserDefaults.standard
+  /// A scratch defaults suite for tests, never the real one. Task-local so that suites
+  /// running in parallel each see their own; a name because `UserDefaults` is not `Sendable`.
+  @TaskLocal static var testSuite: String?
+
+  /// Where the choices are read from and the folder picks written to.
+  static var defaults: UserDefaults {
+    testSuite.flatMap(UserDefaults.init(suiteName:)) ?? .standard
+  }
 
   /// The `claude` picked in Settings; nil to run the shell's.
   static var executable: URL? {
@@ -71,6 +80,38 @@ enum ClaudeChoice {
       FileManager.default.fileExists(atPath: path)
     else { return nil }
     return account(at: path)
+  }
+
+  /// The account a new session in `folder` starts under: the folder's pick, else Settings',
+  /// else nil for the shell's. A resumed session ignores both and runs where it was written.
+  static func account(forNewSessionIn folder: URL) -> ClaudeAccount? {
+    pickedAccount(for: folder) ?? newSessionAccount
+  }
+
+  /// The folder's pick while its directory is there. A missing directory skips the pick and
+  /// keeps it, for when the directory comes back.
+  static func pickedAccount(for folder: URL) -> ClaudeAccount? {
+    guard let path = picks[folderKey(folder)], FileManager.default.fileExists(atPath: path)
+    else { return nil }
+    return account(at: path)
+  }
+
+  static func pick(_ account: ClaudeAccount, for folder: URL) {
+    var picks = picks
+    picks[folderKey(folder)] = account.directory.path(percentEncoded: false)
+    let data = (try? JSONEncoder().encode(picks)) ?? Data("{}".utf8)
+    defaults.set(String(decoding: data, as: UTF8.self), forKey: PreferenceKey.accountForFolder)
+  }
+
+  private static var picks: [String: String] {
+    guard let text = stored(PreferenceKey.accountForFolder),
+      let picks = try? JSONDecoder().decode([String: String].self, from: Data(text.utf8))
+    else { return [:] }
+    return picks
+  }
+
+  private static func folderKey(_ folder: URL) -> String {
+    ProjectPath.normalize(folder.path(percentEncoded: false))
   }
 
   /// The account a configuration directory holds; `~/.claude` is the default one.

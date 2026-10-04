@@ -70,14 +70,10 @@ struct ClaudeSessionTests {
     let defaults = try #require(UserDefaults(suiteName: suite))
     defaults.set(picked.path(percentEncoded: false), forKey: PreferenceKey.claudePath)
     defaults.set(account.path(percentEncoded: false), forKey: PreferenceKey.newSessionAccount)
-    ClaudeChoice.defaults = defaults
-    defer {
-      ClaudeChoice.defaults = .standard
-      defaults.removePersistentDomain(forName: suite)
-    }
+    defer { defaults.removePersistentDomain(forName: suite) }
 
     let session = ClaudeSession(folder: folder)
-    await session.spawn()
+    await ClaudeChoice.$testSuite.withValue(suite) { await session.spawn() }
     defer { session.stop() }
     #expect(session.executable == picked)
     #expect(session.account?.name == "picked")
