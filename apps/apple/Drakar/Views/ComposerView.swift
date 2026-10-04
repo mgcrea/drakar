@@ -16,6 +16,8 @@ struct ComposerView: View {
   let unpin: (EditorSelection) -> Void
   let send: (String, [EditorSelection]) -> Void
   let stop: () -> Void
+  let sessionFolder: URL
+  let projectFolder: URL
 
   @State private var leavesContextOut = false
   @FocusState private var isFocused: Bool
@@ -26,12 +28,18 @@ struct ComposerView: View {
         ScrollView(.horizontal, showsIndicators: false) {
           HStack(spacing: 6) {
             ForEach(pinned, id: \.self) { selection in
-              PinnedChip(label: selection.label) { unpin(selection) }
+              PinnedChip(
+                label: selection.label,
+                unpin: { unpin(selection) },
+                note: Self.selectionNote(
+                  selection, sessionFolder: sessionFolder, projectFolder: projectFolder))
             }
             if let live {
-              ContextChip(label: live.label, isIncluded: !leavesContextOut) {
-                leavesContextOut.toggle()
-              }
+              ContextChip(
+                label: live.label, isIncluded: !leavesContextOut,
+                toggle: { leavesContextOut.toggle() },
+                note: Self.selectionNote(
+                  live, sessionFolder: sessionFolder, projectFolder: projectFolder))
             }
           }
         }
@@ -79,21 +87,35 @@ struct ComposerView: View {
     send(text, pinned + (leavesContextOut ? [] : live.map { [$0] } ?? []))
     text = ""
   }
+
+  /// "from the main checkout" when the session runs in a folder below the project (a
+  /// worktree) and the selection is a file outside it: the session reads another copy.
+  static func selectionNote(
+    _ selection: EditorSelection, sessionFolder: URL, projectFolder: URL
+  ) -> String? {
+    let session = ProjectPath.normalize(sessionFolder.path(percentEncoded: false))
+    let project = ProjectPath.normalize(projectFolder.path(percentEncoded: false))
+    guard session != project, !ProjectPath.contains(session, selection.filePath) else { return nil }
+    return String(localized: "from the main checkout")
+  }
 }
 
 private struct ContextChip: View {
   let label: String
   let isIncluded: Bool
   let toggle: () -> Void
+  let note: String?
 
   var body: some View {
     Button(action: toggle) {
-      Label(label, systemImage: isIncluded ? "doc.text" : "eye.slash")
-        .font(.caption)
-        .strikethrough(!isIncluded)
-        .padding(.horizontal, 7)
-        .padding(.vertical, 3)
-        .background(.quaternary.opacity(isIncluded ? 0.8 : 0.3), in: Capsule())
+      Label(
+        note.map { "\(label) · \($0)" } ?? label, systemImage: isIncluded ? "doc.text" : "eye.slash"
+      )
+      .font(.caption)
+      .strikethrough(!isIncluded)
+      .padding(.horizontal, 7)
+      .padding(.vertical, 3)
+      .background(.quaternary.opacity(isIncluded ? 0.8 : 0.3), in: Capsule())
     }
     .buttonStyle(.plain)
     .foregroundStyle(isIncluded ? .primary : .secondary)
@@ -107,10 +129,11 @@ private struct ContextChip: View {
 private struct PinnedChip: View {
   let label: String
   let unpin: () -> Void
+  let note: String?
 
   var body: some View {
     Button(action: unpin) {
-      Label(label, systemImage: "pin.fill")
+      Label(note.map { "\(label) · \($0)" } ?? label, systemImage: "pin.fill")
         .font(.caption)
         .padding(.horizontal, 7)
         .padding(.vertical, 3)

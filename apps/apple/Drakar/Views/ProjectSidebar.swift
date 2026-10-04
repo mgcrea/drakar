@@ -230,6 +230,9 @@ struct SummaryRow: View {
       OpenSessions.shared.locate(summary.sessionID)?.1.waitingFor ?? summary.live?.waitingFor
     if let waiting { parts.insert(waiting, at: 0) }
     if let host { parts.append(host) }
+    if summary.live.map({ IDEBridge.shared.connectedPIDs.contains($0.pid) }) == true {
+      parts.append(String(localized: "connected"))
+    }
     return parts.joined(separator: " · ")
   }
 

@@ -27,7 +27,8 @@ struct SessionView: View {
             session.send(text, context: context)
             workspace.pinned = []
           },
-          stop: session.interrupt)
+          stop: session.interrupt,
+          sessionFolder: session.folder, projectFolder: project.folder)
       }
       SessionFooter(session: session)
     }

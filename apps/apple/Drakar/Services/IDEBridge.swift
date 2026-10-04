@@ -38,6 +38,8 @@ final class IDEBridge {
   private(set) var port: UInt16?
   private(set) var pending: [PendingDiff] = []
   private(set) var failure: String?
+  /// The pids of the terminal `claude`s connected now, from their `ide_connected`.
+  private(set) var connectedPIDs: Set<Int32> = []
 
   @ObservationIgnored private var server: IDEServer?
   /// The last selection sent, for `getLatestSelection` and for a `claude` that connects.
@@ -185,6 +187,7 @@ final class IDEBridge {
     case .notification(let method, let params):
       if method == "ide_connected", let pid = params["pid"]?.intValue {
         connection.claudePID = Int32(exactly: pid)
+        if let pid = connection.claudePID { connectedPIDs.insert(pid) }
       }
       if method == "notifications/initialized" {
         connection.isInitialized = true
@@ -316,6 +319,7 @@ final class IDEBridge {
   }
 
   private func closed(_ connection: IDEConnection) {
+    if let pid = connection.claudePID { connectedPIDs.remove(pid) }
     pending.removeAll { $0.connection === connection }
     if pending.isEmpty { review.hide() }
   }

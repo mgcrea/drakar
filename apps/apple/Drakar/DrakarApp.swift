@@ -1,4 +1,5 @@
 import AppKit
+import DrakarKit
 import SupportKitUI
 import SwiftUI
 import UserNotifications
@@ -152,12 +153,20 @@ private struct CloseCommands: View {
 private struct MentionCommands: View {
   @FocusedValue(\.workspace) private var workspace
 
+  private var title: String {
+    guard let workspace,
+      let summary = SessionMonitor.shared.connectedSession(
+        under: workspace.folder.path(percentEncoded: false))
+    else { return String(localized: "Mention in Terminal Session") }
+    return "Mention in \"\(summary.displayTitle)\""
+  }
+
   var body: some View {
     Divider()
     Button("Pin Selection to Prompt") { workspace?.pinSelection() }
       .keyboardShortcut("k", modifiers: .option)
       .disabled(workspace?.active == nil)
-    Button("Mention in Terminal Session") {
+    Button(title) {
       guard let workspace, !workspace.mentionInTerminal() else { return }
       workspace.problem = String(
         localized:

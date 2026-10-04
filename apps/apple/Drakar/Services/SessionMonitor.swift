@@ -43,6 +43,14 @@ final class SessionMonitor {
     }
   }
 
+  /// The one terminal session of `folder` connected to the bridge, when there is exactly one.
+  func connectedSession(under folder: String) -> SessionSummary? {
+    let connected = summaries(under: folder).filter { summary in
+      summary.live.map { IDEBridge.shared.connectedPIDs.contains($0.pid) } ?? false
+    }
+    return connected.count == 1 ? connected.first : nil
+  }
+
   func accountModel(for account: ClaudeAccount) -> String? { accountModels[account.directory] }
 
   /// Where a live session runs, in words.
