@@ -23,7 +23,7 @@ Settled with the person on 2026-10-04.
 | What a move does to the original | A real move: the files leave the old account, the id stays. Not a copy that continues (Armada's handover), not a fork |
 | What a move covers | The folder's sessions (worktrees included), offered when the picker changes account; and one session from its row's context menu. Not a whole account |
 | A session this window runs | Idle at Ready: its process is stopped, it moves, its next prompt resumes it on the new account. Mid-turn or waiting on a permission: skipped |
-| How files travel | Rename, transcript last; copy, check, delete only when a rename crosses volumes |
+| How files travel | `FileManager.moveItem`, transcript last: a rename on one volume, and Foundation's own copy-then-remove across volumes |
 
 ## What a session is on disk
 
@@ -71,7 +71,7 @@ public enum SessionMover {
 2. The target transcript path exists: `.skipped(.alreadyThere)`, nothing touched.
 3. Each sidecar that exists at the source moves: the subagent folder, then `file-history/<id>`, then `session-env/<id>`. A sidecar already at the target is left in place and the source's copy stays too (never merged, never overwritten).
 4. The transcript moves.
-5. Each move is `moveItem` (a rename on one volume). On `EXDEV` (another volume) that one item is copied, its size checked against the source, and the source removed.
+5. Each move is `FileManager.moveItem`: a rename on one volume; across volumes Foundation copies the item and removes the source itself, so Drakar adds no fallback of its own.
 
 A failure at 3 leaves the transcript on the source: the session still works where it was,
 and moving it again moves what is left. A failure at 4 is reported as `.failed`, with the
@@ -159,8 +159,7 @@ DrakarKit, `SessionMoverTests`, on temporary account directories:
 - the folder name is reused exactly, including one that encoding the cwd would not produce;
 - a missing target directory: `.failed`, nothing moved;
 - a failure after the sidecars moved leaves the transcript at the source; a second move
-  finishes;
-- the cross-volume fallback, through an injected `FileManager` whose `moveItem` throws `EXDEV`.
+  finishes (an injected `FileManager` refusing the transcript).
 
 App tests:
 
