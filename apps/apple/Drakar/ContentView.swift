@@ -30,15 +30,7 @@ struct ContentView: View {
           SplitPanes(fraction: $editorFraction, showsLeading: !workspace.documents.isEmpty) {
             EditorView(workspace: workspace)
           } trailing: {
-            if let item = project.selected {
-              SessionView(item: item, project: project).id(item.id)
-            } else {
-              ContentUnavailableView {
-                Label("No session", systemImage: "bubble.left.and.text.bubble.right")
-              } actions: {
-                Button("New Session") { project.newSession() }
-              }
-            }
+            SelectedSessionPane(project: project)
           }
         }
         // The window's closing, not this view's disappearing, stops the sessions: the editor
@@ -62,10 +54,12 @@ struct ContentView: View {
         .onChange(of: appearsActive, initial: true) { _, active in
           if active { workspace.becameActive() }
         }
-        .onChange(of: project.stored, initial: true) { _, stored in
-          storedProject = (try? String(decoding: JSONEncoder().encode(stored), as: UTF8.self)) ?? ""
-          ProjectMemory.remember(stored, for: project.folder)
-        }
+        .background(
+          StoredProjectWriter(project: project) { stored in
+            storedProject =
+              (try? String(decoding: JSONEncoder().encode(stored), as: UTF8.self)) ?? ""
+            ProjectMemory.remember(stored, for: project.folder)
+          })
       } else {
         HomeView(pick: pick, enter: enter)
       }
@@ -291,6 +285,37 @@ struct ContentView: View {
 /// Floats the window a view is in above other apps' windows, or puts it back among them.
 /// Applied again once the view lands in a window, since a restored window has its level
 /// asked for before it has one.
+/// The selected session, or the way to start one. Its own view, so that a switch redraws
+/// this pane alone: read in `ContentView`, the selection re-ran the window's body, and its
+/// toolbar and title blinked on every switch.
+private struct SelectedSessionPane: View {
+  let project: Project
+
+  var body: some View {
+    if let item = project.selected {
+      SessionView(item: item, project: project).id(item.id)
+    } else {
+      ContentUnavailableView {
+        Label("No session", systemImage: "bubble.left.and.text.bubble.right")
+      } actions: {
+        Button("New Session") { project.newSession() }
+      }
+    }
+  }
+}
+
+/// Hands over what the window keeps of its project each time it changes. The selection is
+/// part of it, so it is watched here rather than in `ContentView`, for the same reason as
+/// `SelectedSessionPane`.
+private struct StoredProjectWriter: View {
+  let project: Project
+  let write: (StoredProject) -> Void
+
+  var body: some View {
+    Color.clear.onChange(of: project.stored, initial: true) { _, stored in write(stored) }
+  }
+}
+
 private struct WindowLevel: NSViewRepresentable {
   let floats: Bool
 
@@ -298,8 +323,10 @@ private struct WindowLevel: NSViewRepresentable {
   func updateNSView(_ view: LevelView, context: Context) { view.floats = floats }
 
   final class LevelView: NSView {
+    /// Set on every update of the view: the level is only touched when it changes, since
+    /// setting it orders the window again.
     var floats = false {
-      didSet { apply() }
+      didSet { if floats != oldValue { apply() } }
     }
 
     override func viewDidMoveToWindow() {
