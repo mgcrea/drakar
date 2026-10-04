@@ -124,7 +124,8 @@ struct ContentView: View {
     self.session?.stop()
     self.session = session
     if workspace?.folder != session.folder { workspace = Workspace(folder: session.folder) }
-    Task { await session.start(command: command) }
+    session.command = command
+    Task { await session.spawn() }
   }
 
   /// The transcript lands under whichever account the shell selected; look for it in

@@ -2,13 +2,15 @@ import DrakarKit
 import Foundation
 import Observation
 
-/// One `claude` process working in one folder, and the transcript it has written.
+/// One session in a project window: its history from disk, and a `claude` process from its
+/// first prompt on.
 ///
 /// Main-actor state over an `AgentProcess`: events are decoded off the main thread and
 /// applied here in batches, which is all the view observes.
 @Observable
 final class ClaudeSession {
   enum Phase: Equatable {
+    /// No process: never started, or a history shown until the first prompt.
     case idle
     case starting
     case ready
@@ -17,9 +19,9 @@ final class ClaudeSession {
   }
 
   let folder: URL
-  /// The account and session to resume, or nil for a new session under the shell's own
-  /// configuration directory.
-  let resuming: ResumeTarget?
+  /// What this session continues; nil for a new one. Becomes the session's own target
+  /// once it has one, so that a prompt after the process ended resumes it.
+  private(set) var resuming: ResumeTarget?
   private(set) var transcript = Transcript()
   private(set) var phase: Phase = .idle
   /// The binary this session runs, for the footer and for bug reports.
@@ -28,14 +30,36 @@ final class ClaudeSession {
   private(set) var account: ClaudeAccount?
   /// The end of the CLI's stderr, shown when the process fails.
   private(set) var diagnostics = ""
+  /// The process's answer to `get_context_usage` after its last turn: the exact window.
+  private(set) var reportedContext: ContextUsageReply?
+  /// What reopening the window resumes: known from the start for a resumed session, and
+  /// from its first finished turn for a new one or a fork, once its transcript exists.
+  private(set) var savedTarget: ResumeTarget?
+  /// The arguments the next spawn runs with (a model for a debug launch).
+  var command = ClaudeCommand()
+  /// Open in another process: the transcript follows its file and nothing is sent.
+  var isReadOnly = false
+  /// Stands in for the located binary, in tests.
+  @ObservationIgnored var executableOverride: URL?
+
+  /// For the window's attention: a turn ended, a permission request arrived, the process
+  /// stopped on its own.
+  @ObservationIgnored var onTurnEnded: (() -> Void)?
+  @ObservationIgnored var onPermissionRequested: ((Transcript.PendingPermission) -> Void)?
+  @ObservationIgnored var onStopped: (() -> Void)?
 
   @ObservationIgnored private var process: AgentProcess?
   @ObservationIgnored private var events: Task<Void, Never>?
   @ObservationIgnored private var requestCount = 0
+  @ObservationIgnored private var hasHistory = false
+  @ObservationIgnored private var follower: TranscriptFollower?
+  /// A prompt sent before the process existed, written right after `initialize`.
+  @ObservationIgnored private var pendingPrompt: ClientMessage?
 
   init(folder: URL, resuming: ResumeTarget? = nil) {
     self.folder = folder
     self.resuming = resuming
+    savedTarget = resuming?.forks == true ? nil : resuming
   }
 
   /// The session's id once known: the resumed one at once, a new one or a fork's from
@@ -47,24 +71,70 @@ final class ClaudeSession {
   /// The title Claude Code gave the session, from its history.
   var title: String? { transcript.title }
 
-  var canSend: Bool { phase == .ready && !transcript.isRunning }
+  var isProcessRunning: Bool { process != nil }
 
-  func start(command: ClaudeCommand = ClaudeCommand()) async {
-    guard phase == .idle else { return }
+  var canSend: Bool { !isReadOnly && !transcript.isRunning && phase != .starting }
+
+  /// The history from the transcript file, once: `--resume` continues a session but does
+  /// not replay it, and transcripts run to megabytes, so it is read off the main thread.
+  func loadHistory() async {
+    guard !hasHistory, let file = resuming?.transcriptFile else { return }
+    hasHistory = true
+    let loaded = await Task.detached { () -> (Transcript, TranscriptFollower)? in
+      var follower = TranscriptFollower(file: file)
+      var transcript = Transcript()
+      guard (try? follower.catchUp(&transcript)) != nil else { return nil }
+      return (transcript, follower)
+    }.value
+    guard let (transcript, follower) = loaded else {
+      phase = .failed(
+        String(
+          localized:
+            "The transcript of this session is missing. It may have been deleted, or its account removed."
+        ))
+      return
+    }
+    self.transcript = transcript
+    self.follower = follower
+  }
+
+  /// What another process appended, for a read-only session.
+  func catchUp() {
+    guard isReadOnly, var follower else { return }
+    try? follower.catchUp(&transcript)
+    self.follower = follower
+  }
+
+  /// `context` is the editor's open file or selections, sent ahead of the text as the
+  /// extension's chat sends it. Starts the process when there is none.
+  func send(_ prompt: String, context: [EditorSelection] = []) {
+    let text = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard canSend, !text.isEmpty else { return }
+    transcript.addPrompt(
+      text, context: context.isEmpty ? nil : context.map(\.label).joined(separator: ", "))
+    let message = ClientMessage.prompt(text, context: context.map(\.promptContext))
+    if process == nil {
+      pendingPrompt = message
+      Task { await spawn() }
+    } else {
+      write(message)
+    }
+  }
+
+  /// Starts `claude`, resuming this session if it has a transcript.
+  func spawn() async {
+    guard process == nil, phase != .starting else { return }
+    // A session whose process ended goes on under its own id, never as a fork again.
+    if let saved = savedTarget, resuming?.forks == true || resuming == nil { resuming = saved }
     phase = .starting
+    await loadHistory()
+    if case .failed = phase { return fail(nil) }
     var command = command
     var environment = await Self.environment.value
     guard FileManager.default.fileExists(atPath: folder.path(percentEncoded: false)) else {
-      phase = .failed(String(localized: "The folder \(folder.lastPathComponent) no longer exists."))
-      return
+      return fail(String(localized: "The folder \(folder.lastPathComponent) no longer exists."))
     }
     if let resuming {
-      // `--resume` continues the session but does not replay it, so the past comes from
-      // the transcript file, read off the main thread: they run to megabytes.
-      let file = resuming.transcriptFile
-      transcript =
-        (try? await Task.detached { try Transcript.history(contentsOf: file) }.value)
-        ?? Transcript()
       command.resumeSessionID = resuming.sessionID
       command.forksSession = resuming.forks == true
     }
@@ -79,12 +149,11 @@ final class ClaudeSession {
           ?? FileManager.default.homeDirectoryForCurrentUser.appending(path: ".claude")
           .path(percentEncoded: false))
     guard
-      let claude = ClaudeLocator.locate(
-        preferred: ClaudeChoice.executable, path: environment["PATH"])
+      let claude = executableOverride
+        ?? ClaudeLocator.locate(preferred: ClaudeChoice.executable, path: environment["PATH"])
     else {
-      phase = .failed(
+      return fail(
         String(localized: "Claude Code was not found. Install it, then open the folder again."))
-      return
     }
     executable = claude
     let process = AgentProcess(
@@ -95,23 +164,17 @@ final class ClaudeSession {
       let stream = try process.start()
       self.process = process
       try process.send(.initialize(requestID: nextRequestID("init")))
+      if let pendingPrompt {
+        try process.send(pendingPrompt)
+        self.pendingPrompt = nil
+      }
       phase = .ready
       events = Task { [weak self] in
         for await event in stream { self?.handle(event) }
       }
     } catch {
-      phase = .failed(error.localizedDescription)
+      fail(error.localizedDescription)
     }
-  }
-
-  /// `context` is the editor's open file or selections, sent ahead of the text as the
-  /// extension's chat sends it.
-  func send(_ prompt: String, context: [EditorSelection] = []) {
-    let text = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard canSend, !text.isEmpty else { return }
-    transcript.addPrompt(
-      text, context: context.isEmpty ? nil : context.map(\.label).joined(separator: ", "))
-    write(.prompt(text, context: context.map(\.promptContext)))
   }
 
   func answer(_ pending: Transcript.PendingPermission, _ decision: PermissionDecision) {
@@ -132,10 +195,17 @@ final class ClaudeSession {
     events?.cancel()
   }
 
+  /// `message` nil keeps the reason already in `phase`.
+  private func fail(_ message: String?) {
+    if let message { phase = .failed(message) }
+    pendingPrompt = nil
+    transcript.processExited()
+  }
+
   private func handle(_ event: AgentProcess.Event) {
     switch event {
     case .messages(let messages):
-      for message in messages { transcript.apply(message) }
+      for message in messages { apply(message) }
     case .stderr(let text):
       diagnostics = String((diagnostics + text).suffix(4000))
     case .exited(let status, _):
@@ -143,7 +213,54 @@ final class ClaudeSession {
       process = nil
       if case .failed = phase { return }
       phase = .exited(status: status)
+      onStopped?()
     }
+  }
+
+  private func apply(_ message: StreamMessage) {
+    if case .controlResponse(let response) = message, response.requestID.hasPrefix("context-") {
+      if response.isSuccess, let reply = ContextUsageReply(response.response) {
+        reportedContext = reply
+      }
+      return
+    }
+    let waiting = transcript.pendingPermissions.count
+    transcript.apply(message)
+    if transcript.pendingPermissions.count > waiting,
+      let pending = transcript.pendingPermissions.last
+    {
+      onPermissionRequested?(pending)
+    }
+    if case .result = message {
+      if savedTarget == nil { savedTarget = findTarget() }
+      // Not `write`: a failed context request must not mark the session failed.
+      try? process?.send(.contextUsage(requestID: nextRequestID("context")))
+      onTurnEnded?()
+    }
+  }
+
+  /// The transcript lands under whichever account the shell selected; look for it in each.
+  /// It exists from the first prompt on, which is when `system/init` gave the id.
+  private func findTarget() -> ResumeTarget? {
+    guard let id = sessionID else { return nil }
+    for account in ClaudeAccount.discover() {
+      let projects = account.directory.appending(path: "projects")
+      let folders =
+        (try? FileManager.default.contentsOfDirectory(atPath: projects.path(percentEncoded: false)))
+        ?? []
+      for name in folders {
+        let file = projects.appending(path: "\(name)/\(id).jsonl")
+        guard FileManager.default.fileExists(atPath: file.path(percentEncoded: false)) else {
+          continue
+        }
+        return ResumeTarget(
+          sessionID: id, cwd: transcript.session?.cwd ?? folder.path(percentEncoded: false),
+          file: file.path(percentEncoded: false),
+          accountDirectory: account.directory.path(percentEncoded: false),
+          accountIsDefault: account.isDefault)
+      }
+    }
+    return nil
   }
 
   private func write(_ message: ClientMessage) {
