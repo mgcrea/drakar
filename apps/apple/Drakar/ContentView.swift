@@ -70,11 +70,14 @@ struct ContentView: View {
     }
     .frame(minWidth: 680, minHeight: 440)
     .toolbar {
-      if project != nil {
+      if let project {
         ToolbarItem(placement: .primaryAction) {
           Button("Projects", systemImage: "square.grid.2x2") { WindowTabs.showHome() }
             .help("Show the projects (⇧⌘H)")
             .accessibilityIdentifier("window.showProjects")
+        }
+        ToolbarItem(placement: .primaryAction) {
+          AccountToolbarItem(folder: project.folder)
         }
       }
       ToolbarItem(placement: .primaryAction) {
