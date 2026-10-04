@@ -107,6 +107,9 @@ public struct AssistantMessage: Sendable, Equatable {
   public var parentToolUseID: String?
   /// The request's tokens. Every block of one message repeats the same object.
   public var usage: TokenUsage?
+  /// `end_turn` on a message that ended the turn, `tool_use` on one that calls a tool.
+  /// Transcript files repeat it on every block line; the live stream may leave it null.
+  public var stopReason: String?
 
   init?(_ json: JSONValue) {
     guard let message = json["message"], let id = message["id"]?.stringValue else { return nil }
@@ -115,6 +118,7 @@ public struct AssistantMessage: Sendable, Equatable {
     content = ContentBlock.list(message["content"])
     parentToolUseID = json["parent_tool_use_id"]?.stringValue
     usage = TokenUsage(message["usage"])
+    stopReason = message["stop_reason"]?.stringValue
   }
 }
 
@@ -301,6 +305,10 @@ public struct PermissionRequest: Sendable, Equatable {
   /// back as `updatedPermissions` when the user picks one.
   public var suggestions: [JSONValue]
   public var blockedPath: String?
+  /// Set on a request only the person can answer, such as `AskUserQuestion`'s.
+  public var requiresUserInteraction: Bool
+  /// An `AskUserQuestion` waiting on a choice, not a tool waiting on permission.
+  public var isChoice: Bool { toolName == UserQuestion.toolName }
 
   init?(_ request: JSONValue) {
     guard let toolName = request["tool_name"]?.stringValue else { return nil }
@@ -310,6 +318,7 @@ public struct PermissionRequest: Sendable, Equatable {
     description = request["description"]?.stringValue
     suggestions = request["permission_suggestions"]?.arrayValue ?? []
     blockedPath = request["blocked_path"]?.stringValue
+    requiresUserInteraction = request["requires_user_interaction"]?.boolValue ?? false
   }
 }
 

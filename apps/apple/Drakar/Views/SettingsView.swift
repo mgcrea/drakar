@@ -4,25 +4,23 @@ import SwiftUI
 
 // MARK: - Settings
 
-/// The panes, and the order they sit in.
+/// The panes, and the order they sit in: General, Transcript, Attention, About.
 ///
-/// About only, for now. A General pane joins with the app's first real preference
-/// and goes first, with `defaultPane` moved to it; an empty pane shipped to fill
-/// the sidebar is a pane somebody opens once. An entitlement pane joins only when
-/// something is actually sold: before a StoreKit product is registered it would
-/// be a button that fails.
+/// An entitlement pane joins only when something is actually sold: before a StoreKit
+/// product is registered it would be a button that fails.
 ///
-/// About stays last, because it answers a question you only ask with a bug report
-/// open.
+/// About stays last, because it answers a question you only ask with a bug report open.
 enum SettingsPane: String, SupportKitSettings.SettingsPane {
   case general
   case transcript
+  case attention
   case about
 
   var title: LocalizedStringKey {
     switch self {
     case .general: "General"
     case .transcript: "Transcript"
+    case .attention: "Attention"
     case .about: "About"
     }
   }
@@ -31,6 +29,7 @@ enum SettingsPane: String, SupportKitSettings.SettingsPane {
     switch self {
     case .general: "gearshape"
     case .transcript: "text.bubble"
+    case .attention: "bell.badge"
     case .about: "info.circle"
     }
   }
@@ -54,6 +53,8 @@ enum PreferenceKey {
   static let accountForFolder = "drakar.accountForFolder"
   /// Whether a session that finishes its turn while Drakar is in the background says so.
   static let notifiesTurnEnds = "drakar.notifiesTurnEnds"
+  /// Whether a turn that ends on a question or an offer marks its row.
+  static let recognisesAsks = "drakar.recognisesAsks"
   /// Whether the last prompt stays pinned over the transcript even while it is in view.
   static let pinsLastPrompt = "drakar.pinsLastPrompt"
 }
@@ -130,6 +131,63 @@ enum ClaudeChoice {
   }
 }
 
+/// What each level of `Urgency` does, as the Attention pane set it.
+enum AttentionFeedback: String, CaseIterable {
+  /// In the group's header count and ⌥⌘↓.
+  case counts
+  case badges
+  case notifies
+}
+
+enum AttentionChoice {
+  /// Where the choices are read from; a scratch suite in tests, never the real one.
+  static var defaults = UserDefaults.standard
+
+  static var recognisesAsks: Bool {
+    _ = AttentionDefaults.shared.revision
+    return defaults.object(forKey: PreferenceKey.recognisesAsks) as? Bool ?? true
+  }
+
+  static var notifiesTurnEnds: Bool { defaults.bool(forKey: PreferenceKey.notifiesTurnEnds) }
+
+  static func key(_ level: Urgency, _ feedback: AttentionFeedback) -> String {
+    "drakar.attention.\(level.rawValue).\(feedback.rawValue)"
+  }
+
+  /// Everything is on but an offer, which only marks its row.
+  static func defaultValue(_ level: Urgency, _ feedback: AttentionFeedback) -> Bool {
+    level != .offer
+  }
+
+  static func isOn(_ level: Urgency, _ feedback: AttentionFeedback) -> Bool {
+    _ = AttentionDefaults.shared.revision
+    return defaults.object(forKey: key(level, feedback)) as? Bool ?? defaultValue(level, feedback)
+  }
+}
+
+/// Bumped whenever a default changes, and read by every `AttentionChoice` question:
+/// `UserDefaults` is not observable, and a switch flipped in the Attention pane has to
+/// redraw the rows and counts that read it.
+@Observable
+final class AttentionDefaults {
+  static let shared = AttentionDefaults()
+
+  private(set) var revision = 0
+  @ObservationIgnored private var observer: (any NSObjectProtocol)?
+
+  private init() {
+    observer = NotificationCenter.default.addObserver(
+      forName: UserDefaults.didChangeNotification, object: nil, queue: nil
+    ) { _ in
+      if Thread.isMainThread {
+        MainActor.assumeIsolated { AttentionDefaults.shared.revision += 1 }
+      } else {
+        Task { @MainActor in AttentionDefaults.shared.revision += 1 }
+      }
+    }
+  }
+}
+
 /// Where a terminal `claude` finds Drakar as its editor (`docs/claude-ide-bridge.md`).
 enum EditorScope: String, CaseIterable {
   /// The folders of Drakar's open session windows: the default, because a second editor
@@ -156,6 +214,7 @@ struct SettingsView: View {
       switch pane {
       case .general: GeneralPane()
       case .transcript: TranscriptPane()
+      case .attention: AttentionPane()
       case .about:
         AboutSettingsPane(app: Support.app, preferIssueTracker: Support.preferIssueTracker)
       }
@@ -168,7 +227,6 @@ struct SettingsView: View {
 
 struct GeneralPane: View {
   @AppStorage(PreferenceKey.editorScope) private var editorScope = EditorScope.openFolders
-  @AppStorage(PreferenceKey.notifiesTurnEnds) private var notifiesTurnEnds = false
 
   var body: some View {
     Form {
@@ -184,12 +242,6 @@ struct GeneralPane: View {
         Text(
           "Run `claude --ide` in one of these folders, or type /ide in a running session, and its edits open here for you to accept or reject. If VS Code has the same folder open, pick the editor with /ide."
         )
-      }
-      Section {
-        Toggle("Notify when a session finishes its turn", isOn: $notifiesTurnEnds)
-          .accessibilityIdentifier("settings.notifiesTurnEnds")
-      } footer: {
-        Text("Sessions that need a permission always notify while Drakar is in the background.")
       }
     }
     .formStyle(.grouped)
@@ -212,6 +264,83 @@ struct TranscriptPane: View {
       }
     }
     .formStyle(.grouped)
+  }
+}
+
+/// What wants the person, and how loudly: per level, whether it counts, badges, notifies.
+struct AttentionPane: View {
+  @AppStorage(PreferenceKey.recognisesAsks) private var recognisesAsks = true
+  @AppStorage(PreferenceKey.notifiesTurnEnds) private var notifiesTurnEnds = false
+
+  var body: some View {
+    Form {
+      Section {
+        Toggle("Recognise questions and offers at the end of a turn", isOn: $recognisesAsks)
+          .accessibilityIdentifier("settings.recognisesAsks")
+      } footer: {
+        Text(
+          "A reply that ends on a question, such as “Want me to build it that way?”, marks its session “Asked you”; one that ends on an offer marks it “Offered”. Either stays until you answer or dismiss it (⌥⌘D)."
+        )
+      }
+      Section {
+        Grid(alignment: .leading, horizontalSpacing: 18, verticalSpacing: 8) {
+          GridRow {
+            Text("")
+            Text("Counts").gridColumnAlignment(.center)
+            Text("Dock badge").gridColumnAlignment(.center)
+            Text("Notification").gridColumnAlignment(.center)
+          }
+          .font(.caption)
+          .foregroundStyle(.secondary)
+          ForEach(Urgency.allCases.reversed(), id: \.self) { level in
+            GridRow {
+              Text(level.title)
+              ForEach(AttentionFeedback.allCases, id: \.self) { feedback in
+                FeedbackToggle(level: level, feedback: feedback)
+                  .disabled(!recognisesAsks && (level == .question || level == .offer))
+              }
+            }
+          }
+          GridRow {
+            Text("Finished turn")
+            Text("")
+            Text("")
+            Toggle("", isOn: $notifiesTurnEnds)
+              .labelsHidden()
+              .accessibilityIdentifier("settings.notifiesTurnEnds")
+          }
+        }
+      } footer: {
+        Text(
+          "Counts puts the session in the sidebar's count and in Next Session Needing You (⌥⌘↓). Drakar notifies unless the session is the one you are looking at."
+        )
+      }
+    }
+    .formStyle(.grouped)
+    .onChange(of: recognisesAsks) { Attention.shared.refresh() }
+  }
+}
+
+/// One switch of the Attention grid, on its own key.
+private struct FeedbackToggle: View {
+  let level: Urgency
+  let feedback: AttentionFeedback
+  @AppStorage private var isOn: Bool
+
+  init(level: Urgency, feedback: AttentionFeedback) {
+    self.level = level
+    self.feedback = feedback
+    _isOn = AppStorage(
+      wrappedValue: AttentionChoice.defaultValue(level, feedback),
+      AttentionChoice.key(level, feedback))
+  }
+
+  var body: some View {
+    Toggle("", isOn: $isOn)
+      .labelsHidden()
+      .gridColumnAlignment(.center)
+      .onChange(of: isOn) { Attention.shared.refresh() }
+      .accessibilityIdentifier("settings.\(level.rawValue).\(feedback.rawValue)")
   }
 }
 

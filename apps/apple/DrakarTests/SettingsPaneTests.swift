@@ -19,7 +19,8 @@ struct SettingsPaneTests {
 
   /// Add a pane here when it is added to the enum; never rename one that has shipped.
   @Test func keepsPaneIdentifiersStable() {
-    #expect(SettingsPane.allCases.map(\.rawValue) == ["general", "transcript", "about"])
+    #expect(
+      SettingsPane.allCases.map(\.rawValue) == ["general", "transcript", "attention", "about"])
   }
 
   /// Nothing is sold yet, so every pane sits in the one ungrouped configuration

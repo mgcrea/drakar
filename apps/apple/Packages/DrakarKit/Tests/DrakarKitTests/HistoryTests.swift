@@ -71,6 +71,35 @@ struct HistoryTests {
     ])
     #expect(transcript.title == "Refined")
   }
+  /// A transcript has no `result`: a turn that ended says so on its message, block by block.
+  @Test func historyKnowsATurnThatEnded() {
+    let transcript = history([
+      #"{"type":"user","message":{"role":"user","content":"Build it"}}"#,
+      #"{"type":"assistant","message":{"id":"m1","stop_reason":"end_turn","content":[{"type":"thinking","thinking":""}]}}"#,
+      #"{"type":"assistant","message":{"id":"m1","stop_reason":"end_turn","content":[{"type":"text","text":"Built. Want me to commit it?"}]}}"#,
+    ])
+    #expect(transcript.turnEnd == .completed)
+    #expect(transcript.closingText?.messageID == "m1")
+    #expect(transcript.closingText?.text == "Built. Want me to commit it?")
+  }
+
+  @Test func historyWithoutAStopReasonDoesNotGuess() {
+    let transcript = history([
+      #"{"type":"user","message":{"role":"user","content":"Build it"}}"#,
+      #"{"type":"assistant","message":{"id":"m1","content":[{"type":"text","text":"Want me to commit it?"}]}}"#,
+    ])
+    #expect(transcript.closingText == nil)
+  }
+
+  @Test func anInterruptInHistoryHasNone() {
+    let transcript = history([
+      #"{"type":"user","message":{"role":"user","content":"Build it"}}"#,
+      #"{"type":"assistant","message":{"id":"m1","stop_reason":"end_turn","content":[{"type":"text","text":"Want me to commit it?"}]}}"#,
+      #"{"type":"user","message":{"role":"user","content":"[Request interrupted by user]"}}"#,
+    ])
+    #expect(transcript.closingText == nil)
+  }
+
 }
 
 @Suite("Listing sessions on disk")

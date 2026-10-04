@@ -29,6 +29,11 @@ enum Fixture: String {
   /// windows plan): init, an assistant line with usage, the result, and the replies to
   /// `get_context_usage` sent mid-turn and between turns.
   case contextUsage = "context-usage"
+  /// A hundred closing texts of real turns (Task 0 of the session-questions plan, 2026-10-04),
+  /// trimmed to their last three paragraphs and scrubbed, each labelled `question`, `offer`
+  /// or null with the sentence a row should show. Lines are `{"text", "kind", "shows"}`,
+  /// not stream messages.
+  case closingEndings = "closing-endings"
 
   var lines: [Data] {
     get throws {

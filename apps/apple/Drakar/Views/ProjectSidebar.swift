@@ -32,15 +32,18 @@ struct SessionListView: View {
   /// Read only to redraw the account badges when a pick or the Settings default changes.
   @AppStorage(PreferenceKey.accountForFolder) private var picks = ""
   @AppStorage(PreferenceKey.newSessionAccount) private var settingsAccount = ""
+  /// The list takes the arrow keys once one of the window's rows is clicked, as the native
+  /// selection did.
+  @FocusState private var isFocused: Bool
   private var monitor: SessionMonitor { .shared }
 
   private var groups: ProjectGroups {
     let folder = ProjectPath.normalize(project.folder.path(percentEncoded: false))
     let others = OpenSessions.shared.folders.filter { $0 != folder }
-    let attached = Set(project.sessions.compactMap(\.sessionID))
+    let attached = Set(project.held.compactMap(\.sessionID))
     let inOtherWindows = Set(
       OpenSessions.shared.projects.values.filter { $0 !== project }
-        .flatMap { $0.sessions.compactMap(\.sessionID) })
+        .flatMap { $0.held.compactMap(\.sessionID) })
     return ProjectSessions.group(
       monitor.summaries(under: folder), folder: folder, otherFolders: others,
       attached: attached, inOtherWindows: inOtherWindows, checkout: monitor.checkout(of:))
@@ -68,7 +71,7 @@ struct SessionListView: View {
           .foregroundStyle(.white)
           .padding(.horizontal, 5)
           .background(.blue, in: Capsule())
-          .help("Waiting for you: \(project.waitingCount)")
+          .help("Wants you: \(project.waitingCount)")
           .accessibilityLabel("\(project.waitingCount) waiting for you")
           .accessibilityIdentifier("sessions.waiting")
       }
@@ -81,14 +84,19 @@ struct SessionListView: View {
   }
 
   private var list: some View {
-    List(selection: selection) {
+    List {
       Section("This Window") {
-        ForEach(project.sessions) { item in
+        ForEach(project.held) { item in
           SessionRow(
             item: item, isSelected: item.id == project.selectedID,
             windowAccount: AccountStore.shared.windowAccount(for: project.folder)
           )
-          .tag(item.id)
+          .contentShape(Rectangle())
+          .onTapGesture {
+            project.select(item, focusingComposer: false)
+            isFocused = true
+          }
+          .selectionBorder(item.id == project.selectedID)
           .contextMenu { menu(for: item) }
           .accessibilityIdentifier("sessions.attached.\(item.sessionID ?? item.id.uuidString)")
         }
@@ -100,6 +108,7 @@ struct SessionListView: View {
             SummaryRow(summary: summary, host: monitor.host(of: summary), monitor: monitor)
               .contentShape(Rectangle())
               .onTapGesture { openElsewhere(summary) }
+              .selectionBorder(isWatched(summary))
               .accessibilityAddTraits(.isButton)
               .accessibilityIdentifier("sessions.elsewhere.\(summary.sessionID)")
           }
@@ -110,7 +119,8 @@ struct SessionListView: View {
           ForEach(showsAllEnded ? groups.ended : Array(groups.ended.prefix(20))) { summary in
             SummaryRow(summary: summary, host: nil, monitor: monitor)
               .contentShape(Rectangle())
-              .onTapGesture { if let target = ResumeTarget(summary) { project.attach(target) } }
+              .selectionBorder(isWatched(summary))
+              .onTapGesture { openEnded(summary) }
               .accessibilityAddTraits(.isButton)
               .accessibilityIdentifier("sessions.ended.\(summary.sessionID)")
           }
@@ -124,7 +134,38 @@ struct SessionListView: View {
       }
     }
     .listStyle(.sidebar)
+    .focusable()
+    .focused($isFocused)
+    .focusEffectDisabled()
+    .onKeyPress(.downArrow) { move(1) }
+    .onKeyPress(.upArrow) { move(-1) }
     .accessibilityIdentifier("sessions")
+  }
+
+  /// The row above or below the selected one, in the list's order, shown as a click shows
+  /// it. A session open in another Drakar window is passed over: showing it would leave
+  /// this one.
+  private func move(_ step: Int) -> KeyPress.Result {
+    let groups = groups
+    var rows: [(isSelected: Bool, show: () -> Void)] = project.held.map { item in
+      (item.id == project.selectedID, { project.select(item, focusingComposer: false) })
+    }
+    for summary in groups.elsewhere where OpenSessions.shared.locate(summary.sessionID) == nil {
+      rows.append((isWatched(summary), { openElsewhere(summary) }))
+    }
+    if showsEnded {
+      for summary in showsAllEnded ? groups.ended : Array(groups.ended.prefix(20)) {
+        rows.append((isWatched(summary), { openEnded(summary) }))
+      }
+    }
+    guard !rows.isEmpty else { return .ignored }
+    let index = rows.firstIndex(where: \.isSelected).map { $0 + step } ?? 0
+    rows[min(max(index, 0), rows.count - 1)].show()
+    return .handled
+  }
+
+  private func openEnded(_ summary: SessionSummary) {
+    if let target = ResumeTarget(summary) { project.attach(target, watching: true) }
   }
 
   private func openElsewhere(_ summary: SessionSummary) {
@@ -132,19 +173,23 @@ struct SessionListView: View {
       owner.select(item)
       owner.workspace.window?.makeKeyAndOrderFront(nil)
     } else if let target = ResumeTarget(summary) {
-      project.attach(target, readOnly: true)
+      project.attach(target, watching: true, readOnly: true)
     }
   }
 
-  private var selection: Binding<ProjectSession.ID?> {
-    Binding(
-      get: { project.selectedID },
-      set: { id in
-        if let item = project.sessions.first(where: { $0.id == id }) { project.select(item) }
-      })
+  /// Whether the selected row is watching `summary` here, so the list shows it selected.
+  private func isWatched(_ summary: SessionSummary) -> Bool {
+    guard let item = project.session(withID: summary.sessionID), item.isWatching else {
+      return false
+    }
+    return item.id == project.selectedID
   }
 
   @ViewBuilder private func menu(for item: ProjectSession) -> some View {
+    if item.closingAsk != nil {
+      Button("Dismiss") { project.dismissAsk(item) }
+      Divider()
+    }
     if item.session.isProcessRunning {
       Button("End Session") { confirmIfRunning(item) { project.end(item) } }
     }
@@ -167,6 +212,18 @@ struct SessionListView: View {
   }
 }
 
+extension View {
+  /// The selected row's outline, in place of the list's filled highlight, and its trait.
+  fileprivate func selectionBorder(_ isSelected: Bool) -> some View {
+    listRowBackground(
+      isSelected
+        ? RoundedRectangle(cornerRadius: 5).strokeBorder(Color.accentColor, lineWidth: 1.5)
+          .padding(.horizontal, 8) : nil
+    )
+    .accessibilityAddTraits(isSelected ? .isSelected : [])
+  }
+}
+
 /// One attached session: what it is doing, and its title.
 struct SessionRow: View {
   let item: ProjectSession
@@ -176,10 +233,7 @@ struct SessionRow: View {
 
   var body: some View {
     HStack(alignment: .firstTextBaseline, spacing: 7) {
-      Circle()
-        .fill(state.tint)
-        .frame(width: 7, height: 7)
-        .help(state.label)
+      StateDot(state: state)
       VStack(alignment: .leading, spacing: 2) {
         HStack(spacing: 4) {
           Text(item.displayTitle)
@@ -224,7 +278,7 @@ struct SessionRow: View {
 
   private var detail: String? {
     var parts: [String] = []
-    if let lead = item.waitingFor ?? item.stopReason { parts.append(lead) }
+    if let lead = item.wants ?? item.stopReason { parts.append(lead) }
     if let when = item.lastActivity {
       parts.append(when.formatted(.relative(presentation: .named)))
     }
@@ -250,7 +304,7 @@ struct SummaryRow: View {
   var body: some View {
     HStack(alignment: .firstTextBaseline, spacing: 7) {
       if host != nil {
-        Circle().fill(state.tint).frame(width: 7, height: 7).help(state.label)
+        StateDot(state: state)
       }
       VStack(alignment: .leading, spacing: 2) {
         Text(summary.displayTitle).lineLimit(1)
@@ -303,13 +357,20 @@ struct SummaryRow: View {
 
 /// A row's state, in Claude Code's words and Armada's colours.
 enum RowState {
-  case working, runningTool, waiting, idle, notStarted, stopped, ended, elsewhere
+  case working, runningTool, waiting, choosing, asked, offered, idle, notStarted, stopped, ended,
+    elsewhere
 
   /// What an attached session is doing.
   init(_ item: ProjectSession) {
     let session = item.session
-    if item.waitingFor != nil {
-      self = .waiting
+    if let urgency = item.urgency {
+      self =
+        switch urgency {
+        case .permission: .waiting
+        case .choice: .choosing
+        case .question: .asked
+        case .offer: .offered
+        }
     } else if session.transcript.isRunning {
       self = .working
     } else if item.hasStopped {
@@ -330,6 +391,9 @@ enum RowState {
     case .working: String(localized: "Working")
     case .runningTool: String(localized: "Probably running a tool")
     case .waiting: String(localized: "Waiting for you")
+    case .choosing: String(localized: "Asks you to choose")
+    case .asked: String(localized: "Asked you")
+    case .offered: String(localized: "Offered")
     case .idle: String(localized: "Idle")
     case .notStarted: String(localized: "Not started")
     case .stopped: String(localized: "Stopped")
@@ -342,9 +406,27 @@ enum RowState {
     switch self {
     case .working: .green
     case .runningTool: .orange
-    case .waiting: .blue
+    case .waiting, .choosing, .asked: .blue
     case .stopped: .red
-    case .idle, .notStarted, .ended, .elsewhere: .secondary
+    case .offered, .idle, .notStarted, .ended, .elsewhere: .secondary
     }
+  }
+}
+
+/// A row's state as a dot: filled, or a ring for what a finished turn asked, so that a
+/// blocked tool and a question read apart at a glance. Same size either way.
+struct StateDot: View {
+  let state: RowState
+
+  var body: some View {
+    Group {
+      if state == .asked || state == .offered {
+        Circle().strokeBorder(state.tint, lineWidth: 1.5)
+      } else {
+        Circle().fill(state.tint)
+      }
+    }
+    .frame(width: 7, height: 7)
+    .help(state.label)
   }
 }

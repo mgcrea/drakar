@@ -142,7 +142,8 @@ struct ProjectStatsTests {
         LiveSession(pid: 1, sessionID: "a", status: "busy", cwd: "/w/drakar"),
         LiveSession(pid: 1, sessionID: "a", status: "busy", cwd: "/w/drakar"),
         LiveSession(pid: 2, sessionID: "b", status: "waiting", cwd: "/w/drakar/apps"),
-        LiveSession(pid: 3, sessionID: "c", status: "idle", cwd: "/w/drakar",
+        LiveSession(
+          pid: 3, sessionID: "c", status: "idle", cwd: "/w/drakar",
           updatedAt: now),
         LiveSession(pid: 4, sessionID: "d", status: "busy", cwd: "/w/other"),
       ])
@@ -255,7 +256,8 @@ struct TrackedProjectsTests {
     tracked.track("/w/new", at: Date(timeIntervalSinceReferenceDate: 200))
     var busy = ProjectStats()
     busy.lastActivity = Date(timeIntervalSinceReferenceDate: 100)
-    #expect(tracked.ordered(by: ["/w/busy": busy]).map(\.path) == ["/w/new", "/w/busy", "/w/quiet"])
+    #expect(
+      tracked.ordered(by: ["/w/busy": busy]).map(\.path) == ["/w/new", "/w/busy", "/w/quiet"])
   }
 }
 

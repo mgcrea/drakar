@@ -93,7 +93,9 @@ struct HomeView: View {
       if !projects.isEmpty {
         Section("Projects") {
           ForEach(projects) { entry in
-            Button { enter(entry.url) } label: {
+            Button {
+              enter(entry.url)
+            } label: {
               ProjectRow(
                 entry: entry, stats: stats[entry.path] ?? ProjectStats(),
                 own: own[entry.path] ?? (0, 0), isOpen: openFolders.contains(entry.path))

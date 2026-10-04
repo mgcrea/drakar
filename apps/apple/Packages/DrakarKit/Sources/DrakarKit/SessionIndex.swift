@@ -88,6 +88,10 @@ public struct SessionSummary: Sendable, Hashable, Identifiable {
   /// The newest turn is a tool call nobody answered (`TranscriptTail.isAwaitingToolResult`),
   /// read with the rest so a list never reads the file again to draw a row.
   public var awaitsToolResult = false
+  /// What the newest turn ended on (`ClosingAsk`), while nothing was sent after it, and the
+  /// id of the message that asked it.
+  public var closingAsk: ClosingAsk?
+  public var closingMessageID: String?
 
   /// The transcript's path, not the session id: one id can have a transcript under two
   /// accounts, when a session was resumed after switching `CLAUDE_CONFIG_DIR`.
@@ -191,6 +195,10 @@ public enum SessionIndex {
     summary.context = tail.newestReading
     summary.modelID = tail.newestModelID
     summary.awaitsToolResult = tail.isAwaitingToolResult
+    if let closing = tail.closingText, let ask = ClosingAsk.detect(closing.text) {
+      summary.closingAsk = ask
+      summary.closingMessageID = closing.messageID
+    }
     return summary
   }
 

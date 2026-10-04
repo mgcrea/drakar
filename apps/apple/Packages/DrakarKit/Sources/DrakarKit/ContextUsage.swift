@@ -122,6 +122,48 @@ public struct TranscriptTail: Sendable {
     return false
   }
 
+  /// The text the newest main-thread turn ended on, when its last message ended the turn
+  /// (`end_turn`) and nothing was sent after it: what a row whose history is not read
+  /// shows its ask from. Every block of a message is its own line, newest first here.
+  public var closingText: ClosingText? {
+    var messageID: String?
+    var parts: [String] = []
+    for line in newestFirst {
+      guard let json = try? JSONValue.parse(line), json["isSidechain"]?.boolValue != true
+      else { continue }
+      switch json["type"]?.stringValue {
+      case "user":
+        if json["isMeta"]?.boolValue == true { continue }
+        // Newer than any assistant line: the person answered, or interrupted.
+        guard messageID != nil else { return nil }
+        return Self.closing(messageID, parts)
+      case "assistant":
+        guard let message = json["message"], let id = message["id"]?.stringValue else {
+          continue
+        }
+        if let messageID, id != messageID { return Self.closing(messageID, parts) }
+        if messageID == nil {
+          guard message["stop_reason"]?.stringValue == "end_turn",
+            message["model"]?.stringValue != Self.syntheticModel
+          else { return nil }
+          messageID = id
+        }
+        for block in (message["content"]?.arrayValue ?? []).reversed()
+        where block["type"]?.stringValue == "text" {
+          if let text = block["text"]?.stringValue { parts.insert(text, at: 0) }
+        }
+      default: continue
+      }
+    }
+    return Self.closing(messageID, parts)
+  }
+
+  private static func closing(_ messageID: String?, _ parts: [String]) -> ClosingText? {
+    let text = parts.joined(separator: "\n\n").trimmingCharacters(in: .whitespacesAndNewlines)
+    guard let messageID, !text.isEmpty else { return nil }
+    return ClosingText(messageID: messageID, text: text)
+  }
+
   /// `message.model` of a turn the CLI wrote itself rather than the API answered ("You've
   /// hit your session limit", an API error), with all-zero usage: never a context reading.
   public static let syntheticModel = "<synthetic>"

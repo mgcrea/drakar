@@ -135,8 +135,7 @@ public struct ProjectStats: Sendable, Equatable {
       case "waiting": stats[owner]?.waiting += 1
       default: break
       }
-      if let updated = session.updatedAt, stats[owner]?.lastActivity.map({ updated > $0 }) ?? true
-      {
+      if let updated = session.updatedAt, stats[owner]?.lastActivity.map({ updated > $0 }) ?? true {
         stats[owner]?.lastActivity = updated
       }
     }
@@ -156,7 +155,8 @@ public struct FolderSuggestion: Sendable, Equatable, Identifiable {
 public enum FolderSuggestions {
   /// Folders no project should be: the home folder and the root.
   public static let defaultExcluded: Set<String> = [
-    ProjectPath.normalize(FileManager.default.homeDirectoryForCurrentUser.path(percentEncoded: false)),
+    ProjectPath.normalize(
+      FileManager.default.homeDirectoryForCurrentUser.path(percentEncoded: false)),
     "/",
   ]
 
@@ -189,7 +189,9 @@ public enum FolderSuggestions {
       if let hiddenAt = hidden[path], hiddenAt >= date { return nil }
       return FolderSuggestion(path: path, lastActivity: date, sessionCount: ids[path]?.count ?? 0)
     }
-    .sorted { $0.lastActivity == $1.lastActivity ? $0.path < $1.path : $0.lastActivity > $1.lastActivity }
+    .sorted {
+      $0.lastActivity == $1.lastActivity ? $0.path < $1.path : $0.lastActivity > $1.lastActivity
+    }
   }
 }
 

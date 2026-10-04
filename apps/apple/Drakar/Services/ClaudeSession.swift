@@ -60,6 +60,8 @@ final class ClaudeSession {
   /// The number of waiting permission requests changed: asked, answered, cancelled, or gone
   /// with the process.
   @ObservationIgnored var onPermissionsChanged: (() -> Void)?
+  /// A prompt was sent: whatever the last turn asked is answered.
+  @ObservationIgnored var onPromptSent: (() -> Void)?
 
   @ObservationIgnored private var process: AgentProcess?
   @ObservationIgnored private var events: Task<Void, Never>?
@@ -152,6 +154,7 @@ final class ClaudeSession {
     guard canSend, !text.isEmpty else { return }
     let label = context.isEmpty ? nil : context.map(\.label).joined(separator: ", ")
     transcript.addPrompt(text, context: label)
+    onPromptSent?()
     if isLoadingHistory { promptsDuringLoad.append((text, label)) }
     let message = ClientMessage.prompt(text, context: context.map(\.promptContext))
     if process == nil {

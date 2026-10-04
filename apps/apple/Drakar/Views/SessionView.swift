@@ -27,18 +27,24 @@ struct SessionView: View {
           context: workspace.selection, pinned: workspace.pinned,
           unpin: { selection in workspace.pinned.removeAll { $0 == selection } },
           send: { text, context in
+            project.takeOver(item)
             session.send(text, context: context)
             workspace.pinned = []
           },
           stop: session.interrupt,
-          sessionFolder: session.folder, projectFolder: project.folder)
+          sessionFolder: session.folder, projectFolder: project.folder,
+          takesFocus: project.focusesComposer)
       }
       let _ = (picks, settingsAccount)
       SessionFooter(
         session: session, windowAccount: AccountStore.shared.windowAccount(for: project.folder))
     }
     .sheet(item: pendingPermission) { pending in
-      PermissionSheet(pending: pending) { decision in session.answer(pending, decision) }
+      if pending.request.isChoice {
+        ChoiceSheet(pending: pending) { decision in session.answer(pending, decision) }
+      } else {
+        PermissionSheet(pending: pending) { decision in session.answer(pending, decision) }
+      }
     }
     .environment(\.sessionFolder, session.folder)
     .environment(\.openInEditor, OpenInEditorAction(workspace: workspace))

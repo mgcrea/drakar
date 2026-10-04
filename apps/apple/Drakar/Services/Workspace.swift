@@ -359,17 +359,21 @@ extension FocusedValues {
   @Entry var project: Project?
   /// Whether the focused window's files are folded away, for View › Hide Files.
   @Entry var filesCollapsed: Binding<Bool>?
+  /// Closes the focused window's project and shows home there, for File › Close Project.
+  @Entry var closeProject: (() -> Void)?
 }
 
 /// The question before a close or a quit stops sessions mid-turn.
 enum RunningSessions {
-  /// What stops them: closing a window, or quitting the app.
-  enum Action { case close, quit }
+  /// What stops them: closing a window, closing its project to go back to home, or
+  /// quitting the app.
+  enum Action { case close, closeProject, quit }
 
   static func note(count: Int, action: Action = .close) -> String {
     switch (action, count == 1) {
-    case (.close, true): String(localized: "A session is still working. Closing stops it.")
-    case (.close, false):
+    case (.close, true), (.closeProject, true):
+      String(localized: "A session is still working. Closing stops it.")
+    case (.close, false), (.closeProject, false):
       String(localized: "\(count) sessions are still working. Closing stops them.")
     case (.quit, true): String(localized: "A session is still working. Quitting stops it.")
     case (.quit, false):
@@ -380,12 +384,19 @@ enum RunningSessions {
   static func alert(count: Int, action: Action = .close) -> NSAlert {
     let alert = NSAlert()
     alert.messageText =
-      action == .quit
-      ? String(localized: "Quit while sessions are working?")
-      : String(localized: "Close while sessions are working?")
+      switch action {
+      case .quit: String(localized: "Quit while sessions are working?")
+      case .close: String(localized: "Close while sessions are working?")
+      case .closeProject: String(localized: "Close the project while sessions are working?")
+      }
     alert.informativeText = note(count: count, action: action)
-    alert.addButton(
-      withTitle: action == .quit ? String(localized: "Quit") : String(localized: "Close"))
+    let button =
+      switch action {
+      case .quit: String(localized: "Quit")
+      case .close: String(localized: "Close")
+      case .closeProject: String(localized: "Close Project")
+      }
+    alert.addButton(withTitle: button)
     alert.addButton(withTitle: String(localized: "Cancel"))
     return alert
   }
@@ -426,10 +437,17 @@ final class WindowCloseGuard: NSObject, NSWindowDelegate {
   /// ever asked on the main thread, where window delegates are messaged.
   nonisolated(unsafe) private weak var original: NSWindowDelegate?
   private weak var workspace: Workspace?
-  private let running: () -> Int
+  private var running: () -> Int
 
+  /// Guards `window` for `workspace`. A window that went back to home and opened another
+  /// project keeps its guard, which takes the new project's workspace.
   static func install(on window: NSWindow, for workspace: Workspace, running: @escaping () -> Int) {
-    guard !(window.delegate is WindowCloseGuard) else { return }
+    if let existing = window.delegate as? WindowCloseGuard {
+      existing.workspace = workspace
+      existing.running = running
+      workspace.closeGuard = existing
+      return
+    }
     let closeGuard = WindowCloseGuard(
       original: window.delegate, workspace: workspace, running: running)
     workspace.closeGuard = closeGuard

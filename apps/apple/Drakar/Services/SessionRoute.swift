@@ -98,9 +98,13 @@ final class OpenSessions {
         projects.values.map { ProjectPath.normalize($0.folder.path(percentEncoded: false)) }))
   }
 
+  /// The window holding `sessionID` as one of its own rows; one only watching it does not
+  /// count.
   func locate(_ sessionID: String) -> (Project, ProjectSession)? {
     for project in projects.values {
-      if let session = project.session(withID: sessionID) { return (project, session) }
+      if let session = project.session(withID: sessionID), !session.isWatching {
+        return (project, session)
+      }
     }
     return nil
   }
@@ -129,12 +133,15 @@ final class OpenSessions {
   }
 
   /// A transcript changed on disk: a read-only session following it catches up, and its
-  /// row takes the new summary (its last activity; its title and gauge until its history
-  /// is read).
+  /// rows, in every window holding or watching it, take the new summary (its last activity;
+  /// its title and gauge until its history is read).
   func transcriptWritten(_ summary: SessionSummary) {
-    guard let (_, item) = locate(summary.sessionID) else { return }
-    item.session.catchUp()
-    item.preview = summary
+    for project in projects.values {
+      guard let item = project.session(withID: summary.sessionID) else { continue }
+      item.session.catchUp()
+      item.preview = summary
+    }
+    Attention.shared.refresh()
   }
 
   /// The ids live in other processes now. A session listed here that another process has
@@ -152,6 +159,7 @@ final class OpenSessions {
         }
       }
     }
+    Attention.shared.refresh()
   }
 
   /// Sessions mid-turn across every window, for the quit question.

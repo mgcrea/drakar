@@ -87,6 +87,31 @@ Drakar sends the same (`EditorSelection.promptContext`). Verified on 2026-10-03 
 editor?" got `main.swift`; without the block the model says it cannot know. The transcript
 keeps both blocks, and history shows them as a label on the prompt.
 
+## AskUserQuestion (verified 2026-10-04, 2.1.288)
+
+The tool asks for permission like any other, as a `can_use_tool` request, with one field
+more:
+
+```jsonc
+{"type":"control_request","request_id":"…","request":{"subtype":"can_use_tool",
+ "tool_name":"AskUserQuestion","display_name":"AskUserQuestion",
+ "input":{"questions":[{"question":"Which filename would you prefer?","header":"Filename",
+   "options":[{"label":"a.txt","description":"Name the file a.txt"},
+              {"label":"b.txt","description":"Name the file b.txt"}],
+   "multiSelect":false}]},
+ "tool_use_id":"toolu_…","requires_user_interaction":true}}
+```
+
+- **The answer rides in `updatedInput`**: `allow` with the request's `input` plus
+  `"answers": {"<question text>": "<chosen label>"}`. The tool result the model gets is
+  `Your questions have been answered: "Which filename would you prefer?"="a.txt". You can
+  now continue with these answers in mind.`, and it went on with `a.txt`.
+- **A plain `allow`** (the input unchanged) gives the model `The user did not answer the
+  questions.`, and it gives up. So a sheet that only offers Allow and Deny cannot answer one:
+  the options have to be shown and the picked label sent back.
+- **Closing stdin while the request is pending** fails the call with
+  `Tool permission request failed: AbortError: Stream closed`.
+
 ## Interrupting (verified 2026-10-03)
 
 ```jsonc
