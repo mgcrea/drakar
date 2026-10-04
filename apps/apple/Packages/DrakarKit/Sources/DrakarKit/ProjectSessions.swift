@@ -2,7 +2,7 @@ import Foundation
 
 /// A project window's sidebar, below the sessions it holds: those live elsewhere, and
 /// those that ended.
-public struct ProjectGroups: Sendable {
+public struct ProjectGroups: Sendable, Equatable {
   /// Live in a terminal, VS Code or another Drakar window: newest activity first.
   public var elsewhere: [SessionSummary]
   /// Newest first.
@@ -36,7 +36,11 @@ public enum ProjectSessions {
     }
     let activity = { (summary: SessionSummary) in summary.live?.updatedAt ?? summary.modified }
     return ProjectGroups(
-      elsewhere: newest.values.filter(isElsewhere).sorted { activity($0) > activity($1) },
-      ended: newest.values.filter { !isElsewhere($0) }.sorted { $0.modified > $1.modified })
+      elsewhere: newest.values.filter(isElsewhere).sorted { a, b in
+        activity(a) == activity(b) ? a.sessionID < b.sessionID : activity(a) > activity(b)
+      },
+      ended: newest.values.filter { !isElsewhere($0) }.sorted { a, b in
+        a.modified == b.modified ? a.sessionID < b.sessionID : a.modified > b.modified
+      })
   }
 }

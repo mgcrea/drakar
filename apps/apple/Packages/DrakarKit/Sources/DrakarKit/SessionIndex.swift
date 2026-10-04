@@ -53,7 +53,7 @@ public struct ClaudeAccount: Sendable, Hashable {
 }
 
 /// One session on disk, read enough to list it.
-public struct SessionSummary: Sendable, Identifiable {
+public struct SessionSummary: Sendable, Hashable, Identifiable {
   public var sessionID: String
   public var account: ClaudeAccount
   public var file: URL
