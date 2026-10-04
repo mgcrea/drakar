@@ -355,6 +355,8 @@ final class EditorDocument: Identifiable {
 extension FocusedValues {
   /// The focused window's workspace, for Save.
   @Entry var workspace: Workspace?
+  /// The focused window's project, for the Session menu.
+  @Entry var project: Project?
 }
 
 /// "Save changes?" for one window's unsaved tabs, or every window's at quit.

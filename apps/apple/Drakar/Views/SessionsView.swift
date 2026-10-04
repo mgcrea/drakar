@@ -5,7 +5,9 @@ import UniformTypeIdentifiers
 /// Every session on the Mac, newest first, across every Claude Code account: the ones the
 /// extension and the terminal started too, since they all write the same transcripts.
 struct SessionsView: View {
-  let open: (SessionRoute) -> Void
+  /// A session picked: `forking` when it is open in another process.
+  let pick: (SessionSummary, Bool) -> Void
+  let openFolder: (URL) -> Void
 
   @State private var sessions: [SessionSummary] = []
   @State private var isLoading = true
@@ -13,7 +15,6 @@ struct SessionsView: View {
   @State private var choosingFolder = false
   /// A session open in another process, waiting for the choice to fork it.
   @State private var openElsewhere: SessionSummary?
-  @Environment(\.openWindow) private var openWindow
 
   var body: some View {
     VStack(spacing: 0) {
@@ -29,9 +30,9 @@ struct SessionsView: View {
             query.isEmpty ? "Open a folder to start one." : "Try another word."))
       } else {
         List(filtered) { summary in
-          SessionRow(
+          SummaryRow(
             summary: summary, showsAccount: showsAccounts,
-            isOpenHere: OpenSessions.shared.routes[summary.sessionID] != nil
+            isOpenHere: OpenSessions.shared.locate(summary.sessionID) != nil
           )
           .contentShape(Rectangle())
           .onTapGesture(count: 2) { resume(summary) }
@@ -47,7 +48,7 @@ struct SessionsView: View {
     }
     .searchable(text: $query, placement: .toolbar, prompt: "Search sessions")
     .fileImporter(isPresented: $choosingFolder, allowedContentTypes: [.folder]) { result in
-      if case .success(let folder) = result { open(.new(folder: folder)) }
+      if case .success(let folder) = result { openFolder(folder) }
     }
     .task { await load() }
     .confirmationDialog(
@@ -55,10 +56,8 @@ struct SessionsView: View {
       isPresented: Binding(get: { openElsewhere != nil }, set: { if !$0 { openElsewhere = nil } }),
       presenting: openElsewhere
     ) { summary in
-      Button("Fork a Copy") {
-        if let route = SessionRoute.resume(summary, forking: true) { open(route) }
-      }
-      .accessibilityIdentifier("sessions.fork")
+      Button("Fork a Copy") { pick(summary, true) }
+        .accessibilityIdentifier("sessions.fork")
       Button("Cancel", role: .cancel) {}
     } message: { _ in
       Text(
@@ -112,17 +111,12 @@ struct SessionsView: View {
 
   @ViewBuilder private func menu(for summary: SessionSummary) -> some View {
     Button("Resume") { resume(summary) }
-    if summary.live == nil, let route = SessionRoute.resume(summary) {
-      Button("Resume in New Window") { openWindow(value: route) }
-    }
-    if summary.live != nil, OpenSessions.shared.routes[summary.sessionID] == nil,
-      let route = SessionRoute.resume(summary, forking: true)
-    {
-      Button("Fork a Copy") { open(route) }
+    if summary.live != nil, OpenSessions.shared.locate(summary.sessionID) == nil {
+      Button("Fork a Copy") { pick(summary, true) }
     }
     if let cwd = summary.cwd {
       Button("New Session in \(URL(filePath: cwd).lastPathComponent)") {
-        open(.new(folder: URL(filePath: cwd, directoryHint: .isDirectory)))
+        openFolder(URL(filePath: cwd, directoryHint: .isDirectory))
       }
     }
     Divider()
@@ -134,12 +128,10 @@ struct SessionsView: View {
   /// In this window, unless it is open already: in another Drakar window, that window
   /// comes forward; anywhere else, the choice is a fork or nothing.
   private func resume(_ summary: SessionSummary) {
-    if let route = OpenSessions.shared.routes[summary.sessionID] {
-      openWindow(value: route)
-    } else if summary.live != nil {
+    if OpenSessions.shared.locate(summary.sessionID) != nil || summary.live == nil {
+      pick(summary, false)
+    } else {
       openElsewhere = summary
-    } else if let route = SessionRoute.resume(summary) {
-      open(route)
     }
   }
 
@@ -156,7 +148,7 @@ struct SessionsView: View {
   }
 }
 
-private struct SessionRow: View {
+private struct SummaryRow: View {
   let summary: SessionSummary
   let showsAccount: Bool
   let isOpenHere: Bool

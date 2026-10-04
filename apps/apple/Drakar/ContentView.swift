@@ -2,34 +2,43 @@ import AppKit
 import DrakarKit
 import SwiftUI
 
-/// A window: the session list until a route is chosen, then that session beside its
-/// folder's files and the editor.
+/// A window: the session picker until a project is chosen, then the project's sessions
+/// over its files in the sidebar, the editor, and the selected session.
 struct ContentView: View {
-  @Binding var route: SessionRoute?
-  @State private var session: ClaudeSession?
-  @State private var workspace: Workspace?
-  /// Names this window to `OpenSessions`, which keeps each window's folder.
+  @Binding var route: WindowRoute?
+  @State private var project: Project?
+  /// Names this window to `OpenSessions`.
   @State private var windowID = UUID()
   @Environment(\.appearsActive) private var appearsActive
+  @Environment(\.openWindow) private var openWindow
+  @Environment(\.dismissWindow) private var dismissWindow
   /// The editor's share of the window beside the session, kept per window.
   @SceneStorage("drakar.editorFraction") private var editorFraction = 0.5
   /// Whether this window floats above other apps' windows, kept per window.
   @SceneStorage("drakar.keepsOnTop") private var keepsOnTop = false
+  /// The attached sessions and the one shown, as JSON (`StoredProject`).
+  @SceneStorage("drakar.project") private var storedProject = ""
 
   var body: some View {
     Group {
-      if let session, let workspace {
+      if let project {
+        let workspace = project.workspace
         NavigationSplitView {
-          FileTreeView(workspace: workspace)
-            .navigationSplitViewColumnWidth(220)
+          ProjectSidebar(project: project)
+            .navigationSplitViewColumnWidth(min: 200, ideal: 240)
         } detail: {
-          // The editor appears with the first open file. The session's view must survive
-          // it appearing, which is why the session is stopped by this window closing and
-          // not by its own view going away.
           SplitPanes(fraction: $editorFraction, showsLeading: !workspace.documents.isEmpty) {
             EditorView(workspace: workspace)
           } trailing: {
-            SessionView(session: session, workspace: workspace)
+            if let item = project.selected {
+              SessionView(item: item, project: project).id(item.id)
+            } else {
+              ContentUnavailableView {
+                Label("No session", systemImage: "bubble.left.and.text.bubble.right")
+              } actions: {
+                Button("New Session") { project.newSession() }
+              }
+            }
           }
         }
         .background(
@@ -38,21 +47,28 @@ struct ContentView: View {
             WindowCloseGuard.install(on: window, for: workspace)
           }
         )
-        // The dot in the close button, as in every document window.
         .onChange(of: workspace.unsavedDocuments.isEmpty, initial: true) { _, clean in
           workspace.window?.isDocumentEdited = !clean
         }
         .focusedSceneValue(\.workspace, workspace)
+        .focusedSceneValue(\.project, project)
         .sheet(isPresented: quickOpenShown(workspace)) { QuickOpenView(workspace: workspace) }
         .sheet(isPresented: searchShown(workspace)) { ProjectSearchView(workspace: workspace) }
         .onChange(of: appearsActive, initial: true) { _, active in
           if active { workspace.becameActive() }
         }
+        .onChange(of: project.stored, initial: true) { _, stored in
+          storedProject = (try? String(decoding: JSONEncoder().encode(stored), as: UTF8.self)) ?? ""
+        }
       } else {
-        SessionsView { route = $0 }
+        SessionsView(
+          pick: pick,
+          openFolder: { folder in
+            show(.project(folder), attaching: [])
+          })
       }
     }
-    .frame(minWidth: 560, minHeight: 440)
+    .frame(minWidth: 680, minHeight: 440)
     .toolbar {
       ToolbarItem(placement: .primaryAction) {
         Toggle(isOn: $keepsOnTop) {
@@ -65,37 +81,17 @@ struct ContentView: View {
     }
     .background(WindowLevel(floats: keepsOnTop))
     .navigationTitle(windowTitle)
-    // Short, because the title bar does not truncate it: a long path widened the detail
-    // column past the window and pushed the sidebar off its leading edge.
-    .navigationSubtitle(session.map { Self.shortened($0.folder) } ?? "")
-    .onChange(of: route, initial: true) { show(route) }
-    // A new session becomes a resumable one once it has an id and a transcript, so that
-    // reopening the app resumes it instead of starting over in its folder.
-    .onChange(of: session?.sessionID) { promoteToResume() }
-    .onChange(of: registration, initial: true) { old, new in
-      if let id = old?.id { OpenSessions.shared.unregister(id) }
-      if let new { OpenSessions.shared.register(new.route, for: new.id) }
-    }
-    .onChange(of: session?.folder, initial: true) { _, folder in
-      OpenSessions.shared.setFolder(folder, forWindow: windowID)
-    }
+    .navigationSubtitle(project?.selected?.displayTitle ?? "")
+    .onChange(of: route, initial: true) { open(route) }
     .onDisappear {
-      session?.stop()
-      if let id = registration?.id { OpenSessions.shared.unregister(id) }
-      OpenSessions.shared.setFolder(nil, forWindow: windowID)
+      project?.stopAll()
+      OpenSessions.shared.unregister(window: windowID)
     }
     .task { openFromLaunchArguments() }
   }
 
-  /// What this window tells `OpenSessions`: its session's id and the route it holds.
-  private var registration: Registration? {
-    guard let route, let id = session?.sessionID else { return nil }
-    return Registration(id: id, route: route)
-  }
-
-  private struct Registration: Equatable {
-    var id: String
-    var route: SessionRoute
+  private var windowTitle: String {
+    project.map { Self.shortened($0.folder) } ?? "Drakar"
   }
 
   private func quickOpenShown(_ workspace: Workspace) -> Binding<Bool> {
@@ -106,59 +102,51 @@ struct ContentView: View {
     Binding(get: { workspace.isSearchShown }, set: { workspace.isSearchShown = $0 })
   }
 
-  private var windowTitle: String {
-    guard let session else { return "Drakar" }
-    return session.title ?? session.folder.lastPathComponent
-  }
-
-  private func show(_ route: SessionRoute?) {
-    guard let route else { return }
-    // Already showing it: the route moved from new to resume for the same session.
-    if let session, let id = route.sessionID, session.sessionID == id { return }
-    let target: ResumeTarget? =
-      if case .resume(let target) = route { target } else { nil }
-    start(ClaudeSession(folder: route.folder, resuming: target))
-  }
-
-  private func start(_ session: ClaudeSession, command: ClaudeCommand = ClaudeCommand()) {
-    self.session?.stop()
-    self.session = session
-    if workspace?.folder != session.folder { workspace = Workspace(folder: session.folder) }
-    session.command = command
-    Task { await session.spawn() }
-  }
-
-  /// The transcript lands under whichever account the shell selected; look for it in
-  /// each. It exists from the first prompt on, which is when `system/init` gave the id.
-  private func promoteToResume() {
-    guard let route, let session, let id = session.sessionID else { return }
-    // A new session, or a fork that now has its own id: either way the route still names
-    // something else, and reopening the app would start it over or fork it again.
-    switch route {
-    case .new: break
-    case .resume(let target) where target.forks == true && target.sessionID != id: break
-    case .resume: return
+  /// The project for `route`, restored from scene storage the first time.
+  private func open(_ route: WindowRoute?) {
+    guard let folder = route?.folder else { return }
+    if project?.folder.standardizedFileURL != folder.standardizedFileURL {
+      let stored = try? JSONDecoder().decode(StoredProject.self, from: Data(storedProject.utf8))
+      let project = Project(folder: folder, restoring: stored)
+      self.project = project
+      OpenSessions.shared.register(project, window: windowID)
     }
-    for account in ClaudeAccount.discover() {
-      let projects = account.directory.appending(path: "projects")
-      let folders =
-        (try? FileManager.default.contentsOfDirectory(atPath: projects.path(percentEncoded: false)))
-        ?? []
-      for folder in folders {
-        let file = projects.appending(path: "\(folder)/\(id).jsonl")
-        guard FileManager.default.fileExists(atPath: file.path(percentEncoded: false)) else {
-          continue
-        }
-        self.route = .resume(
-          ResumeTarget(
-            sessionID: id,
-            cwd: session.transcript.session?.cwd ?? session.folder.path(percentEncoded: false),
-            file: file.path(percentEncoded: false),
-            accountDirectory: account.directory.path(percentEncoded: false),
-            accountIsDefault: account.isDefault))
-        return
-      }
+    guard let project else { return }
+    for target in OpenSessions.shared.takePending(for: folder.path(percentEncoded: false)) {
+      project.attach(target)
     }
+    if project.sessions.isEmpty { project.newSession() }
+  }
+
+  /// A session picked in this picker window: shown where it already is, or in the project
+  /// window that owns its folder, this one becoming it when none is open.
+  private func pick(_ summary: SessionSummary, forking: Bool) {
+    if !forking, let (owner, item) = OpenSessions.shared.locate(summary.sessionID) {
+      owner.select(item)
+      owner.workspace.window?.makeKeyAndOrderFront(nil)
+      return
+    }
+    guard let cwd = summary.cwd, let target = ResumeTarget(summary, forking: forking) else {
+      return
+    }
+    let folder = OpenSessions.shared.ownerFolder(forCwd: cwd)
+    show(.project(folder: folder), attaching: [target])
+  }
+
+  /// The project window for `next`: the one already open on that folder, brought forward
+  /// with the sessions attached (this picker window closing), or this window becoming it.
+  private func show(_ next: WindowRoute, attaching targets: [ResumeTarget]) {
+    guard case .project(let folder) = next else { return }
+    if let owner = OpenSessions.shared.projects.values.first(where: {
+      ProjectPath.normalize($0.folder.path(percentEncoded: false)) == folder
+    }) {
+      for target in targets { owner.attach(target) }
+      owner.workspace.window?.makeKeyAndOrderFront(nil)
+      if let current = route { dismissWindow(value: current) }
+      return
+    }
+    for target in targets { OpenSessions.shared.requestAttach(target, in: folder) }
+    route = next
   }
 
   /// The folder's path as `abbreviated` writes it, or only its last two folders when
@@ -177,21 +165,18 @@ struct ContentView: View {
   }
 
   /// `make run ARGS='-drakar.debugFolder <path> -drakar.debugPrompt <text>'` opens a
-  /// session and sends a first prompt with no clicks, which is how the app is checked
-  /// end to end without typing into it. `-drakar.debugResume <session id>` resumes one
-  /// from the index instead, through the same route a double-click takes.
-  /// `-drakar.debugModel <id>` picks a cheap model for a new session, and
-  /// `-drakar.debugSettingSources project` keeps the user's own permission rules and
-  /// hooks out of one that needs a permission prompt to appear. `-drakar.debugOpen
-  /// <path>` opens a file of the folder in the editor, and `-drakar.debugQuickOpen
-  /// <query>` shows quick open with that query typed, `-drakar.debugSearch <query>` the
-  /// folder search. Values, not flags:
-  /// UserDefaults reads a value starting with `-` as the next key and drops it.
-  /// Debug builds only: a shipped binary takes no instructions from its launch arguments.
+  /// project with a new session and sends it a first prompt with no clicks.
+  /// `-drakar.debugResume <session id>` attaches one from the index instead.
+  /// `-drakar.debugModel <id>` picks a cheap model for the new session, and
+  /// `-drakar.debugSettingSources project` keeps the user's own permission rules and hooks
+  /// out of one that needs a permission prompt to appear. `-drakar.debugOpen <path>`,
+  /// `-drakar.debugQuickOpen <query>` and `-drakar.debugSearch <query>` drive the editor.
+  /// Values, not flags: UserDefaults reads a value starting with `-` as the next key.
+  /// Debug builds only.
   private func openFromLaunchArguments() {
     #if DEBUG
       let defaults = UserDefaults.standard
-      guard session == nil, route == nil else { return }
+      guard project == nil, route?.folder == nil else { return }
       let prompt = defaults.string(forKey: "drakar.debugPrompt")
       if let id = defaults.string(forKey: "drakar.debugResume") {
         Task {
@@ -199,42 +184,35 @@ struct ContentView: View {
             SessionIndex.list(accounts: ClaudeAccount.discover())
           }.value
           guard let summary = summaries.first(where: { $0.sessionID == id }) else { return }
-          route = SessionRoute.resume(summary)
-          if let prompt { await send(prompt) }
+          pick(summary, forking: false)
+          if let prompt { project?.selected?.session.send(prompt) }
         }
         return
       }
       guard let path = defaults.string(forKey: "drakar.debugFolder") else { return }
-      let command = ClaudeCommand(
+      route = .project(URL(filePath: path, directoryHint: .isDirectory))
+      open(route)  // now, not on the next update: the rest needs the project
+      guard let project, let item = project.selected else { return }
+      item.session.command = ClaudeCommand(
         model: defaults.string(forKey: "drakar.debugModel"),
         extraArguments: defaults.string(forKey: "drakar.debugSettingSources").map {
           ["--setting-sources", $0]
         } ?? [])
-      let folder = URL(filePath: path, directoryHint: .isDirectory)
-      start(ClaudeSession(folder: folder), command: command)
+      let workspace = project.workspace
       if let file = defaults.string(forKey: "drakar.debugOpen") {
-        workspace?.open(URL(filePath: file, relativeTo: folder))
+        workspace.open(URL(filePath: file, relativeTo: project.folder))
       }
       if let query = defaults.string(forKey: "drakar.debugQuickOpen") {
-        workspace?.showQuickOpen(query: query)
+        workspace.showQuickOpen(query: query)
       }
       if let query = defaults.string(forKey: "drakar.debugSearch") {
-        workspace?.showSearch(query: query)
+        workspace.showSearch(query: query)
       }
-      if let prompt { Task { await send(prompt) } }
+      if let prompt {
+        item.session.send(prompt, context: workspace.active.map { [$0.selection] } ?? [])
+      }
     #endif
   }
-
-  #if DEBUG
-    /// Waits for whichever session this window ends up with to be ready, then sends, with
-    /// the editor's context attached as the composer would.
-    private func send(_ prompt: String) async {
-      while session == nil || session?.phase == .starting || session?.phase == .idle {
-        try? await Task.sleep(for: .milliseconds(100))
-      }
-      session?.send(prompt, context: workspace?.active.map { [$0.selection] } ?? [])
-    }
-  #endif
 }
 
 /// Floats the window a view is in above other apps' windows, or puts it back among them.

@@ -7,20 +7,20 @@ struct DrakarApp: App {
   @NSApplicationDelegateAdaptor private var delegate: AppDelegate
 
   var body: some Scene {
-    // One window per session, keyed by its route: a window opened without one shows the
-    // session list, and SwiftUI reopens each session's window at the next launch.
-    WindowGroup(for: SessionRoute.self) { $route in
+    // One window per project, keyed by its route: a window opened without one shows the
+    // session picker, and SwiftUI reopens each project's window at the next launch.
+    WindowGroup(for: WindowRoute.self) { $route in
       ContentView(route: $route)
     }
     .commands {
       SupportCommands(app: Support.app, preferIssueTracker: Support.preferIssueTracker)
-      // Replacing the save group takes File > Close with it, so both closes come back here.
+      CommandGroup(replacing: .newItem) { NewWindowCommand() }
+      CommandMenu("Session") { SessionCommands() }
       CommandGroup(replacing: .saveItem) {
         CloseCommands()
         SaveCommand()
       }
       CommandGroup(after: .textEditing) { MentionCommands() }
-      // ⌘P, as in VS Code and Zed: Drakar prints nothing.
       CommandGroup(replacing: .printItem) { QuickOpenCommand() }
     }
 
@@ -30,6 +30,27 @@ struct DrakarApp: App {
     Settings {
       SettingsView()
     }
+  }
+}
+
+/// File > New Window (⇧⌘N): a picker window. ⌘N belongs to New Session.
+private struct NewWindowCommand: View {
+  @Environment(\.openWindow) private var openWindow
+
+  var body: some View {
+    Button("New Window") { openWindow(value: WindowRoute.picker()) }
+      .keyboardShortcut("n", modifiers: [.command, .shift])
+  }
+}
+
+/// The Session menu: what acts on the focused project's sessions.
+private struct SessionCommands: View {
+  @FocusedValue(\.project) private var project
+
+  var body: some View {
+    Button("New Session") { project?.newSession() }
+      .keyboardShortcut("n")
+      .disabled(project == nil)
   }
 }
 

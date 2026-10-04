@@ -8,6 +8,7 @@ import SwiftUI
 /// `attachOpenFile` does by default; a click on it leaves it out of this one. Selections
 /// pinned with ⌥K go too, until a click takes one off.
 struct ComposerView: View {
+  @Binding var text: String
   let canSend: Bool
   let isRunning: Bool
   let context: EditorSelection?
@@ -16,7 +17,6 @@ struct ComposerView: View {
   let send: (String, [EditorSelection]) -> Void
   let stop: () -> Void
 
-  @State private var text = ""
   @State private var leavesContextOut = false
   @FocusState private var isFocused: Bool
 

@@ -91,8 +91,7 @@ final class OpenSessions {
   var folders: [String] {
     Array(
       Set(
-        projects.values.map { ProjectPath.normalize($0.folder.path(percentEncoded: false)) }
-          + windowFolders.values))
+        projects.values.map { ProjectPath.normalize($0.folder.path(percentEncoded: false)) }))
   }
 
   func locate(_ sessionID: String) -> (Project, ProjectSession)? {
@@ -139,44 +138,4 @@ final class OpenSessions {
 
   /// Sessions mid-turn across every window, for the quit question.
   var runningCount: Int { projects.values.reduce(0) { $0 + $1.runningCount } }
-
-  // MARK: - Until Task 8: the one-session windows still use these
-
-  private(set) var routes: [String: SessionRoute] = [:]
-  private(set) var windowFolders: [UUID: String] = [:]
-
-  func register(_ route: SessionRoute, for sessionID: String) { routes[sessionID] = route }
-
-  func unregister(_ sessionID: String) { routes[sessionID] = nil }
-
-  func setFolder(_ folder: URL?, forWindow window: UUID) {
-    windowFolders[window] = folder.map { ProjectPath.normalize($0.path(percentEncoded: false)) }
-    IDEBridge.shared.refreshFolders()
-  }
-}
-
-/// Until Task 8: the window value of a one-session window.
-enum SessionRoute: Codable, Hashable {
-  case new(folder: String, token: UUID)
-  case resume(ResumeTarget)
-
-  static func new(folder: URL) -> SessionRoute {
-    .new(folder: folder.path(percentEncoded: false), token: UUID())
-  }
-
-  static func resume(_ summary: SessionSummary, forking: Bool = false) -> SessionRoute? {
-    ResumeTarget(summary, forking: forking).map(SessionRoute.resume)
-  }
-
-  var folder: URL {
-    switch self {
-    case .new(let folder, _): URL(filePath: folder, directoryHint: .isDirectory)
-    case .resume(let target): URL(filePath: target.cwd, directoryHint: .isDirectory)
-    }
-  }
-
-  var sessionID: String? {
-    if case .resume(let target) = self { return target.sessionID }
-    return nil
-  }
 }

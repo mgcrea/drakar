@@ -3,25 +3,32 @@ import SwiftUI
 
 /// The transcript, what stopped it if anything did, the composer and the footer.
 struct SessionView: View {
-  let session: ClaudeSession
-  let workspace: Workspace
+  @Bindable var item: ProjectSession
+  let project: Project
+
+  private var session: ClaudeSession { item.session }
+  private var workspace: Workspace { project.workspace }
 
   var body: some View {
     VStack(spacing: 0) {
-      TranscriptView(transcript: session.transcript)
+      TranscriptView(transcript: session.transcript, anchor: $item.scrollAnchor)
       if let problem {
         ProblemBanner(message: problem, diagnostics: session.diagnostics)
       }
       Divider()
-      ComposerView(
-        canSend: session.canSend, isRunning: session.transcript.isRunning,
-        context: workspace.selection, pinned: workspace.pinned,
-        unpin: { selection in workspace.pinned.removeAll { $0 == selection } },
-        send: { text, context in
-          session.send(text, context: context)
-          workspace.pinned = []
-        },
-        stop: session.interrupt)
+      if session.isReadOnly {
+        ReadOnlyBanner(host: host) { project.fork(item) }
+      } else {
+        ComposerView(
+          text: $item.draft, canSend: session.canSend, isRunning: session.transcript.isRunning,
+          context: workspace.selection, pinned: workspace.pinned,
+          unpin: { selection in workspace.pinned.removeAll { $0 == selection } },
+          send: { text, context in
+            session.send(text, context: context)
+            workspace.pinned = []
+          },
+          stop: session.interrupt)
+      }
       SessionFooter(session: session)
     }
     .sheet(item: pendingPermission) { pending in
@@ -29,6 +36,12 @@ struct SessionView: View {
     }
     .environment(\.sessionFolder, session.folder)
     .environment(\.openInEditor, OpenInEditorAction(workspace: workspace))
+  }
+
+  /// Where the session is open, from the registry, for the banner.
+  private var host: String {
+    // Task 9 replaces this with the monitor's answer.
+    String(localized: "another app")
   }
 
   /// The first request waiting; answering it shows the next. Never dismissed except by
@@ -42,8 +55,7 @@ struct SessionView: View {
     case .failed(let message): message
     case .exited(let status) where status != 0:
       String(localized: "Claude Code exited with status \(status).")
-    case .exited: String(localized: "The session has ended.")
-    case .idle, .starting, .ready: nil
+    case .idle, .starting, .ready, .exited: nil
     }
   }
 }
@@ -67,6 +79,25 @@ private struct ProblemBanner: View {
     .frame(maxWidth: .infinity, alignment: .leading)
     .padding(12)
     .background(.orange.opacity(0.08))
+  }
+}
+
+/// In place of the composer while another process has the session open: two writers on one
+/// transcript would interleave its history.
+private struct ReadOnlyBanner: View {
+  let host: String
+  let fork: () -> Void
+
+  var body: some View {
+    HStack {
+      Label("Live in \(host). Its transcript follows here.", systemImage: "eye")
+        .foregroundStyle(.secondary)
+      Spacer()
+      Button("Fork a Copy", action: fork)
+        .help("Continue a copy under a new id, leaving the original where it is.")
+        .accessibilityIdentifier("session.fork")
+    }
+    .padding(12)
   }
 }
 
@@ -130,7 +161,9 @@ private struct SessionFooter: View {
 
   @ViewBuilder private var status: some View {
     switch session.phase {
-    case .idle, .starting:
+    case .idle:
+      Label("Not started", systemImage: "circle.dotted")
+    case .starting:
       Label("Starting…", systemImage: "circle.dotted")
     case .ready where session.transcript.isRunning:
       Label("Working", systemImage: "circle.fill").foregroundStyle(.blue)

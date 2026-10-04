@@ -8,6 +8,8 @@ import SwiftUI
 /// measurement; the AppKit fallback replaces this view and nothing around it.
 struct TranscriptView: View {
   let transcript: Transcript
+  /// The entry at the top when this session was last shown; nil while following.
+  @Binding var anchor: String?
 
   @State private var position = ScrollPosition(edge: .bottom)
   /// Whether new output scrolls into view. Scrolling up to read stops it; scrolling back
@@ -29,11 +31,21 @@ struct TranscriptView: View {
             .accessibilityLabel("Working")
         }
       }
+      .scrollTargetLayout()
       .padding(16)
       .frame(maxWidth: 820, alignment: .leading)
       .frame(maxWidth: .infinity)
     }
     .scrollPosition($position)
+    .onScrollTargetVisibilityChange(idType: String.self, threshold: 0.6) { visible in
+      if !isFollowing { anchor = visible.first }
+    }
+    .onChange(of: isFollowing) { _, following in if following { anchor = nil } }
+    .onAppear {
+      guard let anchor else { return }
+      isFollowing = false
+      position.scrollTo(id: anchor, anchor: .top)
+    }
     .onScrollGeometryChange(for: Bool.self) { geometry in
       geometry.visibleRect.maxY >= geometry.contentSize.height - 40
     } action: { _, atBottom in
