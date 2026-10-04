@@ -28,8 +28,6 @@ struct SessionListView: View {
   let project: Project
   @Binding var isCollapsed: Bool
   @State private var showsEnded = false
-  /// Read so that rows redraw when the Attention pane turns recognition on or off.
-  @AppStorage(PreferenceKey.recognisesAsks) private var recognisesAsks = true
   @State private var showsAllEnded = false
   private var monitor: SessionMonitor { .shared }
 
@@ -46,7 +44,6 @@ struct SessionListView: View {
   }
 
   var body: some View {
-    let _ = recognisesAsks
     VStack(spacing: 0) {
       header
       if !isCollapsed { list }

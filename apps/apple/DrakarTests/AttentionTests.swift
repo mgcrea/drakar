@@ -299,4 +299,57 @@ struct UrgencyTests {
           updatedInput: UserQuestion.answering(
             input, with: ["Which file?": "a", "Which tags?": "x, y, z"])))
   }
+
+  /// A session started here has no history to read, so it never counts as loaded, and the
+  /// file watcher keeps handing it a summary that lags the live turn. The live turn wins.
+  @Test func aLiveTurnOutranksTheFilesSummary() async throws {
+    let (project, item) = try await session(Self.asking)
+    defer { project.stopAll() }
+    item.preview = SessionSummary(
+      sessionID: "s", account: ClaudeAccount(directory: URL(filePath: "/tmp"), isDefault: false),
+      file: URL(filePath: "/tmp/s.jsonl"), modified: .now, size: 0)
+    #expect(item.urgency == .question)
+    item.session.send("yes")
+    #expect(item.urgency == nil)
+  }
+
+  /// A level that does not notify falls back to "Finished its turn." when those are on, so
+  /// turning finished-turn notifications on still covers a turn that ended on an offer.
+  @Test func aTurnEndNotifiesItsAskOrThatItFinished() {
+    let offer = ClosingAsk(kind: .offer, text: "Say the word.")
+    let question = ClosingAsk(kind: .question, text: "Push it?")
+    let quietOffers = { (level: Urgency) in level != .offer }
+    #expect(
+      Attention.turnEndNotice(
+        ask: question, level: .question, notifiesTurnEnds: false, levelNotifies: quietOffers)?
+        .body == "Push it?")
+    #expect(
+      Attention.turnEndNotice(
+        ask: offer, level: .offer, notifiesTurnEnds: true, levelNotifies: quietOffers)?.body
+        == "Finished its turn.")
+    #expect(
+      Attention.turnEndNotice(
+        ask: offer, level: .offer, notifiesTurnEnds: false, levelNotifies: quietOffers) == nil)
+    #expect(
+      Attention.turnEndNotice(
+        ask: nil, level: nil, notifiesTurnEnds: false, levelNotifies: quietOffers) == nil)
+  }
+
+  /// `UserDefaults` is not observable: a switch flipped in the Attention pane must still
+  /// redraw the rows and the header that read it.
+  @Test func aSwitchFlippedInSettingsRedrawsWhatReadsIt() {
+    let redrawn = Flag()
+    withObservationTracking {
+      _ = AttentionChoice.isOn(.offer, .counts)
+    } onChange: {
+      redrawn.value = true
+    }
+    AttentionChoice.defaults.set(true, forKey: AttentionChoice.key(.offer, .counts))
+    #expect(redrawn.value)
+  }
+}
+
+/// Set from an observation callback, which may not capture a variable.
+private final class Flag: @unchecked Sendable {
+  var value = false
 }

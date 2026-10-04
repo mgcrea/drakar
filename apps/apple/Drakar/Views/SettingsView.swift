@@ -98,7 +98,8 @@ enum AttentionChoice {
   static var defaults = UserDefaults.standard
 
   static var recognisesAsks: Bool {
-    defaults.object(forKey: PreferenceKey.recognisesAsks) as? Bool ?? true
+    _ = AttentionDefaults.shared.revision
+    return defaults.object(forKey: PreferenceKey.recognisesAsks) as? Bool ?? true
   }
 
   static var notifiesTurnEnds: Bool { defaults.bool(forKey: PreferenceKey.notifiesTurnEnds) }
@@ -113,7 +114,31 @@ enum AttentionChoice {
   }
 
   static func isOn(_ level: Urgency, _ feedback: AttentionFeedback) -> Bool {
-    defaults.object(forKey: key(level, feedback)) as? Bool ?? defaultValue(level, feedback)
+    _ = AttentionDefaults.shared.revision
+    return defaults.object(forKey: key(level, feedback)) as? Bool ?? defaultValue(level, feedback)
+  }
+}
+
+/// Bumped whenever a default changes, and read by every `AttentionChoice` question:
+/// `UserDefaults` is not observable, and a switch flipped in the Attention pane has to
+/// redraw the rows and counts that read it.
+@Observable
+final class AttentionDefaults {
+  static let shared = AttentionDefaults()
+
+  private(set) var revision = 0
+  @ObservationIgnored private var observer: (any NSObjectProtocol)?
+
+  private init() {
+    observer = NotificationCenter.default.addObserver(
+      forName: UserDefaults.didChangeNotification, object: nil, queue: nil
+    ) { _ in
+      if Thread.isMainThread {
+        MainActor.assumeIsolated { AttentionDefaults.shared.revision += 1 }
+      } else {
+        Task { @MainActor in AttentionDefaults.shared.revision += 1 }
+      }
+    }
   }
 }
 

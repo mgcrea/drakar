@@ -90,7 +90,9 @@ final class ProjectSession: Identifiable {
     case .idle, .starting, .ready: break
     }
     let found: (messageID: String, ask: ClosingAsk)?
-    if let preview = unloadedPreview {
+    // The file's summary stands in only while nothing is in memory: a session started here
+    // has no history to read, and the summary of its file lags the live turn.
+    if session.transcript.entries.isEmpty, let preview {
       found = preview.closingMessageID.flatMap { id in preview.closingAsk.map { (id, $0) } }
     } else if let closing = session.transcript.closingText {
       found = detect(closing).map { (closing.messageID, $0) }

@@ -124,6 +124,7 @@ final class OpenSessions {
     guard let (_, item) = locate(summary.sessionID) else { return }
     item.session.catchUp()
     item.preview = summary
+    Attention.shared.refresh()
   }
 
   /// The ids live in other processes now. A session listed here that another process has
@@ -141,6 +142,7 @@ final class OpenSessions {
         }
       }
     }
+    Attention.shared.refresh()
   }
 
   /// Sessions mid-turn across every window, for the quit question.
