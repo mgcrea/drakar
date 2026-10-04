@@ -131,6 +131,9 @@ final class Project {
   let workspace: Workspace
   private(set) var sessions: [ProjectSession] = []
   var selectedID: ProjectSession.ID?
+  /// Whether the shown session's composer takes the focus when it appears: not when the
+  /// sidebar's arrow keys or a click there chose it, so the keys keep moving in the list.
+  @ObservationIgnored private(set) var focusesComposer = true
 
   init(folder: URL, restoring stored: StoredProject? = nil) {
     self.folder = folder
@@ -196,7 +199,8 @@ final class Project {
     return attach(target)
   }
 
-  func select(_ item: ProjectSession) {
+  func select(_ item: ProjectSession, focusingComposer: Bool = true) {
+    focusesComposer = focusingComposer
     selectedID = item.id
     item.isUnread = false
     load(item)

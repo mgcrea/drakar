@@ -29,7 +29,8 @@ struct SessionView: View {
             workspace.pinned = []
           },
           stop: session.interrupt,
-          sessionFolder: session.folder, projectFolder: project.folder)
+          sessionFolder: session.folder, projectFolder: project.folder,
+          takesFocus: project.focusesComposer)
       }
       SessionFooter(session: session)
     }

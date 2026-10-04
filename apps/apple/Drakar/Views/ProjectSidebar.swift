@@ -29,6 +29,9 @@ struct SessionListView: View {
   @Binding var isCollapsed: Bool
   @State private var showsEnded = false
   @State private var showsAllEnded = false
+  /// The list takes the arrow keys once one of the window's rows is clicked, as the native
+  /// selection did.
+  @FocusState private var isFocused: Bool
   private var monitor: SessionMonitor { .shared }
 
   private var groups: ProjectGroups {
@@ -77,11 +80,16 @@ struct SessionListView: View {
   }
 
   private var list: some View {
-    List(selection: selection) {
+    List {
       Section("This Window") {
         ForEach(project.held) { item in
           SessionRow(item: item, isSelected: item.id == project.selectedID)
-            .tag(item.id)
+            .contentShape(Rectangle())
+            .onTapGesture {
+              project.select(item, focusingComposer: false)
+              isFocused = true
+            }
+            .selectionBorder(item.id == project.selectedID)
             .contextMenu { menu(for: item) }
             .accessibilityIdentifier("sessions.attached.\(item.sessionID ?? item.id.uuidString)")
         }
@@ -91,9 +99,9 @@ struct SessionListView: View {
         Section("Elsewhere") {
           ForEach(groups.elsewhere) { summary in
             SummaryRow(summary: summary, host: monitor.host(of: summary), monitor: monitor)
-              .tagged(watched(summary))
               .contentShape(Rectangle())
               .onTapGesture { openElsewhere(summary) }
+              .selectionBorder(isWatched(summary))
               .accessibilityAddTraits(.isButton)
               .accessibilityIdentifier("sessions.elsewhere.\(summary.sessionID)")
           }
@@ -103,11 +111,9 @@ struct SessionListView: View {
         Section(isExpanded: $showsEnded) {
           ForEach(showsAllEnded ? groups.ended : Array(groups.ended.prefix(20))) { summary in
             SummaryRow(summary: summary, host: nil, monitor: monitor)
-              .tagged(watched(summary))
               .contentShape(Rectangle())
-              .onTapGesture {
-                if let target = ResumeTarget(summary) { project.attach(target, watching: true) }
-              }
+              .selectionBorder(isWatched(summary))
+              .onTapGesture { openEnded(summary) }
               .accessibilityAddTraits(.isButton)
               .accessibilityIdentifier("sessions.ended.\(summary.sessionID)")
           }
@@ -121,7 +127,38 @@ struct SessionListView: View {
       }
     }
     .listStyle(.sidebar)
+    .focusable()
+    .focused($isFocused)
+    .focusEffectDisabled()
+    .onKeyPress(.downArrow) { move(1) }
+    .onKeyPress(.upArrow) { move(-1) }
     .accessibilityIdentifier("sessions")
+  }
+
+  /// The row above or below the selected one, in the list's order, shown as a click shows
+  /// it. A session open in another Drakar window is passed over: showing it would leave
+  /// this one.
+  private func move(_ step: Int) -> KeyPress.Result {
+    let groups = groups
+    var rows: [(isSelected: Bool, show: () -> Void)] = project.held.map { item in
+      (item.id == project.selectedID, { project.select(item, focusingComposer: false) })
+    }
+    for summary in groups.elsewhere where OpenSessions.shared.locate(summary.sessionID) == nil {
+      rows.append((isWatched(summary), { openElsewhere(summary) }))
+    }
+    if showsEnded {
+      for summary in showsAllEnded ? groups.ended : Array(groups.ended.prefix(20)) {
+        rows.append((isWatched(summary), { openEnded(summary) }))
+      }
+    }
+    guard !rows.isEmpty else { return .ignored }
+    let index = rows.firstIndex(where: \.isSelected).map { $0 + step } ?? 0
+    rows[min(max(index, 0), rows.count - 1)].show()
+    return .handled
+  }
+
+  private func openEnded(_ summary: SessionSummary) {
+    if let target = ResumeTarget(summary) { project.attach(target, watching: true) }
   }
 
   private func openElsewhere(_ summary: SessionSummary) {
@@ -133,17 +170,12 @@ struct SessionListView: View {
     }
   }
 
-  /// The row watching `summary` here, so the list shows it selected.
-  private func watched(_ summary: SessionSummary) -> ProjectSession.ID? {
-    project.session(withID: summary.sessionID).flatMap { $0.isWatching ? $0.id : nil }
-  }
-
-  private var selection: Binding<ProjectSession.ID?> {
-    Binding(
-      get: { project.selectedID },
-      set: { id in
-        if let item = project.sessions.first(where: { $0.id == id }) { project.select(item) }
-      })
+  /// Whether the selected row is watching `summary` here, so the list shows it selected.
+  private func isWatched(_ summary: SessionSummary) -> Bool {
+    guard let item = project.session(withID: summary.sessionID), item.isWatching else {
+      return false
+    }
+    return item.id == project.selectedID
   }
 
   @ViewBuilder private func menu(for item: ProjectSession) -> some View {
@@ -170,9 +202,14 @@ struct SessionListView: View {
 }
 
 extension View {
-  /// Selectable as `id`'s row, when there is one.
-  @ViewBuilder fileprivate func tagged(_ id: ProjectSession.ID?) -> some View {
-    if let id { tag(id) } else { self }
+  /// The selected row's outline, in place of the list's filled highlight, and its trait.
+  fileprivate func selectionBorder(_ isSelected: Bool) -> some View {
+    listRowBackground(
+      isSelected
+        ? RoundedRectangle(cornerRadius: 5).strokeBorder(Color.accentColor, lineWidth: 1.5)
+          .padding(.horizontal, 8) : nil
+    )
+    .accessibilityAddTraits(isSelected ? .isSelected : [])
   }
 }
 
