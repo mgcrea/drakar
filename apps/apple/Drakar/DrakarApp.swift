@@ -39,10 +39,11 @@ struct DrakarApp: App {
 }
 
 /// File > New Tab (⌘T) and New Window (⇧⌘N) open home; ⌘N belongs to New Session.
-/// Open Project… (⌘O) tracks a folder and opens it in a new tab; Show Projects (⇧⌘H)
-/// brings home forward in this window's tabs.
+/// Open Project… (⌘O) tracks a folder and opens it in a new tab; Close Project (⇧⌘H)
+/// goes back to home in this window.
 private struct NewWindowCommand: View {
   @Environment(\.openWindow) private var openWindow
+  @FocusedValue(\.closeProject) private var closeProject
 
   var body: some View {
     Button("New Tab") {
@@ -55,11 +56,9 @@ private struct NewWindowCommand: View {
     Divider()
     Button("Open Project…") { openProject() }
       .keyboardShortcut("o")
-    Button("Show Projects") {
-      WindowTabs.openWindow = WindowTabs.openWindow ?? openWindow
-      WindowTabs.showHome()
-    }
-    .keyboardShortcut("h", modifiers: [.command, .shift])
+    Button("Close Project") { closeProject?() }
+      .keyboardShortcut("h", modifiers: [.command, .shift])
+      .disabled(closeProject == nil)
   }
 
   private func openProject() {

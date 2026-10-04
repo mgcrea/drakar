@@ -19,6 +19,9 @@ final class ProjectSession: Identifiable {
   /// not shown yet has its title and gauge without its whole history being read, and every
   /// row its last activity.
   var preview: SessionSummary?
+  /// Opened from Elsewhere or Ended to look at: listed there, not with the window's own rows,
+  /// and not kept between launches, until it is taken over.
+  var isWatching = false
   /// The message id of the ask the person dismissed: that one stays quiet, the next one
   /// does not.
   var dismissedAsk: String?
@@ -157,6 +160,36 @@ struct StoredProject: Codable, Equatable {
   var dismissedQuestions: [String: String]?
 }
 
+/// Each project's `StoredProject`, app-wide in `UserDefaults` by folder. A window's scene
+/// storage comes back only when macOS restores windows at launch, which quitting closes by
+/// default: without this, a window opened after a relaunch lost its sessions to Ended.
+/// Removing a row from the window is what lets it go.
+enum ProjectMemory {
+  static let key = "drakar.projectSessions"
+
+  static func stored(for folder: URL, in defaults: UserDefaults = .standard) -> StoredProject? {
+    all(in: defaults)[path(of: folder)]
+  }
+
+  static func remember(
+    _ stored: StoredProject, for folder: URL, in defaults: UserDefaults = .standard
+  ) {
+    var all = all(in: defaults)
+    all[path(of: folder)] = stored.sessions.isEmpty ? nil : stored
+    defaults.set(try? JSONEncoder().encode(all), forKey: key)
+  }
+
+  private static func all(in defaults: UserDefaults) -> [String: StoredProject] {
+    defaults.data(forKey: key).flatMap {
+      try? JSONDecoder().decode([String: StoredProject].self, from: $0)
+    } ?? [:]
+  }
+
+  private static func path(of folder: URL) -> String {
+    ProjectPath.normalize(folder.path(percentEncoded: false))
+  }
+}
+
 /// A project window: a folder, its editor, and the sessions attached to it.
 @Observable
 final class Project {
@@ -164,6 +197,9 @@ final class Project {
   let workspace: Workspace
   private(set) var sessions: [ProjectSession] = []
   var selectedID: ProjectSession.ID?
+  /// Whether the shown session's composer takes the focus when it appears: not when the
+  /// sidebar's arrow keys or a click there chose it, so the keys keep moving in the list.
+  @ObservationIgnored private(set) var focusesComposer = true
 
   init(folder: URL, restoring stored: StoredProject? = nil) {
     self.folder = folder
@@ -196,10 +232,13 @@ final class Project {
     return item
   }
 
-  /// `target` on top and shown, or the row already holding it. `readOnly` while another
-  /// process has it open.
-  @discardableResult func attach(_ target: ResumeTarget, readOnly: Bool = false) -> ProjectSession {
+  /// `target` on top and shown, or the row already holding it, taken over unless
+  /// `watching`. `readOnly` while another process has it open.
+  @discardableResult func attach(
+    _ target: ResumeTarget, watching: Bool = false, readOnly: Bool = false
+  ) -> ProjectSession {
     if target.forks != true, let existing = session(withID: target.sessionID) {
+      if !watching { takeOver(existing) }
       select(existing)
       return existing
     }
@@ -207,9 +246,18 @@ final class Project {
       folder: URL(filePath: target.cwd, directoryHint: .isDirectory), resuming: target)
     session.isReadOnly = readOnly
     let item = make(session)
+    item.isWatching = watching
     sessions.insert(item, at: 0)
     select(item)
     return item
+  }
+
+  /// A watched row becomes one of the window's own, on top: it was prompted, or attached.
+  func takeOver(_ item: ProjectSession) {
+    guard item.isWatching else { return }
+    item.isWatching = false
+    sessions.removeAll { $0.id == item.id }
+    sessions.insert(item, at: 0)
   }
 
   /// A copy of a session open elsewhere, continued under a new id beside it.
@@ -219,7 +267,8 @@ final class Project {
     return attach(target)
   }
 
-  func select(_ item: ProjectSession) {
+  func select(_ item: ProjectSession, focusingComposer: Bool = true) {
+    focusesComposer = focusingComposer
     selectedID = item.id
     item.isUnread = false
     load(item)
@@ -268,14 +317,17 @@ final class Project {
   /// Sessions mid-turn: what closing the window would interrupt.
   var runningCount: Int { sessions.count { $0.session.transcript.isRunning } }
 
+  /// The window's own rows; a watched one is not kept.
+  var held: [ProjectSession] { sessions.filter { !$0.isWatching } }
+
   var stored: StoredProject {
-    let dismissed = sessions.compactMap { item -> (String, String)? in
+    let dismissed = held.compactMap { item -> (String, String)? in
       guard let id = item.sessionID, let message = item.dismissedAsk else { return nil }
       return (id, message)
     }
     return StoredProject(
-      sessions: sessions.compactMap(\.session.savedTarget),
-      selected: selected?.session.savedTarget?.sessionID,
+      sessions: held.compactMap(\.session.savedTarget),
+      selected: selected.flatMap { $0.isWatching ? nil : $0.session.savedTarget?.sessionID },
       dismissedQuestions: dismissed.isEmpty
         ? nil : Dictionary(dismissed, uniquingKeysWith: { first, _ in first }))
   }
