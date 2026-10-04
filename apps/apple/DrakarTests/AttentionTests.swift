@@ -280,4 +280,23 @@ struct UrgencyTests {
     #expect(RowState.choosing.label == "Asks you to choose")
     #expect(RowState.offered.label == "Offered")
   }
+
+  @Test func theSheetAnswersEveryQuestionOrNothing() throws {
+    let input = try JSONValue.parse(
+      Data(
+        #"{"questions":[{"question":"Which file?","options":[{"label":"a"},{"label":"b"}],"multiSelect":false},{"question":"Which tags?","options":[{"label":"x"},{"label":"y"}],"multiSelect":true}]}"#
+          .utf8))
+    let questions = UserQuestion.list(input)
+    #expect(
+      ChoiceSheet.decision(
+        for: questions, input: input, picked: ["Which file?": ["a"]], other: [:]) == nil)
+    let decision = ChoiceSheet.decision(
+      for: questions, input: input, picked: ["Which file?": ["a"], "Which tags?": ["y", "x"]],
+      other: ["Which tags?": "z"])
+    #expect(
+      decision
+        == .allow(
+          updatedInput: UserQuestion.answering(
+            input, with: ["Which file?": "a", "Which tags?": "x, y, z"])))
+  }
 }

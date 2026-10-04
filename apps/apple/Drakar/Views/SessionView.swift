@@ -33,7 +33,11 @@ struct SessionView: View {
       SessionFooter(session: session)
     }
     .sheet(item: pendingPermission) { pending in
-      PermissionSheet(pending: pending) { decision in session.answer(pending, decision) }
+      if pending.request.isChoice {
+        ChoiceSheet(pending: pending) { decision in session.answer(pending, decision) }
+      } else {
+        PermissionSheet(pending: pending) { decision in session.answer(pending, decision) }
+      }
     }
     .environment(\.sessionFolder, session.folder)
     .environment(\.openInEditor, OpenInEditorAction(workspace: workspace))
