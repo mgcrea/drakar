@@ -151,9 +151,14 @@ private struct SessionFooter: View {
         VersionLabel(version: version, executable: session.executable)
       }
       if let cost = session.transcript.lastResult?.totalCostUSD {
-        Text(cost, format: .currency(code: "USD").precision(.fractionLength(4)))
+        let billing = Billing(apiKeySource: session.transcript.session?.apiKeySource)
+        let amount = cost.formatted(.currency(code: "USD").precision(.fractionLength(4)))
+        Text(billing == .subscription ? "≈ \(amount)" : amount)
           .monospacedDigit()
-          .help("Cost reported by the last turn")
+          .help(
+            billing == .subscription
+              ? "API-equivalent estimate from token counts. Your subscription is not billed per token."
+              : "Billed to your API key")
       }
     }
     .font(.caption)

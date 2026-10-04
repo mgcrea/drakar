@@ -81,6 +81,8 @@ public struct SessionInfo: Sendable, Equatable {
   public var model: String?
   public var permissionMode: String?
   public var claudeCodeVersion: String?
+  /// `none` for a subscription login, else where the API key came from.
+  public var apiKeySource: String?
   public var tools: [String]
 
   init?(_ json: JSONValue) {
@@ -90,6 +92,7 @@ public struct SessionInfo: Sendable, Equatable {
     model = json["model"]?.stringValue
     permissionMode = json["permissionMode"]?.stringValue
     claudeCodeVersion = json["claude_code_version"]?.stringValue
+    apiKeySource = json["apiKeySource"]?.stringValue
     tools = json["tools"]?.arrayValue?.compactMap(\.stringValue) ?? []
   }
 }

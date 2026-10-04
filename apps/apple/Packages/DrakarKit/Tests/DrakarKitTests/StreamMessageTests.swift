@@ -29,6 +29,28 @@ struct StreamMessageTests {
     #expect(info.tools.contains("Bash"))
   }
 
+  /// `none` is a subscription login: the cost is an estimate, not a bill.
+  @Test func readsTheLoginKindFromInit() throws {
+    let message = try StreamMessage(
+      line: Data(
+        #"{"type":"system","subtype":"init","session_id":"s","apiKeySource":"none"}"#.utf8))
+    guard case .system(.initialized(let info)) = message else {
+      Issue.record("not an init: \(message)")
+      return
+    }
+    #expect(info.apiKeySource == "none")
+    #expect(Billing(apiKeySource: info.apiKeySource) == .subscription)
+  }
+
+  @Test(
+    arguments: [
+      (nil, Billing.subscription), ("none", .subscription), ("ANTHROPIC_API_KEY", .apiKey),
+      ("apiKeyHelper", .apiKey),
+    ] as [(String?, Billing)])
+  func tellsAnEstimateFromABill(_ source: String?, _ billing: Billing) {
+    #expect(Billing(apiKeySource: source) == billing)
+  }
+
   /// One `assistant` line per content block, all sharing the message id: the quirk that
   /// makes merging necessary at all.
   @Test func assistantLinesArriveOnePerBlock() throws {
