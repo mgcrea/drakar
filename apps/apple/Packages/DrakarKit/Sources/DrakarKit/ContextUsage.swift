@@ -122,11 +122,16 @@ public struct TranscriptTail: Sendable {
     return false
   }
 
+  /// `message.model` of a turn the CLI wrote itself rather than the API answered ("You've
+  /// hit your session limit", an API error), with all-zero usage: never a context reading.
+  public static let syntheticModel = "<synthetic>"
+
   static func reading(_ line: Data) -> ContextReading? {
     // Cheap reject first: most lines are not assistant turns.
     guard line.range(of: Data(#""usage""#.utf8)) != nil, let json = try? JSONValue.parse(line),
       json["type"]?.stringValue == "assistant", json["isSidechain"]?.boolValue != true,
-      let message = json["message"], let usage = TokenUsage(message["usage"])
+      let message = json["message"], message["model"]?.stringValue != syntheticModel,
+      let usage = TokenUsage(message["usage"])
     else { return nil }
     return ContextReading(
       usage: usage, modelID: message["model"]?.stringValue,

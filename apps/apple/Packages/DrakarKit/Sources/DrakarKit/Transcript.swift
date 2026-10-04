@@ -124,7 +124,11 @@ public struct Transcript: Sendable, Equatable {
     case .system(.initialized(let info)):
       session = info
     case .assistant(let assistant):
-      if assistant.parentToolUseID == nil, let usage = assistant.usage {
+      // A `<synthetic>` turn ("You've hit your session limit", an API error) is written by
+      // the CLI, not the API: its usage is all zeros and says nothing of the context.
+      if assistant.parentToolUseID == nil, assistant.model != TranscriptTail.syntheticModel,
+        let usage = assistant.usage
+      {
         contextUsage = usage
         contextModelID = assistant.model ?? contextModelID
       }

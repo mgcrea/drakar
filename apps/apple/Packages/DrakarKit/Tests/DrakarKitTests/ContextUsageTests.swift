@@ -128,6 +128,28 @@ struct ContextUsageTests {
     #expect(transcript.contextUsage != nil)
   }
 
+  /// What the CLI writes itself when a session hits its limit or the API fails: model
+  /// `<synthetic>`, every figure zero. Trimmed from a local transcript (2.1.263).
+  private let syntheticTurn =
+    #"{"isSidechain":false,"type":"assistant","timestamp":"2026-09-08T15:46:39.018Z","message":{"id":"4a80696d","model":"<synthetic>","role":"assistant","stop_reason":"stop_sequence","type":"message","usage":{"input_tokens":0,"output_tokens":0,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"server_tool_use":{"web_search_requests":0,"web_fetch_requests":0},"cache_creation":{"ephemeral_1h_input_tokens":0,"ephemeral_5m_input_tokens":0}},"content":[{"type":"text","text":"You've hit your session limit"}]},"isApiErrorMessage":true}"#
+
+  /// A `<synthetic>` turn is not a reading: the gauge keeps the last real one, never 0 %.
+  @Test func aSyntheticTurnIsNotAReading() throws {
+    #expect(tail([warmTurn, syntheticTurn]).newestReading?.total == 100_281)
+    #expect(tail([syntheticTurn]).newestReading == nil)
+  }
+
+  @Test func aSyntheticTurnLeavesTheTranscriptsUsageAlone() throws {
+    let transcript = Transcript.history(lines: [Data(warmTurn.utf8), Data(syntheticTurn.utf8)])
+    #expect(transcript.contextUsage?.total == 100_281)
+    #expect(transcript.contextModelID == "claude-opus-5-5")
+    var live = Transcript()
+    live.apply(try StreamMessage(line: Data(warmTurn.utf8)))
+    live.apply(try StreamMessage(line: Data(syntheticTurn.utf8)))
+    #expect(live.contextUsage?.total == 100_281)
+    #expect(live.contextModelID == "claude-opus-5-5")
+  }
+
   @Test func asksForTheContextInSummary() throws {
     let json = ClientMessage.contextUsage(requestID: "context-1").json
     #expect(json["type"]?.stringValue == "control_request")
