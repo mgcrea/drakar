@@ -106,7 +106,7 @@ struct AccountChoiceTests {
       if configDirectory != nil { break }
       try await Task.sleep(for: .milliseconds(100))
     }
-    #expect(configDirectory == picked.path(percentEncoded: false))
+    #expect(configDirectory == String(picked.path(percentEncoded: false).dropLast()))
     #expect(session.account?.name == "picked")
   }
 

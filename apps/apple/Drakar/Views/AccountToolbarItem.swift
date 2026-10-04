@@ -6,6 +6,13 @@ extension AccountStore {
   func windowAccount(for folder: URL) -> ClaudeAccount {
     ClaudeChoice.account(forNewSessionIn: folder) ?? shellAccount
   }
+
+  /// `account` as `folder`'s pick, unless the window already runs on it: clicking the checked
+  /// row must not tie a folder that follows Settings to today's Settings.
+  func pick(_ account: ClaudeAccount, for folder: URL) {
+    guard account.key != windowAccount(for: folder).key else { return }
+    ClaudeChoice.pick(account, for: folder)
+  }
 }
 
 /// The window's account and its plan usage, on the right of the toolbar. A click lists every
@@ -73,7 +80,7 @@ private struct AccountPicker: View {
     VStack(alignment: .leading, spacing: 0) {
       ForEach(accounts, id: \.key) { account in
         Button {
-          ClaudeChoice.pick(account, for: folder)
+          store.pick(account, for: folder)
           dismiss()
         } label: {
           row(account)

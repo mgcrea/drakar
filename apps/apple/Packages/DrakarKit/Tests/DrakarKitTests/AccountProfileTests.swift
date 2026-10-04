@@ -94,4 +94,13 @@ struct ClaudeAccountKeyTests {
     #expect(a.key == b.key)
     #expect(a.key == "/Users/me/.claude-work")
   }
+
+  /// `claude auth status` under `CLAUDE_CONFIG_DIR=~/.claude-x/` reports signed out, and
+  /// under `~/.claude-x` signed in (Claude Code 2.1.288): the slash is not cosmetic.
+  @Test func namesTheDirectoryToTheCLIWithoutItsTrailingSlash() {
+    let account = ClaudeAccount(
+      directory: URL(filePath: "/Users/me/.claude-work/", directoryHint: .isDirectory),
+      isDefault: false)
+    #expect(account.environment([:])["CLAUDE_CONFIG_DIR"] == "/Users/me/.claude-work")
+  }
 }

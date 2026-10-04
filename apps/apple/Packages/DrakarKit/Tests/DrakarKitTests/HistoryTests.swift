@@ -122,7 +122,7 @@ struct SessionIndexTests {
     #expect(accounts.map(\.isDefault) == [true, false])
     let base = ["CLAUDE_CONFIG_DIR": "/elsewhere", "PATH": "/bin"]
     #expect(accounts[0].environment(base)["CLAUDE_CONFIG_DIR"] == nil)
-    #expect(accounts[1].environment(base)["CLAUDE_CONFIG_DIR"]?.hasSuffix(".claude-work/") == true)
+    #expect(accounts[1].environment(base)["CLAUDE_CONFIG_DIR"]?.hasSuffix(".claude-work") == true)
   }
 
   @Test func listsNewestFirstWithTitlesAndFolders() throws {

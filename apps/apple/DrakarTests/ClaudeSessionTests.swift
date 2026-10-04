@@ -85,7 +85,8 @@ struct ClaudeSessionTests {
       if configDirectory != nil { break }
       try await Task.sleep(for: .milliseconds(100))
     }
-    #expect(configDirectory == account.path(percentEncoded: false))
+    // No trailing slash: with one, the CLI reads the account as signed out.
+    #expect(configDirectory == String(account.path(percentEncoded: false).dropLast()))
   }
 
   /// A restored window whose transcript is gone still opens, and says why it cannot resume.

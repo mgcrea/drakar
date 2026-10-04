@@ -48,6 +48,6 @@ struct SettingsPaneTests {
     let other = ClaudeChoice.account(at: home + ".claude-work")
     #expect(!other.isDefault)
     #expect(other.name == "work")
-    #expect(other.environment([:])["CLAUDE_CONFIG_DIR"]?.hasSuffix(".claude-work/") == true)
+    #expect(other.environment([:])["CLAUDE_CONFIG_DIR"] == home + ".claude-work")
   }
 }

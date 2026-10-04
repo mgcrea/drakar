@@ -24,7 +24,8 @@ public struct ClaudeAccount: Sendable, Hashable {
   /// keys its keychain item by the variable, not by the path it resolves to.
   public func environment(_ base: [String: String]) -> [String: String] {
     var environment = base
-    environment["CLAUDE_CONFIG_DIR"] = isDefault ? nil : directory.path(percentEncoded: false)
+    // `key`, not the URL's path: with a trailing slash the CLI reads the account as signed out.
+    environment["CLAUDE_CONFIG_DIR"] = isDefault ? nil : key
     return environment
   }
 

@@ -127,4 +127,28 @@ struct AccountStoreTests {
     }
     #expect(store.usage(for: account)?.fiveHour?.percent == 50)
   }
+
+  /// Clicking the account the window already uses changes nothing: a folder never picked
+  /// keeps following Settings.
+  @Test func pickingTheWindowsOwnAccountStoresNothing() async throws {
+    defer { try? FileManager.default.removeItem(at: root) }
+    let suite = "drakar-tests-\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defaults.set(
+      account.directory.path(percentEncoded: false), forKey: PreferenceKey.newSessionAccount)
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let other = ClaudeAccount(
+      directory: root.appending(path: ".claude-other", directoryHint: .isDirectory),
+      isDefault: false)
+    try FileManager.default.createDirectory(at: other.directory, withIntermediateDirectories: true)
+    let folder = root.appending(path: "project", directoryHint: .isDirectory)
+
+    let store = await store()
+    ClaudeChoice.$testSuite.withValue(suite) {
+      store.pick(account, for: folder)
+      #expect(ClaudeChoice.pickedAccount(for: folder) == nil)
+      store.pick(other, for: folder)
+      #expect(ClaudeChoice.pickedAccount(for: folder)?.key == other.key)
+    }
+  }
 }
