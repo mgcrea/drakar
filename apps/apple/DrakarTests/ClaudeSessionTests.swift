@@ -19,7 +19,7 @@ struct ClaudeSessionTests {
       path: "drakar-session-\(UUID().uuidString)", directoryHint: .isDirectory)
     try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
     fake = folder.appending(path: "claude")
-    try Data("#!/bin/sh\ncat > \"$0.stdin\"\n".utf8).write(to: fake)
+    try Data("#!/bin/sh\ncat >> \"$0.stdin\"\n".utf8).write(to: fake)
     try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: fake.path)
   }
 
@@ -94,5 +94,52 @@ struct ClaudeSessionTests {
     #expect(!session.canSend)
     session.send("hello")
     #expect(session.transcript.entries.isEmpty)
+  }
+
+  /// A prompt typed while the history is still being read is kept, after that history.
+  @Test func aPromptDuringTheHistoryLoadIsKept() async throws {
+    let file = folder.appending(path: "s2.jsonl")
+    try Data(
+      #"{"type":"user","message":{"role":"user","content":"Earlier"}}"#.appending("\n").utf8
+    ).write(to: file)
+    let target = ResumeTarget(
+      sessionID: "s2", cwd: folder.path(percentEncoded: false),
+      file: file.path(percentEncoded: false),
+      accountDirectory: folder.path(percentEncoded: false), accountIsDefault: false)
+    let session = ClaudeSession(folder: folder, resuming: target)
+    session.executableOverride = fake
+    async let load: Void = session.loadHistory()
+    session.send("hello")
+    await load
+    let lines = try await lines(count: 2)
+    session.stop()
+    #expect(session.transcript.entries.count == 2)
+    #expect(lines.first?.contains(#""subtype":"initialize""#) == true)
+    #expect(lines.last?.contains("hello") == true)
+  }
+
+  /// An ended session starts again on the next prompt.
+  @Test func anEndedSessionStartsAgain() async throws {
+    let session = ClaudeSession(folder: folder)
+    session.executableOverride = fake
+    session.send("one")
+    _ = try await lines(count: 2)
+    session.stop()
+    #expect(!session.isProcessRunning)
+    #expect(session.canSend)
+    session.send("two")
+    let lines = try await lines(count: 4)
+    session.stop()
+    #expect(lines.filter { $0.contains(#""subtype":"initialize""#) }.count == 2)
+  }
+
+  @Test func aMissingTranscriptDisablesTheComposer() async {
+    let target = ResumeTarget(
+      sessionID: "gone", cwd: folder.path(percentEncoded: false),
+      file: folder.appending(path: "gone.jsonl").path(percentEncoded: false),
+      accountDirectory: folder.path(percentEncoded: false), accountIsDefault: false)
+    let session = ClaudeSession(folder: folder, resuming: target)
+    await session.loadHistory()
+    #expect(!session.canSend)
   }
 }

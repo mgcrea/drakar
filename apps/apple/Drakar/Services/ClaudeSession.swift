@@ -51,7 +51,12 @@ final class ClaudeSession {
   @ObservationIgnored private var process: AgentProcess?
   @ObservationIgnored private var events: Task<Void, Never>?
   @ObservationIgnored private var requestCount = 0
-  @ObservationIgnored private var hasHistory = false
+  @ObservationIgnored private var historyLoad: Task<Void, Never>?
+  /// True from the start for a session with a transcript, until its history is read.
+  @ObservationIgnored private var isLoadingHistory = false
+  @ObservationIgnored private var promptsDuringLoad: [(String, String?)] = []
+  /// The history could not be read: the reason stays in `phase` and nothing is sent.
+  @ObservationIgnored private var historyFailed = false
   @ObservationIgnored private var follower: TranscriptFollower?
   /// A prompt sent before the process existed, written right after `initialize`.
   @ObservationIgnored private var pendingPrompt: ClientMessage?
@@ -60,6 +65,7 @@ final class ClaudeSession {
     self.folder = folder
     self.resuming = resuming
     savedTarget = resuming?.forks == true ? nil : resuming
+    isLoadingHistory = resuming != nil
   }
 
   /// The session's id once known: the resumed one at once, a new one or a fork's from
@@ -73,20 +79,34 @@ final class ClaudeSession {
 
   var isProcessRunning: Bool { process != nil }
 
-  var canSend: Bool { !isReadOnly && !transcript.isRunning && phase != .starting }
+  var canSend: Bool {
+    !isReadOnly && !historyFailed && !transcript.isRunning && phase != .starting
+  }
 
   /// The history from the transcript file, once: `--resume` continues a session but does
   /// not replay it, and transcripts run to megabytes, so it is read off the main thread.
+  /// Every caller waits for the same load.
   func loadHistory() async {
-    guard !hasHistory, let file = resuming?.transcriptFile else { return }
-    hasHistory = true
+    if historyLoad == nil {
+      historyLoad = Task { await self.readHistory() }
+    }
+    await historyLoad?.value
+  }
+
+  private func readHistory() async {
+    guard let file = resuming?.transcriptFile else {
+      isLoadingHistory = false
+      return
+    }
     let loaded = await Task.detached { () -> (Transcript, TranscriptFollower)? in
       var follower = TranscriptFollower(file: file)
       var transcript = Transcript()
       guard (try? follower.catchUp(&transcript)) != nil else { return nil }
       return (transcript, follower)
     }.value
+    isLoadingHistory = false
     guard let (transcript, follower) = loaded else {
+      historyFailed = true
       phase = .failed(
         String(
           localized:
@@ -96,6 +116,9 @@ final class ClaudeSession {
     }
     self.transcript = transcript
     self.follower = follower
+    // Prompts typed while the history was being read go after it.
+    for (text, context) in promptsDuringLoad { self.transcript.addPrompt(text, context: context) }
+    promptsDuringLoad = []
   }
 
   /// What another process appended, for a read-only session.
@@ -110,8 +133,9 @@ final class ClaudeSession {
   func send(_ prompt: String, context: [EditorSelection] = []) {
     let text = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
     guard canSend, !text.isEmpty else { return }
-    transcript.addPrompt(
-      text, context: context.isEmpty ? nil : context.map(\.label).joined(separator: ", "))
+    let label = context.isEmpty ? nil : context.map(\.label).joined(separator: ", ")
+    transcript.addPrompt(text, context: label)
+    if isLoadingHistory { promptsDuringLoad.append((text, label)) }
     let message = ClientMessage.prompt(text, context: context.map(\.promptContext))
     if process == nil {
       pendingPrompt = message
@@ -128,7 +152,7 @@ final class ClaudeSession {
     if let saved = savedTarget, resuming?.forks == true || resuming == nil { resuming = saved }
     phase = .starting
     await loadHistory()
-    if case .failed = phase { return fail(nil) }
+    if historyFailed { return fail(nil) }
     var command = command
     var environment = await Self.environment.value
     guard FileManager.default.fileExists(atPath: folder.path(percentEncoded: false)) else {
@@ -193,6 +217,11 @@ final class ClaudeSession {
     process?.closeInput()
     process?.terminate()
     events?.cancel()
+    // The cancelled event task will not report the exit, so it is recorded here.
+    process = nil
+    transcript.processExited()
+    if case .failed = phase { return }
+    if phase == .ready || phase == .starting { phase = .exited(status: 0) }
   }
 
   /// `message` nil keeps the reason already in `phase`.
