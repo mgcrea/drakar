@@ -171,6 +171,122 @@ struct ClaudeSessionTests {
     #expect(lines.filter { $0.contains(#""subtype":"initialize""#) }.count == 2)
   }
 
+  /// Yields until the spawn the first prompt started is suspended in one of its awaits.
+  private func untilStarting(_ session: ClaudeSession) async {
+    for _ in 0..<1000 where session.phase != .starting { await Task.yield() }
+    #expect(session.phase == .starting)
+  }
+
+  /// Nothing reached the stand-in: no process was started, or none was written to.
+  private func expectNothingStarted(_ session: ClaudeSession) async throws {
+    try await Task.sleep(for: .seconds(1))
+    #expect(!session.isProcessRunning)
+    #expect(!FileManager.default.fileExists(atPath: received.path(percentEncoded: false)))
+  }
+
+  /// A window closed right after its first prompt leaves no `claude` behind.
+  @Test func aStopBeforeTheSpawnRunsStartsNothing() async throws {
+    let session = ClaudeSession(folder: folder)
+    session.executableOverride = fake
+    session.send("hello")
+    session.stop()
+    try await expectNothingStarted(session)
+  }
+
+  /// Closed while the spawn waited on the history or the shell's environment.
+  @Test func aStopDuringTheStartStartsNothing() async throws {
+    let session = ClaudeSession(folder: folder)
+    session.executableOverride = fake
+    session.send("hello")
+    await untilStarting(session)
+    session.stop()
+    try await expectNothingStarted(session)
+    #expect(session.phase == .exited(status: 0))
+  }
+
+  /// Another process opened the session while this one was starting: it is followed, never
+  /// written to.
+  @Test func aSessionOpenedElsewhereDuringTheStartIsNotWritten() async throws {
+    let session = ClaudeSession(folder: folder)
+    session.executableOverride = fake
+    session.send("hello")
+    await untilStarting(session)
+    session.isReadOnly = true
+    try await expectNothingStarted(session)
+    #expect(session.phase == .idle)
+    #expect(!session.transcript.isRunning)
+  }
+
+  /// A restored row live in a terminal, prompted before the monitor read the registries:
+  /// the account's own registry refuses the resume.
+  @Test func aSessionLiveInAnotherProcessIsNotResumed() async throws {
+    let account = folder.appending(path: ".claude-other", directoryHint: .isDirectory)
+    let sessions = account.appending(path: "sessions", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: sessions, withIntermediateDirectories: true)
+    let pid = getpid()
+    try Data(#"{"pid":\#(pid),"sessionId":"s-live","entrypoint":"cli","status":"idle"}"#.utf8)
+      .write(to: sessions.appending(path: "\(pid).json"))
+    let file = folder.appending(path: "s-live.jsonl")
+    try Data(
+      #"{"type":"user","message":{"role":"user","content":"Earlier"}}"#.appending("\n").utf8
+    ).write(to: file)
+    let target = ResumeTarget(
+      sessionID: "s-live", cwd: folder.path(percentEncoded: false),
+      file: file.path(percentEncoded: false),
+      accountDirectory: account.path(percentEncoded: false), accountIsDefault: false)
+    let session = ClaudeSession(folder: folder, resuming: target)
+    session.executableOverride = fake
+    await session.loadHistory()
+    session.send("hello")
+    try await expectNothingStarted(session)
+    #expect(session.isReadOnly)
+    #expect(!session.canSend)
+  }
+
+  /// A new session ended during its first turn has no saved target yet; its next prompt
+  /// resumes it by the id `system/init` gave, rather than starting another.
+  @Test func aFirstTurnThatNeverFinishedResumesItsOwnSession() async throws {
+    let script = folder.appending(path: "claude-init")
+    let initLine =
+      #"{"type":"system","subtype":"init","cwd":"/tmp","session_id":"s-new","model":"m"}"#
+    try Data(
+      "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$0.args\"\nprintf '%s\\n' '\(initLine)'\ncat > /dev/null\n"
+        .utf8
+    ).write(to: script)
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script.path)
+    let account = folder.appending(path: ".claude-new", directoryHint: .isDirectory)
+    let project = account.appending(path: "projects/-tmp", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+    try Data(
+      #"{"type":"user","message":{"role":"user","content":"one"}}"#.appending("\n").utf8
+    ).write(to: project.appending(path: "s-new.jsonl"))
+
+    let session = ClaudeSession(folder: folder)
+    session.executableOverride = script
+    session.accounts = { [ClaudeAccount(directory: account, isDefault: false)] }
+    session.send("one")
+    for _ in 0..<50 where session.sessionID != "s-new" {
+      try await Task.sleep(for: .milliseconds(100))
+    }
+    #expect(session.sessionID == "s-new")
+    session.stop()
+    #expect(session.savedTarget == nil)
+    session.send("two")
+    let args = script.appendingPathExtension("args")
+    var runs: [String] = []
+    for _ in 0..<50 {
+      runs = ((try? String(contentsOf: args, encoding: .utf8)) ?? "").split(separator: "\n")
+        .map(String.init)
+      if runs.count >= 2 { break }
+      try await Task.sleep(for: .milliseconds(100))
+    }
+    session.stop()
+    #expect(runs.count == 2)
+    #expect(runs.first?.contains("--resume") == false)
+    #expect(runs.last?.contains("--resume=s-new") == true)
+    #expect(runs.last?.contains("--fork-session") == false)
+  }
+
   @Test func aMissingTranscriptDisablesTheComposer() async {
     let target = ResumeTarget(
       sessionID: "gone", cwd: folder.path(percentEncoded: false),

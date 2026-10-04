@@ -41,6 +41,9 @@ final class ClaudeSession {
   var isReadOnly = false
   /// Stands in for the located binary, in tests.
   @ObservationIgnored var executableOverride: URL?
+  /// The accounts a new session's transcript is looked for in; the discovered ones, or a
+  /// test's.
+  @ObservationIgnored var accounts: () -> [ClaudeAccount] = { ClaudeAccount.discover() }
 
   /// For the window's attention: a turn ended, a permission request arrived, the process
   /// stopped on its own.
@@ -63,6 +66,9 @@ final class ClaudeSession {
   @ObservationIgnored private var follower: TranscriptFollower?
   /// A prompt sent before the process existed, written right after `initialize`.
   @ObservationIgnored private var pendingPrompt: ClientMessage?
+  /// Bumped by every `stop()`: a spawn that started before one must not start a process
+  /// after it, for a window that closed or a row that was removed meanwhile.
+  @ObservationIgnored private var stopCount = 0
 
   init(folder: URL, resuming: ResumeTarget? = nil) {
     self.folder = folder
@@ -142,7 +148,9 @@ final class ClaudeSession {
     let message = ClientMessage.prompt(text, context: context.map(\.promptContext))
     if process == nil {
       pendingPrompt = message
-      Task { await spawn() }
+      // Counted now, not when the task runs: a `stop()` before then cancels it too.
+      let stops = stopCount
+      Task { await spawn(unlessStoppedSince: stops) }
     } else {
       write(message)
     }
@@ -150,14 +158,27 @@ final class ClaudeSession {
 
   /// Starts `claude`, resuming this session if it has a transcript.
   func spawn() async {
-    guard process == nil, phase != .starting else { return }
-    // A session whose process ended goes on under its own id, never as a fork again.
-    if let saved = savedTarget, resuming?.forks == true || resuming == nil { resuming = saved }
+    await spawn(unlessStoppedSince: stopCount)
+  }
+
+  /// Every await is a point where the window may have closed (`stop()`) or another process
+  /// may have opened the session (`isReadOnly`): after each, either ends the spawn.
+  private func spawn(unlessStoppedSince stops: Int) async {
+    guard stopCount == stops, process == nil, phase != .starting else { return }
+    if resuming?.forks == true || resuming == nil {
+      // A first turn that never finished (End Session, a crash) left no saved target, but
+      // the transcript exists from `system/init` on: look for it.
+      if savedTarget == nil, transcript.session?.sessionID != nil { savedTarget = findTarget() }
+      // A session whose process ended goes on under its own id, never as a fork again.
+      if let saved = savedTarget { resuming = saved }
+    }
     phase = .starting
     await loadHistory()
+    guard stillWanted(since: stops) else { return }
     if historyFailed { return fail(nil) }
     var command = command
     var environment = await Self.environment.value
+    guard stillWanted(since: stops) else { return }
     guard FileManager.default.fileExists(atPath: folder.path(percentEncoded: false)) else {
       return fail(String(localized: "The folder \(folder.lastPathComponent) no longer exists."))
     }
@@ -183,6 +204,14 @@ final class ClaudeSession {
         String(localized: "Claude Code was not found. Install it, then open the folder again."))
     }
     executable = claude
+    // The last word before the process starts, with no await after it: a session live in
+    // another process now is followed, not written to. The monitor may not have read the
+    // registries yet at launch, so the account's own registry is read here too.
+    if let resuming, resuming.forks != true, isLiveElsewhere(resuming) {
+      isReadOnly = true
+      _ = stillWanted(since: stops)
+      return
+    }
     let process = AgentProcess(
       .init(
         executable: claude, arguments: command.arguments, environment: environment,
@@ -204,6 +233,23 @@ final class ClaudeSession {
     }
   }
 
+  /// False when a `stop()` came since `stops` (which already settled the phase), or when
+  /// the session became read-only, which leaves it as it was before the prompt.
+  private func stillWanted(since stops: Int) -> Bool {
+    guard stopCount == stops else { return false }
+    guard isReadOnly else { return true }
+    phase = .idle
+    pendingPrompt = nil
+    notingPermissions { transcript.processExited() }
+    return false
+  }
+
+  private func isLiveElsewhere(_ target: ResumeTarget) -> Bool {
+    let monitor = SessionMonitor.shared
+    if monitor.hasReadRegistries, monitor.liveIDs.contains(target.sessionID) { return true }
+    return LiveSession.read(account: target.account).contains { $0.sessionID == target.sessionID }
+  }
+
   func answer(_ pending: Transcript.PendingPermission, _ decision: PermissionDecision) {
     write(.permission(requestID: pending.requestID, decision))
     notingPermissions { transcript.resolvePermission(requestID: pending.requestID) }
@@ -219,6 +265,8 @@ final class ClaudeSession {
   func stop() {
     let waiting = transcript.pendingPermissions.count
     defer { permissionsMayHaveChanged(from: waiting) }
+    stopCount += 1
+    pendingPrompt = nil
     process?.closeInput()
     process?.terminate()
     events?.cancel()
@@ -288,7 +336,7 @@ final class ClaudeSession {
   /// It exists from the first prompt on, which is when `system/init` gave the id.
   private func findTarget() -> ResumeTarget? {
     guard let id = sessionID else { return nil }
-    for account in ClaudeAccount.discover() {
+    for account in accounts() {
       let projects = account.directory.appending(path: "projects")
       let folders =
         (try? FileManager.default.contentsOfDirectory(atPath: projects.path(percentEncoded: false)))
