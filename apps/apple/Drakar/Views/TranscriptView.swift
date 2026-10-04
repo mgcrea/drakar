@@ -26,6 +26,9 @@ struct TranscriptView: View {
   @State private var onScreenIDs: Set<String> = []
   /// The bar stays up even while the prompt is in view, instead of only once it scrolled away.
   @AppStorage(PreferenceKey.pinsLastPrompt) private var pinsLastPrompt = false
+  /// `revision` when following stopped, so the follow button can tell output that arrived
+  /// since from a transcript that is merely scrolled up.
+  @State private var revisionWhenLeft: Int?
 
   var body: some View {
     ScrollView {
@@ -56,6 +59,7 @@ struct TranscriptView: View {
     }
     .onChange(of: isFollowing) { _, following in
       anchor = following ? nil : visibleIDs.first
+      revisionWhenLeft = following ? nil : transcript.revision
     }
     .onAppear {
       guard let anchor else { return }
@@ -85,6 +89,25 @@ struct TranscriptView: View {
       }
     }
     .animation(.easeOut(duration: 0.15), value: offScreenPrompt?.id)
+    .overlay(alignment: .bottomTrailing) {
+      if showsFollowButton {
+        FollowButton(isRunning: transcript.isRunning, hasUnseenOutput: hasUnseenOutput) {
+          isFollowing = true
+          position.scrollTo(edge: .bottom)
+        }
+        .padding(12)
+        .transition(.opacity)
+      }
+    }
+    .animation(.easeOut(duration: 0.15), value: showsFollowButton)
+  }
+
+  /// Not following and not at the bottom either: paused at the bottom, there is nothing to
+  /// go back to until the next output pushes it away.
+  private var showsFollowButton: Bool { !isFollowing && !isAtBottom }
+
+  private var hasUnseenOutput: Bool {
+    revisionWhenLeft.map { transcript.revision > $0 } ?? false
   }
 
   @ViewBuilder private func bar(for prompt: Transcript.Entry) -> some View {
@@ -155,6 +178,39 @@ private struct LastPromptBar: View {
   private var promptText: String {
     guard case .prompt(let text) = prompt.kind else { return headline }
     return String(text.prefix(1000))
+  }
+}
+
+/// Back to the newest output and following it, while the transcript is scrolled away. A
+/// spinner while the turn still runs; a dot when output arrived since scrolling away.
+private struct FollowButton: View {
+  let isRunning: Bool
+  let hasUnseenOutput: Bool
+  let follow: () -> Void
+
+  var body: some View {
+    Button(action: follow) {
+      HStack(spacing: 6) {
+        Image(systemName: "arrow.down")
+        Text("Latest")
+        if isRunning {
+          ProgressView().controlSize(.mini)
+        } else if hasUnseenOutput {
+          Circle().fill(.tint).frame(width: 6, height: 6)
+        }
+      }
+      .font(.callout)
+      .padding(.horizontal, 12)
+      .padding(.vertical, 6)
+      .background(.regularMaterial, in: Capsule())
+      .overlay(Capsule().strokeBorder(.separator))
+      .shadow(color: .black.opacity(0.12), radius: 6, y: 2)
+      .contentShape(Capsule())
+    }
+    .buttonStyle(.plain)
+    .help("Scroll to the newest output and keep following it")
+    .accessibilityLabel(hasUnseenOutput ? "Jump to latest, new output below" : "Jump to latest")
+    .accessibilityIdentifier("transcript.follow")
   }
 }
 
