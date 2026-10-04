@@ -13,6 +13,11 @@ final class SessionMonitor {
   /// account.
   private(set) var byFile: [String: SessionSummary] = [:]
   private(set) var isLoaded = false
+  /// Every transcript folder, for home's counts: every session on disk, not only the newest
+  /// listed in `byFile`.
+  private(set) var folders: [TranscriptFolder] = []
+  /// The sessions a `claude` process has open now, outside Drakar.
+  private(set) var liveSessions: [LiveSession] = []
 
   @ObservationIgnored private var accounts: [ClaudeAccount]
   @ObservationIgnored private var accountModels: [URL: String] = [:]
@@ -25,6 +30,9 @@ final class SessionMonitor {
   @ObservationIgnored private var generations: [String: Int] = [:]
   /// `realpath` of each transcript folder seen, so a key costs one lookup.
   @ObservationIgnored private var resolvedFolders: [String: String] = [:]
+  /// A linked worktree's `cwd` → the same folder in its main checkout, from `folders`.
+  @ObservationIgnored private var checkouts: [String: String] = [:]
+  @ObservationIgnored private var folderScan: Task<Void, Never>?
   /// Whether the registries were read once: before that, no id is known to be live.
   @ObservationIgnored private(set) var hasReadRegistries = false
 
@@ -43,8 +51,25 @@ final class SessionMonitor {
   func summaries(under folder: String) -> [SessionSummary] {
     let owners = ProjectPath.Owners([folder])
     return byFile.values.filter { summary in
-      summary.cwd.map { owners.owner(of: $0) != nil } ?? false
+      summary.cwd.map { owners.owner(of: checkout(of: $0)) != nil } ?? false
     }
+  }
+
+  /// `cwd` as it sits in its main checkout: a linked worktree's sessions belong to their
+  /// repository. Known once the folders are scanned; until then, `cwd` itself.
+  func checkout(of cwd: String) -> String {
+    checkouts[ProjectPath.normalize(cwd)] ?? cwd
+  }
+
+  /// The summary of `file`, when it is among those read.
+  func summary(forFile file: URL) -> SessionSummary? { byFile[key(file)] }
+
+  /// Reads `file`'s summary when the newest 500 did not include it: a project row's gauge
+  /// is its newest session's, however old.
+  func load(_ file: URL, account: ClaudeAccount) async {
+    guard summary(forFile: file) == nil else { return }
+    let summary = await Task.detached { SessionIndex.summary(of: file, account: account) }.value
+    if let summary, self.summary(forFile: file) == nil { merge([summary]) }
   }
 
   /// The one terminal session of `folder` connected to the bridge, when there is exactly one.
@@ -108,6 +133,7 @@ final class SessionMonitor {
     merge(listed)
     readRegistries()
     isLoaded = true
+    scanFolders(after: .zero)
     for account in accounts {
       for name in ["sessions", "projects"] {
         let folder = account.directory.appending(path: name, directoryHint: .isDirectory)
@@ -143,6 +169,43 @@ final class SessionMonitor {
       SessionIndex.list(accounts: accounts, limit: 200, under: folder)
     }.value
     merge(listed)
+    // A linked worktree's transcripts are named after its own path, not the folder's.
+    let owners = ProjectPath.Owners([folder])
+    let worktrees = folders.filter { entry in
+      guard let checkout = entry.checkout, let cwd = entry.cwd else { return false }
+      return checkout != ProjectPath.normalize(cwd) && owners.owner(of: checkout) != nil
+    }
+    guard !worktrees.isEmpty else { return }
+    let read = await Task.detached {
+      worktrees.flatMap { entry in
+        entry.sessionIDs.compactMap { id in
+          SessionIndex.summary(
+            of: entry.folder.appending(path: "\(id).jsonl"), account: entry.account)
+        }
+      }
+    }.value
+    merge(read)
+  }
+
+  /// Rescans the transcript folders, `delay` after the last change asked: a streaming
+  /// session writes many times a second, and the counts need none of those in between.
+  private func scanFolders(after delay: Duration) {
+    folderScan?.cancel()
+    let (accounts, previous) = (self.accounts, folders)
+    folderScan = Task {
+      try? await Task.sleep(for: delay)
+      guard !Task.isCancelled else { return }
+      let scanned = await Task.detached {
+        SessionIndex.folders(accounts: accounts, previous: previous)
+      }.value
+      guard !Task.isCancelled else { return }
+      for entry in scanned {
+        if let cwd = entry.cwd, let checkout = entry.checkout {
+          checkouts[ProjectPath.normalize(cwd)] = checkout
+        }
+      }
+      if scanned != folders { folders = scanned }
+    }
   }
 
   private func merge(_ summaries: [SessionSummary]) {
@@ -184,6 +247,7 @@ final class SessionMonitor {
       }
     }
     if registry { readRegistries() }
+    if !files.isEmpty { scanFolders(after: .seconds(2)) }
     for path in files {
       let file = URL(filePath: path)
       let generation = generations[path, default: 0] + 1
@@ -215,6 +279,8 @@ final class SessionMonitor {
       let current = live[summary.account.directory]?[summary.sessionID]
       if summary.live != current { byFile[key]?.live = current }
     }
+    let sessions = live.values.flatMap(\.values).sorted { $0.pid < $1.pid }
+    if sessions != liveSessions { liveSessions = sessions }
     hasReadRegistries = true
     OpenSessions.shared.liveChanged(liveIDs)
   }

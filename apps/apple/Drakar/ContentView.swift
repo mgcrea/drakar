@@ -11,6 +11,7 @@ struct ContentView: View {
   @State private var windowID = UUID()
   @Environment(\.appearsActive) private var appearsActive
   @Environment(\.dismiss) private var dismiss
+  @Environment(\.openWindow) private var openWindow
   /// The editor's share of the window beside the session, kept per window.
   @SceneStorage("drakar.editorFraction") private var editorFraction = 0.5
   /// Whether this window floats above other apps' windows, kept per window.
@@ -64,15 +65,18 @@ struct ContentView: View {
           storedProject = (try? String(decoding: JSONEncoder().encode(stored), as: UTF8.self)) ?? ""
         }
       } else {
-        SessionsView(
-          pick: pick,
-          openFolder: { folder in
-            show(.project(folder), attaching: [])
-          })
+        HomeView(pick: pick, enter: enter)
       }
     }
     .frame(minWidth: 680, minHeight: 440)
     .toolbar {
+      if project != nil {
+        ToolbarItem(placement: .primaryAction) {
+          Button("Projects", systemImage: "square.grid.2x2") { WindowTabs.showHome() }
+            .help("Show the projects (⇧⌘H)")
+            .accessibilityIdentifier("window.showProjects")
+        }
+      }
       ToolbarItem(placement: .primaryAction) {
         Toggle(isOn: $keepsOnTop) {
           Label("Keep on Top", systemImage: keepsOnTop ? "pin.fill" : "pin")
@@ -83,10 +87,12 @@ struct ContentView: View {
       }
     }
     .background(WindowLevel(floats: keepsOnTop))
+    .background(WindowReader { WindowTabs.adopt($0) })
+    .onAppear { WindowTabs.openWindow = openWindow }
     // The folder's name over its path, as the Files pane writes it. The path is shortened
     // because the title bar does not truncate: a long subtitle widened the detail column
     // past the window and pushed the sidebar off its leading edge.
-    .navigationTitle(project?.folder.lastPathComponent ?? "Drakar")
+    .navigationTitle(project?.folder.lastPathComponent ?? String(localized: "Projects"))
     .navigationSubtitle(project.map { Self.shortened($0.folder) } ?? "")
     .onChange(of: route, initial: true) { open(route) }
     .onDisappear {
@@ -108,6 +114,7 @@ struct ContentView: View {
   /// The project for `route`, restored from scene storage the first time.
   private func open(_ route: WindowRoute?) {
     guard let folder = route?.folder else { return }
+    ProjectList.shared.track(folder)
     if project?.folder.standardizedFileURL != folder.standardizedFileURL {
       let stored = try? JSONDecoder().decode(StoredProject.self, from: Data(storedProject.utf8))
       let project = Project(folder: folder, restoring: stored)
@@ -119,6 +126,16 @@ struct ContentView: View {
       project.attach(target)
     }
     if project.sessions.isEmpty { project.newSession() }
+  }
+
+  /// A project clicked on home: its open window comes forward, or this one becomes it.
+  private func enter(_ folder: URL) {
+    let path = ProjectPath.normalize(folder.path(percentEncoded: false))
+    if let window = OpenSessions.shared.window(forFolder: path) {
+      window.makeKeyAndOrderFront(nil)
+      return
+    }
+    route = .project(folder)
   }
 
   /// A session picked in this picker window: shown where it already is, or in the project
@@ -241,6 +258,65 @@ private struct WindowLevel: NSViewRepresentable {
     }
 
     private func apply() { window?.level = floats ? .floating : .normal }
+  }
+}
+
+/// Windows opened as tabs of the key window, and home found among them.
+@MainActor enum WindowTabs {
+  /// The scene's action, handed over by the first window to appear: menus and rows open
+  /// windows through it.
+  static var openWindow: OpenWindowAction?
+  /// The window the next one to appear joins as a tab.
+  private static weak var tabHost: NSWindow?
+  private static var windows: [WeakWindow] = []
+
+  private struct WeakWindow {
+    weak var window: NSWindow?
+  }
+
+  /// A window for `route`, as a tab of the key window when `asTab`. A project already
+  /// open comes forward instead: one window per folder.
+  static func open(_ route: WindowRoute, asTab: Bool) {
+    if let folder = route.folder,
+      let window = OpenSessions.shared.window(
+        forFolder: ProjectPath.normalize(folder.path(percentEncoded: false)))
+    {
+      window.makeKeyAndOrderFront(nil)
+      return
+    }
+    tabHost = asTab ? NSApp.keyWindow : nil
+    openWindow?(value: route)
+  }
+
+  /// A Drakar window appeared: it joins the tab group it was opened for.
+  static func adopt(_ window: NSWindow) {
+    windows.removeAll { $0.window == nil }
+    if !windows.contains(where: { $0.window === window }) {
+      windows.append(WeakWindow(window: window))
+    }
+    guard let host = tabHost, host !== window else { return }
+    tabHost = nil
+    if host.tabbedWindows?.contains(window) != true {
+      host.addTabbedWindow(window, ordered: .above)
+    }
+    window.makeKeyAndOrderFront(nil)
+  }
+
+  /// Home in the key window's tab group, brought forward, or opened as a new tab there.
+  static func showHome() {
+    let key = NSApp.keyWindow
+    let projectWindows = OpenSessions.shared.projects.values.compactMap(\.workspace.window)
+    let homes = windows.compactMap(\.window).filter { window in
+      !projectWindows.contains { $0 === window }
+    }
+    let group = key.map { $0.tabbedWindows ?? [$0] } ?? []
+    if let home = homes.first(where: { home in group.contains { $0 === home } })
+      ?? (key == nil ? homes.first : nil)
+    {
+      home.makeKeyAndOrderFront(nil)
+      return
+    }
+    open(.picker(), asTab: key != nil)
   }
 }
 

@@ -4,7 +4,7 @@ import SwiftUI
 
 // MARK: - Settings
 
-/// The panes, and the order they sit in: General, Attention, About.
+/// The panes, and the order they sit in: General, Transcript, Attention, About.
 ///
 /// An entitlement pane joins only when something is actually sold: before a StoreKit
 /// product is registered it would be a button that fails.
@@ -12,12 +12,14 @@ import SwiftUI
 /// About stays last, because it answers a question you only ask with a bug report open.
 enum SettingsPane: String, SupportKitSettings.SettingsPane {
   case general
+  case transcript
   case attention
   case about
 
   var title: LocalizedStringKey {
     switch self {
     case .general: "General"
+    case .transcript: "Transcript"
     case .attention: "Attention"
     case .about: "About"
     }
@@ -26,6 +28,7 @@ enum SettingsPane: String, SupportKitSettings.SettingsPane {
   var systemImage: String {
     switch self {
     case .general: "gearshape"
+    case .transcript: "text.bubble"
     case .attention: "bell.badge"
     case .about: "info.circle"
     }
@@ -49,6 +52,8 @@ enum PreferenceKey {
   static let notifiesTurnEnds = "drakar.notifiesTurnEnds"
   /// Whether a turn that ends on a question or an offer marks its row.
   static let recognisesAsks = "drakar.recognisesAsks"
+  /// Whether the last prompt stays pinned over the transcript even while it is in view.
+  static let pinsLastPrompt = "drakar.pinsLastPrompt"
 }
 
 /// What Settings picked for the sessions Drakar starts.
@@ -167,6 +172,7 @@ struct SettingsView: View {
     SettingsScaffold(selection: Support.settings) { pane in
       switch pane {
       case .general: GeneralPane()
+      case .transcript: TranscriptPane()
       case .attention: AttentionPane()
       case .about:
         AboutSettingsPane(app: Support.app, preferIssueTracker: Support.preferIssueTracker)
@@ -199,6 +205,24 @@ struct GeneralPane: View {
     }
     .formStyle(.grouped)
     .onChange(of: editorScope) { IDEBridge.shared.refreshFolders() }
+  }
+}
+
+struct TranscriptPane: View {
+  @AppStorage(PreferenceKey.pinsLastPrompt) private var pinsLastPrompt = false
+
+  var body: some View {
+    Form {
+      Section {
+        Toggle("Always show your last message", isOn: $pinsLastPrompt)
+          .accessibilityIdentifier("settings.pinsLastPrompt")
+      } footer: {
+        Text(
+          "Pinned at the top of the transcript; click it to scroll back to the message. When off, it shows only once the message has scrolled out of view."
+        )
+      }
+    }
+    .formStyle(.grouped)
   }
 }
 

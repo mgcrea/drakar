@@ -1,3 +1,4 @@
+import AppKit
 import DrakarKit
 import Foundation
 import Observation
@@ -104,9 +105,19 @@ final class OpenSessions {
     return nil
   }
 
-  /// The open project that would own `cwd`, or `cwd` itself for a new window.
+  /// The open or tracked project that would own `cwd` (a linked worktree's by its main
+  /// checkout), or `cwd` itself for a new window.
   func ownerFolder(forCwd cwd: String) -> String {
-    ProjectPath.owner(of: cwd, among: folders) ?? ProjectPath.normalize(cwd)
+    let path = SessionMonitor.shared.checkout(of: cwd)
+    return ProjectPath.owner(of: path, among: folders + ProjectList.shared.tracked.paths)
+      ?? ProjectPath.normalize(cwd)
+  }
+
+  /// The window showing the project at `folder`, as `normalize` writes it.
+  func window(forFolder folder: String) -> NSWindow? {
+    projects.values.first {
+      ProjectPath.normalize($0.folder.path(percentEncoded: false)) == folder
+    }?.workspace.window
   }
 
   func requestAttach(_ target: ResumeTarget, in folder: String) {

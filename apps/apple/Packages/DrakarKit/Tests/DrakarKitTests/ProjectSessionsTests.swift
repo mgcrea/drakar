@@ -44,6 +44,14 @@ struct ProjectSessionsTests {
     #expect(groups.ended.isEmpty && groups.elsewhere.isEmpty)
   }
 
+  @Test func aLinkedWorktreesSessionsListUnderTheirRepository() {
+    let groups = ProjectSessions.group(
+      [summary("wt", cwd: "/w/drakar-feature", minutesAgo: 1)], folder: "/w/drakar",
+      otherFolders: [], attached: [], inOtherWindows: [],
+      checkout: { $0 == "/w/drakar-feature" ? "/w/drakar" : $0 })
+    #expect(groups.ended.map(\.sessionID) == ["wt"])
+  }
+
   /// Open in another Drakar window: Drakar's children are not in the registry, so the
   /// window index says it is live.
   @Test func anotherDrakarWindowCountsAsElsewhere() {
