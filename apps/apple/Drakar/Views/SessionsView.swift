@@ -9,8 +9,6 @@ struct SessionsView: View {
   let pick: (SessionSummary, Bool) -> Void
   let openFolder: (URL) -> Void
 
-  @State private var sessions: [SessionSummary] = []
-  @State private var isLoading = true
   @State private var query = ""
   @State private var choosingFolder = false
   /// A session open in another process, waiting for the choice to fork it.
@@ -20,7 +18,7 @@ struct SessionsView: View {
     VStack(spacing: 0) {
       header
       Divider()
-      if isLoading && sessions.isEmpty {
+      if !SessionMonitor.shared.isLoaded {
         ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
       } else if filtered.isEmpty {
         ContentUnavailableView(
@@ -30,7 +28,7 @@ struct SessionsView: View {
             query.isEmpty ? "Open a folder to start one." : "Try another word."))
       } else {
         List(filtered) { summary in
-          SummaryRow(
+          PickerRow(
             summary: summary, showsAccount: showsAccounts,
             isOpenHere: OpenSessions.shared.locate(summary.sessionID) != nil
           )
@@ -50,7 +48,6 @@ struct SessionsView: View {
     .fileImporter(isPresented: $choosingFolder, allowedContentTypes: [.folder]) { result in
       if case .success(let folder) = result { openFolder(folder) }
     }
-    .task { await load() }
     .confirmationDialog(
       "This session is open in \(openElsewhere.map(Self.host) ?? "")",
       isPresented: Binding(get: { openElsewhere != nil }, set: { if !$0 { openElsewhere = nil } }),
@@ -88,9 +85,6 @@ struct SessionsView: View {
           .foregroundStyle(.secondary)
       }
       Spacer()
-      Button("Refresh", systemImage: "arrow.clockwise") { Task { await load() } }
-        .labelStyle(.iconOnly)
-        .keyboardShortcut("r")
       Button("Open Folder…") { choosingFolder = true }
         .keyboardShortcut("o")
         .buttonStyle(.borderedProminent)
@@ -98,6 +92,8 @@ struct SessionsView: View {
     }
     .padding(16)
   }
+
+  private var sessions: [SessionSummary] { SessionMonitor.shared.all }
 
   private var filtered: [SessionSummary] {
     guard !query.isEmpty else { return sessions }
@@ -134,21 +130,9 @@ struct SessionsView: View {
       openElsewhere = summary
     }
   }
-
-  private func load() async {
-    isLoading = true
-    let extra =
-      (await ClaudeSession.environment.value)["CLAUDE_CONFIG_DIR"].map {
-        [URL(filePath: $0, directoryHint: .isDirectory)]
-      } ?? []
-    sessions = await Task.detached {
-      SessionIndex.list(accounts: ClaudeAccount.discover(extra: extra))
-    }.value
-    isLoading = false
-  }
 }
 
-private struct SummaryRow: View {
+private struct PickerRow: View {
   let summary: SessionSummary
   let showsAccount: Bool
   let isOpenHere: Bool

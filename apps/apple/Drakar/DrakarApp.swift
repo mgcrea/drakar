@@ -61,6 +61,7 @@ private struct SessionCommands: View {
 final class AppDelegate: NSObject, NSApplicationDelegate {
   func applicationDidFinishLaunching(_ notification: Notification) {
     IDEBridge.shared.start()
+    Task { await SessionMonitor.shared.start() }
   }
 
   func applicationWillTerminate(_ notification: Notification) {

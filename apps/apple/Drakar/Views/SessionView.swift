@@ -40,8 +40,10 @@ struct SessionView: View {
 
   /// Where the session is open, from the registry, for the banner.
   private var host: String {
-    // Task 9 replaces this with the monitor's answer.
-    String(localized: "another app")
+    guard let id = item.sessionID,
+      let summary = SessionMonitor.shared.all.first(where: { $0.sessionID == id })
+    else { return String(localized: "another app") }
+    return SessionMonitor.shared.host(of: summary)
   }
 
   /// The first request waiting; answering it shows the next. Never dismissed except by

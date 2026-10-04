@@ -20,6 +20,21 @@ struct ProjectSidebar: View {
 /// row never moves under the pointer.
 struct SessionListView: View {
   let project: Project
+  @State private var showsEnded = false
+  @State private var showsAllEnded = false
+  private var monitor: SessionMonitor { .shared }
+
+  private var groups: ProjectGroups {
+    let folder = ProjectPath.normalize(project.folder.path(percentEncoded: false))
+    let others = OpenSessions.shared.folders.filter { $0 != folder }
+    let attached = Set(project.sessions.compactMap(\.sessionID))
+    let inOtherWindows = Set(
+      OpenSessions.shared.projects.values.filter { $0 !== project }
+        .flatMap { $0.sessions.compactMap(\.sessionID) })
+    return ProjectSessions.group(
+      monitor.summaries(under: folder), folder: folder, otherFolders: others,
+      attached: attached, inOtherWindows: inOtherWindows)
+  }
 
   var body: some View {
     List(selection: selection) {
@@ -41,9 +56,48 @@ struct SessionListView: View {
             .accessibilityIdentifier("sessions.new")
         }
       }
+      let groups = groups
+      if !groups.elsewhere.isEmpty {
+        Section("Elsewhere") {
+          ForEach(groups.elsewhere) { summary in
+            SummaryRow(summary: summary, host: monitor.host(of: summary), monitor: monitor)
+              .contentShape(Rectangle())
+              .onTapGesture { openElsewhere(summary) }
+              .accessibilityAddTraits(.isButton)
+              .accessibilityIdentifier("sessions.elsewhere.\(summary.sessionID)")
+          }
+        }
+      }
+      if !groups.ended.isEmpty {
+        Section(isExpanded: $showsEnded) {
+          ForEach(showsAllEnded ? groups.ended : Array(groups.ended.prefix(20))) { summary in
+            SummaryRow(summary: summary, host: nil, monitor: monitor)
+              .contentShape(Rectangle())
+              .onTapGesture { if let target = ResumeTarget(summary) { project.attach(target) } }
+              .accessibilityAddTraits(.isButton)
+              .accessibilityIdentifier("sessions.ended.\(summary.sessionID)")
+          }
+          if groups.ended.count > 20, !showsAllEnded {
+            Button("Show All \(groups.ended.count)") { showsAllEnded = true }
+              .buttonStyle(.link)
+          }
+        } header: {
+          Text("Ended (\(groups.ended.count))")
+        }
+      }
     }
     .listStyle(.sidebar)
     .accessibilityIdentifier("sessions")
+    .task { await monitor.include(folder: project.folder.path(percentEncoded: false)) }
+  }
+
+  private func openElsewhere(_ summary: SessionSummary) {
+    if let (owner, item) = OpenSessions.shared.locate(summary.sessionID) {
+      owner.select(item)
+      owner.workspace.window?.makeKeyAndOrderFront(nil)
+    } else if let target = ResumeTarget(summary) {
+      project.attach(target, readOnly: true)
+    }
   }
 
   private var selection: Binding<ProjectSession.ID?> {
@@ -101,6 +155,14 @@ struct SessionRow: View {
           Text(detail).font(.caption).foregroundStyle(.secondary).lineLimit(1)
         }
       }
+      Spacer(minLength: 4)
+      if let gauge = item.gauge(
+        accountModel: item.session.resuming.flatMap {
+          SessionMonitor.shared.accountModel(for: $0.account)
+        })
+      {
+        ContextGaugeView(gauge: gauge)
+      }
     }
     .accessibilityElement(children: .combine)
   }
@@ -127,6 +189,56 @@ struct SessionRow: View {
     let path = item.session.folder.path(percentEncoded: false)
     guard let range = path.range(of: "/.claude/worktrees/") else { return nil }
     return String(path[range.upperBound...].prefix { $0 != "/" })
+  }
+}
+
+/// A session this window does not hold: live elsewhere, or ended.
+struct SummaryRow: View {
+  let summary: SessionSummary
+  /// Where it is live, or nil for an ended one.
+  let host: String?
+  let monitor: SessionMonitor
+
+  var body: some View {
+    HStack(alignment: .firstTextBaseline, spacing: 7) {
+      Circle().fill(state.tint).frame(width: 7, height: 7).help(state.label)
+      VStack(alignment: .leading, spacing: 2) {
+        Text(summary.displayTitle).lineLimit(1)
+        Text(detail).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+      }
+      Spacer(minLength: 4)
+      if let gauge {
+        ContextGaugeView(gauge: gauge)
+      }
+    }
+    .accessibilityElement(children: .combine)
+  }
+
+  private var state: RowState {
+    guard host != nil else { return .idle }
+    return switch summary.live?.status {
+    case "busy":
+      TranscriptTail.read(summary.file)?.isAwaitingToolResult == true ? .runningTool : .working
+    case "waiting": .waiting
+    default: .idle
+    }
+  }
+
+  private var detail: String {
+    let when = (summary.live?.updatedAt ?? summary.modified)
+      .formatted(.relative(presentation: .named))
+    var parts = [when]
+    if let waiting = summary.live?.waitingFor { parts.insert(waiting, at: 0) }
+    if let host { parts.append(host) }
+    return parts.joined(separator: " · ")
+  }
+
+  private var gauge: ContextGauge? {
+    ContextGauge.make(
+      usage: summary.context?.usage, reportedLimit: nil, initModelID: nil,
+      attachmentModelID: summary.modelID,
+      accountModelID: monitor.accountModel(for: summary.account),
+      messageModelID: summary.context?.modelID)
   }
 }
 

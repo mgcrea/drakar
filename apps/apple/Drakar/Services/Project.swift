@@ -38,6 +38,16 @@ final class ProjectSession: Identifiable {
     return summary.isEmpty ? name : "\(name): \(summary)"
   }
 
+  /// The gauge from what this session knows: its process's report, its own model, the
+  /// account's, the newest message's.
+  func gauge(accountModel: String?) -> ContextGauge? {
+    let transcript = session.transcript
+    return ContextGauge.make(
+      usage: transcript.contextUsage, reportedLimit: session.reportedContext?.maxTokens,
+      initModelID: transcript.session?.model, attachmentModelID: nil,
+      accountModelID: accountModel, messageModelID: transcript.contextModelID)
+  }
+
   var hasStopped: Bool {
     switch session.phase {
     case .failed: true
