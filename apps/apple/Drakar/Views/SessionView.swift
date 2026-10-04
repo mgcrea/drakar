@@ -24,6 +24,7 @@ struct SessionView: View {
           context: workspace.selection, pinned: workspace.pinned,
           unpin: { selection in workspace.pinned.removeAll { $0 == selection } },
           send: { text, context in
+            project.takeOver(item)
             session.send(text, context: context)
             workspace.pinned = []
           },

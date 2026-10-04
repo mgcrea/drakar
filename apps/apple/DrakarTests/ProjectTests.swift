@@ -58,12 +58,42 @@ struct ProjectTests {
 
   @Test func aForkIsANewRowBesideTheOriginal() {
     let project = Project(folder: folder)
-    let original = project.attach(target("a"), readOnly: true)
+    let original = project.attach(target("a"), watching: true, readOnly: true)
     let fork = project.fork(original)
     #expect(project.sessions.count == 2)
     #expect(fork.session.resuming?.forks == true)
     #expect(!fork.session.isReadOnly)
     #expect(original.session.isReadOnly)
+  }
+
+  /// A session opened from Elsewhere or Ended is looked at there, not made the window's
+  /// own, until it is taken over: prompted, or attached.
+  @Test func aWatchedSessionStaysOutOfTheWindowUntilTakenOver() {
+    let project = Project(folder: folder)
+    let own = project.attach(target("a"))
+    let watched = project.attach(target("b"), watching: true)
+    #expect(watched.isWatching && !watched.session.isReadOnly)
+    #expect(project.held.map(\.id) == [own.id])
+    #expect(project.stored.sessions.map(\.sessionID) == ["a"])
+    #expect(project.stored.selected == nil)
+    let window = UUID()
+    OpenSessions.shared.register(project, window: window)
+    defer { OpenSessions.shared.unregister(window: window) }
+    #expect(OpenSessions.shared.locate("b") == nil)
+    #expect(project.attach(target("b"), watching: true).isWatching)
+    project.select(own)
+    project.attach(target("b"))
+    #expect(!watched.isWatching)
+    #expect(project.held.map(\.id) == [watched.id, own.id])
+    #expect(project.stored.sessions.map(\.sessionID) == ["b", "a"])
+  }
+
+  @Test func aForkOfAWatchedSessionIsTheWindowsOwn() {
+    let project = Project(folder: folder)
+    let watched = project.attach(target("a"), watching: true, readOnly: true)
+    let fork = project.fork(watched)
+    #expect(project.held.map(\.id) == [fork.id])
+    #expect(watched.isWatching)
   }
 
   @Test func theWindowIndexFindsASessionAndItsOwner() {

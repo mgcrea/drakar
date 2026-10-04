@@ -34,10 +34,10 @@ struct SessionListView: View {
   private var groups: ProjectGroups {
     let folder = ProjectPath.normalize(project.folder.path(percentEncoded: false))
     let others = OpenSessions.shared.folders.filter { $0 != folder }
-    let attached = Set(project.sessions.compactMap(\.sessionID))
+    let attached = Set(project.held.compactMap(\.sessionID))
     let inOtherWindows = Set(
       OpenSessions.shared.projects.values.filter { $0 !== project }
-        .flatMap { $0.sessions.compactMap(\.sessionID) })
+        .flatMap { $0.held.compactMap(\.sessionID) })
     return ProjectSessions.group(
       monitor.summaries(under: folder), folder: folder, otherFolders: others,
       attached: attached, inOtherWindows: inOtherWindows, checkout: monitor.checkout(of:))
@@ -79,7 +79,7 @@ struct SessionListView: View {
   private var list: some View {
     List(selection: selection) {
       Section("This Window") {
-        ForEach(project.sessions) { item in
+        ForEach(project.held) { item in
           SessionRow(item: item, isSelected: item.id == project.selectedID)
             .tag(item.id)
             .contextMenu { menu(for: item) }
@@ -91,6 +91,7 @@ struct SessionListView: View {
         Section("Elsewhere") {
           ForEach(groups.elsewhere) { summary in
             SummaryRow(summary: summary, host: monitor.host(of: summary), monitor: monitor)
+              .tagged(watched(summary))
               .contentShape(Rectangle())
               .onTapGesture { openElsewhere(summary) }
               .accessibilityAddTraits(.isButton)
@@ -102,8 +103,11 @@ struct SessionListView: View {
         Section(isExpanded: $showsEnded) {
           ForEach(showsAllEnded ? groups.ended : Array(groups.ended.prefix(20))) { summary in
             SummaryRow(summary: summary, host: nil, monitor: monitor)
+              .tagged(watched(summary))
               .contentShape(Rectangle())
-              .onTapGesture { if let target = ResumeTarget(summary) { project.attach(target) } }
+              .onTapGesture {
+                if let target = ResumeTarget(summary) { project.attach(target, watching: true) }
+              }
               .accessibilityAddTraits(.isButton)
               .accessibilityIdentifier("sessions.ended.\(summary.sessionID)")
           }
@@ -125,8 +129,13 @@ struct SessionListView: View {
       owner.select(item)
       owner.workspace.window?.makeKeyAndOrderFront(nil)
     } else if let target = ResumeTarget(summary) {
-      project.attach(target, readOnly: true)
+      project.attach(target, watching: true, readOnly: true)
     }
+  }
+
+  /// The row watching `summary` here, so the list shows it selected.
+  private func watched(_ summary: SessionSummary) -> ProjectSession.ID? {
+    project.session(withID: summary.sessionID).flatMap { $0.isWatching ? $0.id : nil }
   }
 
   private var selection: Binding<ProjectSession.ID?> {
@@ -157,6 +166,13 @@ struct SessionListView: View {
     alert.addButton(withTitle: String(localized: "Stop"))
     alert.addButton(withTitle: String(localized: "Cancel"))
     if alert.runModal() == .alertFirstButtonReturn { action() }
+  }
+}
+
+extension View {
+  /// Selectable as `id`'s row, when there is one.
+  @ViewBuilder fileprivate func tagged(_ id: ProjectSession.ID?) -> some View {
+    if let id { tag(id) } else { self }
   }
 }
 

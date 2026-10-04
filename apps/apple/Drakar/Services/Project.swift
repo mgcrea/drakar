@@ -19,6 +19,9 @@ final class ProjectSession: Identifiable {
   /// not shown yet has its title and gauge without its whole history being read, and every
   /// row its last activity.
   var preview: SessionSummary?
+  /// Opened from Elsewhere or Ended to look at: listed there, not with the window's own rows,
+  /// and not kept between launches, until it is taken over.
+  var isWatching = false
 
   init(session: ClaudeSession) {
     self.session = session
@@ -128,10 +131,13 @@ final class Project {
     return item
   }
 
-  /// `target` on top and shown, or the row already holding it. `readOnly` while another
-  /// process has it open.
-  @discardableResult func attach(_ target: ResumeTarget, readOnly: Bool = false) -> ProjectSession {
+  /// `target` on top and shown, or the row already holding it, taken over unless
+  /// `watching`. `readOnly` while another process has it open.
+  @discardableResult func attach(
+    _ target: ResumeTarget, watching: Bool = false, readOnly: Bool = false
+  ) -> ProjectSession {
     if target.forks != true, let existing = session(withID: target.sessionID) {
+      if !watching { takeOver(existing) }
       select(existing)
       return existing
     }
@@ -139,9 +145,18 @@ final class Project {
       folder: URL(filePath: target.cwd, directoryHint: .isDirectory), resuming: target)
     session.isReadOnly = readOnly
     let item = make(session)
+    item.isWatching = watching
     sessions.insert(item, at: 0)
     select(item)
     return item
+  }
+
+  /// A watched row becomes one of the window's own, on top: it was prompted, or attached.
+  func takeOver(_ item: ProjectSession) {
+    guard item.isWatching else { return }
+    item.isWatching = false
+    sessions.removeAll { $0.id == item.id }
+    sessions.insert(item, at: 0)
   }
 
   /// A copy of a session open elsewhere, continued under a new id beside it.
@@ -189,10 +204,13 @@ final class Project {
   /// Sessions mid-turn: what closing the window would interrupt.
   var runningCount: Int { sessions.count { $0.session.transcript.isRunning } }
 
+  /// The window's own rows; a watched one is not kept.
+  var held: [ProjectSession] { sessions.filter { !$0.isWatching } }
+
   var stored: StoredProject {
     StoredProject(
-      sessions: sessions.compactMap(\.session.savedTarget),
-      selected: selected?.session.savedTarget?.sessionID)
+      sessions: held.compactMap(\.session.savedTarget),
+      selected: selected.flatMap { $0.isWatching ? nil : $0.session.savedTarget?.sessionID })
   }
 
   private func make(_ session: ClaudeSession) -> ProjectSession {
