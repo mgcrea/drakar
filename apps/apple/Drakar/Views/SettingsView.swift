@@ -50,6 +50,9 @@ enum PreferenceKey {
 
 /// What Settings picked for the sessions Drakar starts.
 enum ClaudeChoice {
+  /// Where the choices are read from; a scratch suite in tests, never the real one.
+  static var defaults = UserDefaults.standard
+
   /// The `claude` picked in Settings; nil to run the shell's.
   static var executable: URL? {
     stored(PreferenceKey.claudePath).map { URL(filePath: $0) }
@@ -75,7 +78,7 @@ enum ClaudeChoice {
   }
 
   private static func stored(_ key: String) -> String? {
-    UserDefaults.standard.string(forKey: key).flatMap { $0.isEmpty ? nil : $0 }
+    defaults.string(forKey: key).flatMap { $0.isEmpty ? nil : $0 }
   }
 }
 

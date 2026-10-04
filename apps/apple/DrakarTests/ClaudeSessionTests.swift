@@ -54,6 +54,44 @@ struct ClaudeSessionTests {
     #expect(lines.last?.contains("hello") == true)
   }
 
+  /// What Settings › General picks reaches the process: the `claude` it runs and the
+  /// account it runs under. Nothing else fails if the spawn stops reading them.
+  @Test func runsTheClaudeAndAccountPickedInSettings() async throws {
+    let picked = folder.appending(path: "picked-claude")
+    try Data(
+      "#!/bin/sh\nprintf '%s' \"$CLAUDE_CONFIG_DIR\" > \"$0.account\"\ncat > /dev/null\n".utf8
+    )
+    .write(to: picked)
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: picked.path)
+    let account = folder.appending(path: ".claude-picked", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: account, withIntermediateDirectories: true)
+
+    let suite = "drakar-tests-\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defaults.set(picked.path(percentEncoded: false), forKey: PreferenceKey.claudePath)
+    defaults.set(account.path(percentEncoded: false), forKey: PreferenceKey.newSessionAccount)
+    ClaudeChoice.defaults = defaults
+    defer {
+      ClaudeChoice.defaults = .standard
+      defaults.removePersistentDomain(forName: suite)
+    }
+
+    let session = ClaudeSession(folder: folder)
+    await session.spawn()
+    defer { session.stop() }
+    #expect(session.executable == picked)
+    #expect(session.account?.name == "picked")
+
+    let written = picked.appendingPathExtension("account")
+    var configDirectory: String?
+    for _ in 0..<50 {
+      configDirectory = try? String(contentsOf: written, encoding: .utf8)
+      if configDirectory != nil { break }
+      try await Task.sleep(for: .milliseconds(100))
+    }
+    #expect(configDirectory == account.path(percentEncoded: false))
+  }
+
   /// A restored window whose transcript is gone still opens, and says why it cannot resume.
   @Test func aMissingTranscriptStopsWithAReason() async {
     let target = ResumeTarget(
