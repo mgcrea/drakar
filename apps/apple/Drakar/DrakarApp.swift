@@ -38,13 +38,39 @@ struct DrakarApp: App {
   }
 }
 
-/// File > New Window (⇧⌘N): a picker window. ⌘N belongs to New Session.
+/// File > New Tab (⌘T) and New Window (⇧⌘N) open home; ⌘N belongs to New Session.
+/// Open Project… (⌘O) tracks a folder and opens it in a new tab; Show Projects (⇧⌘H)
+/// brings home forward in this window's tabs.
 private struct NewWindowCommand: View {
   @Environment(\.openWindow) private var openWindow
 
   var body: some View {
+    Button("New Tab") {
+      WindowTabs.openWindow = WindowTabs.openWindow ?? openWindow
+      WindowTabs.open(.picker(), asTab: true)
+    }
+    .keyboardShortcut("t")
     Button("New Window") { openWindow(value: WindowRoute.picker()) }
       .keyboardShortcut("n", modifiers: [.command, .shift])
+    Divider()
+    Button("Open Project…") { openProject() }
+      .keyboardShortcut("o")
+    Button("Show Projects") {
+      WindowTabs.openWindow = WindowTabs.openWindow ?? openWindow
+      WindowTabs.showHome()
+    }
+    .keyboardShortcut("h", modifiers: [.command, .shift])
+  }
+
+  private func openProject() {
+    let panel = NSOpenPanel()
+    panel.canChooseDirectories = true
+    panel.canChooseFiles = false
+    panel.prompt = String(localized: "Open")
+    guard panel.runModal() == .OK, let folder = panel.url else { return }
+    ProjectList.shared.track(folder)
+    WindowTabs.openWindow = WindowTabs.openWindow ?? openWindow
+    WindowTabs.open(.project(folder), asTab: NSApp.keyWindow != nil)
   }
 }
 

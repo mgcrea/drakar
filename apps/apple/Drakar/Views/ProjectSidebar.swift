@@ -40,7 +40,7 @@ struct SessionListView: View {
         .flatMap { $0.sessions.compactMap(\.sessionID) })
     return ProjectSessions.group(
       monitor.summaries(under: folder), folder: folder, otherFolders: others,
-      attached: attached, inOtherWindows: inOtherWindows)
+      attached: attached, inOtherWindows: inOtherWindows, checkout: monitor.checkout(of:))
   }
 
   var body: some View {
