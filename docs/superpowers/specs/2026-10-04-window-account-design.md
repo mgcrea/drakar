@@ -85,8 +85,9 @@ cache never replaces a fresher live reading.
 
 - Holds `[ClaudeAccount: AccountProfile]` and `[ClaudeAccount: AccountUsage]` for
   `ClaudeAccount.discover()`.
-- Watches each account's `.claude.json` with FSEvents on its parent folder, re-reading the
-  file after a short debounce; also re-reads when the app becomes active.
+- Re-reads each account's `.claude.json` when its modification date changes, checked every
+  5 s and when the popover opens. Not FSEvents: a stream is recursive, and the default
+  account's file sits in the home folder, so it would wake for every file any project writes.
 - `record(_ info: JSONValue, for account: ClaudeAccount)`: each `ClaudeSession` forwards its
   `.rateLimit` messages here with its own `account`.
 
