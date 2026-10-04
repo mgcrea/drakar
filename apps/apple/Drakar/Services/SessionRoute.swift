@@ -120,14 +120,19 @@ final class OpenSessions {
     locate(sessionID)?.1.session.catchUp()
   }
 
-  /// The ids live in other processes now. A read-only session whose process went away can
-  /// be resumed where it is.
+  /// The ids live in other processes now. A session listed here that another process has
+  /// open, and that has no process of its own, is read-only: two writers on one transcript
+  /// must never happen. One whose process went away catches up and can be resumed here.
   func liveChanged(_ live: Set<String>) {
     for project in projects.values {
-      for item in project.sessions where item.session.isReadOnly {
-        guard let id = item.sessionID, !live.contains(id) else { continue }
-        item.session.catchUp()
-        item.session.isReadOnly = false
+      for item in project.sessions {
+        guard let id = item.sessionID else { continue }
+        if live.contains(id) {
+          if !item.session.isProcessRunning { item.session.isReadOnly = true }
+        } else if item.session.isReadOnly {
+          item.session.catchUp()
+          item.session.isReadOnly = false
+        }
       }
     }
   }

@@ -86,4 +86,53 @@ struct ProjectTests {
     #expect(OpenSessions.shared.takePending(for: path).map(\.sessionID) == ["a"])
     #expect(OpenSessions.shared.takePending(for: path).isEmpty)
   }
+
+  @Test func aSessionLiveElsewhereIsReadOnlyAndWritableAgain() {
+    let project = Project(folder: folder)
+    let item = project.attach(target("a"))
+    let window = UUID()
+    OpenSessions.shared.register(project, window: window)
+    defer { OpenSessions.shared.unregister(window: window) }
+    OpenSessions.shared.liveChanged(["a"])
+    #expect(item.session.isReadOnly)
+    OpenSessions.shared.liveChanged([])
+    #expect(!item.session.isReadOnly)
+  }
+
+  @Test func aRestoredRowLiveElsewhereIsReadOnly() {
+    let stored = StoredProject(sessions: [target("a"), target("a"), target("b")], selected: "a")
+    let project = Project(folder: folder, restoring: stored)
+    #expect(project.sessions.map(\.sessionID) == ["a", "b"])
+    let window = UUID()
+    OpenSessions.shared.register(project, window: window)
+    defer { OpenSessions.shared.unregister(window: window) }
+    OpenSessions.shared.liveChanged(["b"])
+    #expect(project.sessions.map(\.session.isReadOnly) == [false, true])
+  }
+
+  /// A session running here is never flipped.
+  @Test func aRowWithItsOwnProcessIsNeverFlipped() async throws {
+    let fake = folder.appending(path: "claude")
+    try Data("#!/bin/sh\ncat >> \"$0.stdin\"\n".utf8).write(to: fake)
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: fake.path)
+    let file = folder.appending(path: "a.jsonl")
+    try Data(
+      #"{"type":"user","message":{"role":"user","content":"Earlier"}}"#.appending("\n").utf8
+    ).write(to: file)
+    let project = Project(folder: folder)
+    let item = project.attach(target("a"))
+    item.session.executableOverride = fake
+    await item.session.loadHistory()
+    item.session.send("hello")
+    for _ in 0..<50 where !item.session.isProcessRunning {
+      try await Task.sleep(for: .milliseconds(100))
+    }
+    defer { item.session.stop() }
+    #expect(item.session.isProcessRunning)
+    let window = UUID()
+    OpenSessions.shared.register(project, window: window)
+    defer { OpenSessions.shared.unregister(window: window) }
+    OpenSessions.shared.liveChanged(["a"])
+    #expect(!item.session.isReadOnly)
+  }
 }

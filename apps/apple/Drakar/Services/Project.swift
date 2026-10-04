@@ -65,7 +65,9 @@ final class Project {
     self.folder = folder
     workspace = Workspace(folder: folder)
     for target in stored?.sessions ?? [] {
-      sessions.append(make(ClaudeSession(folder: URL(filePath: target.cwd), resuming: target)))
+      guard !sessions.contains(where: { $0.sessionID == target.sessionID }) else { continue }
+      let folder = URL(filePath: target.cwd, directoryHint: .isDirectory)
+      sessions.append(make(ClaudeSession(folder: folder, resuming: target)))
     }
     selectedID =
       sessions.first { $0.sessionID == stored?.selected }?.id ?? sessions.first?.id
