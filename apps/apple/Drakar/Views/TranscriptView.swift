@@ -21,6 +21,9 @@ struct TranscriptView: View {
   /// The entries in view, as of the last change: the scroll is judged at rest only after
   /// they stopped changing, so the anchor is taken from here and not from the next change.
   @State private var visibleIDs: [String] = []
+  /// The entries with any part on screen, for the bar: a prompt taller than the view is never
+  /// 60% visible, yet it is in sight.
+  @State private var onScreenIDs: Set<String> = []
 
   var body: some View {
     ScrollView {
@@ -64,6 +67,77 @@ struct TranscriptView: View {
       if isFollowing { position.scrollTo(edge: .bottom) }
     }
     .accessibilityIdentifier("transcript")
+    .overlay(alignment: .top) {
+      if let prompt = offScreenPrompt, let headline = prompt.headline {
+        LastPromptBar(prompt: prompt, headline: headline) {
+          isFollowing = false
+          position.scrollTo(id: prompt.id, anchor: .top)
+        }
+        .transition(.opacity)
+      }
+    }
+    .animation(.easeOut(duration: 0.15), value: offScreenPrompt?.id)
+  }
+
+  /// The newest prompt while none of it is on screen. Nothing on screen is the view before it
+  /// first measured, not a prompt scrolled away.
+  private var offScreenPrompt: Transcript.Entry? {
+    guard let prompt = transcript.lastPrompt, !onScreenIDs.isEmpty, !onScreenIDs.contains(prompt.id)
+    else { return nil }
+    return prompt
+  }
+}
+
+/// The newest prompt, pinned over the transcript while it is out of view: a long turn pushes
+/// what was asked far above what is being done about it. Clicking scrolls back to it.
+private struct LastPromptBar: View {
+  let prompt: Transcript.Entry
+  let headline: String
+  let reveal: () -> Void
+
+  var body: some View {
+    Button(action: reveal) {
+      HStack(spacing: 6) {
+        Image(systemName: "arrow.turn.down.right")
+        Text("You").fontWeight(.semibold)
+        if let context = prompt.context {
+          Label(context, systemImage: "doc.text")
+            .font(.caption)
+            .lineLimit(1)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(.quaternary, in: Capsule())
+        }
+        Text(headline)
+          .foregroundStyle(.primary)
+          .lineLimit(1)
+          .truncationMode(.tail)
+          .layoutPriority(1)
+        Spacer(minLength: 0)
+        Image(systemName: "chevron.up")
+      }
+      .font(.callout)
+      .foregroundStyle(.secondary)
+      .padding(.horizontal, 16)
+      .padding(.vertical, 6)
+      .frame(maxWidth: 820, alignment: .leading)
+      .frame(maxWidth: .infinity)
+      .contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+    // The prompt bubble's tint, over an opaque ground so the transcript does not show through.
+    .background(.quaternary.opacity(0.6))
+    .background(.background)
+    .overlay(alignment: .bottom) { Divider() }
+    .help(promptText)
+    .accessibilityLabel("Your last message: \(headline)")
+    .accessibilityHint("Scrolls back to it")
+    .accessibilityIdentifier("transcript.lastPrompt")
+  }
+
+  private var promptText: String {
+    guard case .prompt(let text) = prompt.kind else { return headline }
+    return String(text.prefix(1000))
   }
 }
 
