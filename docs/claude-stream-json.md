@@ -42,7 +42,7 @@ Every line has `type`. Observed in the spike, in order of a turn:
 | `control_response` | `response.subtype = success`, `response.request_id` | The answer to our `initialize`; carries `commands` (slash commands, skills), models, account. |
 | `system` | `init` | `session_id`, `cwd`, `model`, `permissionMode`, `tools`, `mcp_servers`, `slash_commands`, `claude_code_version`, … |
 | `system` | `status` (`status: requesting`) | Emitted before each API request. |
-| `rate_limit_event` | `rate_limit_info` | Plan utilisation windows (`five_hour`, `seven_day`). |
+| `rate_limit_event` | `rate_limit_info` | `status` (`allowed` / `rejected`), `rateLimitType`, `unifiedWindows.five_hour` / `seven_day`: `utilization` 0–1, `resetsAt` epoch seconds. The account's `.claude.json` caches the same windows as `cachedUsageUtilization` (0–100, ISO-8601 `resets_at`). |
 | `stream_event` | `event: {type: message_start \| content_block_start \| content_block_delta \| content_block_stop \| message_delta \| message_stop}` | Only with `--include-partial-messages`. Deltas seen: `text_delta`, `thinking_delta`, `signature_delta`, `input_json_delta`. |
 | `assistant` | `message` (an API message) | **Emitted once per content block, not once per message.** A thinking block and a tool_use block of the same turn arrive as two `assistant` lines sharing one `message.id`, each holding only its own block. Merge by `message.id`. |
 | `user` | `message.content[]` of `tool_result` | Plus `tool_use_result` with the tool's structured output (Bash: `stdout`, `stderr`, `interrupted`). |
