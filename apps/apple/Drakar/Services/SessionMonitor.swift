@@ -19,11 +19,21 @@ final class SessionMonitor {
   @ObservationIgnored private var watchers: [FolderWatcher] = []
   @ObservationIgnored private var sweep: Timer?
   @ObservationIgnored private var included: Set<String> = []
+  @ObservationIgnored private var discovery: Task<Void, Never>?
+  @ObservationIgnored private let discover: (() async -> [ClaudeAccount])?
+  @ObservationIgnored private var generations: [String: Int] = [:]
+  /// Whether the registries were read once: before that, no id is known to be live.
+  @ObservationIgnored private(set) var hasReadRegistries = false
 
   /// `accounts` for tests; the app discovers them, its shell's `CLAUDE_CONFIG_DIR` included.
-  init(accounts: [ClaudeAccount] = []) {
+  /// `discover` replaces the login-shell discovery, for tests.
+  init(accounts: [ClaudeAccount] = [], discover: (() async -> [ClaudeAccount])? = nil) {
     self.accounts = accounts
+    self.discover = discover
   }
+
+  /// The ids a `claude` process has open now.
+  var liveIDs: Set<String> { Set(live.values.flatMap(\.keys)) }
 
   var all: [SessionSummary] { byFile.values.sorted { $0.modified > $1.modified } }
 
@@ -36,8 +46,10 @@ final class SessionMonitor {
   func accountModel(for account: ClaudeAccount) -> String? { accountModels[account.directory] }
 
   /// Where a live session runs, in words.
-  func host(of summary: SessionSummary) -> String {
-    if OpenSessions.shared.locate(summary.sessionID) != nil {
+  /// `project` is the asking window: the session being in it does not make it "another
+  /// window".
+  func host(of summary: SessionSummary, excluding project: Project? = nil) -> String {
+    if let (owner, _) = OpenSessions.shared.locate(summary.sessionID), owner !== project {
       return String(localized: "another Drakar window")
     }
     return switch summary.live?.entrypoint {
@@ -48,19 +60,38 @@ final class SessionMonitor {
     }
   }
 
+  /// Finds the accounts once, whoever asks first; later callers wait for the same answer.
+  private func ensureAccounts() async {
+    if let discovery { return await discovery.value }
+    guard accounts.isEmpty else { return }
+    let task = Task {
+      if let discover = self.discover {
+        self.accounts = await discover()
+      } else {
+        let extra =
+          (await ClaudeSession.environment.value)["CLAUDE_CONFIG_DIR"].map {
+            [URL(filePath: $0, directoryHint: .isDirectory)]
+          } ?? []
+        self.accounts = ClaudeAccount.discover(extra: extra)
+      }
+      for account in self.accounts {
+        self.accountModels[account.directory] = ContextWindow.accountModelID(account)
+      }
+    }
+    discovery = task
+    await task.value
+  }
+
   func start() async {
     guard watchers.isEmpty else { return }
-    if accounts.isEmpty {
-      let extra =
-        (await ClaudeSession.environment.value)["CLAUDE_CONFIG_DIR"].map {
-          [URL(filePath: $0, directoryHint: .isDirectory)]
-        } ?? []
-      accounts = ClaudeAccount.discover(extra: extra)
-    }
+    await ensureAccounts()
+    guard watchers.isEmpty else { return }
     let accounts = self.accounts
-    for account in accounts {
+    for account in accounts where accountModels[account.directory] == nil {
       accountModels[account.directory] = ContextWindow.accountModelID(account)
     }
+    // Before the long listing: a restored row live in a terminal locks at once.
+    readRegistries()
     let listed = await Task.detached { SessionIndex.list(accounts: accounts, limit: 500) }.value
     merge(listed)
     readRegistries()
@@ -94,6 +125,7 @@ final class SessionMonitor {
   /// A project window's own sessions, past the 500 newest the app reads at launch.
   func include(folder: String) async {
     guard included.insert(folder).inserted else { return }
+    await ensureAccounts()
     let accounts = self.accounts
     let listed = await Task.detached {
       SessionIndex.list(accounts: accounts, limit: 200, under: folder)
@@ -127,12 +159,27 @@ final class SessionMonitor {
     if registry { readRegistries() }
     for path in files {
       let file = URL(filePath: path)
+      let generation = generations[path, default: 0] + 1
+      generations[path] = generation
       Task {
         let read = Task.detached { SessionIndex.summary(of: file, account: account) }
-        guard let summary = await read.value else { return }
+        let summary = await read.value
+        // A newer read of this file started meanwhile: its answer wins.
+        guard generations[path] == generation else { return }
+        guard let summary else { return forget(path) }
         merge([summary])
         OpenSessions.shared.transcriptWritten(summary.sessionID)
       }
+    }
+  }
+
+  /// A transcript that was deleted leaves the lists. Paths from FSEvents are resolved, the
+  /// keys may not be: compared resolved.
+  private func forget(_ path: String) {
+    let target = URL(filePath: path).resolvingSymlinksInPath().path(percentEncoded: false)
+    for key in byFile.keys
+    where URL(filePath: key).resolvingSymlinksInPath().path(percentEncoded: false) == target {
+      byFile[key] = nil
     }
   }
 
@@ -146,7 +193,8 @@ final class SessionMonitor {
       let current = live[summary.account.directory]?[summary.sessionID]
       if summary.live != current { byFile[key]?.live = current }
     }
-    OpenSessions.shared.liveChanged(Set(live.values.flatMap(\.keys)))
+    hasReadRegistries = true
+    OpenSessions.shared.liveChanged(liveIDs)
   }
 
   private func sweepDead() {

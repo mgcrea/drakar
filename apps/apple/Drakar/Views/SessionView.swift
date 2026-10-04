@@ -43,7 +43,7 @@ struct SessionView: View {
     guard let id = item.sessionID,
       let summary = SessionMonitor.shared.all.first(where: { $0.sessionID == id })
     else { return String(localized: "another app") }
-    return SessionMonitor.shared.host(of: summary)
+    return SessionMonitor.shared.host(of: summary, excluding: project)
   }
 
   /// The first request waiting; answering it shows the next. Never dismissed except by

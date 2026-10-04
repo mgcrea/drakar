@@ -78,6 +78,8 @@ final class OpenSessions {
 
   func register(_ project: Project, window: UUID) {
     projects[window] = project
+    // A window restored while a terminal has one of its sessions open locks it at once.
+    if SessionMonitor.shared.hasReadRegistries { liveChanged(SessionMonitor.shared.liveIDs) }
     IDEBridge.shared.refreshFolders()
   }
 

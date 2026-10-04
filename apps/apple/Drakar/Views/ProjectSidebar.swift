@@ -167,16 +167,7 @@ struct SessionRow: View {
     .accessibilityElement(children: .combine)
   }
 
-  private var state: RowState {
-    let session = item.session
-    if item.waitingFor != nil { return .waiting }
-    if session.transcript.isRunning { return .working }
-    if item.hasStopped { return .stopped }
-    if session.isReadOnly { return .elsewhere }
-    if session.isProcessRunning { return .idle }
-    if case .exited = session.phase { return .ended }
-    return .notStarted
-  }
+  private var state: RowState { RowState(item) }
 
   private var detail: String? {
     if let waiting = item.waitingFor { return waiting }
@@ -201,7 +192,9 @@ struct SummaryRow: View {
 
   var body: some View {
     HStack(alignment: .firstTextBaseline, spacing: 7) {
-      Circle().fill(state.tint).frame(width: 7, height: 7).help(state.label)
+      if host != nil {
+        Circle().fill(state.tint).frame(width: 7, height: 7).help(state.label)
+      }
       VStack(alignment: .leading, spacing: 2) {
         Text(summary.displayTitle).lineLimit(1)
         Text(detail).font(.caption).foregroundStyle(.secondary).lineLimit(1)
@@ -216,6 +209,11 @@ struct SummaryRow: View {
 
   private var state: RowState {
     guard host != nil else { return .idle }
+    // Another window's own child has no registry entry: its row knows.
+    if let (_, item) = OpenSessions.shared.locate(summary.sessionID) {
+      let state = RowState(item)
+      return state == .elsewhere ? .idle : state
+    }
     return switch summary.live?.status {
     case "busy":
       TranscriptTail.read(summary.file)?.isAwaitingToolResult == true ? .runningTool : .working
@@ -228,7 +226,9 @@ struct SummaryRow: View {
     let when = (summary.live?.updatedAt ?? summary.modified)
       .formatted(.relative(presentation: .named))
     var parts = [when]
-    if let waiting = summary.live?.waitingFor { parts.insert(waiting, at: 0) }
+    let waiting =
+      OpenSessions.shared.locate(summary.sessionID)?.1.waitingFor ?? summary.live?.waitingFor
+    if let waiting { parts.insert(waiting, at: 0) }
     if let host { parts.append(host) }
     return parts.joined(separator: " · ")
   }
@@ -245,6 +245,26 @@ struct SummaryRow: View {
 /// A row's state, in Claude Code's words and Armada's colours.
 enum RowState {
   case working, runningTool, waiting, idle, notStarted, stopped, ended, elsewhere
+
+  /// What an attached session is doing.
+  init(_ item: ProjectSession) {
+    let session = item.session
+    if item.waitingFor != nil {
+      self = .waiting
+    } else if session.transcript.isRunning {
+      self = .working
+    } else if item.hasStopped {
+      self = .stopped
+    } else if session.isReadOnly {
+      self = .elsewhere
+    } else if session.isProcessRunning {
+      self = .idle
+    } else if case .exited = session.phase {
+      self = .ended
+    } else {
+      self = .notStarted
+    }
+  }
 
   var label: String {
     switch self {
