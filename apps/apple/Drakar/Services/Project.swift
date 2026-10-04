@@ -1,0 +1,160 @@
+import DrakarKit
+import Foundation
+import Observation
+
+/// One session as a project window holds it: the session, and what the window keeps for it
+/// while another is shown.
+@Observable
+final class ProjectSession: Identifiable {
+  let id = UUID()
+  let session: ClaudeSession
+  /// The composer's text, kept across switches.
+  var draft = ""
+  /// A turn ended, or the process stopped, while another session was shown.
+  var isUnread = false
+  /// The entry at the top of the transcript when it was last shown; nil while it followed
+  /// the bottom.
+  var scrollAnchor: String?
+
+  init(session: ClaudeSession) {
+    self.session = session
+  }
+
+  var sessionID: String? { session.sessionID }
+
+  var displayTitle: String {
+    if let title = session.title { return title }
+    for entry in session.transcript.entries {
+      if case .prompt(let text) = entry.kind { return String(text.prefix(80)) }
+    }
+    return String(localized: "New session")
+  }
+
+  /// What the first waiting permission request wants: "Bash: make test".
+  var waitingFor: String? {
+    guard let pending = session.transcript.pendingPermissions.first else { return nil }
+    let name = pending.request.displayName ?? pending.request.toolName
+    let summary = pending.request.summary
+    return summary.isEmpty ? name : "\(name): \(summary)"
+  }
+
+  var hasStopped: Bool {
+    switch session.phase {
+    case .failed: true
+    case .exited(let status): status != 0
+    case .idle, .starting, .ready: false
+    }
+  }
+}
+
+/// What a project window keeps between launches: the sessions it held, and the one shown.
+struct StoredProject: Codable, Equatable {
+  var sessions: [ResumeTarget] = []
+  var selected: String?
+}
+
+/// A project window: a folder, its editor, and the sessions attached to it.
+@Observable
+final class Project {
+  let folder: URL
+  let workspace: Workspace
+  private(set) var sessions: [ProjectSession] = []
+  var selectedID: ProjectSession.ID?
+
+  init(folder: URL, restoring stored: StoredProject? = nil) {
+    self.folder = folder
+    workspace = Workspace(folder: folder)
+    for target in stored?.sessions ?? [] {
+      sessions.append(make(ClaudeSession(folder: URL(filePath: target.cwd), resuming: target)))
+    }
+    selectedID =
+      sessions.first { $0.sessionID == stored?.selected }?.id ?? sessions.first?.id
+    if let selected { load(selected) }
+  }
+
+  var selected: ProjectSession? { sessions.first { $0.id == selectedID } }
+
+  func session(withID sessionID: String) -> ProjectSession? {
+    sessions.first { $0.sessionID == sessionID }
+  }
+
+  /// A new session in the project's folder, on top and shown. No process until it is
+  /// prompted.
+  @discardableResult func newSession() -> ProjectSession {
+    let item = make(ClaudeSession(folder: folder))
+    sessions.insert(item, at: 0)
+    select(item)
+    return item
+  }
+
+  /// `target` on top and shown, or the row already holding it. `readOnly` while another
+  /// process has it open.
+  @discardableResult func attach(_ target: ResumeTarget, readOnly: Bool = false) -> ProjectSession {
+    if target.forks != true, let existing = session(withID: target.sessionID) {
+      select(existing)
+      return existing
+    }
+    let session = ClaudeSession(
+      folder: URL(filePath: target.cwd, directoryHint: .isDirectory), resuming: target)
+    session.isReadOnly = readOnly
+    let item = make(session)
+    sessions.insert(item, at: 0)
+    select(item)
+    return item
+  }
+
+  /// A copy of a session open elsewhere, continued under a new id beside it.
+  @discardableResult func fork(_ item: ProjectSession) -> ProjectSession {
+    guard var target = item.session.resuming ?? item.session.savedTarget else { return item }
+    target.forks = true
+    return attach(target)
+  }
+
+  func select(_ item: ProjectSession) {
+    selectedID = item.id
+    item.isUnread = false
+    load(item)
+  }
+
+  /// Stops the process; the row stays, and its next prompt resumes it.
+  func end(_ item: ProjectSession) {
+    item.session.stop()
+  }
+
+  func remove(_ item: ProjectSession) {
+    item.session.stop()
+    sessions.removeAll { $0.id == item.id }
+    if selectedID == item.id { selectedID = sessions.first?.id }
+    if let selected { load(selected) }
+  }
+
+  func stopAll() {
+    for item in sessions { item.session.stop() }
+  }
+
+  /// Sessions mid-turn: what closing the window would interrupt.
+  var runningCount: Int { sessions.count { $0.session.transcript.isRunning } }
+
+  var stored: StoredProject {
+    StoredProject(
+      sessions: sessions.compactMap(\.session.savedTarget),
+      selected: selected?.session.savedTarget?.sessionID)
+  }
+
+  private func make(_ session: ClaudeSession) -> ProjectSession {
+    let item = ProjectSession(session: session)
+    session.onTurnEnded = { [weak self, weak item] in
+      guard let self, let item, item.id != self.selectedID else { return }
+      item.isUnread = true
+    }
+    session.onStopped = { [weak self, weak item] in
+      guard let self, let item, item.id != self.selectedID, item.hasStopped else { return }
+      item.isUnread = true
+    }
+    return item
+  }
+
+  private func load(_ item: ProjectSession) {
+    Task { await item.session.loadHistory() }
+  }
+}

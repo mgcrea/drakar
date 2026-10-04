@@ -2,13 +2,156 @@ import DrakarKit
 import Foundation
 import Observation
 
-/// What a window shows: a new session in a folder, or an existing session resumed.
+/// What a window shows: a project, or the session picker until one is chosen.
 ///
 /// A window's value, so SwiftUI restores it at launch and `openWindow(value:)` brings
-/// forward the window already showing a session instead of opening a second one: two
-/// windows resuming one session would be two writers on one transcript.
+/// forward the window already showing a project instead of opening a second: two windows
+/// on one folder would be two editors, and could be two writers on one transcript.
+enum WindowRoute: Codable, Hashable {
+  case project(folder: String)
+  /// `token` keeps two picker windows apart.
+  case picker(token: UUID)
+
+  static func project(_ url: URL) -> WindowRoute {
+    .project(folder: ProjectPath.normalize(url.path(percentEncoded: false)))
+  }
+
+  static func picker() -> WindowRoute { .picker(token: UUID()) }
+
+  var folder: URL? {
+    if case .project(let folder) = self {
+      return URL(filePath: folder, directoryHint: .isDirectory)
+    }
+    return nil
+  }
+}
+
+struct ResumeTarget: Codable, Hashable {
+  var sessionID: String
+  var cwd: String
+  var file: String
+  var accountDirectory: String
+  var accountIsDefault: Bool
+  /// Continue a copy under a new id: the session is open in another process. Optional so
+  /// that a target stored before the field existed still decodes.
+  var forks: Bool?
+
+  init(
+    sessionID: String, cwd: String, file: String, accountDirectory: String,
+    accountIsDefault: Bool, forks: Bool? = nil
+  ) {
+    self.sessionID = sessionID
+    self.cwd = cwd
+    self.file = file
+    self.accountDirectory = accountDirectory
+    self.accountIsDefault = accountIsDefault
+    self.forks = forks
+  }
+
+  init?(_ summary: SessionSummary, forking: Bool = false) {
+    guard let cwd = summary.cwd else { return nil }
+    self.init(
+      sessionID: summary.sessionID, cwd: cwd, file: summary.file.path(percentEncoded: false),
+      accountDirectory: summary.account.directory.path(percentEncoded: false),
+      accountIsDefault: summary.account.isDefault, forks: forking ? true : nil)
+  }
+
+  var account: ClaudeAccount {
+    ClaudeAccount(
+      directory: URL(filePath: accountDirectory, directoryHint: .isDirectory),
+      isDefault: accountIsDefault)
+  }
+
+  var transcriptFile: URL { URL(filePath: file) }
+}
+
+/// Every project window Drakar has open, and through them every session it holds: so a
+/// window knows a session is open in another, the global list knows where to send a pick,
+/// and the bridge knows which folders to claim.
+@Observable
+final class OpenSessions {
+  static let shared = OpenSessions()
+
+  private(set) var projects: [UUID: Project] = [:]
+  /// Sessions picked before their project's window existed, by folder.
+  @ObservationIgnored private var pending: [String: [ResumeTarget]] = [:]
+
+  func register(_ project: Project, window: UUID) {
+    projects[window] = project
+    IDEBridge.shared.refreshFolders()
+  }
+
+  func unregister(window: UUID) {
+    projects[window] = nil
+    IDEBridge.shared.refreshFolders()
+  }
+
+  /// The open projects' folders, which Drakar is the editor for by default. As the lock
+  /// file lists them: no trailing slash.
+  var folders: [String] {
+    Array(
+      Set(
+        projects.values.map { ProjectPath.normalize($0.folder.path(percentEncoded: false)) }
+          + windowFolders.values))
+  }
+
+  func locate(_ sessionID: String) -> (Project, ProjectSession)? {
+    for project in projects.values {
+      if let session = project.session(withID: sessionID) { return (project, session) }
+    }
+    return nil
+  }
+
+  /// The open project that would own `cwd`, or `cwd` itself for a new window.
+  func ownerFolder(forCwd cwd: String) -> String {
+    ProjectPath.owner(of: cwd, among: folders) ?? ProjectPath.normalize(cwd)
+  }
+
+  func requestAttach(_ target: ResumeTarget, in folder: String) {
+    pending[ProjectPath.normalize(folder), default: []].append(target)
+  }
+
+  func takePending(for folder: String) -> [ResumeTarget] {
+    pending.removeValue(forKey: ProjectPath.normalize(folder)) ?? []
+  }
+
+  /// A transcript changed on disk: a read-only session following it catches up.
+  func transcriptWritten(_ sessionID: String) {
+    locate(sessionID)?.1.session.catchUp()
+  }
+
+  /// The ids live in other processes now. A read-only session whose process went away can
+  /// be resumed where it is.
+  func liveChanged(_ live: Set<String>) {
+    for project in projects.values {
+      for item in project.sessions where item.session.isReadOnly {
+        guard let id = item.sessionID, !live.contains(id) else { continue }
+        item.session.catchUp()
+        item.session.isReadOnly = false
+      }
+    }
+  }
+
+  /// Sessions mid-turn across every window, for the quit question.
+  var runningCount: Int { projects.values.reduce(0) { $0 + $1.runningCount } }
+
+  // MARK: - Until Task 8: the one-session windows still use these
+
+  private(set) var routes: [String: SessionRoute] = [:]
+  private(set) var windowFolders: [UUID: String] = [:]
+
+  func register(_ route: SessionRoute, for sessionID: String) { routes[sessionID] = route }
+
+  func unregister(_ sessionID: String) { routes[sessionID] = nil }
+
+  func setFolder(_ folder: URL?, forWindow window: UUID) {
+    windowFolders[window] = folder.map { ProjectPath.normalize($0.path(percentEncoded: false)) }
+    IDEBridge.shared.refreshFolders()
+  }
+}
+
+/// Until Task 8: the window value of a one-session window.
 enum SessionRoute: Codable, Hashable {
-  /// `token` keeps two new sessions in the same folder apart.
   case new(folder: String, token: UUID)
   case resume(ResumeTarget)
 
@@ -17,12 +160,7 @@ enum SessionRoute: Codable, Hashable {
   }
 
   static func resume(_ summary: SessionSummary, forking: Bool = false) -> SessionRoute? {
-    guard let cwd = summary.cwd else { return nil }
-    return .resume(
-      ResumeTarget(
-        sessionID: summary.sessionID, cwd: cwd, file: summary.file.path(percentEncoded: false),
-        accountDirectory: summary.account.directory.path(percentEncoded: false),
-        accountIsDefault: summary.account.isDefault, forks: forking ? true : nil))
+    ResumeTarget(summary, forking: forking).map(SessionRoute.resume)
   }
 
   var folder: URL {
@@ -36,52 +174,4 @@ enum SessionRoute: Codable, Hashable {
     if case .resume(let target) = self { return target.sessionID }
     return nil
   }
-}
-
-struct ResumeTarget: Codable, Hashable {
-  var sessionID: String
-  var cwd: String
-  var file: String
-  var accountDirectory: String
-  var accountIsDefault: Bool
-  /// Continue a copy under a new id: the session is open in another process. Optional so
-  /// that a window restored from before the field existed still decodes.
-  var forks: Bool?
-
-  var account: ClaudeAccount {
-    ClaudeAccount(
-      directory: URL(filePath: accountDirectory, directoryHint: .isDirectory),
-      isDefault: accountIsDefault)
-  }
-
-  var transcriptFile: URL { URL(filePath: file) }
-}
-
-/// The sessions Drakar's own windows have open, by session id, with the route each window
-/// holds. `openWindow(value:)` with that exact route brings the window forward rather than
-/// opening a second writer on the same transcript.
-@Observable
-final class OpenSessions {
-  static let shared = OpenSessions()
-  private(set) var routes: [String: SessionRoute] = [:]
-
-  func register(_ route: SessionRoute, for sessionID: String) { routes[sessionID] = route }
-
-  func unregister(_ sessionID: String) { routes[sessionID] = nil }
-
-  /// Each window's session folder, from the moment it shows one: a new session has no id
-  /// until its first prompt, but its folder is open all the same.
-  private(set) var windowFolders: [UUID: String] = [:]
-
-  func setFolder(_ folder: URL?, forWindow window: UUID) {
-    windowFolders[window] = folder.map { url in
-      let path = url.path(percentEncoded: false)
-      // The lock file lists folders as the CLI compares them: no trailing slash.
-      return path.count > 1 && path.hasSuffix("/") ? String(path.dropLast()) : path
-    }
-    IDEBridge.shared.refreshFolders()
-  }
-
-  /// The folders the open sessions work in, which Drakar is the editor for by default.
-  var folders: [String] { Array(windowFolders.values) }
 }
