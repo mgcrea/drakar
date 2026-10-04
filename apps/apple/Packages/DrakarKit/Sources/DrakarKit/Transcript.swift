@@ -19,6 +19,14 @@ public struct Transcript: Sendable, Equatable {
     public var parentToolUseID: String?
     /// On a prompt, what the editor attached to it: `notes.md:3–5`.
     public var context: String?
+
+    /// On a prompt, its first line with text: what a glance at it needs.
+    public var headline: String? {
+      guard case .prompt(let text) = kind else { return nil }
+      return text.split(whereSeparator: \.isNewline).lazy
+        .map { $0.trimmingCharacters(in: .whitespaces) }
+        .first { !$0.isEmpty }
+    }
   }
 
   public enum Kind: Sendable, Equatable {
@@ -71,6 +79,10 @@ public struct Transcript: Sendable, Equatable {
   public private(set) var contextUsage: TokenUsage?
   /// `message.model` of that request.
   public private(set) var contextModelID: String?
+  /// The newest prompt sent, wherever the turn after it has got to.
+  public var lastPrompt: Entry? {
+    lastPromptID.flatMap { indexByID[$0] }.map { entries[$0] }
+  }
   /// True from a prompt until its `result`.
   public private(set) var isRunning = false
   /// Bumped by every change, so a view can react to "something changed" without
@@ -84,6 +96,7 @@ public struct Transcript: Sendable, Equatable {
   /// The message a stream event belongs to, per subagent (nil key: the main thread).
   private var streamingMessage: [String?: String] = [:]
   private var promptCount = 0
+  private var lastPromptID: String?
   private var noticeCount = 0
 
   public init() {}
@@ -94,7 +107,9 @@ public struct Transcript: Sendable, Equatable {
   public mutating func addPrompt(_ text: String, context: String? = nil, running: Bool = true) {
     revision += 1
     promptCount += 1
-    upsert(Entry(id: "prompt#\(promptCount)", kind: .prompt(text), context: context))
+    let id = "prompt#\(promptCount)"
+    upsert(Entry(id: id, kind: .prompt(text), context: context))
+    lastPromptID = id
     isRunning = running
   }
 

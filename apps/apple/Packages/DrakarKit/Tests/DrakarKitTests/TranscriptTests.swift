@@ -105,4 +105,26 @@ struct TranscriptTests {
     }
     Issue.record("the fixture holds no control request")
   }
+
+  @Test func hasNoLastPromptBeforeTheFirst() {
+    #expect(Transcript().lastPrompt == nil)
+  }
+
+  /// The turn after a prompt adds thinking, a tool call and text; the prompt stays the last
+  /// one sent, and the next prompt takes over with what the editor attached to it.
+  @Test func theLastPromptIsTheNewestSent() throws {
+    var transcript = try transcript(.turnWithTool)
+    #expect(transcript.lastPrompt?.kind == .prompt("Run it"))
+    #expect(transcript.lastPrompt?.id != transcript.entries.last?.id)
+
+    transcript.addPrompt("And again", context: "notes.md:3–5")
+    #expect(transcript.lastPrompt?.kind == .prompt("And again"))
+    #expect(transcript.lastPrompt?.context == "notes.md:3–5")
+  }
+
+  @Test func aPromptsHeadlineIsItsFirstLineWithText() {
+    var transcript = Transcript()
+    transcript.addPrompt("\n  \n  Fix the bar  \nthen the rest")
+    #expect(transcript.lastPrompt?.headline == "Fix the bar")
+  }
 }
