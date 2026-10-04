@@ -83,10 +83,11 @@ struct ContentView: View {
       }
     }
     .background(WindowLevel(floats: keepsOnTop))
-    .navigationTitle(windowTitle)
-    // Short, because the title bar does not truncate it: a long one widened the detail
-    // column past the window and pushed the sidebar off its leading edge.
-    .navigationSubtitle(Self.clipped(project?.selected?.displayTitle ?? ""))
+    // The folder's name over its path, as the Files pane writes it. The path is shortened
+    // because the title bar does not truncate: a long subtitle widened the detail column
+    // past the window and pushed the sidebar off its leading edge.
+    .navigationTitle(project?.folder.lastPathComponent ?? "Drakar")
+    .navigationSubtitle(project.map { Self.shortened($0.folder) } ?? "")
     .onChange(of: route, initial: true) { open(route) }
     .onDisappear {
       // The window is gone: no session outlives it.
@@ -94,10 +95,6 @@ struct ContentView: View {
       OpenSessions.shared.unregister(window: windowID)
     }
     .task { openFromLaunchArguments() }
-  }
-
-  private var windowTitle: String {
-    project.map { Self.shortened($0.folder) } ?? "Drakar"
   }
 
   private func quickOpenShown(_ workspace: Workspace) -> Binding<Bool> {
@@ -155,11 +152,6 @@ struct ContentView: View {
     }
     for target in targets { OpenSessions.shared.requestAttach(target, in: folder) }
     route = next
-  }
-
-  /// `text` cut to 40 characters, with an ellipsis.
-  static func clipped(_ text: String) -> String {
-    text.count > 40 ? text.prefix(39) + "…" : text
   }
 
   /// The folder's path as `abbreviated` writes it, or only its last two folders when
