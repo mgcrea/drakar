@@ -74,7 +74,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     Task { await SessionMonitor.shared.start() }
   }
 
+  /// Every window's sessions are stopped, not left to the windows closing: a `claude` must
+  /// not outlive the app that was working with it.
   func applicationWillTerminate(_ notification: Notification) {
+    for project in OpenSessions.shared.projects.values { project.stopAll() }
     IDEBridge.shared.stop()
   }
 
@@ -84,11 +87,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let running = OpenSessions.shared.runningCount
     if workspaces.isEmpty {
       guard running > 0 else { return .terminateNow }
-      return RunningSessions.alert(count: running).runModal() == .alertFirstButtonReturn
+      return RunningSessions.alert(count: running, action: .quit).runModal()
+        == .alertFirstButtonReturn
         ? .terminateNow : .terminateCancel
     }
     let alert = UnsavedChanges.alert(for: workspaces.flatMap(\.unsavedDocuments))
-    if running > 0 { alert.informativeText += "\n\n" + RunningSessions.note(count: running) }
+    if running > 0 {
+      alert.informativeText += "\n\n" + RunningSessions.note(count: running, action: .quit)
+    }
     switch UnsavedChanges.choice(alert.runModal())
     {
     case .save:

@@ -361,17 +361,29 @@ extension FocusedValues {
 
 /// The question before a close or a quit stops sessions mid-turn.
 enum RunningSessions {
-  static func note(count: Int) -> String {
-    count == 1
-      ? String(localized: "A session is still working. Closing stops it.")
-      : String(localized: "\(count) sessions are still working. Closing stops them.")
+  /// What stops them: closing a window, or quitting the app.
+  enum Action { case close, quit }
+
+  static func note(count: Int, action: Action = .close) -> String {
+    switch (action, count == 1) {
+    case (.close, true): String(localized: "A session is still working. Closing stops it.")
+    case (.close, false):
+      String(localized: "\(count) sessions are still working. Closing stops them.")
+    case (.quit, true): String(localized: "A session is still working. Quitting stops it.")
+    case (.quit, false):
+      String(localized: "\(count) sessions are still working. Quitting stops them.")
+    }
   }
 
-  static func alert(count: Int) -> NSAlert {
+  static func alert(count: Int, action: Action = .close) -> NSAlert {
     let alert = NSAlert()
-    alert.messageText = String(localized: "Close while sessions are working?")
-    alert.informativeText = note(count: count)
-    alert.addButton(withTitle: String(localized: "Close"))
+    alert.messageText =
+      action == .quit
+      ? String(localized: "Quit while sessions are working?")
+      : String(localized: "Close while sessions are working?")
+    alert.informativeText = note(count: count, action: action)
+    alert.addButton(
+      withTitle: action == .quit ? String(localized: "Quit") : String(localized: "Close"))
     alert.addButton(withTitle: String(localized: "Cancel"))
     return alert
   }
