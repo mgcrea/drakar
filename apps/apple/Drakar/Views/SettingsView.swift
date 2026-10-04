@@ -48,6 +48,8 @@ enum PreferenceKey {
   static let newSessionAccount = "drakar.newSessionAccount"
   /// Whether a session that finishes its turn while Drakar is in the background says so.
   static let notifiesTurnEnds = "drakar.notifiesTurnEnds"
+  /// Whether a turn that ends on a question or an offer marks its row.
+  static let recognisesAsks = "drakar.recognisesAsks"
 }
 
 /// What Settings picked for the sessions Drakar starts.
@@ -81,6 +83,38 @@ enum ClaudeChoice {
 
   private static func stored(_ key: String) -> String? {
     defaults.string(forKey: key).flatMap { $0.isEmpty ? nil : $0 }
+  }
+}
+
+/// What each level of `Urgency` does, as the Attention pane set it.
+enum AttentionFeedback: String, CaseIterable {
+  /// In the group's header count and ⌥⌘↓.
+  case counts
+  case badges
+  case notifies
+}
+
+enum AttentionChoice {
+  /// Where the choices are read from; a scratch suite in tests, never the real one.
+  static var defaults = UserDefaults.standard
+
+  static var recognisesAsks: Bool {
+    defaults.object(forKey: PreferenceKey.recognisesAsks) as? Bool ?? true
+  }
+
+  static var notifiesTurnEnds: Bool { defaults.bool(forKey: PreferenceKey.notifiesTurnEnds) }
+
+  static func key(_ level: Urgency, _ feedback: AttentionFeedback) -> String {
+    "drakar.attention.\(level.rawValue).\(feedback.rawValue)"
+  }
+
+  /// Everything is on but an offer, which only marks its row.
+  static func defaultValue(_ level: Urgency, _ feedback: AttentionFeedback) -> Bool {
+    level != .offer
+  }
+
+  static func isOn(_ level: Urgency, _ feedback: AttentionFeedback) -> Bool {
+    defaults.object(forKey: key(level, feedback)) as? Bool ?? defaultValue(level, feedback)
   }
 }
 

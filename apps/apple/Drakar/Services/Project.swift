@@ -19,6 +19,12 @@ final class ProjectSession: Identifiable {
   /// not shown yet has its title and gauge without its whole history being read, and every
   /// row its last activity.
   var preview: SessionSummary?
+  /// The message id of the ask the person dismissed: that one stays quiet, the next one
+  /// does not.
+  var dismissedAsk: String?
+  /// `ClosingAsk.detect` of the newest closing text, kept until the text changes: a row
+  /// asks on every draw, and a reply can be long.
+  @ObservationIgnored private var detected: (key: String, ask: ClosingAsk?)?
 
   init(session: ClaudeSession) {
     self.session = session
@@ -46,6 +52,61 @@ final class ProjectSession: Identifiable {
     let name = pending.request.displayName ?? pending.request.toolName
     let summary = pending.request.summary
     return summary.isEmpty ? name : "\(name): \(summary)"
+  }
+
+  /// How much this session wants the person, from the most urgent thing it waits on.
+  var urgency: Urgency? {
+    if let pending = session.transcript.pendingPermissions.first {
+      return pending.request.isChoice ? .choice : .permission
+    }
+    switch closingAsk?.kind {
+    case .question: return .question
+    case .offer: return .offer
+    case nil: return nil
+    }
+  }
+
+  /// What it wants, for the row's second line and the notification.
+  var wants: String? {
+    if let pending = session.transcript.pendingPermissions.first, pending.request.isChoice {
+      return UserQuestion.list(pending.request.input).first?.question ?? waitingFor
+    }
+    return waitingFor ?? closingAsk?.text
+  }
+
+  /// The question or offer the newest turn ended on, while it waits: nil once a prompt
+  /// went, after Dismiss, once the process ended, and for a row held read-only.
+  var closingAsk: ClosingAsk? { asked?.ask }
+
+  /// Quiets `closingAsk` until a newer one.
+  func dismissAsk() {
+    dismissedAsk = asked?.messageID
+  }
+
+  private var asked: (messageID: String, ask: ClosingAsk)? {
+    guard AttentionChoice.recognisesAsks, !session.isReadOnly else { return nil }
+    switch session.phase {
+    case .exited, .failed: return nil
+    case .idle, .starting, .ready: break
+    }
+    let found: (messageID: String, ask: ClosingAsk)?
+    if let preview = unloadedPreview {
+      found = preview.closingMessageID.flatMap { id in preview.closingAsk.map { (id, $0) } }
+    } else if let closing = session.transcript.closingText {
+      found = detect(closing).map { (closing.messageID, $0) }
+    } else {
+      found = nil
+    }
+    guard let found, found.messageID != dismissedAsk else { return nil }
+    return found
+  }
+
+  private func detect(_ closing: ClosingText) -> ClosingAsk? {
+    let key = "\(closing.messageID)#\(closing.text.utf8.count)"
+    if let detected, detected.key == key { return detected.ask }
+    let ask = ClosingAsk.detect(closing.text)
+    detected = (key, ask)
+    return ask
   }
 
   /// The gauge from what this session knows: its process's report, its own model, the
@@ -89,6 +150,9 @@ final class ProjectSession: Identifiable {
 struct StoredProject: Codable, Equatable {
   var sessions: [ResumeTarget] = []
   var selected: String?
+  /// Per session id, the message id of the ask dismissed. Optional so that a window stored
+  /// before the field existed still decodes.
+  var dismissedQuestions: [String: String]?
 }
 
 /// A project window: a folder, its editor, and the sessions attached to it.
@@ -105,7 +169,9 @@ final class Project {
     for target in stored?.sessions ?? [] {
       guard !sessions.contains(where: { $0.sessionID == target.sessionID }) else { continue }
       let folder = URL(filePath: target.cwd, directoryHint: .isDirectory)
-      sessions.append(make(ClaudeSession(folder: folder, resuming: target)))
+      let item = make(ClaudeSession(folder: folder, resuming: target))
+      item.dismissedAsk = stored?.dismissedQuestions?[target.sessionID]
+      sessions.append(item)
     }
     selectedID =
       sessions.first { $0.sessionID == stored?.selected }?.id ?? sessions.first?.id
@@ -158,12 +224,21 @@ final class Project {
     Attention.shared.refresh()
   }
 
-  /// The next row after the selected one that wants the person: waiting on a permission
-  /// first, then unread, wrapping. Never the selected row.
+  /// The next row after the selected one that wants the person: the most urgent level that
+  /// counts first, then unread, wrapping. Never the selected row.
   func nextNeedingAttention() -> ProjectSession? {
     let start = sessions.firstIndex { $0.id == selectedID } ?? -1
     let ordered = sessions[(start + 1)...] + sessions[..<max(start, 0)]
-    return ordered.first { $0.waitingFor != nil } ?? ordered.first { $0.isUnread }
+    for level in Urgency.allCases.reversed() where AttentionChoice.isOn(level, .counts) {
+      if let item = ordered.first(where: { $0.urgency == level }) { return item }
+    }
+    return ordered.first { $0.isUnread }
+  }
+
+  /// Quiets the row's question or offer until it asks another.
+  func dismissAsk(_ item: ProjectSession) {
+    item.dismissAsk()
+    Attention.shared.refresh()
   }
 
   /// Stops the process; the row stays, and its next prompt resumes it.
@@ -183,16 +258,24 @@ final class Project {
     for item in sessions { item.session.stop() }
   }
 
-  /// Rows waiting on a permission request, for the group's header.
-  var waitingCount: Int { sessions.count { $0.waitingFor != nil } }
+  /// Rows that want the person at a level that counts: the group's header.
+  var waitingCount: Int {
+    sessions.count { item in item.urgency.map { AttentionChoice.isOn($0, .counts) } ?? false }
+  }
 
   /// Sessions mid-turn: what closing the window would interrupt.
   var runningCount: Int { sessions.count { $0.session.transcript.isRunning } }
 
   var stored: StoredProject {
-    StoredProject(
+    let dismissed = sessions.compactMap { item -> (String, String)? in
+      guard let id = item.sessionID, let message = item.dismissedAsk else { return nil }
+      return (id, message)
+    }
+    return StoredProject(
       sessions: sessions.compactMap(\.session.savedTarget),
-      selected: selected?.session.savedTarget?.sessionID)
+      selected: selected?.session.savedTarget?.sessionID,
+      dismissedQuestions: dismissed.isEmpty
+        ? nil : Dictionary(dismissed, uniquingKeysWith: { first, _ in first }))
   }
 
   private func make(_ session: ClaudeSession) -> ProjectSession {
@@ -207,7 +290,9 @@ final class Project {
       Attention.shared.permissionRequested(item, in: self)
     }
     session.onPermissionsChanged = { [weak item] in Attention.shared.permissionsChanged(item) }
+    session.onPromptSent = { Attention.shared.refresh() }
     session.onStopped = { [weak self, weak item] in
+      Attention.shared.refresh()
       guard let self, let item, item.id != self.selectedID, item.hasStopped else { return }
       item.isUnread = true
     }
@@ -226,6 +311,7 @@ final class Project {
     Task { [weak item] in
       let summary = await Task.detached { SessionIndex.summary(of: file, account: account) }.value
       item?.preview = summary
+      Attention.shared.refresh()
     }
   }
 }

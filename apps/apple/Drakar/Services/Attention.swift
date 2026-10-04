@@ -2,6 +2,17 @@ import AppKit
 import DrakarKit
 import UserNotifications
 
+/// How much a session wants the person, least first: an offer at the end of a turn, a
+/// question at the end of a turn, an `AskUserQuestion` waiting on a choice, a tool waiting
+/// on permission.
+enum Urgency: String, CaseIterable, Comparable {
+  case offer, question, choice, permission
+
+  static func < (a: Urgency, b: Urgency) -> Bool {
+    allCases.firstIndex(of: a)! < allCases.firstIndex(of: b)!
+  }
+}
+
 /// What wants the person while they look elsewhere: the Dock badge for permission requests
 /// waiting in any window, and a local notification when Drakar is not the active app. Only
 /// Drakar's own sessions: Armada notifies for every session on the Mac already.
