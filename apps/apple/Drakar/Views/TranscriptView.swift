@@ -18,6 +18,9 @@ struct TranscriptView: View {
   /// follow has a chance to catch up, and would read as "the user left".
   @State private var isFollowing = true
   @State private var isAtBottom = true
+  /// The entries in view, as of the last change: the scroll is judged at rest only after
+  /// they stopped changing, so the anchor is taken from here and not from the next change.
+  @State private var visibleIDs: [String] = []
 
   var body: some View {
     ScrollView {
@@ -38,9 +41,12 @@ struct TranscriptView: View {
     }
     .scrollPosition($position)
     .onScrollTargetVisibilityChange(idType: String.self, threshold: 0.6) { visible in
+      visibleIDs = visible
       if !isFollowing { anchor = visible.first }
     }
-    .onChange(of: isFollowing) { _, following in if following { anchor = nil } }
+    .onChange(of: isFollowing) { _, following in
+      anchor = following ? nil : visibleIDs.first
+    }
     .onAppear {
       guard let anchor else { return }
       isFollowing = false

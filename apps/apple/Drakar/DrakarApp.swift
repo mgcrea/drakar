@@ -16,11 +16,13 @@ struct DrakarApp: App {
       SupportCommands(app: Support.app, preferIssueTracker: Support.preferIssueTracker)
       CommandGroup(replacing: .newItem) { NewWindowCommand() }
       CommandMenu("Session") { SessionCommands() }
+      // Replacing the save group takes File > Close with it, so both closes come back here.
       CommandGroup(replacing: .saveItem) {
         CloseCommands()
         SaveCommand()
       }
       CommandGroup(after: .textEditing) { MentionCommands() }
+      // ⌘P, as in VS Code and Zed: Drakar prints nothing.
       CommandGroup(replacing: .printItem) { QuickOpenCommand() }
     }
 

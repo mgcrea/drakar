@@ -28,7 +28,7 @@ struct SessionListView: View {
           SessionRow(item: item, isSelected: item.id == project.selectedID)
             .tag(item.id)
             .contextMenu { menu(for: item) }
-            .accessibilityIdentifier("sessions.attached.\(item.sessionID ?? "new")")
+            .accessibilityIdentifier("sessions.attached.\(item.sessionID ?? item.id.uuidString)")
         }
       } header: {
         HStack {
@@ -111,7 +111,9 @@ struct SessionRow: View {
     if session.transcript.isRunning { return .working }
     if item.hasStopped { return .stopped }
     if session.isReadOnly { return .elsewhere }
-    return session.isProcessRunning ? .idle : .notStarted
+    if session.isProcessRunning { return .idle }
+    if case .exited = session.phase { return .ended }
+    return .notStarted
   }
 
   private var detail: String? {
@@ -130,7 +132,7 @@ struct SessionRow: View {
 
 /// A row's state, in Claude Code's words and Armada's colours.
 enum RowState {
-  case working, runningTool, waiting, idle, notStarted, stopped, elsewhere
+  case working, runningTool, waiting, idle, notStarted, stopped, ended, elsewhere
 
   var label: String {
     switch self {
@@ -140,6 +142,7 @@ enum RowState {
     case .idle: String(localized: "Idle")
     case .notStarted: String(localized: "Not started")
     case .stopped: String(localized: "Stopped")
+    case .ended: String(localized: "Stopped")
     case .elsewhere: String(localized: "Open elsewhere")
     }
   }
@@ -150,7 +153,7 @@ enum RowState {
     case .runningTool: .orange
     case .waiting: .blue
     case .stopped: .red
-    case .idle, .notStarted, .elsewhere: .secondary
+    case .idle, .notStarted, .ended, .elsewhere: .secondary
     }
   }
 }

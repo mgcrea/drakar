@@ -10,8 +10,7 @@ struct ContentView: View {
   /// Names this window to `OpenSessions`.
   @State private var windowID = UUID()
   @Environment(\.appearsActive) private var appearsActive
-  @Environment(\.openWindow) private var openWindow
-  @Environment(\.dismissWindow) private var dismissWindow
+  @Environment(\.dismiss) private var dismiss
   /// The editor's share of the window beside the session, kept per window.
   @SceneStorage("drakar.editorFraction") private var editorFraction = 0.5
   /// Whether this window floats above other apps' windows, kept per window.
@@ -41,12 +40,15 @@ struct ContentView: View {
             }
           }
         }
+        // The window's closing, not this view's disappearing, stops the sessions: the editor
+        // appearing with the first open file must not take the running ones with it.
         .background(
           WindowReader { window in
             workspace.window = window
             WindowCloseGuard.install(on: window, for: workspace)
           }
         )
+        // The dot in the close button, as in every document window.
         .onChange(of: workspace.unsavedDocuments.isEmpty, initial: true) { _, clean in
           workspace.window?.isDocumentEdited = !clean
         }
@@ -81,9 +83,12 @@ struct ContentView: View {
     }
     .background(WindowLevel(floats: keepsOnTop))
     .navigationTitle(windowTitle)
-    .navigationSubtitle(project?.selected?.displayTitle ?? "")
+    // Short, because the title bar does not truncate it: a long one widened the detail
+    // column past the window and pushed the sidebar off its leading edge.
+    .navigationSubtitle(Self.clipped(project?.selected?.displayTitle ?? ""))
     .onChange(of: route, initial: true) { open(route) }
     .onDisappear {
+      // The window is gone: no session outlives it.
       project?.stopAll()
       OpenSessions.shared.unregister(window: windowID)
     }
@@ -142,11 +147,16 @@ struct ContentView: View {
     }) {
       for target in targets { owner.attach(target) }
       owner.workspace.window?.makeKeyAndOrderFront(nil)
-      if let current = route { dismissWindow(value: current) }
+      dismiss()  // this picker window, with or without a route
       return
     }
     for target in targets { OpenSessions.shared.requestAttach(target, in: folder) }
     route = next
+  }
+
+  /// `text` cut to 40 characters, with an ellipsis.
+  static func clipped(_ text: String) -> String {
+    text.count > 40 ? text.prefix(39) + "…" : text
   }
 
   /// The folder's path as `abbreviated` writes it, or only its last two folders when
@@ -185,6 +195,7 @@ struct ContentView: View {
           }.value
           guard let summary = summaries.first(where: { $0.sessionID == id }) else { return }
           pick(summary, forking: false)
+          open(route)  // now, not on the next update: the prompt needs the project
           if let prompt { project?.selected?.session.send(prompt) }
         }
         return
