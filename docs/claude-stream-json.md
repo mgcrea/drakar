@@ -144,6 +144,16 @@ blocks arrive with their text withheld; with it they stream as `thinking_delta` 
 Unsettled: whether `result.total_cost_usd` is the turn's cost or the process's running
 total. Two consecutive turns read 0.00096 then 0.0063, consistent with either.
 
+## Context usage (measured 2026-10-04, Claude Code 2.1.288)
+
+`{"type":"control_request","request_id":…,"request":{"subtype":"get_context_usage","detail":"summary"}}`
+is answered by the process that owns stdin, with `totalTokens`, `maxTokens` (the window,
+`[1m]` included) and `categories` (`name`, `tokens`, `isDeferred`). Mid-turn: answered in
+35 ms (before the turn's `result`). Between turns: 19 ms. `summary` made no
+`count_tokens` calls (`--debug` wrote nothing to stderr in this build, so this rests on the
+timing: single-digit to tens of milliseconds, not a network round trip). Drakar asks after
+every `result`. Capture: `Fixtures/context-usage.jsonl`.
+
 ## Raw captures
 
 The captures this was written from are trimmed into
