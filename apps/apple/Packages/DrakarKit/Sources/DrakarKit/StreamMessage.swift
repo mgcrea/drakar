@@ -302,6 +302,10 @@ public struct PermissionRequest: Sendable, Equatable {
   /// back as `updatedPermissions` when the user picks one.
   public var suggestions: [JSONValue]
   public var blockedPath: String?
+  /// Set on a request only the person can answer, such as `AskUserQuestion`'s.
+  public var requiresUserInteraction: Bool
+  /// An `AskUserQuestion` waiting on a choice, not a tool waiting on permission.
+  public var isChoice: Bool { toolName == UserQuestion.toolName }
 
   init?(_ request: JSONValue) {
     guard let toolName = request["tool_name"]?.stringValue else { return nil }
@@ -311,6 +315,7 @@ public struct PermissionRequest: Sendable, Equatable {
     description = request["description"]?.stringValue
     suggestions = request["permission_suggestions"]?.arrayValue ?? []
     blockedPath = request["blocked_path"]?.stringValue
+    requiresUserInteraction = request["requires_user_interaction"]?.boolValue ?? false
   }
 }
 
