@@ -76,6 +76,38 @@ struct SessionMonitorTests {
     monitor.stop()
   }
 
+  /// `~/.claude` may be a link: the listing spells paths through it, FSEvents reports them
+  /// resolved. One transcript is still one row.
+  @Test func aTranscriptListedThenWrittenIsOneRow() async throws {
+    let home = FileManager.default.temporaryDirectory.appending(path: "monitor-\(UUID())")
+    defer { try? FileManager.default.removeItem(at: home) }
+    let real = home.appending(path: "claude-real", directoryHint: .isDirectory)
+    let projects = real.appending(path: "projects/-w-drakar")
+    try FileManager.default.createDirectory(at: projects, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(
+      at: real.appending(path: "sessions"), withIntermediateDirectories: true)
+    let link = home.appending(path: ".claude")
+    try FileManager.default.createSymbolicLink(at: link, withDestinationURL: real)
+    let account = ClaudeAccount(directory: link, isDefault: true)
+    let file = projects.appending(path: "once.jsonl")
+    try Data(Self.line.utf8).write(to: file)
+    let monitor = SessionMonitor(accounts: [account])
+    await monitor.start()
+    #expect(monitor.summaries(under: "/w/drakar").count == 1)
+    let handle = try FileHandle(forWritingTo: file)
+    try handle.seekToEnd()
+    try handle.write(contentsOf: Data(("\n" + #"{"type":"ai-title","aiTitle":"Again"}"#).utf8))
+    try handle.close()
+    for _ in 0..<40
+    where !monitor.summaries(under: "/w/drakar").contains(where: { $0.title == "Again" }) {
+      try await Task.sleep(for: .milliseconds(100))
+    }
+    // Long enough for a second, differently spelled entry to land too.
+    try await Task.sleep(for: .milliseconds(500))
+    #expect(monitor.summaries(under: "/w/drakar").map(\.title) == ["Again"])
+    monitor.stop()
+  }
+
   @Test func includeWaitsForAccountDiscovery() async throws {
     let (home, account, projects) = try fixture()
     defer { try? FileManager.default.removeItem(at: home) }

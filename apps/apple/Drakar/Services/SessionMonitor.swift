@@ -9,7 +9,8 @@ import Observation
 final class SessionMonitor {
   static let shared = SessionMonitor()
 
-  /// By transcript path (`SessionSummary.id`): one id can have a transcript per account.
+  /// By transcript path, its folder resolved (`key(_:)`): one id can have a transcript per
+  /// account.
   private(set) var byFile: [String: SessionSummary] = [:]
   private(set) var isLoaded = false
 
@@ -22,6 +23,8 @@ final class SessionMonitor {
   @ObservationIgnored private var discovery: Task<Void, Never>?
   @ObservationIgnored private let discover: (() async -> [ClaudeAccount])?
   @ObservationIgnored private var generations: [String: Int] = [:]
+  /// `realpath` of each transcript folder seen, so a key costs one lookup.
+  @ObservationIgnored private var resolvedFolders: [String: String] = [:]
   /// Whether the registries were read once: before that, no id is known to be live.
   @ObservationIgnored private(set) var hasReadRegistries = false
 
@@ -38,8 +41,9 @@ final class SessionMonitor {
   var all: [SessionSummary] { byFile.values.sorted { $0.modified > $1.modified } }
 
   func summaries(under folder: String) -> [SessionSummary] {
-    byFile.values.filter { summary in
-      summary.cwd.map { ProjectPath.owner(of: $0, among: [folder]) != nil } ?? false
+    let owners = ProjectPath.Owners([folder])
+    return byFile.values.filter { summary in
+      summary.cwd.map { owners.owner(of: $0) != nil } ?? false
     }
   }
 
@@ -144,8 +148,23 @@ final class SessionMonitor {
   private func merge(_ summaries: [SessionSummary]) {
     for var summary in summaries {
       summary.live = live[summary.account.directory]?[summary.sessionID]
-      byFile[summary.id] = summary
+      byFile[key(summary.file)] = summary
     }
+  }
+
+  /// The transcript's path with its folder's links resolved: FSEvents reports resolved
+  /// paths, the listing the spelling it was given (`~/.claude` may be a link, the temporary
+  /// folder is `/var` → `/private/var`), and a deleted file cannot be resolved itself.
+  private func key(_ file: URL) -> String {
+    let folder = file.deletingLastPathComponent().path(percentEncoded: false)
+    let resolved =
+      resolvedFolders[folder]
+      ?? {
+        let resolved = ProjectPath.resolved(folder)
+        resolvedFolders[folder] = resolved
+        return resolved
+      }()
+    return resolved + "/" + file.lastPathComponent
   }
 
   private func changed(_ paths: [String], in account: ClaudeAccount) {
@@ -181,14 +200,9 @@ final class SessionMonitor {
     }
   }
 
-  /// A transcript that was deleted leaves the lists. Paths from FSEvents are resolved, the
-  /// keys may not be: compared resolved.
+  /// A transcript that was deleted leaves the lists.
   private func forget(_ path: String) {
-    let target = URL(filePath: path).resolvingSymlinksInPath().path(percentEncoded: false)
-    for key in byFile.keys
-    where URL(filePath: key).resolvingSymlinksInPath().path(percentEncoded: false) == target {
-      byFile[key] = nil
-    }
+    byFile[key(URL(filePath: path))] = nil
   }
 
   private func readRegistries() {

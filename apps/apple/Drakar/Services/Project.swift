@@ -15,8 +15,9 @@ final class ProjectSession: Identifiable {
   /// The entry at the top of the transcript when it was last shown; nil while it followed
   /// the bottom.
   var scrollAnchor: String?
-  /// The transcript's summary, read at restore: a row not shown yet has its title and
-  /// gauge without its whole history being read. Kept current as the file changes.
+  /// The transcript's summary, read at restore and kept current as the file changes: a row
+  /// not shown yet has its title and gauge without its whole history being read, and every
+  /// row its last activity.
   var preview: SessionSummary?
 
   init(session: ClaudeSession) {
@@ -61,6 +62,18 @@ final class ProjectSession: Identifiable {
       usage: transcript.contextUsage, reportedLimit: session.reportedContext?.maxTokens,
       initModelID: transcript.session?.model, attachmentModelID: nil,
       accountModelID: accountModel, messageModelID: transcript.contextModelID)
+  }
+
+  /// When the transcript was last written: the session's last activity, from the file.
+  var lastActivity: Date? { preview?.modified }
+
+  /// Why the row stopped, for its second line: the failure, or "Stopped, exit 1".
+  var stopReason: String? {
+    switch session.phase {
+    case .failed(let reason): reason
+    case .exited(let status) where status != 0: String(localized: "Stopped, exit \(status)")
+    case .idle, .starting, .ready, .exited: nil
+    }
   }
 
   var hasStopped: Bool {
@@ -169,6 +182,9 @@ final class Project {
   func stopAll() {
     for item in sessions { item.session.stop() }
   }
+
+  /// Rows waiting on a permission request, for the group's header.
+  var waitingCount: Int { sessions.count { $0.waitingFor != nil } }
 
   /// Sessions mid-turn: what closing the window would interrupt.
   var runningCount: Int { sessions.count { $0.session.transcript.isRunning } }

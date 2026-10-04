@@ -48,6 +48,16 @@ struct SessionListView: View {
       } header: {
         HStack {
           Text("This Window")
+          if project.waitingCount > 0 {
+            Text(project.waitingCount, format: .number)
+              .font(.caption.monospacedDigit())
+              .foregroundStyle(.white)
+              .padding(.horizontal, 5)
+              .background(.blue, in: Capsule())
+              .help("Waiting for you: \(project.waitingCount)")
+              .accessibilityLabel("\(project.waitingCount) waiting for you")
+              .accessibilityIdentifier("sessions.waiting")
+          }
           Spacer()
           Button("New Session", systemImage: "plus") { project.newSession() }
             .labelStyle(.iconOnly)
@@ -170,9 +180,13 @@ struct SessionRow: View {
   private var state: RowState { RowState(item) }
 
   private var detail: String? {
-    if let waiting = item.waitingFor { return waiting }
-    if case .failed(let reason) = item.session.phase { return reason }
-    return worktreeName
+    var parts: [String] = []
+    if let lead = item.waitingFor ?? item.stopReason { parts.append(lead) }
+    if let when = item.lastActivity {
+      parts.append(when.formatted(.relative(presentation: .named)))
+    }
+    if let worktreeName { parts.append(worktreeName) }
+    return parts.isEmpty ? nil : parts.joined(separator: " · ")
   }
 
   /// The worktree's folder name, for a session running below the project root.
@@ -215,8 +229,7 @@ struct SummaryRow: View {
       return state == .elsewhere ? .idle : state
     }
     return switch summary.live?.status {
-    case "busy":
-      TranscriptTail.read(summary.file)?.isAwaitingToolResult == true ? .runningTool : .working
+    case "busy": summary.awaitsToolResult ? .runningTool : .working
     case "waiting": .waiting
     default: .idle
     }

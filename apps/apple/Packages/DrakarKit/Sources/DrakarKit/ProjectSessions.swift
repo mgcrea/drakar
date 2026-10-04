@@ -23,9 +23,10 @@ public enum ProjectSessions {
   ) -> ProjectGroups {
     let folders = [folder] + otherFolders
     let own = ProjectPath.normalize(folder)
+    let owners = ProjectPath.Owners(folders)
     var newest: [String: SessionSummary] = [:]
     for summary in summaries where !attached.contains(summary.sessionID) {
-      guard let cwd = summary.cwd, ProjectPath.owner(of: cwd, among: folders) == own else {
+      guard let cwd = summary.cwd, owners.owner(of: cwd) == own else {
         continue
       }
       if let kept = newest[summary.sessionID], kept.modified >= summary.modified { continue }

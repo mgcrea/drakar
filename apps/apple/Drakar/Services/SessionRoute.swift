@@ -117,12 +117,13 @@ final class OpenSessions {
     pending.removeValue(forKey: ProjectPath.normalize(folder)) ?? []
   }
 
-  /// A transcript changed on disk: a read-only session following it catches up, and a row
-  /// whose history is not read yet shows the new summary.
+  /// A transcript changed on disk: a read-only session following it catches up, and its
+  /// row takes the new summary (its last activity; its title and gauge until its history
+  /// is read).
   func transcriptWritten(_ summary: SessionSummary) {
     guard let (_, item) = locate(summary.sessionID) else { return }
     item.session.catchUp()
-    if item.preview != nil, !item.session.hasLoadedHistory { item.preview = summary }
+    item.preview = summary
   }
 
   /// The ids live in other processes now. A session listed here that another process has

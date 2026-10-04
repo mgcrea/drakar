@@ -35,15 +35,29 @@ public enum ProjectPath {
   /// The folder among `folders` that owns `cwd`: the deepest containing it, by its own
   /// spelling or its resolved one. Returned as `normalize` writes it.
   public static func owner(of cwd: String, among folders: [String]) -> String? {
-    var best: (folder: String, length: Int)?
-    for folder in folders {
-      let normalized = normalize(folder)
-      for key in Set([normalized, resolved(normalized)]) where contains(key, cwd) {
-        if let current = best, key.count <= current.length { continue }
-        best = (normalized, key.count)
+    Owners(folders).owner(of: cwd)
+  }
+
+  /// `owner(of:among:)` with the folders resolved once, for a loop over many sessions:
+  /// `realpath` per session per folder is file-system work on every redraw.
+  public struct Owners: Sendable {
+    private let keys: [(folder: String, key: String)]
+
+    public init(_ folders: [String]) {
+      keys = folders.flatMap { folder in
+        let normalized = normalize(folder)
+        return Set([normalized, resolved(normalized)]).map { (normalized, $0) }
       }
     }
-    return best?.folder
+
+    public func owner(of cwd: String) -> String? {
+      var best: (folder: String, length: Int)?
+      for (folder, key) in keys where contains(key, cwd) {
+        if let current = best, key.count <= current.length { continue }
+        best = (folder, key.count)
+      }
+      return best?.folder
+    }
   }
 
   /// How Claude Code names the transcript folder of `folder`, in the two encodings seen:

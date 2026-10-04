@@ -70,6 +70,9 @@ public struct SessionSummary: Sendable, Hashable, Identifiable {
   public var context: ContextReading?
   /// The session's own model attachment (`claude-opus-5[1m]`), when it wrote one.
   public var modelID: String?
+  /// The newest turn is a tool call nobody answered (`TranscriptTail.isAwaitingToolResult`),
+  /// read with the rest so a list never reads the file again to draw a row.
+  public var awaitsToolResult = false
 
   /// The transcript's path, not the session id: one id can have a transcript under two
   /// accounts, when a session was resumed after switching `CLAUDE_CONFIG_DIR`.
@@ -108,6 +111,7 @@ public enum SessionIndex {
         live[account, default: [:]][session.sessionID] = session
       }
     }
+    let owners = folder.map { ProjectPath.Owners([$0]) }
     let prefixes = folder.map { folder in
       Set(
         ProjectPath.encodedPrefixes(for: folder)
@@ -139,8 +143,8 @@ public enum SessionIndex {
     }
     return found.sorted { $0.2 > $1.2 }.prefix(limit).compactMap { file, account, modified, size in
       var summary = summarize(file: file, account: account, modified: modified, size: size)
-      if let folder {
-        guard let cwd = summary.cwd, ProjectPath.owner(of: cwd, among: [folder]) != nil else {
+      if let owners {
+        guard let cwd = summary.cwd, owners.owner(of: cwd) != nil else {
           return nil
         }
       }
@@ -171,6 +175,7 @@ public enum SessionIndex {
     let tail = TranscriptTail(suffixOf: data)
     summary.context = tail.newestReading
     summary.modelID = tail.newestModelID
+    summary.awaitsToolResult = tail.isAwaitingToolResult
     return summary
   }
 

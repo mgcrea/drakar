@@ -35,6 +35,7 @@ struct ProjectPathTests {
     let cwd = ProjectPath.resolved(real.path(percentEncoded: false)) + "/sub"
     let folder = link.path(percentEncoded: false)
     #expect(ProjectPath.owner(of: cwd, among: [folder]) == ProjectPath.normalize(folder))
+    #expect(ProjectPath.Owners([folder]).owner(of: cwd) == ProjectPath.normalize(folder))
   }
 
   @Test func transcriptFoldersBeginWithTheFoldersEncoding() {

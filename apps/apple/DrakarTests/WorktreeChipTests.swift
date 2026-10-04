@@ -32,6 +32,32 @@ struct WorktreeChipTests {
         selection("/w/drakar/README.md"), sessionFolder: URL(filePath: "/w/drakar"),
         projectFolder: URL(filePath: "/w/drakar")) == nil)
   }
+
+  /// A session in a plain subfolder reads the same checkout: nothing to say.
+  @Test func aSubfolderSessionIsNotMarked() {
+    #expect(
+      ComposerView.selectionNote(
+        selection("/w/drakar/README.md"),
+        sessionFolder: URL(filePath: "/w/drakar/apps/apple"),
+        projectFolder: URL(filePath: "/w/drakar")) == nil)
+  }
+
+  /// A worktree made outside Claude Code is known by its `.git` file.
+  @Test func aFolderWithAGitFileIsAWorktree() throws {
+    let project = FileManager.default.temporaryDirectory.appending(
+      path: "worktree-\(UUID().uuidString)", directoryHint: .isDirectory)
+    let tree = project.appending(path: "trees/x", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: tree, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(
+      at: project.appending(path: ".git"), withIntermediateDirectories: true)
+    try Data("gitdir: ../../.git/worktrees/x\n".utf8).write(to: tree.appending(path: ".git"))
+    defer { try? FileManager.default.removeItem(at: project) }
+    let readme = project.appending(path: "README.md").path(percentEncoded: false)
+    #expect(
+      ComposerView.selectionNote(selection(readme), sessionFolder: tree, projectFolder: project)
+        == "from the main checkout")
+    #expect(!ComposerView.isWorktree(project.path(percentEncoded: false)))
+  }
 }
 
 @Suite("The ⌘⌥K menu title")

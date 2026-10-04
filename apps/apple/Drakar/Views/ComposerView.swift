@@ -88,15 +88,27 @@ struct ComposerView: View {
     text = ""
   }
 
-  /// "from the main checkout" when the session runs in a folder below the project (a
-  /// worktree) and the selection is a file outside it: the session reads another copy.
+  /// "from the main checkout" when the session runs in a worktree of the project and the
+  /// selection is a file outside it: the session reads another copy. A session in a plain
+  /// subfolder (`apps/apple`) reads the same files, and gets no note.
   static func selectionNote(
     _ selection: EditorSelection, sessionFolder: URL, projectFolder: URL
   ) -> String? {
     let session = ProjectPath.normalize(sessionFolder.path(percentEncoded: false))
     let project = ProjectPath.normalize(projectFolder.path(percentEncoded: false))
-    guard session != project, !ProjectPath.contains(session, selection.filePath) else { return nil }
+    guard session != project, isWorktree(session),
+      !ProjectPath.contains(session, selection.filePath)
+    else { return nil }
     return String(localized: "from the main checkout")
+  }
+
+  /// Claude Code's own worktree folder, or any folder whose `.git` is a file: a linked
+  /// worktree points at its repository that way, where a checkout has a directory.
+  static func isWorktree(_ folder: String) -> Bool {
+    if folder.contains("/.claude/worktrees/") { return true }
+    var isDirectory: ObjCBool = false
+    return FileManager.default.fileExists(atPath: folder + "/.git", isDirectory: &isDirectory)
+      && !isDirectory.boolValue
   }
 }
 

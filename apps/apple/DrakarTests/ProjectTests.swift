@@ -131,6 +131,45 @@ struct ProjectTests {
     #expect(project.sessions.map(\.displayTitle) == ["Title A", "Title B"])
     #expect(!unshown.session.hasLoadedHistory)
     #expect(unshown.gauge(accountModel: nil)?.used == 40_012)
+    #expect(unshown.lastActivity != nil)
+  }
+
+  private func standIn(_ name: String, _ body: String) throws -> URL {
+    let script = folder.appending(path: name)
+    try Data("#!/bin/sh\n\(body)\n".utf8).write(to: script)
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script.path)
+    return script
+  }
+
+  /// A row waiting on a permission counts in the group's header.
+  @Test func aWaitingRowCountsInTheHeader() async throws {
+    let request =
+      #"{"type":"control_request","request_id":"r1","request":{"subtype":"can_use_tool","tool_name":"Bash","display_name":"Bash","input":{"command":"make test"},"tool_use_id":"toolu_1"}}"#
+    let project = Project(folder: folder)
+    _ = project.newSession()
+    let item = project.newSession()
+    item.session.executableOverride = try standIn("claude", "echo '\(request)'\ncat > /dev/null")
+    #expect(project.waitingCount == 0)
+    item.session.send("go")
+    for _ in 0..<50 where project.waitingCount == 0 {
+      try await Task.sleep(for: .milliseconds(100))
+    }
+    #expect(project.waitingCount == 1)
+    item.session.stop()
+    #expect(project.waitingCount == 0)
+  }
+
+  /// A process that exits on an error says so in its row: "Stopped, exit 3".
+  @Test func aFailedExitSaysItsStatus() async throws {
+    let project = Project(folder: folder)
+    let item = project.newSession()
+    item.session.executableOverride = try standIn("claude", "read line\nexit 3")
+    item.session.send("go")
+    for _ in 0..<50 where !item.hasStopped {
+      try await Task.sleep(for: .milliseconds(100))
+    }
+    #expect(item.session.phase == .exited(status: 3))
+    #expect(item.stopReason == "Stopped, exit 3")
   }
 
   /// A session running here is never flipped.

@@ -87,5 +87,21 @@ struct ProjectSessionsTests {
     let listed = SessionIndex.list(accounts: [account], under: "/w/drakar", isAlive: { _ in false })
     #expect(Set(listed.map(\.sessionID)) == ["a", "b"])
     #expect(listed.first?.context?.total == 6)
+    #expect(listed.allSatisfy { !$0.awaitsToolResult })
+  }
+
+  /// Whether the newest turn waits on a tool is read with the summary, once.
+  @Test func aSummaryKnowsAnUnansweredToolCall() throws {
+    let file = FileManager.default.temporaryDirectory.appending(path: "tool-\(UUID()).jsonl")
+    defer { try? FileManager.default.removeItem(at: file) }
+    let account = ClaudeAccount(directory: FileManager.default.temporaryDirectory, isDefault: true)
+    let calling =
+      #"{"type":"assistant","cwd":"/w","message":{"id":"m","content":[{"type":"tool_use","id":"t","name":"Bash","input":{}}]}}"#
+    try Data(calling.utf8).write(to: file)
+    #expect(SessionIndex.summary(of: file, account: account)?.awaitsToolResult == true)
+    let answered =
+      #"{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t","content":"ok"}]}}"#
+    try Data((calling + "\n" + answered).utf8).write(to: file)
+    #expect(SessionIndex.summary(of: file, account: account)?.awaitsToolResult == false)
   }
 }
