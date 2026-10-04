@@ -159,7 +159,8 @@ public struct ContextUsageReply: Sendable, Equatable {
     maxTokens = max
     categories = (response["categories"]?.arrayValue ?? []).compactMap { entry in
       guard let name = entry["name"]?.stringValue, let tokens = entry["tokens"]?.intValue,
-        tokens > 0, !Self.excluded.contains(name), entry["isDeferred"]?.boolValue != true
+        tokens > 0, !Self.excluded.contains(name), entry["isDeferred"]?.boolValue != true,
+        entry["kind"]?.stringValue != "deferred", entry["kind"]?.stringValue != "free"
       else { return nil }
       return Category(name: name, tokens: tokens)
     }

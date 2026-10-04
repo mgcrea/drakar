@@ -117,14 +117,14 @@ struct ContextUsageTests {
 
   /// History replays the same messages, so a resumed session has its gauge before it runs.
   @Test func historyCarriesTheNewestUsage() throws {
-    // Fixture.historyWithTool does not carry usage; build synthetic history from context-usage fixture
+    // The captured history fixture carries no usage; build synthetic history from context-usage fixture
     let contextUsageLines = try Fixture.contextUsage.lines
-    // Find the assistant line (second line: system/init, then assistant line)
-    let assistantLine = contextUsageLines.dropFirst().first { line in
-      String(decoding: line, as: UTF8.self).contains("\"type\":\"assistant\"")
-    }
-    guard let assistantLine else { throw NSError() }
-    let transcript = Transcript.history(lines: [assistantLine])
+    let assistantLine = try #require(
+      contextUsageLines.first { line in
+        String(decoding: line, as: UTF8.self).contains("\"type\":\"assistant\"")
+      })
+    let userLine = Data(#"{"type":"user","message":{"role":"user","content":"go"}}"#.utf8)
+    let transcript = Transcript.history(lines: [userLine, assistantLine])
     #expect(transcript.contextUsage != nil)
   }
 
@@ -148,5 +148,10 @@ struct ContextUsageTests {
     #expect(reply.totalTokens > 0)
     #expect(!reply.categories.isEmpty)
     #expect(!reply.categories.contains { $0.name == "Free space" || $0.tokens == 0 })
+    // Verify deferred and free categories are excluded
+    #expect(!reply.categories.contains { $0.name.contains("(deferred)") })
+    #expect(!reply.categories.contains { $0.name == "Autocompact buffer" })
+    #expect(!reply.categories.contains { $0.name == "MCP tools (deferred)" })
+    #expect(!reply.categories.contains { $0.name == "System tools (deferred)" })
   }
 }
