@@ -20,7 +20,7 @@ Settled with the person on 2026-10-04.
 | Question | Decision |
 | --- | --- |
 | Where | A right-hand inspector column in the project window, two folding panes like the left sidebar's |
-| A click on a skill | Runs it in a new session. With no arguments it is sent at once; with an `argumentHint` the new session opens with `/name ` in the composer and the hint as placeholder |
+| A click on a skill | Runs it in a new session. With no arguments it is sent at once; with an `argumentHint` the new session opens with `/name ` in the composer and the hint on a line above the field |
 | A right click | Run in Current Session (same rule), Run in New Session, Copy Name |
 | What the MCP pane does | Status at a glance in v1. Fixing (authenticate, reconnect) and per-session toggling come later |
 | Where the lists come from | A short probe process per project, refreshed by the project's own sessions (approach A below) |
@@ -37,7 +37,9 @@ in about 1.2 to 1.8 s, without writing a transcript:
   entries, each `{name, description, argumentHint}`, plus `builtin: true` on the 58 that
   are the CLI's own (`compact`, `init`, `loop`, …) and `aliases` on some. `argumentHint` is
   always present; `""` means the command takes no arguments. Plugin skills are namespaced
-  (`superpowers:brainstorming`).
+  (`superpowers:brainstorming`). `builtin` also covers the skills bundled with the CLI
+  (`simplify`, `code-review`, `loop`): nothing in the reply tells them from commands like
+  `compact`, so v1 lists neither.
 - **`mcp_status`** (`{"subtype":"mcp_status"}`, new to Drakar): its reply's `mcpServers`
   lists every server, each `{name, status, source, scope, config}`, plus `serverInfo`
   (`name`, `title`, `version`) and `tools` (`[{name, annotations: {readOnly, destructive}}]`)
@@ -100,8 +102,9 @@ Inside, top to bottom:
 - Built-in commands are not listed. Order: alphabetical by the name without its namespace.
 - **Click**: a new session in the project (`newSession()`), selected, then
   - `argumentHint == ""`: `/name` is sent;
-  - otherwise: the draft is `/name `, the composer shows the hint as its placeholder, and
-    takes focus.
+  - otherwise: the draft is `/name `, the hint shows on a line above the composer's field
+    (a `TextField`'s placeholder only shows while it is empty), and the field takes focus.
+    In the current session, a draft already there stays, after `/name `.
 - **Context menu**: Run in Current Session (the same rule, in the selected session;
   disabled with no selection, a read-only session, or one mid-turn), Run in New Session,
   Copy Name.
@@ -143,8 +146,10 @@ Inside, top to bottom:
   `initialize` and `mcpStatus`, waits for both replies up to 20 s, then closes stdin, and
   terminates the process if it is still there 2 s later. Never a hard kill first: that
   leaves the registry entry behind.
-- **`Capabilities`** (`@Observable`), one per project, in a store keyed by
-  `ProjectPath.normalize(folder)`, the key `ProjectList` and `OpenSessions` use:
+- **`Capabilities`** (`@Observable`), one per project and account, in a store keyed by
+  `ProjectPath.normalize(folder)` (the key `ProjectList` and `OpenSessions` use) and the
+  window's account (`AccountStore.windowAccount(for:)`), since another account has other
+  user skills and servers:
   `state` is loading, loaded (with the time), or failed (with the message and stderr tail),
   and the last loaded `ProjectCapabilities` is kept through a reload. It lives for the
   launch, never on disk: a tab closed and reopened shows the last lists while it probes.
@@ -165,16 +170,16 @@ Inside, top to bottom:
   in its own folder, as their sessions run.
 - **Home never probes.** Only projects open in a window or tab do: a probe per tracked
   project would start every stdio server once per project.
-- **Accounts.** The probe runs under the account a new session would
-  (`ClaudeChoice.newSessionAccount`). If accounts become per window (`feat/window-account`),
-  the probe takes the window's, and the store's key becomes folder and account.
+- **Accounts.** The probe runs under the account a new session in the folder would
+  (`ClaudeChoice.account(forNewSessionIn:)`). Picking another account for the window binds
+  the project to that account's entry, probed if it has not been.
 
 ### Running a skill
 
 `Project.run(_ skill: SkillEntry, in target: .newSession | .current)`: picks or makes the
 session, then sends `/name` or sets the draft and asks the composer for focus.
-`ComposerView` gains an optional placeholder, cleared once the draft no longer starts with
-the prefilled text, and a focus request it honours on appear.
+`ComposerView` gains an optional hint line, shown while the draft still starts with the
+prefilled text, and a focus request it honours whenever it changes.
 
 ## Change marks
 
@@ -214,9 +219,10 @@ A probe never blocks the window, the sessions or the editor.
   (`executableOverride`): both replies; `initialize` then silence (the timeout keeps the
   skills); exit 1 with stderr. The store coalescing three refreshes into one rerun. A
   worktree session's `initialize` reply leaving the project's skills alone. `Project.run`
-  in a new and in the current session, sending and prefilling. The watcher's path filter.
+  in a new and in the current session, sending and prefilling, a draft kept. The watcher's
+  path filter.
 - **Live, before it is done**, in this repo with the real CLI: `/check` sends on a click;
-  `/simplify` opens with its hint; the needs-auth plugin servers sort first; adding
+  `/marketing:seo-audit` opens with its hint and the cursor after the name; the needs-auth plugin servers sort first; adding
   `.claude/skills/x/SKILL.md` brings `x` with a dot, and a dot on the toolbar button with
   the inspector hidden; Run in Current Session on an idle session; closing the tab mid-probe
   leaves no `sessions/<pid>.json` behind.
@@ -228,5 +234,6 @@ A probe never blocks the window, the sessions or the editor.
 - **Toggling a server per session** (`mcp_toggle`, unverified), to save context.
 - **Counts on home's project rows** ("12 skills · 2 servers need auth"), which the store
   allows without change.
-- **Pinned or favourite skills**, and the CLI's own `/` commands.
+- **Pinned or favourite skills**, and the CLI's own `/` commands, among them the skills it
+  bundles (`/simplify`, `/code-review`, `/loop`), perhaps as a folded Built-in group.
 - **Per-worktree lists** for sessions in a worktree whose skills differ from the project's.
