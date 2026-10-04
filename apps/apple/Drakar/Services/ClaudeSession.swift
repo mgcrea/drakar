@@ -24,6 +24,8 @@ final class ClaudeSession {
   private(set) var phase: Phase = .idle
   /// The binary this session runs, for the footer and for bug reports.
   private(set) var executable: URL?
+  /// The account it runs under, picked or the shell's; nil until it starts.
+  private(set) var account: ClaudeAccount?
   /// The end of the CLI's stderr, shown when the process fails.
   private(set) var diagnostics = ""
 
@@ -65,9 +67,21 @@ final class ClaudeSession {
         ?? Transcript()
       command.resumeSessionID = resuming.sessionID
       command.forksSession = resuming.forks == true
-      environment = resuming.account.environment(environment)
     }
-    guard let claude = ClaudeLocator.locate(path: environment["PATH"]) else {
+    // A resume under the account that wrote it; a new session under the one picked in
+    // Settings, else left to the shell.
+    let chosen = resuming?.account ?? ClaudeChoice.newSessionAccount
+    if let chosen { environment = chosen.environment(environment) }
+    account =
+      chosen
+      ?? ClaudeChoice.account(
+        at: environment["CLAUDE_CONFIG_DIR"]
+          ?? FileManager.default.homeDirectoryForCurrentUser.appending(path: ".claude")
+          .path(percentEncoded: false))
+    guard
+      let claude = ClaudeLocator.locate(
+        preferred: ClaudeChoice.executable, path: environment["PATH"])
+    else {
       phase = .failed(
         String(localized: "Claude Code was not found. Install it, then open the folder again."))
       return

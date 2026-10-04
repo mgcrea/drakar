@@ -206,19 +206,21 @@ armada's did.
 ## 7. Open questions
 
 1. **Which `claude`.** Two are on this Mac's PATH (`~/.local/bin` and Homebrew), and an
-   app launched from the Finder does not inherit the shell's PATH at all. What exists:
-   the login shell's environment is read once per launch (`$SHELL -l -i`, so `.zshrc`
-   additions count), and `claude` is the first executable on that PATH, then in the
-   installers' locations (`ClaudeLocator`). Still open: showing which one runs (the footer
-   only has it as a tooltip) and letting the user pick another in Settings.
+   app launched from the Finder does not inherit the shell's PATH at all. The login
+   shell's environment is read once per launch (`$SHELL -l -i`, so `.zshrc` additions
+   count), and Automatic runs the first executable on that PATH, then in the installers'
+   locations (`ClaudeLocator`). Settings lists every install with its version and can pin
+   one; a pinned one that disappears falls back to Automatic.
 2. **Which account.** `CLAUDE_CONFIG_DIR` selects one; this Mac has more than one config
-   directory. Settled for existing sessions: the list reads every account and a resume
-   runs under the one that wrote the session. Still open: a new session runs under
-   whatever the login shell selects, with no way to choose another.
+   directory. A resume runs under the account that wrote the session. A new session runs
+   under the one picked in Settings, or the login shell's; the footer names it when it is
+   not the default. Still open: picking per session rather than app-wide, which belongs to
+   the project window's new-session control.
 3. **Protocol drift.** Each fixture's version is in its own lines (2.1.284 for the
-   stream captures, 2.1.288 for history and the IDE bridge). Still open: failing loudly
-   in the UI on a `system/init` from a version outside the tested range, and the habit of
-   re-capturing on every minor.
+   stream captures, 2.1.288 for history and the IDE bridge), and `ClaudeVersion.tested`
+   holds that range: the footer's version turns orange outside it, and Settings says why
+   beside the install it would run. Still open: the habit of re-capturing on every minor,
+   and raising the range only after.
 4. **The Sparkle key.** The trio share one EdDSA key, and one leak updates all three. A
    new app has no installed base, so its own key (`generate_keys --account drakar`) costs
    nothing today and a rotation later. Recommended; the owner decides.

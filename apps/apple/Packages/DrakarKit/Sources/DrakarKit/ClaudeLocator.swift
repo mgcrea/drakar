@@ -32,11 +32,29 @@ public enum ClaudeLocator {
     }
   }
 
+  /// `preferred` (the one picked in Settings) while it is still there, else what the shell
+  /// would run.
   public static func locate(
-    home: URL = FileManager.default.homeDirectoryForCurrentUser, path: String?,
+    preferred: URL? = nil, home: URL = FileManager.default.homeDirectoryForCurrentUser,
+    path: String?,
     isExecutable: (URL) -> Bool = { FileManager.default.isExecutableFile(atPath: $0.path) }
   ) -> URL? {
-    candidates(home: home, path: path).first(where: isExecutable)
+    if let preferred, isExecutable(preferred) { return preferred }
+    return candidates(home: home, path: path).first(where: isExecutable)
+  }
+
+  /// Every `claude` there is to pick, in the order `locate` tries them. A link to a binary
+  /// already listed is left out: `/usr/local/bin/claude` pointing into the same install as
+  /// `~/.local/bin/claude` is one choice, not two.
+  public static func installed(
+    home: URL = FileManager.default.homeDirectoryForCurrentUser, path: String?,
+    isExecutable: (URL) -> Bool = { FileManager.default.isExecutableFile(atPath: $0.path) },
+    resolve: (URL) -> URL = { $0.resolvingSymlinksInPath() }
+  ) -> [URL] {
+    var seen = Set<String>()
+    return candidates(home: home, path: path).filter {
+      isExecutable($0) && seen.insert(resolve($0).standardizedFileURL.path).inserted
+    }
   }
 }
 

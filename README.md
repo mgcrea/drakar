@@ -8,6 +8,10 @@ plan is [PLAN.md](PLAN.md); the protocol is [docs/claude-stream-json.md](docs/cl
 Distributed directly (Developer ID, Sparkle), never through the Mac App Store: it spawns
 processes that work on your files, which App Sandbox forbids.
 
+Settings › General picks which `claude` runs when more than one is installed, and the
+account (`CLAUDE_CONFIG_DIR`) a new session starts under. The footer warns when the CLI is
+outside the versions Drakar was tested with, since the protocol it speaks is undocumented.
+
 ## Drakar as the editor of `claude` in a terminal
 
 While Drakar runs, a `claude` started with `claude --ide` in a folder Drakar has open (or

@@ -1,3 +1,5 @@
+import DrakarKit
+import Foundation
 import SupportKit
 import SupportKitSettings
 import Testing
@@ -32,5 +34,20 @@ struct SettingsPaneTests {
   @Test @MainActor func theSupportIdentityIsThisApps() {
     #expect(Support.app.slug == "drakar")
     #expect(Support.app.siteURL.host() == "drakar.mgcrea.io")
+  }
+
+  /// The default account is run with `CLAUDE_CONFIG_DIR` unset, because the CLI keys its
+  /// keychain item by the variable: picking `~/.claude` must not name it.
+  @Test @MainActor func picksTheDefaultAccountByLeavingTheVariableUnset() {
+    let home = FileManager.default.homeDirectoryForCurrentUser.path(percentEncoded: false)
+    let standard = ClaudeChoice.account(at: home + ".claude")
+    #expect(standard.isDefault)
+    #expect(ClaudeChoice.account(at: home + ".claude/").isDefault)
+    #expect(standard.environment(["CLAUDE_CONFIG_DIR": "/elsewhere"])["CLAUDE_CONFIG_DIR"] == nil)
+
+    let other = ClaudeChoice.account(at: home + ".claude-work")
+    #expect(!other.isDefault)
+    #expect(other.name == "work")
+    #expect(other.environment([:])["CLAUDE_CONFIG_DIR"]?.hasSuffix(".claude-work/") == true)
   }
 }

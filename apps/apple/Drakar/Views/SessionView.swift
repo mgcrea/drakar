@@ -70,6 +70,35 @@ private struct ProblemBanner: View {
   }
 }
 
+/// The CLI's version, in orange outside the range Drakar was tested with: the stream
+/// protocol is undocumented, and a newer CLI can change it under the app.
+private struct VersionLabel: View {
+  let version: String
+  let executable: URL?
+
+  var body: some View {
+    let path = executable.map { ContentView.abbreviated($0) } ?? ""
+    let tested = ClaudeVersion.tested
+    let range = "\(tested.lowerBound.description) to \(tested.upperBound.description)"
+    switch ClaudeVersion(version)?.drift {
+    case nil:
+      Text("Claude Code \(version)").help(path)
+    case .older?:
+      Label("Claude Code \(version)", systemImage: "exclamationmark.triangle.fill")
+        .foregroundStyle(.orange)
+        .help(
+          "Older than the versions Drakar was tested with (\(range)): it may not understand everything Drakar sends. Pick another in Settings. \(path)"
+        )
+    case .newer?:
+      Label("Claude Code \(version)", systemImage: "exclamationmark.triangle.fill")
+        .foregroundStyle(.orange)
+        .help(
+          "Newer than the versions Drakar was tested with (\(range)): some of what it says may not show. \(path)"
+        )
+    }
+  }
+}
+
 private struct SessionFooter: View {
   let session: ClaudeSession
 
@@ -80,9 +109,12 @@ private struct SessionFooter: View {
       if let model = session.transcript.session?.model {
         Text(model)
       }
+      if let account = session.account, !account.isDefault {
+        Label(account.name, systemImage: "person.crop.circle")
+          .help("Runs under the account in \(ContentView.abbreviated(account.directory))")
+      }
       if let version = session.transcript.session?.claudeCodeVersion {
-        Text("Claude Code \(version)")
-          .help(session.executable?.path(percentEncoded: false) ?? "")
+        VersionLabel(version: version, executable: session.executable)
       }
       if let cost = session.transcript.lastResult?.totalCostUSD {
         Text(cost, format: .currency(code: "USD").precision(.fractionLength(4)))

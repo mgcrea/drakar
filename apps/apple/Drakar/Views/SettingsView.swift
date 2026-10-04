@@ -1,3 +1,4 @@
+import DrakarKit
 import SupportKitSettings
 import SwiftUI
 
@@ -41,6 +42,41 @@ enum SettingsPane: String, SupportKitSettings.SettingsPane {
 enum PreferenceKey {
   /// Which folders Drakar offers itself as the editor for, to `claude` run in a terminal.
   static let editorScope = "drakar.editorScope"
+  /// The `claude` sessions run, by path; empty for the one the login shell would run.
+  static let claudePath = "drakar.claudePath"
+  /// The configuration directory a new session runs under; empty for the login shell's.
+  static let newSessionAccount = "drakar.newSessionAccount"
+}
+
+/// What Settings picked for the sessions Drakar starts.
+enum ClaudeChoice {
+  /// The `claude` picked in Settings; nil to run the shell's.
+  static var executable: URL? {
+    stored(PreferenceKey.claudePath).map { URL(filePath: $0) }
+  }
+
+  /// The account picked for new sessions while its directory is there; nil for the shell's.
+  static var newSessionAccount: ClaudeAccount? {
+    guard let path = stored(PreferenceKey.newSessionAccount),
+      FileManager.default.fileExists(atPath: path)
+    else { return nil }
+    return account(at: path)
+  }
+
+  /// The account a configuration directory holds; `~/.claude` is the default one.
+  static func account(at path: String) -> ClaudeAccount {
+    let directory = URL(filePath: path, directoryHint: .isDirectory)
+    let standard = FileManager.default.homeDirectoryForCurrentUser.appending(
+      path: ".claude", directoryHint: .isDirectory)
+    return ClaudeAccount(
+      directory: directory,
+      isDefault: directory.standardizedFileURL.path(percentEncoded: false)
+        == standard.standardizedFileURL.path(percentEncoded: false))
+  }
+
+  private static func stored(_ key: String) -> String? {
+    UserDefaults.standard.string(forKey: key).flatMap { $0.isEmpty ? nil : $0 }
+  }
 }
 
 /// Where a terminal `claude` finds Drakar as its editor (`docs/claude-ide-bridge.md`).
@@ -83,6 +119,7 @@ struct GeneralPane: View {
 
   var body: some View {
     Form {
+      ClaudeSection()
       Section {
         Picker("Be the editor for Claude Code in a terminal", selection: $editorScope) {
           Text("In folders open in Drakar").tag(EditorScope.openFolders)
@@ -98,6 +135,120 @@ struct GeneralPane: View {
     }
     .formStyle(.grouped)
     .onChange(of: editorScope) { IDEBridge.shared.refreshFolders() }
+  }
+}
+
+/// Which `claude` runs, and under which account a new session starts.
+private struct ClaudeSection: View {
+  @AppStorage(PreferenceKey.claudePath) private var claudePath = ""
+  @AppStorage(PreferenceKey.newSessionAccount) private var accountPath = ""
+  @State private var installs: [Install] = []
+  @State private var accounts: [ClaudeAccount] = []
+  /// The account the login shell selects, for the first choice's label.
+  @State private var shellAccount = "default"
+  @State private var isLoaded = false
+
+  struct Install {
+    var url: URL
+    var version: ClaudeVersion?
+    var path: String { url.path(percentEncoded: false) }
+  }
+
+  var body: some View {
+    Section {
+      Picker("Claude Code", selection: $claudePath) {
+        Text(installs.first.map { "Automatic: \(label($0))" } ?? "Automatic").tag("")
+        ForEach(installs, id: \.path) { install in
+          Text(label(install)).tag(install.path)
+        }
+        if !claudePath.isEmpty, !installs.contains(where: { $0.path == claudePath }) {
+          Text(isLoaded ? "\(abbreviated(claudePath)), not found" : abbreviated(claudePath))
+            .tag(claudePath)
+        }
+      }
+      .accessibilityIdentifier("settings.claudePath")
+      if let version = running?.version, let drift = version.drift {
+        Label(warning(version, drift), systemImage: "exclamationmark.triangle.fill")
+          .foregroundStyle(.orange)
+      }
+      Picker("Account for new sessions", selection: $accountPath) {
+        Text("As the shell sets it: \(shellAccount)").tag("")
+        ForEach(accounts, id: \.self) { account in
+          Text("\(account.name), in \(abbreviated(account.directory.path(percentEncoded: false)))")
+            .tag(account.directory.path(percentEncoded: false))
+        }
+        if !accountPath.isEmpty,
+          !accounts.contains(where: { $0.directory.path(percentEncoded: false) == accountPath })
+        {
+          Text(isLoaded ? "\(abbreviated(accountPath)), not found" : abbreviated(accountPath))
+            .tag(accountPath)
+        }
+      }
+      .accessibilityIdentifier("settings.newSessionAccount")
+    } header: {
+      Text("Claude Code")
+    } footer: {
+      Text(
+        "Automatic runs the first `claude` on your shell’s PATH, as a terminal would. A resumed session always runs under the account that wrote it. Both apply to sessions started from now on."
+      )
+    }
+    .task { await load() }
+  }
+
+  /// The install sessions will run: the one picked while it is there, else the first.
+  private var running: Install? {
+    installs.first { $0.path == claudePath } ?? (claudePath.isEmpty ? installs.first : nil)
+  }
+
+  private func label(_ install: Install) -> String {
+    let path = abbreviated(install.path)
+    return install.version.map { "\(path), \($0)" } ?? path
+  }
+
+  private func warning(_ version: ClaudeVersion, _ drift: ClaudeVersion.Drift) -> String {
+    let tested = ClaudeVersion.tested
+    return switch drift {
+    case .older:
+      String(
+        localized:
+          "\(version.description) is older than the versions Drakar was tested with (\(tested.lowerBound.description) to \(tested.upperBound.description)): it may not understand everything Drakar sends."
+      )
+    case .newer:
+      String(
+        localized:
+          "\(version.description) is newer than the versions Drakar was tested with (\(tested.lowerBound.description) to \(tested.upperBound.description)): some of what it says may not show."
+      )
+    }
+  }
+
+  private func abbreviated(_ path: String) -> String {
+    ContentView.abbreviated(URL(filePath: path))
+  }
+
+  private func load() async {
+    let environment = await ClaudeSession.environment.value
+    let urls = await Task.detached { ClaudeLocator.installed(path: environment["PATH"]) }.value
+    // Each asked at once: an npm install takes a while to answer.
+    installs = await withTaskGroup(of: (Int, Install).self) { group in
+      for (index, url) in urls.enumerated() {
+        group.addTask {
+          (
+            index,
+            Install(url: url, version: await ClaudeVersion.read(of: url, environment: environment))
+          )
+        }
+      }
+      var found: [(Int, Install)] = []
+      for await item in group { found.append(item) }
+      return found.sorted { $0.0 < $1.0 }.map(\.1)
+    }
+    let shellDirectory = environment["CLAUDE_CONFIG_DIR"]
+    accounts = await Task.detached {
+      ClaudeAccount.discover(
+        extra: shellDirectory.map { [URL(filePath: $0, directoryHint: .isDirectory)] } ?? [])
+    }.value
+    shellAccount = shellDirectory.map { ClaudeChoice.account(at: $0).name } ?? "default"
+    isLoaded = true
   }
 }
 
