@@ -135,3 +135,34 @@ public struct TranscriptTail: Sendable {
       })
   }
 }
+
+/// The answer to `get_context_usage`: the window the process runs with, and what fills it.
+public struct ContextUsageReply: Sendable, Equatable {
+  public struct Category: Sendable, Equatable {
+    public var name: String
+    public var tokens: Int
+  }
+
+  public var totalTokens: Int
+  public var maxTokens: Int
+  /// The categories that occupy the window, largest first: the remainder, the reserve and
+  /// the deferred tools are left out, as Claude Code leaves them out of its own total.
+  public var categories: [Category]
+
+  static let excluded: Set<String> = ["Free space", "Autocompact buffer", "Compact buffer"]
+
+  public init?(_ response: JSONValue?) {
+    guard let response, let total = response["totalTokens"]?.intValue,
+      let max = response["maxTokens"]?.intValue, max > 0
+    else { return nil }
+    totalTokens = total
+    maxTokens = max
+    categories = (response["categories"]?.arrayValue ?? []).compactMap { entry in
+      guard let name = entry["name"]?.stringValue, let tokens = entry["tokens"]?.intValue,
+        tokens > 0, !Self.excluded.contains(name), entry["isDeferred"]?.boolValue != true
+      else { return nil }
+      return Category(name: name, tokens: tokens)
+    }
+    .sorted { $0.tokens > $1.tokens }
+  }
+}

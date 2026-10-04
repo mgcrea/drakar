@@ -25,6 +25,10 @@ enum Fixture: String {
   /// What an interactive claude 2.1.288 sent a spike editor over the IDE bridge while
   /// editing one file (docs/claude-ide-bridge.md), the editor's path and pids scrubbed.
   case ideRequests = "ide-requests"
+  /// A `haiku` turn under `--include-partial-messages` (2026-10-04, Task 0 of the project
+  /// windows plan): init, an assistant line with usage, the result, and the replies to
+  /// `get_context_usage` sent mid-turn and between turns.
+  case contextUsage = "context-usage"
 
   var lines: [Data] {
     get throws {

@@ -102,6 +102,8 @@ public struct AssistantMessage: Sendable, Equatable {
   public var content: [ContentBlock]
   /// Non-nil when a subagent wrote this, naming the `Task` tool call it runs under.
   public var parentToolUseID: String?
+  /// The request's tokens. Every block of one message repeats the same object.
+  public var usage: TokenUsage?
 
   init?(_ json: JSONValue) {
     guard let message = json["message"], let id = message["id"]?.stringValue else { return nil }
@@ -109,6 +111,7 @@ public struct AssistantMessage: Sendable, Equatable {
     model = message["model"]?.stringValue
     content = ContentBlock.list(message["content"])
     parentToolUseID = json["parent_tool_use_id"]?.stringValue
+    usage = TokenUsage(message["usage"])
   }
 }
 

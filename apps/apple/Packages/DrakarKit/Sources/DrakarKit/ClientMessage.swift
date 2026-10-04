@@ -13,6 +13,8 @@ public enum ClientMessage: Sendable, Equatable {
   /// Stop the turn in progress. Sent by the VS Code extension; not yet exercised against
   /// the CLI here (`docs/claude-stream-json.md`).
   case interrupt(requestID: String)
+  /// The process's own account of its context: the window size, exact, and its breakdown.
+  case contextUsage(requestID: String)
 
   public var json: JSONValue {
     switch self {
@@ -42,6 +44,10 @@ public enum ClientMessage: Sendable, Equatable {
       ])
     case .interrupt(let id):
       Self.controlRequest(id, ["subtype": .string("interrupt")])
+    case .contextUsage(let id):
+      // `summary`, not `full`: `full` counts each category through `count_tokens`.
+      Self.controlRequest(
+        id, ["subtype": .string("get_context_usage"), "detail": .string("summary")])
     }
   }
 

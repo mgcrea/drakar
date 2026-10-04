@@ -90,4 +90,63 @@ struct ContextUsageTests {
     #expect(!tail.dropsFirstLine)
     #expect(tail.newestReading?.total == 100_281)
   }
+
+  @Test func theStreamCarriesUsageIntoTheTranscript() throws {
+    var transcript = Transcript()
+    for message in try Fixture.contextUsage.messages { transcript.apply(message) }
+    let usage = try #require(transcript.contextUsage)
+    #expect(usage.total > 0)
+    #expect(transcript.contextModelID != nil)
+  }
+
+  /// A subagent's request has its own context, which is not the session's.
+  @Test func aSubagentsUsageLeavesTheSessionsAlone() throws {
+    var transcript = Transcript()
+    transcript.apply(
+      try StreamMessage(
+        line: Data(
+          #"{"type":"assistant","message":{"id":"m1","model":"claude-opus-5","content":[{"type":"text","text":"hi"}],"usage":{"input_tokens":1,"cache_creation_input_tokens":0,"cache_read_input_tokens":99,"output_tokens":1}}}"#
+            .utf8)))
+    transcript.apply(
+      try StreamMessage(
+        line: Data(
+          #"{"type":"assistant","parent_tool_use_id":"task1","message":{"id":"s1","content":[{"type":"text","text":"sub"}],"usage":{"input_tokens":1,"cache_creation_input_tokens":0,"cache_read_input_tokens":5,"output_tokens":1}}}"#
+            .utf8)))
+    #expect(transcript.contextUsage?.total == 100)
+  }
+
+  /// History replays the same messages, so a resumed session has its gauge before it runs.
+  @Test func historyCarriesTheNewestUsage() throws {
+    // Fixture.historyWithTool does not carry usage; build synthetic history from context-usage fixture
+    let contextUsageLines = try Fixture.contextUsage.lines
+    // Find the assistant line (second line: system/init, then assistant line)
+    let assistantLine = contextUsageLines.dropFirst().first { line in
+      String(decoding: line, as: UTF8.self).contains("\"type\":\"assistant\"")
+    }
+    guard let assistantLine else { throw NSError() }
+    let transcript = Transcript.history(lines: [assistantLine])
+    #expect(transcript.contextUsage != nil)
+  }
+
+  @Test func asksForTheContextInSummary() throws {
+    let json = ClientMessage.contextUsage(requestID: "context-1").json
+    #expect(json["type"]?.stringValue == "control_request")
+    #expect(json["request_id"]?.stringValue == "context-1")
+    #expect(json["request"]?["subtype"]?.stringValue == "get_context_usage")
+    #expect(json["request"]?["detail"]?.stringValue == "summary")
+  }
+
+  @Test func readsTheCapturedReply() throws {
+    let responses = try Fixture.contextUsage.messages.compactMap { message -> ControlResponse? in
+      if case .controlResponse(let response) = message, response.requestID.hasPrefix("ctx-") {
+        return response
+      }
+      return nil
+    }
+    let reply = try #require(responses.last.flatMap { ContextUsageReply($0.response) })
+    #expect(reply.maxTokens >= 200_000)
+    #expect(reply.totalTokens > 0)
+    #expect(!reply.categories.isEmpty)
+    #expect(!reply.categories.contains { $0.name == "Free space" || $0.tokens == 0 })
+  }
 }

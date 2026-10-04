@@ -67,6 +67,10 @@ public struct Transcript: Sendable, Equatable {
   public private(set) var lastResult: TurnResult?
   /// The session's title, from the newest `ai-title` in its history.
   public internal(set) var title: String?
+  /// The newest main-thread request's tokens: the session's context. Subagents' are theirs.
+  public private(set) var contextUsage: TokenUsage?
+  /// `message.model` of that request.
+  public private(set) var contextModelID: String?
   /// True from a prompt until its `result`.
   public private(set) var isRunning = false
   /// Bumped by every change, so a view can react to "something changed" without
@@ -120,6 +124,10 @@ public struct Transcript: Sendable, Equatable {
     case .system(.initialized(let info)):
       session = info
     case .assistant(let assistant):
+      if assistant.parentToolUseID == nil, let usage = assistant.usage {
+        contextUsage = usage
+        contextModelID = assistant.model ?? contextModelID
+      }
       let index = blockCount[assistant.messageID, default: 0]
       for (offset, block) in assistant.content.enumerated() {
         place(
