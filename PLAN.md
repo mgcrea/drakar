@@ -16,7 +16,9 @@ in it, streams the transcript with tool cards, asks permission in a sheet with t
 with history, one window per session, and diffs for Edit and Write in the cards and the
 permission sheet. Phase 3 made Drakar the editor of `claude` run in a terminal: its edits
 arrive as diffs to accept or reject. Phase 4 added a plain-text editor beside the session,
-whose selection goes with the next prompt, Drakar's or a terminal `claude`'s. What comes
+whose selection goes with the next prompt, Drakar's or a terminal `claude`'s. Phase 5 made
+a window a project: its sessions in the sidebar with their state and context, switching in
+place, each started on its first prompt. What comes
 after is a proposal, and §7 lists what has to be decided before it stops being one.
 
 ---
@@ -162,6 +164,25 @@ not in advance.
    selected. ⌥K pins the selection to the next prompt, so one prompt can carry several;
    ⌘⌥K sends `at_mentioned` to a terminal `claude`. A proposal can be edited before it is
    accepted. Not yet: diagnostics, find-and-replace across files.
+5. **Project windows.** *Built 2026-10-04; the live checks below are still to do.*
+   (`docs/superpowers/specs/2026-10-04-project-windows-design.md`). A window is a folder
+   and every session in it and below: the window's own, those live in a terminal, VS Code
+   or another window (read-only, forkable), and those that ended. Each row says what the
+   session is doing and how full its context is, exactly for Drakar's own sessions
+   (`get_context_usage` after each turn) and from the transcript's tail for the rest.
+   `claude` starts on a session's first prompt; a background session's permission request
+   shows on its row, the Dock and a notification. Not yet: a context breakdown panel.
+
+   Live checks:
+   1. Two sessions working at once in one window; switching keeps each draft and scroll
+      place.
+   2. A background permission request: blue row, Dock badge, notification with Drakar in
+      the background, answered from the sheet after selecting the row.
+   3. A terminal `claude --ide` shown under Elsewhere as connected; ⌘⌥K names it.
+   4. Resume an Ended session; fork a live one from its read-only banner; quit and
+      relaunch: rows restored, nothing running.
+   5. A session's gauge: after its first turn the tooltip says "Reported by the session."
+      and the limit matches the model (1M for a `[1m]` model).
 
 ## 5. Distribution
 
