@@ -53,7 +53,7 @@ public struct ClaudeAccount: Sendable, Hashable {
 }
 
 /// One session on disk, read enough to list it.
-public struct SessionSummary: Sendable, Hashable, Identifiable {
+public struct SessionSummary: Sendable, Identifiable {
   public var sessionID: String
   public var account: ClaudeAccount
   public var file: URL
@@ -66,6 +66,10 @@ public struct SessionSummary: Sendable, Hashable, Identifiable {
   public var size: Int
   /// Set when a `claude` process has the session open right now.
   public var live: LiveSession?
+  /// The newest main-thread turn's context, from the end of the transcript.
+  public var context: ContextReading?
+  /// The session's own model attachment (`claude-opus-5[1m]`), when it wrote one.
+  public var modelID: String?
 
   /// The transcript's path, not the session id: one id can have a transcript under two
   /// accounts, when a session was resumed after switching `CLAUDE_CONFIG_DIR`.
@@ -74,15 +78,26 @@ public struct SessionSummary: Sendable, Hashable, Identifiable {
   public var displayTitle: String {
     title ?? lastPrompt.map { String($0.prefix(120)) } ?? String(localized: "Untitled session")
   }
+
+  public init(
+    sessionID: String, account: ClaudeAccount, file: URL, modified: Date, size: Int
+  ) {
+    self.sessionID = sessionID
+    self.account = account
+    self.file = file
+    self.modified = modified
+    self.size = size
+  }
 }
 
 public enum SessionIndex {
-  /// The `limit` most recently written sessions across `accounts`, newest first.
+  /// The `limit` most recently written sessions across `accounts`, newest first; with
+  /// `folder`, only sessions whose `cwd` is that folder or below it.
   ///
   /// Ordered by file date before any file is opened, so only the sessions shown are read.
   /// A session that was never prompted has no file and is not listed.
   public static func list(
-    accounts: [ClaudeAccount], limit: Int = 200,
+    accounts: [ClaudeAccount], limit: Int = 200, under folder: String? = nil,
     isAlive: (Int32) -> Bool = LiveSession.isAlive
   ) -> [SessionSummary] {
     // Per account: one id can have a transcript under two accounts, and a process has
@@ -93,6 +108,11 @@ public enum SessionIndex {
         live[account, default: [:]][session.sessionID] = session
       }
     }
+    let prefixes = folder.map { folder in
+      Set(
+        ProjectPath.encodedPrefixes(for: folder)
+          + ProjectPath.encodedPrefixes(for: ProjectPath.resolved(folder)))
+    }
     let manager = FileManager.default
     let keys: [URLResourceKey] = [.contentModificationDateKey, .fileSizeKey, .isRegularFileKey]
     var found: [(URL, ClaudeAccount, Date, Int)] = []
@@ -101,12 +121,13 @@ public enum SessionIndex {
       let folders =
         (try? manager.contentsOfDirectory(
           at: projects, includingPropertiesForKeys: nil, options: .skipsHiddenFiles)) ?? []
-      for folder in folders {
+      for projectFolder in folders
+      where prefixes?.contains(where: projectFolder.lastPathComponent.hasPrefix) ?? true {
         // Only `<session id>.jsonl` directly inside: subagent transcripts live in a
         // folder named after their parent session, and memory in its own.
         let files =
           (try? manager.contentsOfDirectory(
-            at: folder, includingPropertiesForKeys: keys, options: .skipsHiddenFiles)) ?? []
+            at: projectFolder, includingPropertiesForKeys: keys, options: .skipsHiddenFiles)) ?? []
         for file in files where file.pathExtension == "jsonl" {
           guard let values = try? file.resourceValues(forKeys: Set(keys)),
             values.isRegularFile == true
@@ -116,11 +137,25 @@ public enum SessionIndex {
         }
       }
     }
-    return found.sorted { $0.2 > $1.2 }.prefix(limit).map { file, account, modified, size in
+    return found.sorted { $0.2 > $1.2 }.prefix(limit).compactMap { file, account, modified, size in
       var summary = summarize(file: file, account: account, modified: modified, size: size)
+      if let folder {
+        guard let cwd = summary.cwd, ProjectPath.owner(of: cwd, among: [folder]) != nil else {
+          return nil
+        }
+      }
       summary.live = live[account]?[summary.sessionID]
       return summary
     }
+  }
+
+  /// One transcript, summarized: what the monitor re-reads when a file changes.
+  public static func summary(of file: URL, account: ClaudeAccount) -> SessionSummary? {
+    let keys: Set<URLResourceKey> = [.contentModificationDateKey, .fileSizeKey]
+    guard let values = try? file.resourceValues(forKeys: keys) else { return nil }
+    return summarize(
+      file: file, account: account, modified: values.contentModificationDate ?? .distantPast,
+      size: values.fileSize ?? 0)
   }
 
   static func summarize(file: URL, account: ClaudeAccount, modified: Date, size: Int)
@@ -133,6 +168,9 @@ public enum SessionIndex {
     summary.title = lastValue(of: "aiTitle", inLineOfType: "ai-title", in: data)
     summary.lastPrompt = lastValue(of: "lastPrompt", inLineOfType: "last-prompt", in: data)
     summary.cwd = lastValue(of: "cwd", inLineOfType: nil, in: data)
+    let tail = TranscriptTail(suffixOf: data)
+    summary.context = tail.newestReading
+    summary.modelID = tail.newestModelID
     return summary
   }
 
