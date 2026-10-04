@@ -5,6 +5,9 @@ import SwiftUI
 struct SessionView: View {
   @Bindable var item: ProjectSession
   let project: Project
+  /// Read only to redraw the footer's account when a pick or the Settings default changes.
+  @AppStorage(PreferenceKey.accountForFolder) private var picks = ""
+  @AppStorage(PreferenceKey.newSessionAccount) private var settingsAccount = ""
 
   private var session: ClaudeSession { item.session }
   private var workspace: Workspace { project.workspace }
@@ -30,7 +33,9 @@ struct SessionView: View {
           stop: session.interrupt,
           sessionFolder: session.folder, projectFolder: project.folder)
       }
-      SessionFooter(session: session)
+      let _ = (picks, settingsAccount)
+      SessionFooter(
+        session: session, windowAccount: AccountStore.shared.windowAccount(for: project.folder))
     }
     .sheet(item: pendingPermission) { pending in
       PermissionSheet(pending: pending) { decision in session.answer(pending, decision) }
@@ -135,6 +140,8 @@ private struct VersionLabel: View {
 
 private struct SessionFooter: View {
   let session: ClaudeSession
+  /// The account new sessions in the window start under.
+  let windowAccount: ClaudeAccount
 
   var body: some View {
     HStack(spacing: 12) {
@@ -143,8 +150,8 @@ private struct SessionFooter: View {
       if let model = session.transcript.session?.model {
         Text(model)
       }
-      if let account = session.account, !account.isDefault {
-        Label(account.name, systemImage: "person.crop.circle")
+      if let account = session.effectiveAccount, account.key != windowAccount.key {
+        Label(AccountStore.shared.profile(for: account).name, systemImage: "person.crop.circle")
           .help("Runs under the account in \(ContentView.abbreviated(account.directory))")
       }
       if let version = session.transcript.session?.claudeCodeVersion {

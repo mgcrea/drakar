@@ -29,6 +29,9 @@ struct SessionListView: View {
   @Binding var isCollapsed: Bool
   @State private var showsEnded = false
   @State private var showsAllEnded = false
+  /// Read only to redraw the account badges when a pick or the Settings default changes.
+  @AppStorage(PreferenceKey.accountForFolder) private var picks = ""
+  @AppStorage(PreferenceKey.newSessionAccount) private var settingsAccount = ""
   private var monitor: SessionMonitor { .shared }
 
   private var groups: ProjectGroups {
@@ -44,6 +47,7 @@ struct SessionListView: View {
   }
 
   var body: some View {
+    let _ = (picks, settingsAccount)
     VStack(spacing: 0) {
       header
       if !isCollapsed { list }
@@ -80,10 +84,13 @@ struct SessionListView: View {
     List(selection: selection) {
       Section("This Window") {
         ForEach(project.sessions) { item in
-          SessionRow(item: item, isSelected: item.id == project.selectedID)
-            .tag(item.id)
-            .contextMenu { menu(for: item) }
-            .accessibilityIdentifier("sessions.attached.\(item.sessionID ?? item.id.uuidString)")
+          SessionRow(
+            item: item, isSelected: item.id == project.selectedID,
+            windowAccount: AccountStore.shared.windowAccount(for: project.folder)
+          )
+          .tag(item.id)
+          .contextMenu { menu(for: item) }
+          .accessibilityIdentifier("sessions.attached.\(item.sessionID ?? item.id.uuidString)")
         }
       }
       let groups = groups
@@ -164,6 +171,8 @@ struct SessionListView: View {
 struct SessionRow: View {
   let item: ProjectSession
   let isSelected: Bool
+  /// The account new sessions in this window start under.
+  let windowAccount: ClaudeAccount
 
   var body: some View {
     HStack(alignment: .firstTextBaseline, spacing: 7) {
@@ -178,6 +187,14 @@ struct SessionRow: View {
             .fontWeight(item.isUnread ? .semibold : .regular)
           if item.isUnread {
             Circle().fill(.blue).frame(width: 5, height: 5).accessibilityLabel("Unread")
+          }
+          if let other = otherAccount {
+            Text(AccountStore.shared.profile(for: other).name)
+              .font(.caption2)
+              .padding(.horizontal, 5)
+              .padding(.vertical, 1)
+              .background(Capsule().fill(.quaternary))
+              .help("Runs under the account in \(ContentView.abbreviated(other.directory))")
           }
         }
         if let detail {
@@ -197,6 +214,13 @@ struct SessionRow: View {
   }
 
   private var state: RowState { RowState(item) }
+
+  /// The session's account when it is not the window's.
+  private var otherAccount: ClaudeAccount? {
+    guard let account = item.session.effectiveAccount, account.key != windowAccount.key
+    else { return nil }
+    return account
+  }
 
   private var detail: String? {
     var parts: [String] = []

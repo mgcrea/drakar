@@ -28,6 +28,9 @@ final class ClaudeSession {
   private(set) var executable: URL?
   /// The account it runs under, picked or the shell's; nil until it starts.
   private(set) var account: ClaudeAccount?
+  /// The account the session runs, or will resume, under; nil for a new session not yet
+  /// started, which takes the window's.
+  var effectiveAccount: ClaudeAccount? { account ?? resuming?.account }
   /// The end of the CLI's stderr, shown when the process fails.
   private(set) var diagnostics = ""
   /// The process's answer to `get_context_usage` after its last turn: the exact window.

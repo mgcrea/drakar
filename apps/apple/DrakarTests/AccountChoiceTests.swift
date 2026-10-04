@@ -109,4 +109,17 @@ struct AccountChoiceTests {
     #expect(configDirectory == picked.path(percentEncoded: false))
     #expect(session.account?.name == "picked")
   }
+
+  /// A resumed session not yet started is on the account that wrote it; a new one has none
+  /// until it starts, and runs on the window's.
+  @Test func aSessionNamesItsAccountBeforeItStarts() {
+    defer { cleanUp() }
+    let target = ResumeTarget(
+      sessionID: "s", cwd: project.path(percentEncoded: false),
+      file: project.appending(path: "s.jsonl").path(percentEncoded: false),
+      accountDirectory: String(picked.path(percentEncoded: false).dropLast()),
+      accountIsDefault: false)
+    #expect(ClaudeSession(folder: project, resuming: target).effectiveAccount?.name == "picked")
+    #expect(ClaudeSession(folder: project).effectiveAccount == nil)
+  }
 }
