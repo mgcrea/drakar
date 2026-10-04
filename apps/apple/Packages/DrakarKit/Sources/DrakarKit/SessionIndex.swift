@@ -164,14 +164,45 @@ public enum SessionIndex {
 public struct LiveSession: Sendable, Hashable {
   public var pid: Int32
   public var sessionID: String
-  /// `claude-vscode`, `cli`, or `sdk-cli` for a headless one (Drakar's own among them).
+  /// `claude-vscode`, `cli`, or `sdk-cli` for a headless one.
   public var entrypoint: String?
-  /// `busy`, `waiting` or `idle`.
+  /// `busy`, `waiting` or `idle`: reported by the CLI, the authority for coarse state.
   public var status: String?
+  public var cwd: String?
+  /// Why it waits ("permission prompt", "dialog open"). Display text: never branched on.
+  public var waitingFor: String?
+  /// When the CLI last rewrote the file. Better than the transcript's date: a session
+  /// parked on a prompt writes no transcript, but moves this.
+  public var updatedAt: Date?
 
-  public static func read(account: ClaudeAccount, isAlive: (Int32) -> Bool = isAlive)
-    -> [LiveSession]
-  {
+  public init(
+    pid: Int32, sessionID: String, entrypoint: String? = nil, status: String? = nil,
+    cwd: String? = nil, waitingFor: String? = nil, updatedAt: Date? = nil
+  ) {
+    self.pid = pid
+    self.sessionID = sessionID
+    self.entrypoint = entrypoint
+    self.status = status
+    self.cwd = cwd
+    self.waitingFor = waitingFor
+    self.updatedAt = updatedAt
+  }
+
+  /// The per-user temporary folder both ways it is spelled: where plugins run headless
+  /// summarizers (the remember plugin's `t-XX` rows), which are not sessions.
+  public static let defaultTemporaryDirectories: Set<String> = {
+    let spelled = ProjectPath.normalize(NSTemporaryDirectory())
+    return [spelled, ProjectPath.resolved(spelled)]
+  }()
+
+  /// Every live session in `account`'s registry, except Drakar's own children (a window
+  /// reads those from memory) and spawns in the temporary folder.
+  public static func read(
+    account: ClaudeAccount, isAlive: (Int32) -> Bool = isAlive,
+    parentOf: (Int32) -> Int32? = ProcessAncestry.parent,
+    ownPID: Int32 = getpid(),
+    temporaryDirectories: Set<String> = defaultTemporaryDirectories
+  ) -> [LiveSession] {
     let folder = account.directory.appending(path: "sessions", directoryHint: .isDirectory)
     let files =
       (try? FileManager.default.contentsOfDirectory(
@@ -179,12 +210,17 @@ public struct LiveSession: Sendable, Hashable {
     return files.filter { $0.pathExtension == "json" }.compactMap { file in
       guard let data = try? Data(contentsOf: file), let json = try? JSONValue.parse(data),
         let pid = json["pid"]?.intValue.flatMap(Int32.init(exactly:)),
-        let id = json["sessionId"]?.stringValue, isAlive(pid)
+        let id = json["sessionId"]?.stringValue, isAlive(pid), parentOf(pid) != ownPID
       else { return nil }
+      let cwd = json["cwd"]?.stringValue
+      if let cwd, temporaryDirectories.contains(ProjectPath.normalize(cwd)) { return nil }
       return LiveSession(
         pid: pid, sessionID: id, entrypoint: json["entrypoint"]?.stringValue,
-        status: json["status"]?.stringValue)
+        status: json["status"]?.stringValue, cwd: cwd,
+        waitingFor: json["waitingFor"]?.stringValue,
+        updatedAt: json["updatedAt"]?.numberValue.map { Date(timeIntervalSince1970: $0 / 1000) })
     }
+    .sorted { $0.pid < $1.pid }
   }
 
   /// Whether a process with this pid exists, including one we may not signal.
