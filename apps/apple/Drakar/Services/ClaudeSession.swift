@@ -47,7 +47,9 @@ final class ClaudeSession {
   @ObservationIgnored var onTurnEnded: (() -> Void)?
   @ObservationIgnored var onPermissionRequested: ((Transcript.PendingPermission) -> Void)?
   @ObservationIgnored var onStopped: (() -> Void)?
-  @ObservationIgnored var onPermissionAnswered: (() -> Void)?
+  /// The number of waiting permission requests changed: asked, answered, cancelled, or gone
+  /// with the process.
+  @ObservationIgnored var onPermissionsChanged: (() -> Void)?
 
   @ObservationIgnored private var process: AgentProcess?
   @ObservationIgnored private var events: Task<Void, Never>?
@@ -204,8 +206,7 @@ final class ClaudeSession {
 
   func answer(_ pending: Transcript.PendingPermission, _ decision: PermissionDecision) {
     write(.permission(requestID: pending.requestID, decision))
-    transcript.resolvePermission(requestID: pending.requestID)
-    onPermissionAnswered?()
+    notingPermissions { transcript.resolvePermission(requestID: pending.requestID) }
   }
 
   func interrupt() {
@@ -216,6 +217,8 @@ final class ClaudeSession {
   /// Ends the process: input closed so it can finish cleanly, then terminated, because a
   /// window that closed mid-turn must not leave a `claude` working on nobody's behalf.
   func stop() {
+    let waiting = transcript.pendingPermissions.count
+    defer { permissionsMayHaveChanged(from: waiting) }
     process?.closeInput()
     process?.terminate()
     events?.cancel()
@@ -230,7 +233,17 @@ final class ClaudeSession {
   private func fail(_ message: String?) {
     if let message { phase = .failed(message) }
     pendingPrompt = nil
-    transcript.processExited()
+    notingPermissions { transcript.processExited() }
+  }
+
+  private func notingPermissions(_ change: () -> Void) {
+    let waiting = transcript.pendingPermissions.count
+    change()
+    permissionsMayHaveChanged(from: waiting)
+  }
+
+  private func permissionsMayHaveChanged(from waiting: Int) {
+    if transcript.pendingPermissions.count != waiting { onPermissionsChanged?() }
   }
 
   private func handle(_ event: AgentProcess.Event) {
@@ -240,7 +253,7 @@ final class ClaudeSession {
     case .stderr(let text):
       diagnostics = String((diagnostics + text).suffix(4000))
     case .exited(let status, _):
-      transcript.processExited()
+      notingPermissions { transcript.processExited() }
       process = nil
       if case .failed = phase { return }
       phase = .exited(status: status)
@@ -262,6 +275,7 @@ final class ClaudeSession {
     {
       onPermissionRequested?(pending)
     }
+    permissionsMayHaveChanged(from: waiting)
     if case .result = message {
       if savedTarget == nil { savedTarget = findTarget() }
       // Not `write`: a failed context request must not mark the session failed.

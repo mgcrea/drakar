@@ -8,7 +8,8 @@ import UserNotifications
 final class Attention: NSObject, UNUserNotificationCenterDelegate {
   static let shared = Attention()
 
-  private var askedForPermission = false
+  /// Asked once; every post awaits the same answer, so one made during the prompt waits.
+  private var authorization: Task<Bool, Never>?
 
   var waitingCount: Int {
     OpenSessions.shared.projects.values.reduce(0) { total, project in
@@ -19,6 +20,14 @@ final class Attention: NSObject, UNUserNotificationCenterDelegate {
   func refresh() {
     let count = waitingCount
     NSApp.dockTile.badgeLabel = count == 0 ? nil : String(count)
+  }
+
+  /// A session's waiting requests changed: the badge follows, and a notification for
+  /// requests that are no longer waiting is withdrawn.
+  func permissionsChanged(_ item: ProjectSession?) {
+    refresh()
+    guard let item, item.waitingFor == nil, let id = item.sessionID else { return }
+    UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [id])
   }
 
   func permissionRequested(_ item: ProjectSession, in project: Project) {
@@ -37,12 +46,12 @@ final class Attention: NSObject, UNUserNotificationCenterDelegate {
   private func post(title: String, body: String, item: ProjectSession) {
     guard let sessionID = item.sessionID else { return }
     let center = UNUserNotificationCenter.current()
-    center.delegate = self
+    let asking =
+      authorization
+      ?? Task { (try? await center.requestAuthorization(options: [.alert, .sound])) ?? false }
+    authorization = asking
     Task {
-      if !askedForPermission {
-        askedForPermission = true
-        _ = try? await center.requestAuthorization(options: [.alert, .sound])
-      }
+      _ = await asking.value
       let content = UNMutableNotificationContent()
       content.title = title
       content.body = body

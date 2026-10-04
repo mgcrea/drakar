@@ -1,6 +1,7 @@
 import AppKit
 import SupportKitUI
 import SwiftUI
+import UserNotifications
 
 @main
 struct DrakarApp: App {
@@ -66,6 +67,9 @@ private struct SessionCommands: View {
 final class AppDelegate: NSObject, NSApplicationDelegate {
   func applicationDidFinishLaunching(_ notification: Notification) {
     IDEBridge.shared.start()
+    // Set at launch, not at the first post: a click on a notification delivered before a
+    // relaunch must still land. Setting it does not prompt.
+    UNUserNotificationCenter.current().delegate = Attention.shared
     Task { await SessionMonitor.shared.start() }
   }
 

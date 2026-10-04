@@ -85,6 +85,7 @@ final class OpenSessions {
 
   func unregister(window: UUID) {
     projects[window] = nil
+    Attention.shared.refresh()
     IDEBridge.shared.refreshFolders()
   }
 

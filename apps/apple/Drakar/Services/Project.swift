@@ -147,6 +147,7 @@ final class Project {
     sessions.removeAll { $0.id == item.id }
     if selectedID == item.id { selectedID = sessions.first?.id }
     if let selected { load(selected) }
+    Attention.shared.refresh()
   }
 
   func stopAll() {
@@ -173,7 +174,7 @@ final class Project {
       guard let self, let item else { return }
       Attention.shared.permissionRequested(item, in: self)
     }
-    session.onPermissionAnswered = { Attention.shared.refresh() }
+    session.onPermissionsChanged = { [weak item] in Attention.shared.permissionsChanged(item) }
     session.onStopped = { [weak self, weak item] in
       guard let self, let item, item.id != self.selectedID, item.hasStopped else { return }
       item.isUnread = true
