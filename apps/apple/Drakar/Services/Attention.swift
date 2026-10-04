@@ -11,6 +11,16 @@ enum Urgency: String, CaseIterable, Comparable {
   static func < (a: Urgency, b: Urgency) -> Bool {
     allCases.firstIndex(of: a)! < allCases.firstIndex(of: b)!
   }
+
+  /// Its row in the Attention pane.
+  var title: String {
+    switch self {
+    case .permission: String(localized: "Permission request")
+    case .choice: String(localized: "Choice to make")
+    case .question: String(localized: "Question")
+    case .offer: String(localized: "Offer")
+    }
+  }
 }
 
 /// What wants the person while they look elsewhere: the Dock badge for rows that want them,

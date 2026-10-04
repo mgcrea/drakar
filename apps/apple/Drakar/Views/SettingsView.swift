@@ -4,23 +4,21 @@ import SwiftUI
 
 // MARK: - Settings
 
-/// The panes, and the order they sit in.
+/// The panes, and the order they sit in: General, Attention, About.
 ///
-/// About only, for now. A General pane joins with the app's first real preference
-/// and goes first, with `defaultPane` moved to it; an empty pane shipped to fill
-/// the sidebar is a pane somebody opens once. An entitlement pane joins only when
-/// something is actually sold: before a StoreKit product is registered it would
-/// be a button that fails.
+/// An entitlement pane joins only when something is actually sold: before a StoreKit
+/// product is registered it would be a button that fails.
 ///
-/// About stays last, because it answers a question you only ask with a bug report
-/// open.
+/// About stays last, because it answers a question you only ask with a bug report open.
 enum SettingsPane: String, SupportKitSettings.SettingsPane {
   case general
+  case attention
   case about
 
   var title: LocalizedStringKey {
     switch self {
     case .general: "General"
+    case .attention: "Attention"
     case .about: "About"
     }
   }
@@ -28,6 +26,7 @@ enum SettingsPane: String, SupportKitSettings.SettingsPane {
   var systemImage: String {
     switch self {
     case .general: "gearshape"
+    case .attention: "bell.badge"
     case .about: "info.circle"
     }
   }
@@ -143,6 +142,7 @@ struct SettingsView: View {
     SettingsScaffold(selection: Support.settings) { pane in
       switch pane {
       case .general: GeneralPane()
+      case .attention: AttentionPane()
       case .about:
         AboutSettingsPane(app: Support.app, preferIssueTracker: Support.preferIssueTracker)
       }
@@ -155,7 +155,6 @@ struct SettingsView: View {
 
 struct GeneralPane: View {
   @AppStorage(PreferenceKey.editorScope) private var editorScope = EditorScope.openFolders
-  @AppStorage(PreferenceKey.notifiesTurnEnds) private var notifiesTurnEnds = false
 
   var body: some View {
     Form {
@@ -172,15 +171,86 @@ struct GeneralPane: View {
           "Run `claude --ide` in one of these folders, or type /ide in a running session, and its edits open here for you to accept or reject. If VS Code has the same folder open, pick the editor with /ide."
         )
       }
-      Section {
-        Toggle("Notify when a session finishes its turn", isOn: $notifiesTurnEnds)
-          .accessibilityIdentifier("settings.notifiesTurnEnds")
-      } footer: {
-        Text("Sessions that need a permission always notify while Drakar is in the background.")
-      }
     }
     .formStyle(.grouped)
     .onChange(of: editorScope) { IDEBridge.shared.refreshFolders() }
+  }
+}
+
+/// What wants the person, and how loudly: per level, whether it counts, badges, notifies.
+struct AttentionPane: View {
+  @AppStorage(PreferenceKey.recognisesAsks) private var recognisesAsks = true
+  @AppStorage(PreferenceKey.notifiesTurnEnds) private var notifiesTurnEnds = false
+
+  var body: some View {
+    Form {
+      Section {
+        Toggle("Recognise questions and offers at the end of a turn", isOn: $recognisesAsks)
+          .accessibilityIdentifier("settings.recognisesAsks")
+      } footer: {
+        Text(
+          "A reply that ends on a question, such as “Want me to build it that way?”, marks its session “Asked you”; one that ends on an offer marks it “Offered”. Either stays until you answer or dismiss it (⌥⌘D)."
+        )
+      }
+      Section {
+        Grid(alignment: .leading, horizontalSpacing: 18, verticalSpacing: 8) {
+          GridRow {
+            Text("")
+            Text("Counts").gridColumnAlignment(.center)
+            Text("Dock badge").gridColumnAlignment(.center)
+            Text("Notification").gridColumnAlignment(.center)
+          }
+          .font(.caption)
+          .foregroundStyle(.secondary)
+          ForEach(Urgency.allCases.reversed(), id: \.self) { level in
+            GridRow {
+              Text(level.title)
+              ForEach(AttentionFeedback.allCases, id: \.self) { feedback in
+                FeedbackToggle(level: level, feedback: feedback)
+                  .disabled(!recognisesAsks && (level == .question || level == .offer))
+              }
+            }
+          }
+          GridRow {
+            Text("Finished turn")
+            Text("")
+            Text("")
+            Toggle("", isOn: $notifiesTurnEnds)
+              .labelsHidden()
+              .accessibilityIdentifier("settings.notifiesTurnEnds")
+          }
+        }
+      } footer: {
+        Text(
+          "Counts puts the session in the sidebar's count and in Next Session Needing You (⌥⌘↓). Drakar notifies unless the session is the one you are looking at."
+        )
+      }
+    }
+    .formStyle(.grouped)
+    .onChange(of: recognisesAsks) { Attention.shared.refresh() }
+  }
+}
+
+/// One switch of the Attention grid, on its own key.
+private struct FeedbackToggle: View {
+  let level: Urgency
+  let feedback: AttentionFeedback
+  @AppStorage private var isOn: Bool
+
+  init(level: Urgency, feedback: AttentionFeedback) {
+    self.level = level
+    self.feedback = feedback
+    _isOn = AppStorage(
+      wrappedValue: AttentionChoice.defaultValue(level, feedback),
+      AttentionChoice.key(level, feedback))
+  }
+
+  var body: some View {
+    Toggle("", isOn: $isOn)
+      .labelsHidden()
+      .gridColumnAlignment(.center)
+      .onChange(of: isOn) { Attention.shared.refresh() }
+      .accessibilityIdentifier("settings.\(level.rawValue).\(feedback.rawValue)")
   }
 }
 
