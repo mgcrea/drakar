@@ -75,6 +75,11 @@ private struct SessionCommands: View {
     }
     .keyboardShortcut(.downArrow, modifiers: [.command, .option])
     .disabled(project?.nextNeedingAttention() == nil)
+    Button("Dismiss") {
+      if let project, let item = project.selected { project.dismissAsk(item) }
+    }
+    .keyboardShortcut("d", modifiers: [.command, .option])
+    .disabled(project?.selected?.closingAsk == nil)
   }
 }
 

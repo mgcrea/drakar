@@ -271,4 +271,13 @@ struct UrgencyTests {
     #expect(!Attention.isInView(appIsActive: true, windowIsKey: true, rowIsSelected: false))
     #expect(!Attention.isInView(appIsActive: false, windowIsKey: true, rowIsSelected: true))
   }
+
+  @Test func aRowSaysWhatItWants() async throws {
+    let (project, item) = try await session(Self.asking)
+    defer { project.stopAll() }
+    #expect(RowState(item) == .asked)
+    #expect(RowState.asked.label == "Asked you")
+    #expect(RowState.choosing.label == "Asks you to choose")
+    #expect(RowState.offered.label == "Offered")
+  }
 }

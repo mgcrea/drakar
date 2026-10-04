@@ -28,6 +28,8 @@ struct SessionListView: View {
   let project: Project
   @Binding var isCollapsed: Bool
   @State private var showsEnded = false
+  /// Read so that rows redraw when the Attention pane turns recognition on or off.
+  @AppStorage(PreferenceKey.recognisesAsks) private var recognisesAsks = true
   @State private var showsAllEnded = false
   private var monitor: SessionMonitor { .shared }
 
@@ -44,6 +46,7 @@ struct SessionListView: View {
   }
 
   var body: some View {
+    let _ = recognisesAsks
     VStack(spacing: 0) {
       header
       if !isCollapsed { list }
@@ -64,7 +67,7 @@ struct SessionListView: View {
           .foregroundStyle(.white)
           .padding(.horizontal, 5)
           .background(.blue, in: Capsule())
-          .help("Waiting for you: \(project.waitingCount)")
+          .help("Wants you: \(project.waitingCount)")
           .accessibilityLabel("\(project.waitingCount) waiting for you")
           .accessibilityIdentifier("sessions.waiting")
       }
@@ -138,6 +141,10 @@ struct SessionListView: View {
   }
 
   @ViewBuilder private func menu(for item: ProjectSession) -> some View {
+    if item.closingAsk != nil {
+      Button("Dismiss") { project.dismissAsk(item) }
+      Divider()
+    }
     if item.session.isProcessRunning {
       Button("End Session") { confirmIfRunning(item) { project.end(item) } }
     }
@@ -167,10 +174,7 @@ struct SessionRow: View {
 
   var body: some View {
     HStack(alignment: .firstTextBaseline, spacing: 7) {
-      Circle()
-        .fill(state.tint)
-        .frame(width: 7, height: 7)
-        .help(state.label)
+      StateDot(state: state)
       VStack(alignment: .leading, spacing: 2) {
         HStack(spacing: 4) {
           Text(item.displayTitle)
@@ -200,7 +204,7 @@ struct SessionRow: View {
 
   private var detail: String? {
     var parts: [String] = []
-    if let lead = item.waitingFor ?? item.stopReason { parts.append(lead) }
+    if let lead = item.wants ?? item.stopReason { parts.append(lead) }
     if let when = item.lastActivity {
       parts.append(when.formatted(.relative(presentation: .named)))
     }
@@ -226,7 +230,7 @@ struct SummaryRow: View {
   var body: some View {
     HStack(alignment: .firstTextBaseline, spacing: 7) {
       if host != nil {
-        Circle().fill(state.tint).frame(width: 7, height: 7).help(state.label)
+        StateDot(state: state)
       }
       VStack(alignment: .leading, spacing: 2) {
         Text(summary.displayTitle).lineLimit(1)
@@ -279,13 +283,20 @@ struct SummaryRow: View {
 
 /// A row's state, in Claude Code's words and Armada's colours.
 enum RowState {
-  case working, runningTool, waiting, idle, notStarted, stopped, ended, elsewhere
+  case working, runningTool, waiting, choosing, asked, offered, idle, notStarted, stopped, ended,
+    elsewhere
 
   /// What an attached session is doing.
   init(_ item: ProjectSession) {
     let session = item.session
-    if item.waitingFor != nil {
-      self = .waiting
+    if let urgency = item.urgency {
+      self =
+        switch urgency {
+        case .permission: .waiting
+        case .choice: .choosing
+        case .question: .asked
+        case .offer: .offered
+        }
     } else if session.transcript.isRunning {
       self = .working
     } else if item.hasStopped {
@@ -306,6 +317,9 @@ enum RowState {
     case .working: String(localized: "Working")
     case .runningTool: String(localized: "Probably running a tool")
     case .waiting: String(localized: "Waiting for you")
+    case .choosing: String(localized: "Asks you to choose")
+    case .asked: String(localized: "Asked you")
+    case .offered: String(localized: "Offered")
     case .idle: String(localized: "Idle")
     case .notStarted: String(localized: "Not started")
     case .stopped: String(localized: "Stopped")
@@ -318,9 +332,27 @@ enum RowState {
     switch self {
     case .working: .green
     case .runningTool: .orange
-    case .waiting: .blue
+    case .waiting, .choosing, .asked: .blue
     case .stopped: .red
-    case .idle, .notStarted, .ended, .elsewhere: .secondary
+    case .offered, .idle, .notStarted, .ended, .elsewhere: .secondary
     }
+  }
+}
+
+/// A row's state as a dot: filled, or a ring for what a finished turn asked, so that a
+/// blocked tool and a question read apart at a glance. Same size either way.
+struct StateDot: View {
+  let state: RowState
+
+  var body: some View {
+    Group {
+      if state == .asked || state == .offered {
+        Circle().strokeBorder(state.tint, lineWidth: 1.5)
+      } else {
+        Circle().fill(state.tint)
+      }
+    }
+    .frame(width: 7, height: 7)
+    .help(state.label)
   }
 }
