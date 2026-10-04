@@ -13,6 +13,8 @@ struct ContentView: View {
   @Environment(\.appearsActive) private var appearsActive
   /// The editor's share of the window beside the session, kept per window.
   @SceneStorage("drakar.editorFraction") private var editorFraction = 0.5
+  /// Whether this window floats above other apps' windows, kept per window.
+  @SceneStorage("drakar.keepsOnTop") private var keepsOnTop = false
 
   var body: some View {
     Group {
@@ -51,6 +53,17 @@ struct ContentView: View {
       }
     }
     .frame(minWidth: 560, minHeight: 440)
+    .toolbar {
+      ToolbarItem(placement: .primaryAction) {
+        Toggle(isOn: $keepsOnTop) {
+          Label("Keep on Top", systemImage: keepsOnTop ? "pin.fill" : "pin")
+        }
+        .toggleStyle(.button)
+        .help(keepsOnTop ? "Stop keeping this window on top" : "Keep this window on top")
+        .accessibilityIdentifier("window.keepOnTop")
+      }
+    }
+    .background(WindowLevel(floats: keepsOnTop))
     .navigationTitle(windowTitle)
     // Short, because the title bar does not truncate it: a long path widened the detail
     // column past the window and pushed the sidebar off its leading edge.
@@ -221,6 +234,29 @@ struct ContentView: View {
       session?.send(prompt, context: workspace?.active.map { [$0.selection] } ?? [])
     }
   #endif
+}
+
+/// Floats the window a view is in above other apps' windows, or puts it back among them.
+/// Applied again once the view lands in a window, since a restored window has its level
+/// asked for before it has one.
+private struct WindowLevel: NSViewRepresentable {
+  let floats: Bool
+
+  func makeNSView(context: Context) -> LevelView { LevelView() }
+  func updateNSView(_ view: LevelView, context: Context) { view.floats = floats }
+
+  final class LevelView: NSView {
+    var floats = false {
+      didSet { apply() }
+    }
+
+    override func viewDidMoveToWindow() {
+      super.viewDidMoveToWindow()
+      apply()
+    }
+
+    private func apply() { window?.level = floats ? .floating : .normal }
+  }
 }
 
 /// Hands over the window a view is in, once it is in one.
