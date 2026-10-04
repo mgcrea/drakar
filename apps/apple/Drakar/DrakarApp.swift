@@ -154,11 +154,11 @@ private struct MentionCommands: View {
   @FocusedValue(\.workspace) private var workspace
 
   private var title: String {
-    guard let workspace,
-      let summary = SessionMonitor.shared.connectedSession(
-        under: workspace.folder.path(percentEncoded: false))
-    else { return String(localized: "Mention in Terminal Session") }
-    return "Mention in \"\(summary.displayTitle)\""
+    guard let workspace else { return String(localized: "Mention in Terminal Session") }
+    let connected = IDEBridge.shared.connectedPIDs
+    let summary = SessionMonitor.shared.connectedSession(
+      under: workspace.folder.path(percentEncoded: false))
+    return MentionTitle.make(connected: connected, session: summary)
   }
 
   var body: some View {
@@ -175,5 +175,18 @@ private struct MentionCommands: View {
     }
     .keyboardShortcut("k", modifiers: [.command, .option])
     .disabled(workspace?.active == nil)
+  }
+}
+
+/// Helper to compute the ⌘⌥K menu item title.
+struct MentionTitle {
+  /// Shows session name only when exactly one terminal is connected and it's this session's.
+  nonisolated static func make(connected: Set<Int32>, session: SessionSummary?) -> String {
+    guard let session else { return String(localized: "Mention in Terminal Session") }
+    // Show session name only when exactly one terminal is connected and it's this session's
+    guard connected.count == 1, let pid = session.live?.pid, connected.contains(pid) else {
+      return String(localized: "Mention in Terminal Session")
+    }
+    return String(localized: "Mention in \u{201C}\(session.displayTitle)\u{201D}")
   }
 }

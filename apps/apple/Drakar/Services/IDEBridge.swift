@@ -38,10 +38,16 @@ final class IDEBridge {
   private(set) var port: UInt16?
   private(set) var pending: [PendingDiff] = []
   private(set) var failure: String?
-  /// The pids of the terminal `claude`s connected now, from their `ide_connected`.
-  private(set) var connectedPIDs: Set<Int32> = []
+  /// Bumped when connections change, so SwiftUI re-evaluates connectedPIDs.
+  private(set) var connectionsRevision: Int = 0
 
   @ObservationIgnored private var server: IDEServer?
+
+  /// The pids of the terminal `claude`s connected now, from their live IDE connections.
+  var connectedPIDs: Set<Int32> {
+    _ = connectionsRevision  // Read to ensure SwiftUI re-evaluates on changes
+    return Set(server?.clients.compactMap(\.claudePID) ?? [])
+  }
   /// The last selection sent, for `getLatestSelection` and for a `claude` that connects.
   @ObservationIgnored private var latestSelection: EditorSelection?
   @ObservationIgnored private var selectionTask: Task<Void, Never>?
@@ -187,7 +193,7 @@ final class IDEBridge {
     case .notification(let method, let params):
       if method == "ide_connected", let pid = params["pid"]?.intValue {
         connection.claudePID = Int32(exactly: pid)
-        if let pid = connection.claudePID { connectedPIDs.insert(pid) }
+        connectionsRevision += 1
       }
       if method == "notifications/initialized" {
         connection.isInitialized = true
@@ -319,7 +325,7 @@ final class IDEBridge {
   }
 
   private func closed(_ connection: IDEConnection) {
-    if let pid = connection.claudePID { connectedPIDs.remove(pid) }
+    if connection.claudePID != nil { connectionsRevision += 1 }
     pending.removeAll { $0.connection === connection }
     if pending.isEmpty { review.hide() }
   }
