@@ -24,6 +24,7 @@ struct DrakarApp: App {
         SaveCommand()
       }
       CommandGroup(after: .textEditing) { MentionCommands() }
+      CommandGroup(after: .sidebar) { FilesCommand() }
       // ⌘P, as in VS Code and Zed: Drakar prints nothing.
       CommandGroup(replacing: .printItem) { QuickOpenCommand() }
     }
@@ -44,6 +45,20 @@ private struct NewWindowCommand: View {
   var body: some View {
     Button("New Window") { openWindow(value: WindowRoute.picker()) }
       .keyboardShortcut("n", modifiers: [.command, .shift])
+  }
+}
+
+/// View › Hide Files (⇧⌘E, VS Code's Explorer key): folds the focused window's file tree
+/// away, or brings it back.
+private struct FilesCommand: View {
+  @FocusedBinding(\.filesCollapsed) private var filesCollapsed
+
+  var body: some View {
+    Button(filesCollapsed == true ? "Show Files" : "Hide Files") {
+      withAnimation(.snappy(duration: 0.2)) { filesCollapsed?.toggle() }
+    }
+    .keyboardShortcut("e", modifiers: [.command, .shift])
+    .disabled(filesCollapsed == nil)
   }
 }
 

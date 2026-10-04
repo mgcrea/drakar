@@ -2,22 +2,38 @@ import AppKit
 import DrakarKit
 import SwiftUI
 
-/// The window's folder in the sidebar: a click expands a folder or opens a file.
+/// The window's folder in the sidebar: a click expands a folder or opens a file. Its header
+/// folds the whole tree away (⇧⌘E), leaving the sessions above it the height.
 struct FileTreeView: View {
   let workspace: Workspace
+  @Binding var isCollapsed: Bool
 
   var body: some View {
-    List {
-      Section(workspace.folder.lastPathComponent) {
-        ForEach(workspace.tree.rows) { row in
-          FileRow(row: row, isOpen: row.node.path == workspace.active?.path) {
-            workspace.toggle(row)
+    VStack(spacing: 0) {
+      header
+      if !isCollapsed {
+        List {
+          ForEach(workspace.tree.rows) { row in
+            FileRow(row: row, isOpen: row.node.path == workspace.active?.path) {
+              workspace.toggle(row)
+            }
           }
         }
+        .listStyle(.sidebar)
+        .accessibilityIdentifier("files")
       }
     }
-    .listStyle(.sidebar)
-    .accessibilityIdentifier("files")
+  }
+
+  private var header: some View {
+    PaneHeader(
+      title: String(localized: "Files"), caption: ContentView.abbreviated(workspace.folder),
+      systemImage: "folder",
+      isCollapsed: $isCollapsed,
+      help: isCollapsed
+        ? String(localized: "Show files (⇧⌘E)") : String(localized: "Hide files (⇧⌘E)"),
+      identifier: "files.header"
+    ) {}
   }
 }
 

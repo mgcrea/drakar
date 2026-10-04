@@ -357,6 +357,8 @@ extension FocusedValues {
   @Entry var workspace: Workspace?
   /// The focused window's project, for the Session menu.
   @Entry var project: Project?
+  /// Whether the focused window's files are folded away, for View › Hide Files.
+  @Entry var filesCollapsed: Binding<Bool>?
 }
 
 /// The question before a close or a quit stops sessions mid-turn.

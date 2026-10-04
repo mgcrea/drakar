@@ -171,7 +171,9 @@ not in advance.
    session is doing and how full its context is, exactly for Drakar's own sessions
    (`get_context_usage` after each turn) and from the transcript's tail for the rest.
    `claude` starts on a session's first prompt; a background session's permission request
-   shows on its row, the Dock and a notification. Not yet: a context breakdown panel.
+   shows on its row, the Dock and a notification. Sessions and Files each fold
+   away under their header, as in VS Code (Files also on ⇧⌘E). Not yet: a context
+   breakdown panel.
 
    Live checks:
    1. Two sessions working at once in one window; switching keeps each draft and scroll

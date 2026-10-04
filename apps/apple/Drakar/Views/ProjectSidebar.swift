@@ -2,17 +2,23 @@ import AppKit
 import DrakarKit
 import SwiftUI
 
-/// The project's sessions over its files, the split kept per window.
+/// The project's sessions over its files, the split and which panes are folded away kept
+/// per window.
 struct ProjectSidebar: View {
   let project: Project
   @SceneStorage("drakar.sessionsFraction") private var fraction = 0.38
+  @SceneStorage("drakar.sessionsCollapsed") private var sessionsCollapsed = false
+  @SceneStorage("drakar.filesCollapsed") private var filesCollapsed = false
 
   var body: some View {
-    VerticalSplit(fraction: $fraction) {
-      SessionListView(project: project)
+    VerticalSplit(
+      fraction: $fraction, collapsesTop: sessionsCollapsed, collapsesBottom: filesCollapsed
+    ) {
+      SessionListView(project: project, isCollapsed: $sessionsCollapsed)
     } bottom: {
-      FileTreeView(workspace: project.workspace)
+      FileTreeView(workspace: project.workspace, isCollapsed: $filesCollapsed)
     }
+    .focusedSceneValue(\.filesCollapsed, $filesCollapsed)
   }
 }
 
@@ -20,6 +26,7 @@ struct ProjectSidebar: View {
 /// row never moves under the pointer.
 struct SessionListView: View {
   let project: Project
+  @Binding var isCollapsed: Bool
   @State private var showsEnded = false
   @State private var showsAllEnded = false
   private var monitor: SessionMonitor { .shared }
@@ -37,33 +44,46 @@ struct SessionListView: View {
   }
 
   var body: some View {
+    VStack(spacing: 0) {
+      header
+      if !isCollapsed { list }
+    }
+    .task { await monitor.include(folder: project.folder.path(percentEncoded: false)) }
+  }
+
+  private var header: some View {
+    PaneHeader(
+      title: String(localized: "Sessions"), systemImage: "bubble.left.and.bubble.right",
+      isCollapsed: $isCollapsed,
+      help: isCollapsed ? String(localized: "Show sessions") : String(localized: "Hide sessions"),
+      identifier: "sessions.header", isFirst: true
+    ) {
+      if project.waitingCount > 0 {
+        Text(project.waitingCount, format: .number)
+          .font(.caption.monospacedDigit())
+          .foregroundStyle(.white)
+          .padding(.horizontal, 5)
+          .background(.blue, in: Capsule())
+          .help("Waiting for you: \(project.waitingCount)")
+          .accessibilityLabel("\(project.waitingCount) waiting for you")
+          .accessibilityIdentifier("sessions.waiting")
+      }
+      Button("New Session", systemImage: "plus") { project.newSession() }
+        .labelStyle(.iconOnly)
+        .buttonStyle(.borderless)
+        .help("New session (⌘N)")
+        .accessibilityIdentifier("sessions.new")
+    }
+  }
+
+  private var list: some View {
     List(selection: selection) {
-      Section {
+      Section("This Window") {
         ForEach(project.sessions) { item in
           SessionRow(item: item, isSelected: item.id == project.selectedID)
             .tag(item.id)
             .contextMenu { menu(for: item) }
             .accessibilityIdentifier("sessions.attached.\(item.sessionID ?? item.id.uuidString)")
-        }
-      } header: {
-        HStack {
-          Text("This Window")
-          if project.waitingCount > 0 {
-            Text(project.waitingCount, format: .number)
-              .font(.caption.monospacedDigit())
-              .foregroundStyle(.white)
-              .padding(.horizontal, 5)
-              .background(.blue, in: Capsule())
-              .help("Waiting for you: \(project.waitingCount)")
-              .accessibilityLabel("\(project.waitingCount) waiting for you")
-              .accessibilityIdentifier("sessions.waiting")
-          }
-          Spacer()
-          Button("New Session", systemImage: "plus") { project.newSession() }
-            .labelStyle(.iconOnly)
-            .buttonStyle(.borderless)
-            .help("New session (⌘N)")
-            .accessibilityIdentifier("sessions.new")
         }
       }
       let groups = groups
@@ -98,7 +118,6 @@ struct SessionListView: View {
     }
     .listStyle(.sidebar)
     .accessibilityIdentifier("sessions")
-    .task { await monitor.include(folder: project.folder.path(percentEncoded: false)) }
   }
 
   private func openElsewhere(_ summary: SessionSummary) {
