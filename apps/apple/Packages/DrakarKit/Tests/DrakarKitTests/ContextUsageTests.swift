@@ -176,4 +176,58 @@ struct ContextUsageTests {
     #expect(!reply.categories.contains { $0.name == "MCP tools (deferred)" })
     #expect(!reply.categories.contains { $0.name == "System tools (deferred)" })
   }
+
+  private let endedOnAQuestion = [
+    #"{"type":"user","message":{"role":"user","content":"Build it"}}"#,
+    #"{"type":"assistant","message":{"id":"m1","stop_reason":"end_turn","content":[{"type":"text","text":"Built."}]}}"#,
+    #"{"type":"assistant","message":{"id":"m1","stop_reason":"end_turn","content":[{"type":"text","text":"Want me to commit it?"}]}}"#,
+    #"{"type":"system","subtype":"turn_duration"}"#,
+    #"{"type":"last-prompt","lastPrompt":"Build it"}"#,
+  ]
+
+  @Test func theTailKnowsTheTextATurnEndedOn() {
+    #expect(
+      tail(endedOnAQuestion).closingText
+        == ClosingText(messageID: "m1", text: "Built.\n\nWant me to commit it?"))
+  }
+
+  @Test func aPromptAfterTheEndTakesItAway() {
+    let answered =
+      endedOnAQuestion + [#"{"type":"user","message":{"role":"user","content":"yes"}}"#]
+    #expect(tail(answered).closingText == nil)
+  }
+
+  @Test func aTurnThatCalledAToolHasNone() {
+    #expect(
+      tail([
+        #"{"type":"assistant","message":{"id":"m","stop_reason":"tool_use","content":[{"type":"text","text":"Should I?"}]}}"#
+      ]).closingText == nil)
+  }
+
+  /// "You've hit your session limit" is the CLI talking, not the model asking.
+  @Test func aSyntheticTurnHasNone() {
+    #expect(
+      tail([
+        #"{"type":"assistant","message":{"id":"m","model":"<synthetic>","stop_reason":"end_turn","content":[{"type":"text","text":"Limit reached. Upgrade?"}]}}"#
+      ]).closingText == nil)
+  }
+
+  @Test func aSubagentsEndIsNotTheSessions() {
+    let lines =
+      endedOnAQuestion + [
+        #"{"type":"assistant","isSidechain":true,"message":{"id":"s","stop_reason":"end_turn","content":[{"type":"text","text":"Done."}]}}"#
+      ]
+    #expect(tail(lines).closingText?.messageID == "m1")
+  }
+
+  @Test func aSummaryCarriesTheAsk() throws {
+    let file = FileManager.default.temporaryDirectory.appending(
+      path: "drakar-closing-\(UUID().uuidString).jsonl")
+    try Data(endedOnAQuestion.joined(separator: "\n").utf8).write(to: file)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let account = ClaudeAccount(directory: file.deletingLastPathComponent(), isDefault: false)
+    let summary = try #require(SessionIndex.summary(of: file, account: account))
+    #expect(summary.closingAsk == ClosingAsk(kind: .question, text: "Want me to commit it?"))
+    #expect(summary.closingMessageID == "m1")
+  }
 }
