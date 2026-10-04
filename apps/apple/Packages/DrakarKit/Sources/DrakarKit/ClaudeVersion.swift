@@ -68,6 +68,11 @@ public struct ClaudeVersion: Comparable, Sendable, CustomStringConvertible {
     }
     defer { watchdog.cancel() }
     let data = await Task.detached { output.fileHandleForReading.readDataToEndOfFile() }.value
+    // Known hang, not fixed yet: in about 3 of 80 `make test` runs (2026-10-04),
+    // `ClaudeVersionTests.asksTheBinary` sat here forever, `waitUntilExit` blocking a
+    // thread of Swift's shared async pool, with the other process tests queued behind it.
+    // Settings calls this too. The likely fix is to await the process's
+    // `terminationHandler` instead of blocking.
     process.waitUntilExit()
     guard process.terminationStatus == 0 else { return nil }
     return ClaudeVersion(String(decoding: data, as: UTF8.self))
