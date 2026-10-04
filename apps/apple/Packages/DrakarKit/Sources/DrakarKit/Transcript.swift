@@ -62,6 +62,11 @@ public struct Transcript: Sendable, Equatable {
     }
   }
 
+  /// How the newest turn ended.
+  public enum TurnEnd: Sendable, Equatable {
+    case completed, failed, interrupted
+  }
+
   /// A `can_use_tool` request waiting for the user.
   public struct PendingPermission: Sendable, Equatable, Identifiable {
     public var id: String { requestID }
@@ -73,6 +78,9 @@ public struct Transcript: Sendable, Equatable {
   public private(set) var session: SessionInfo?
   public private(set) var pendingPermissions: [PendingPermission] = []
   public private(set) var lastResult: TurnResult?
+  /// How the newest turn ended; nil while it runs, before any turn, and after a prompt.
+  /// Live, from its `result`; in history, which has none, from `stop_reason: end_turn`.
+  public private(set) var turnEnd: TurnEnd?
   /// The session's title, from the newest `ai-title` in its history.
   public internal(set) var title: String?
   /// The newest main-thread request's tokens: the session's context. Subagents' are theirs.
@@ -82,6 +90,33 @@ public struct Transcript: Sendable, Equatable {
   /// The newest prompt sent, wherever the turn after it has got to.
   public var lastPrompt: Entry? {
     lastPromptID.flatMap { indexByID[$0] }.map { entries[$0] }
+  }
+  /// The text the newest turn ended on, once it ended normally with nothing waiting: the
+  /// main thread's last entry is text, and it and the text blocks of the same message
+  /// before it make the closing text. Nil when it ended on a tool call or a note.
+  public var closingText: ClosingText? {
+    guard turnEnd == .completed, !isRunning, pendingPermissions.isEmpty else { return nil }
+    var messageID: String?
+    var parts: [String] = []
+    scan: for entry in entries.reversed() where entry.parentToolUseID == nil {
+      switch entry.kind {
+      case .thinking: continue
+      case .text(let text):
+        let id = Self.messageID(ofEntry: entry.id)
+        if let messageID, id != messageID { break scan }
+        messageID = id
+        parts.insert(text, at: 0)
+      case .prompt, .tool, .notice: break scan
+      }
+    }
+    let text = parts.joined(separator: "\n\n").trimmingCharacters(in: .whitespacesAndNewlines)
+    guard let messageID, !text.isEmpty else { return nil }
+    return ClosingText(messageID: messageID, text: text)
+  }
+
+  /// A block's entry is keyed `<message id>#<block index>`.
+  static func messageID(ofEntry id: String) -> String {
+    String(id[..<(id.lastIndex(of: "#") ?? id.endIndex)])
   }
   /// True from a prompt until its `result`.
   public private(set) var isRunning = false
@@ -111,6 +146,7 @@ public struct Transcript: Sendable, Equatable {
     upsert(Entry(id: id, kind: .prompt(text), context: context))
     lastPromptID = id
     isRunning = running
+    turnEnd = nil
   }
 
   mutating func addNotice(_ text: String, parent: String? = nil) {
@@ -147,6 +183,9 @@ public struct Transcript: Sendable, Equatable {
         contextUsage = usage
         contextModelID = assistant.model ?? contextModelID
       }
+      if assistant.parentToolUseID == nil, assistant.stopReason == "end_turn" {
+        turnEnd = .completed
+      }
       let index = blockCount[assistant.messageID, default: 0]
       for (offset, block) in assistant.content.enumerated() {
         place(
@@ -181,6 +220,7 @@ public struct Transcript: Sendable, Equatable {
       resolvePermission(requestID: id)
     case .result(let result):
       lastResult = result
+      turnEnd = result.wasInterrupted ? .interrupted : result.isError ? .failed : .completed
       isRunning = false
       // A turn that ended cannot still be asking.
       pendingPermissions.removeAll()

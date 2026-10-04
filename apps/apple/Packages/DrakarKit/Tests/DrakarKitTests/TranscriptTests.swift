@@ -127,4 +127,95 @@ struct TranscriptTests {
     transcript.addPrompt("\n  \n  Fix the bar  \nthen the rest")
     #expect(transcript.lastPrompt?.headline == "Fix the bar")
   }
+
+  private func message(_ json: String) throws -> StreamMessage {
+    try StreamMessage(line: Data(json.utf8))
+  }
+
+  private let asking =
+    #"{"type":"assistant","message":{"id":"m1","content":[{"type":"text","text":"Built. Want me to commit it?"}]}}"#
+  private let succeeded =
+    #"{"type":"result","subtype":"success","is_error":false,"result":"Built. Want me to commit it?"}"#
+
+  @Test func aTurnThatEndedHasItsClosingText() throws {
+    var transcript = Transcript()
+    transcript.addPrompt("Build it")
+    transcript.apply(try message(asking))
+    #expect(transcript.closingText == nil)  // still running
+    transcript.apply(try message(succeeded))
+    #expect(transcript.turnEnd == .completed)
+    #expect(
+      transcript.closingText == ClosingText(messageID: "m1", text: "Built. Want me to commit it?"))
+  }
+
+  @Test func theCapturedTurnEndsOnItsText() throws {
+    let closing = try #require(try transcript(.turnWithTool).closingText)
+    #expect(closing.text == "Amiral.")
+    #expect(!closing.messageID.isEmpty)
+  }
+
+  @Test func anInterruptedOrFailedTurnHasNone() throws {
+    for result in [
+      #"{"type":"result","subtype":"error_during_execution","is_error":true,"terminal_reason":"aborted_streaming"}"#,
+      #"{"type":"result","subtype":"error_max_turns","is_error":true}"#,
+    ] {
+      var transcript = Transcript()
+      transcript.addPrompt("Build it")
+      transcript.apply(try message(asking))
+      transcript.apply(try message(result))
+      #expect(transcript.closingText == nil)
+    }
+  }
+
+  @Test func aPromptAfterItTakesItAway() throws {
+    var transcript = Transcript()
+    transcript.addPrompt("Build it")
+    transcript.apply(try message(asking))
+    transcript.apply(try message(succeeded))
+    transcript.addPrompt("yes")
+    #expect(transcript.turnEnd == nil)
+    #expect(transcript.closingText == nil)
+  }
+
+  @Test func aTurnEndingOnAToolCallHasNone() throws {
+    var transcript = Transcript()
+    transcript.addPrompt("Build it")
+    transcript.apply(
+      try message(
+        #"{"type":"assistant","message":{"id":"m2","content":[{"type":"text","text":"Should I run it?"},{"type":"tool_use","id":"t1","name":"Bash","input":{}}]}}"#
+      ))
+    transcript.apply(try message(succeeded))
+    #expect(transcript.closingText == nil)
+  }
+
+  /// A subagent's words are its own; the turn closes on the main thread's.
+  @Test func aSubagentsQuestionIsNotTheTurns() throws {
+    var transcript = Transcript()
+    transcript.addPrompt("Build it")
+    transcript.apply(
+      try message(
+        #"{"type":"assistant","message":{"id":"m1","content":[{"type":"text","text":"All done."}]}}"#
+      ))
+    transcript.apply(
+      try message(
+        #"{"type":"assistant","parent_tool_use_id":"t9","message":{"id":"s1","content":[{"type":"text","text":"Should I continue?"}]}}"#
+      ))
+    transcript.apply(try message(succeeded))
+    #expect(transcript.closingText == ClosingText(messageID: "m1", text: "All done."))
+  }
+
+  @Test func joinsTheTextBlocksOfTheLastMessage() throws {
+    var transcript = Transcript()
+    transcript.addPrompt("Build it")
+    transcript.apply(
+      try message(
+        #"{"type":"assistant","message":{"id":"m0","content":[{"type":"text","text":"Earlier."}]}}"#
+      ))
+    transcript.apply(
+      try message(
+        #"{"type":"assistant","message":{"id":"m1","content":[{"type":"text","text":"Built."},{"type":"thinking","thinking":"hm"},{"type":"text","text":"Push it?"}]}}"#
+      ))
+    transcript.apply(try message(succeeded))
+    #expect(transcript.closingText == ClosingText(messageID: "m1", text: "Built.\n\nPush it?"))
+  }
 }

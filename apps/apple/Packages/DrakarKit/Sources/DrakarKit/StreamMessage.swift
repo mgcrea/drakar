@@ -104,6 +104,9 @@ public struct AssistantMessage: Sendable, Equatable {
   public var parentToolUseID: String?
   /// The request's tokens. Every block of one message repeats the same object.
   public var usage: TokenUsage?
+  /// `end_turn` on a message that ended the turn, `tool_use` on one that calls a tool.
+  /// Transcript files repeat it on every block line; the live stream may leave it null.
+  public var stopReason: String?
 
   init?(_ json: JSONValue) {
     guard let message = json["message"], let id = message["id"]?.stringValue else { return nil }
@@ -112,6 +115,7 @@ public struct AssistantMessage: Sendable, Equatable {
     content = ContentBlock.list(message["content"])
     parentToolUseID = json["parent_tool_use_id"]?.stringValue
     usage = TokenUsage(message["usage"])
+    stopReason = message["stop_reason"]?.stringValue
   }
 }
 
