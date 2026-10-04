@@ -35,6 +35,8 @@ final class ClaudeSession {
   /// What reopening the window resumes: known from the start for a resumed session, and
   /// from its first finished turn for a new one or a fork, once its transcript exists.
   private(set) var savedTarget: ResumeTarget?
+  /// The transcript's history was read into `transcript`.
+  private(set) var hasLoadedHistory = false
   /// The arguments the next spawn runs with (a model for a debug launch).
   var command = ClaudeCommand()
   /// Open in another process: the transcript follows its file and nothing is sent.
@@ -125,6 +127,7 @@ final class ClaudeSession {
     }
     self.transcript = transcript
     self.follower = follower
+    hasLoadedHistory = true
     // Prompts typed while the history was being read go after it.
     for (text, context) in promptsDuringLoad { self.transcript.addPrompt(text, context: context) }
     promptsDuringLoad = []

@@ -110,6 +110,29 @@ struct ProjectTests {
     #expect(project.sessions.map(\.session.isReadOnly) == [false, true])
   }
 
+  /// Every restored row has its title and gauge before it is shown, not only the selected
+  /// one: they come from the transcript's end, read at restore.
+  @Test func restoredRowsShowTheirTitleAndGaugeBeforeTheyAreShown() async throws {
+    for (id, title) in [("a", "Title A"), ("b", "Title B")] {
+      try Data(
+        [
+          #"{"type":"user","cwd":"/w","message":{"role":"user","content":"go"}}"#,
+          #"{"type":"assistant","message":{"id":"m","model":"claude-opus-5-5","content":[{"type":"text","text":"ok"}],"usage":{"input_tokens":2,"cache_creation_input_tokens":10,"cache_read_input_tokens":40000,"output_tokens":5}}}"#,
+          #"{"type":"ai-title","aiTitle":"\#(title)"}"#,
+        ].joined(separator: "\n").appending("\n").utf8
+      ).write(to: folder.appending(path: "\(id).jsonl"))
+    }
+    let project = Project(
+      folder: folder, restoring: StoredProject(sessions: [target("a"), target("b")], selected: "a"))
+    let unshown = project.sessions[1]
+    for _ in 0..<50 where unshown.displayTitle != "Title B" {
+      try await Task.sleep(for: .milliseconds(50))
+    }
+    #expect(project.sessions.map(\.displayTitle) == ["Title A", "Title B"])
+    #expect(!unshown.session.hasLoadedHistory)
+    #expect(unshown.gauge(accountModel: nil)?.used == 40_012)
+  }
+
   /// A session running here is never flipped.
   @Test func aRowWithItsOwnProcessIsNeverFlipped() async throws {
     let fake = folder.appending(path: "claude")

@@ -15,6 +15,9 @@ final class ProjectSession: Identifiable {
   /// The entry at the top of the transcript when it was last shown; nil while it followed
   /// the bottom.
   var scrollAnchor: String?
+  /// The transcript's summary, read at restore: a row not shown yet has its title and
+  /// gauge without its whole history being read. Kept current as the file changes.
+  var preview: SessionSummary?
 
   init(session: ClaudeSession) {
     self.session = session
@@ -22,10 +25,16 @@ final class ProjectSession: Identifiable {
 
   var sessionID: String? { session.sessionID }
 
+  /// What stands for the history until it is read.
+  private var unloadedPreview: SessionSummary? { session.hasLoadedHistory ? nil : preview }
+
   var displayTitle: String {
     if let title = session.title { return title }
     for entry in session.transcript.entries {
       if case .prompt(let text) = entry.kind { return String(text.prefix(80)) }
+    }
+    if let preview = unloadedPreview, let title = preview.title ?? preview.lastPrompt {
+      return String(title.prefix(80))
     }
     return String(localized: "New session")
   }
@@ -42,6 +51,12 @@ final class ProjectSession: Identifiable {
   /// account's, the newest message's.
   func gauge(accountModel: String?) -> ContextGauge? {
     let transcript = session.transcript
+    if transcript.contextUsage == nil, let preview = unloadedPreview {
+      return ContextGauge.make(
+        usage: preview.context?.usage, reportedLimit: nil, initModelID: nil,
+        attachmentModelID: preview.modelID, accountModelID: accountModel,
+        messageModelID: preview.context?.modelID)
+    }
     return ContextGauge.make(
       usage: transcript.contextUsage, reportedLimit: session.reportedContext?.maxTokens,
       initModelID: transcript.session?.model, attachmentModelID: nil,
@@ -82,6 +97,7 @@ final class Project {
     selectedID =
       sessions.first { $0.sessionID == stored?.selected }?.id ?? sessions.first?.id
     if let selected { load(selected) }
+    for item in sessions { readPreview(item) }
   }
 
   var selected: ProjectSession? { sessions.first { $0.id == selectedID } }
@@ -184,5 +200,16 @@ final class Project {
 
   private func load(_ item: ProjectSession) {
     Task { await item.session.loadHistory() }
+  }
+
+  /// The title and context from the transcript's end, off the main thread: every restored
+  /// row shows them, while only the selected one reads its history.
+  private func readPreview(_ item: ProjectSession) {
+    guard let target = item.session.resuming else { return }
+    let (file, account) = (target.transcriptFile, target.account)
+    Task { [weak item] in
+      let summary = await Task.detached { SessionIndex.summary(of: file, account: account) }.value
+      item?.preview = summary
+    }
   }
 }

@@ -176,7 +176,7 @@ final class SessionMonitor {
         guard generations[path] == generation else { return }
         guard let summary else { return forget(path) }
         merge([summary])
-        OpenSessions.shared.transcriptWritten(summary.sessionID)
+        OpenSessions.shared.transcriptWritten(summary)
       }
     }
   }
