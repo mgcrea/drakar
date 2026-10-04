@@ -46,6 +46,8 @@ enum PreferenceKey {
   static let claudePath = "drakar.claudePath"
   /// The configuration directory a new session runs under; empty for the login shell's.
   static let newSessionAccount = "drakar.newSessionAccount"
+  /// Whether a session that finishes its turn while Drakar is in the background says so.
+  static let notifiesTurnEnds = "drakar.notifiesTurnEnds"
 }
 
 /// What Settings picked for the sessions Drakar starts.
@@ -119,6 +121,7 @@ struct SettingsView: View {
 
 struct GeneralPane: View {
   @AppStorage(PreferenceKey.editorScope) private var editorScope = EditorScope.openFolders
+  @AppStorage(PreferenceKey.notifiesTurnEnds) private var notifiesTurnEnds = false
 
   var body: some View {
     Form {
@@ -134,6 +137,12 @@ struct GeneralPane: View {
         Text(
           "Run `claude --ide` in one of these folders, or type /ide in a running session, and its edits open here for you to accept or reject. If VS Code has the same folder open, pick the editor with /ide."
         )
+      }
+      Section {
+        Toggle("Notify when a session finishes its turn", isOn: $notifiesTurnEnds)
+          .accessibilityIdentifier("settings.notifiesTurnEnds")
+      } footer: {
+        Text("Sessions that need a permission always notify while Drakar is in the background.")
       }
     }
     .formStyle(.grouped)

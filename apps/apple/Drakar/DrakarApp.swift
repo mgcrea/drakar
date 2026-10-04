@@ -53,6 +53,11 @@ private struct SessionCommands: View {
     Button("New Session") { project?.newSession() }
       .keyboardShortcut("n")
       .disabled(project == nil)
+    Button("Next Session Needing You") {
+      if let project, let next = project.nextNeedingAttention() { project.select(next) }
+    }
+    .keyboardShortcut(.downArrow, modifiers: [.command, .option])
+    .disabled(project?.nextNeedingAttention() == nil)
   }
 }
 

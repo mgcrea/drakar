@@ -47,6 +47,7 @@ final class ClaudeSession {
   @ObservationIgnored var onTurnEnded: (() -> Void)?
   @ObservationIgnored var onPermissionRequested: ((Transcript.PendingPermission) -> Void)?
   @ObservationIgnored var onStopped: (() -> Void)?
+  @ObservationIgnored var onPermissionAnswered: (() -> Void)?
 
   @ObservationIgnored private var process: AgentProcess?
   @ObservationIgnored private var events: Task<Void, Never>?
@@ -204,6 +205,7 @@ final class ClaudeSession {
   func answer(_ pending: Transcript.PendingPermission, _ decision: PermissionDecision) {
     write(.permission(requestID: pending.requestID, decision))
     transcript.resolvePermission(requestID: pending.requestID)
+    onPermissionAnswered?()
   }
 
   func interrupt() {

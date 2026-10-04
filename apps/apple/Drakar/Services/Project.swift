@@ -126,6 +126,15 @@ final class Project {
     selectedID = item.id
     item.isUnread = false
     load(item)
+    Attention.shared.refresh()
+  }
+
+  /// The next row after the selected one that wants the person: waiting on a permission
+  /// first, then unread, wrapping. Never the selected row.
+  func nextNeedingAttention() -> ProjectSession? {
+    let start = sessions.firstIndex { $0.id == selectedID } ?? -1
+    let ordered = sessions[(start + 1)...] + sessions[..<max(start, 0)]
+    return ordered.first { $0.waitingFor != nil } ?? ordered.first { $0.isUnread }
   }
 
   /// Stops the process; the row stays, and its next prompt resumes it.
@@ -156,9 +165,15 @@ final class Project {
   private func make(_ session: ClaudeSession) -> ProjectSession {
     let item = ProjectSession(session: session)
     session.onTurnEnded = { [weak self, weak item] in
-      guard let self, let item, item.id != self.selectedID else { return }
-      item.isUnread = true
+      guard let self, let item else { return }
+      if item.id != self.selectedID { item.isUnread = true }
+      Attention.shared.turnEnded(item, in: self)
     }
+    session.onPermissionRequested = { [weak self, weak item] _ in
+      guard let self, let item else { return }
+      Attention.shared.permissionRequested(item, in: self)
+    }
+    session.onPermissionAnswered = { Attention.shared.refresh() }
     session.onStopped = { [weak self, weak item] in
       guard let self, let item, item.id != self.selectedID, item.hasStopped else { return }
       item.isUnread = true
