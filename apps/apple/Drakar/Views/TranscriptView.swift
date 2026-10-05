@@ -29,6 +29,7 @@ struct TranscriptView: View {
   /// `revision` when following stopped, so the follow button can tell output that arrived
   /// since from a transcript that is merely scrolled up.
   @State private var revisionWhenLeft: Int?
+  @State private var thinkingDisclosure = ThinkingDisclosure()
 
   var body: some View {
     ScrollView {
@@ -38,13 +39,13 @@ struct TranscriptView: View {
             // Inside the row, so a jump to the prompt stops short of its bubble.
             .padding(.top, entry.isPrompt ? 12 : 0)
         }
-        if transcript.isRunning {
-          ProgressView()
-            .controlSize(.small)
-            .accessibilityLabel("Working")
+        // Not while a permission waits on the user: nothing is being worked on then.
+        if transcript.isRunning && transcript.pendingPermissions.isEmpty {
+          WorkingIndicator()
         }
       }
       .scrollTargetLayout()
+      .environment(\.thinkingDisclosure, thinkingDisclosure)
       .padding(16)
       .frame(maxWidth: 820, alignment: .leading)
       .frame(maxWidth: .infinity)
@@ -268,24 +269,40 @@ struct EntryView: View, Equatable {
   }
 }
 
+/// Whether the transcript's thinking is shown: opening or closing one block does it to all of
+/// them, as in the extension. A class, so the rows that never think don't redraw on a toggle.
+@Observable final class ThinkingDisclosure {
+  var isExpanded = false
+}
+
 private struct ThinkingView: View {
   let text: String
+  @Environment(\.thinkingDisclosure) private var disclosure
 
   var body: some View {
+    @Bindable var disclosure = disclosure
     if text.isEmpty {
       Label("Thought", systemImage: "brain")
         .font(.callout)
         .foregroundStyle(.tertiary)
     } else {
-      DisclosureGroup {
+      DisclosureGroup(isExpanded: $disclosure.isExpanded) {
         Text(text)
           .font(.callout)
           .foregroundStyle(.secondary)
           .textSelection(.enabled)
+          // Clear of the copy button, which would otherwise sit on the first line.
+          .padding(.trailing, 30)
+          .frame(maxWidth: .infinity, alignment: .leading)
+          .copyOnHover(text)
       } label: {
         Label("Thinking", systemImage: "brain")
           .font(.callout)
           .foregroundStyle(.secondary)
+          // The whole row toggles, not only the chevron.
+          .frame(maxWidth: .infinity, alignment: .leading)
+          .contentShape(Rectangle())
+          .onTapGesture { withAnimation(.snappy) { disclosure.isExpanded.toggle() } }
       }
     }
   }
@@ -302,12 +319,18 @@ struct ToolCallView: View {
         // After the fact a Write's previous content is gone, so it shows as all added.
         if let change = FileChange(toolName: call.name, input: call.input) {
           FileChangeView(change: change)
-        } else if call.name != "Bash" || call.summary.isEmpty {
+        } else if call.name == "Bash" && !call.summary.isEmpty {
+          // The whole command, which the one-line header cuts short.
+          CodeBlock(text: call.summary)
+        } else {
           CodeBlock(text: call.input.prettyPrinted)
         }
         if let result = call.result {
-          CodeBlock(text: result.content.isEmpty ? "(no output)" : result.content)
-            .foregroundStyle(result.isError ? .red : .primary)
+          CodeBlock(
+            text: result.content.isEmpty ? "(no output)" : result.content,
+            isCopyable: !result.content.isEmpty
+          )
+          .foregroundStyle(result.isError ? .red : .primary)
         }
       }
       .padding(.top, 6)
@@ -321,6 +344,10 @@ struct ToolCallView: View {
           .lineLimit(1)
           .truncationMode(.middle)
       }
+      // The whole row toggles, not only the chevron.
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .contentShape(Rectangle())
+      .onTapGesture { withAnimation(.snappy) { isExpanded.toggle() } }
     }
     .padding(10)
     .background(.background.secondary, in: RoundedRectangle(cornerRadius: 8))
@@ -359,6 +386,8 @@ struct ToolCallView: View {
 
 struct CodeBlock: View {
   let text: String
+  /// False for a placeholder such as "(no output)", which is not worth a copy button.
+  var isCopyable = true
 
   var body: some View {
     ScrollView([.vertical, .horizontal]) {
@@ -371,6 +400,57 @@ struct CodeBlock: View {
     .frame(maxHeight: 240)
     .fixedSize(horizontal: false, vertical: true)
     .background(.background.tertiary, in: RoundedRectangle(cornerRadius: 6))
+    .copyOnHover(isCopyable ? text : nil)
+  }
+}
+
+extension View {
+  /// A copy button in the top-trailing corner, out of sight until the pointer is over the
+  /// view, as in the extension. Nil text leaves the view as it is.
+  func copyOnHover(_ text: String?) -> some View {
+    modifier(CopyOnHover(text: text))
+  }
+}
+
+private struct CopyOnHover: ViewModifier {
+  let text: String?
+
+  @State private var isHovering = false
+  @State private var didCopy = false
+
+  func body(content: Content) -> some View {
+    content
+      .overlay(alignment: .topTrailing) {
+        if let text { button(copying: text) }
+      }
+      .onHover { isHovering = $0 }
+  }
+
+  private func button(copying text: String) -> some View {
+    Button {
+      NSPasteboard.general.clearContents()
+      NSPasteboard.general.setString(text, forType: .string)
+      didCopy = true
+    } label: {
+      Image(systemName: didCopy ? "checkmark" : "doc.on.doc")
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .frame(width: 22, height: 22)
+        .background(.background.secondary, in: RoundedRectangle(cornerRadius: 4))
+        .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(.separator))
+        .contentTransition(.symbolEffect(.replace))
+    }
+    .buttonStyle(.plain)
+    .help("Copy")
+    .accessibilityLabel("Copy")
+    .padding(4)
+    .opacity(isHovering || didCopy ? 1 : 0)
+    .animation(.easeOut(duration: 0.15), value: isHovering)
+    .task(id: didCopy) {
+      guard didCopy else { return }
+      try? await Task.sleep(for: .seconds(1.5))
+      didCopy = false
+    }
   }
 }
 
@@ -379,6 +459,8 @@ extension EnvironmentValues {
   @Entry var sessionFolder: URL?
   /// Opens a file in this window's editor; nil where there is none (the review window).
   @Entry var openInEditor: OpenInEditorAction?
+  /// Set by the transcript; one made here would be a new instance on every read.
+  @Entry var thinkingDisclosure = ThinkingDisclosure()
 }
 
 /// Equal per workspace rather than a bare closure, which SwiftUI cannot compare: every
