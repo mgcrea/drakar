@@ -1,3 +1,4 @@
+import AppKit
 import DrakarKit
 import Foundation
 
@@ -140,5 +141,97 @@ enum SessionMoves {
       text += " " + String(localized: "Failed:") + " " + failures.joined(separator: "; ") + "."
     }
     return text
+  }
+}
+
+extension SessionMoves {
+  /// The app's own answers to `run`'s questions.
+  private static func runInApp(_ candidates: [Candidate], to target: ClaudeAccount) async
+    -> [Report]
+  {
+    let monitor = SessionMonitor.shared
+    return await run(
+      candidates, to: target, locate: { OpenSessions.shared.locate($0)?.1.session },
+      liveIDs: { monitor.liveIDs }, host: { hostName(of: $0) })
+  }
+
+  private static func hostName(of candidate: Candidate) -> String {
+    let monitor = SessionMonitor.shared
+    return monitor.summary(forFile: candidate.transcript).map { monitor.host(of: $0) }
+      ?? String(localized: "another app")
+  }
+
+  /// After the picker moved `folder` from `source` to `target`: offer to take its sessions
+  /// along. Asks nothing when there is nothing to move.
+  static func offer(folder: URL, from source: ClaudeAccount, to target: ClaudeAccount) {
+    let path = ProjectPath.normalize(folder.path(percentEncoded: false))
+    let held = OpenSessions.shared.projects.values
+      .filter { ProjectPath.normalize($0.folder.path(percentEncoded: false)) == path }
+      .flatMap(\.held)
+      .compactMap { item in item.session.savedTarget.map { (target: $0, title: item.displayTitle) }
+      }
+    let all = candidates(
+      summaries: SessionMonitor.shared.summaries(under: path), held: held, notOn: target)
+    let live = SessionMonitor.shared.liveIDs
+    let elsewhere = all.filter {
+      OpenSessions.shared.locate($0.sessionID) == nil && live.contains($0.sessionID)
+    }
+    let movable = all.count - elsewhere.count
+    guard movable > 0 else { return }
+    let store = AccountStore.shared
+    let from = store.profile(for: source).name
+    let to = store.profile(for: target).name
+    let alert = NSAlert()
+    alert.messageText =
+      movable == 1
+      ? String(localized: "Move this folder's session from \(from) to \(to) too?")
+      : String(localized: "Move this folder's \(movable) sessions from \(from) to \(to) too?")
+    if !elsewhere.isEmpty {
+      let hosts = Set(elsewhere.map(hostName(of:))).sorted().joined(separator: ", ")
+      alert.informativeText = String(
+        localized: "\(elsewhere.count) running in \(hosts) will stay on \(from).")
+    }
+    alert.addButton(
+      withTitle: movable == 1
+        ? String(localized: "Move Session") : String(localized: "Move \(movable) Sessions"))
+    alert.addButton(withTitle: String(localized: "Not Now"))
+    guard alert.runModal() == .alertFirstButtonReturn else { return }
+    Task {
+      let reports = await runInApp(all, to: target)
+      let summary = NSAlert()
+      summary.messageText = Self.summary(reports, to: to)
+      summary.runModal()
+    }
+  }
+
+  /// One session from its row. Says something only when it did not move.
+  static func moveOne(_ candidate: Candidate, to target: ClaudeAccount) {
+    Task {
+      let reports = await runInApp([candidate], to: target)
+      guard reports.first?.outcome != .moved else { return }
+      let alert = NSAlert()
+      alert.messageText = Self.summary(reports, to: AccountStore.shared.profile(for: target).name)
+      alert.runModal()
+    }
+  }
+
+  static func candidate(for summary: SessionSummary) -> Candidate {
+    Candidate(
+      sessionID: summary.sessionID, title: summary.displayTitle, transcript: summary.file,
+      account: summary.account, cwd: summary.cwd)
+  }
+
+  /// Nil for a session never prompted: it has no files, and starts on the window's account.
+  static func candidate(for item: ProjectSession) -> Candidate? {
+    item.session.savedTarget.map {
+      Candidate(
+        sessionID: $0.sessionID, title: item.displayTitle, transcript: $0.transcriptFile,
+        account: $0.account, cwd: $0.cwd)
+    }
+  }
+
+  /// Every discovered account but `current`, for a "Move to" menu.
+  static func destinations(from current: ClaudeAccount) -> [ClaudeAccount] {
+    AccountStore.shared.accounts.filter { $0.key != current.key }
   }
 }

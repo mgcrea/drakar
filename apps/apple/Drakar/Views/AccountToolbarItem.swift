@@ -80,8 +80,15 @@ private struct AccountPicker: View {
     VStack(alignment: .leading, spacing: 0) {
       ForEach(accounts, id: \.key) { account in
         Button {
+          let previous = store.windowAccount(for: folder)
           store.pick(account, for: folder)
           dismiss()
+          if account.key != previous.key {
+            // After the popover is gone: a modal over an open popover is lost behind it.
+            DispatchQueue.main.async {
+              SessionMoves.offer(folder: folder, from: previous, to: account)
+            }
+          }
         } label: {
           row(account)
         }

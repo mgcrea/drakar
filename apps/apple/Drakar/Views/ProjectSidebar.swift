@@ -109,6 +109,7 @@ struct SessionListView: View {
               .contentShape(Rectangle())
               .onTapGesture { openElsewhere(summary) }
               .selectionBorder(isWatched(summary))
+              .contextMenu { moveMenu(for: summary, host: monitor.host(of: summary)) }
               .accessibilityAddTraits(.isButton)
               .accessibilityIdentifier("sessions.elsewhere.\(summary.sessionID)")
           }
@@ -121,6 +122,7 @@ struct SessionListView: View {
               .contentShape(Rectangle())
               .selectionBorder(isWatched(summary))
               .onTapGesture { openEnded(summary) }
+              .contextMenu { moveMenu(for: summary, host: nil) }
               .accessibilityAddTraits(.isButton)
               .accessibilityIdentifier("sessions.ended.\(summary.sessionID)")
           }
@@ -199,9 +201,40 @@ struct SessionListView: View {
       Button("End Session") { confirmIfRunning(item) { project.end(item) } }
     }
     Button("Remove from Window") { confirmIfRunning(item) { project.remove(item) } }
+    if let candidate = SessionMoves.candidate(for: item) {
+      let others = SessionMoves.destinations(from: candidate.account)
+      if !others.isEmpty {
+        Divider()
+        Menu("Move to") {
+          ForEach(others, id: \.key) { account in
+            Button(AccountStore.shared.profile(for: account).name) {
+              SessionMoves.moveOne(candidate, to: account)
+            }
+          }
+        }
+      }
+    }
     if let file = item.session.savedTarget?.transcriptFile {
       Divider()
       Button("Show Transcript in Finder") { NSWorkspace.shared.activateFileViewerSelecting([file]) }
+    }
+  }
+
+  /// An elsewhere row running in another process cannot move; the menu says where it runs.
+  @ViewBuilder private func moveMenu(for summary: SessionSummary, host: String?) -> some View {
+    let others = SessionMoves.destinations(from: summary.account)
+    if !others.isEmpty {
+      Menu("Move to") {
+        ForEach(others, id: \.key) { account in
+          Button(AccountStore.shared.profile(for: account).name) {
+            SessionMoves.moveOne(SessionMoves.candidate(for: summary), to: account)
+          }
+          .disabled(host != nil)
+        }
+        if let host {
+          Text("Running in \(host)")
+        }
+      }
     }
   }
 
