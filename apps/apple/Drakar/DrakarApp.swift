@@ -113,15 +113,13 @@ private struct SessionCommands: View {
       .keyboardShortcut("n")
       .disabled(project == nil)
     Button("Next Session Needing You") {
-      if let project, let next = project.nextNeedingAttention() { project.select(next) }
+      if let project, let next = project.nextNeedingAttention() { project.show(next) }
     }
     .keyboardShortcut(.downArrow, modifiers: [.command, .option])
     .disabled(project?.nextNeedingAttention() == nil)
-    Button("Dismiss") {
-      if let project, let item = project.selected { project.dismissAsk(item) }
-    }
-    .keyboardShortcut("d", modifiers: [.command, .option])
-    .disabled(project?.selected?.closingAsk == nil)
+    Button("Dismiss") { project?.dismissSelected() }
+      .keyboardShortcut("d", modifiers: [.command, .option])
+      .disabled(project?.canDismissSelected != true)
   }
 }
 

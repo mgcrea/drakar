@@ -12,6 +12,35 @@ enum Urgency: String, CaseIterable, Comparable {
     allCases.firstIndex(of: a)! < allCases.firstIndex(of: b)!
   }
 
+  /// How much a session live outside Drakar wants the person, from its registry and its
+  /// transcript's end: waiting is a permission, or a choice when the call it waits on is an
+  /// `AskUserQuestion`; done with a turn that ended on a question or an offer, that, unless
+  /// `dismissed` is that message. Busy, ended, or Drakar's own (no registry entry): nothing.
+  static func of(
+    _ summary: SessionSummary, recognisesAsks: Bool, dismissed: String?
+  ) -> Urgency? {
+    guard let live = summary.live else { return nil }
+    switch live.status {
+    case "waiting": return summary.pendingQuestion == nil ? .permission : .choice
+    case "busy": return nil
+    default:
+      guard recognisesAsks, let ask = summary.closingAsk,
+        summary.closingMessageID != dismissed
+      else { return nil }
+      return ask.kind == .question ? .question : .offer
+    }
+  }
+
+  /// What a session elsewhere at this level wants, for its row's second line and the
+  /// notification: the registry's own words for a permission ("permission prompt").
+  func wants(of summary: SessionSummary) -> String? {
+    switch self {
+    case .permission: summary.live?.waitingFor
+    case .choice: summary.pendingQuestion
+    case .question, .offer: summary.closingAsk?.text
+    }
+  }
+
   /// Its row in the Attention pane.
   var title: String {
     switch self {
@@ -24,8 +53,8 @@ enum Urgency: String, CaseIterable, Comparable {
 }
 
 /// What wants the person while they look elsewhere: the Dock badge for rows that want them,
-/// by level, and a local notification unless the session is the one in front of them. Only
-/// Drakar's own sessions: Armada notifies for every session on the Mac already.
+/// by level, and a local notification unless the session is the one in front of them. A
+/// window's own sessions, and those of its folder live in a terminal or VS Code.
 final class Attention: NSObject, UNUserNotificationCenterDelegate {
   static let shared = Attention()
 
@@ -34,10 +63,42 @@ final class Attention: NSObject, UNUserNotificationCenterDelegate {
   /// Sessions with a notification on screen that wants an answer: withdrawn when the row
   /// no longer wants the person, however that came about.
   private var asking: Set<String> = []
+  /// Per session live elsewhere, what it last wanted (`newsKey`, "" for nothing): a change
+  /// is news, a session first seen (a window opening, the app launching) is not.
+  private var seenElsewhere: [String: String] = [:]
 
-  var waitingCount: Int {
-    Self.count(OpenSessions.shared.projects.values.flatMap(\.sessions)) {
-      AttentionChoice.isOn($0, .badges)
+  var waitingCount: Int { waitingCount(elsewhere: elsewhere()) }
+
+  private func waitingCount(
+    elsewhere: [String: (project: Project, summary: SessionSummary, level: Urgency?)]
+  ) -> Int {
+    let badges = { AttentionChoice.isOn($0, .badges) }
+    return Self.count(OpenSessions.shared.projects.values.flatMap(\.sessions), badges: badges)
+      + elsewhere.values.count { $0.level.map(badges) ?? false }
+  }
+
+  /// Every session live elsewhere under an open window, once each, with the window it lists
+  /// in and how much it wants the person.
+  private func elsewhere() -> [String: (project: Project, summary: SessionSummary, level: Urgency?)]
+  {
+    var found: [String: (project: Project, summary: SessionSummary, level: Urgency?)] = [:]
+    for project in OpenSessions.shared.projects.values {
+      for summary in project.groups.elsewhere
+      where summary.live != nil && found[summary.sessionID] == nil {
+        found[summary.sessionID] = (project, summary, project.urgency(of: summary))
+      }
+    }
+    return found
+  }
+
+  /// What makes a session elsewhere wanting the person news: its level, and the ask itself,
+  /// so a second question after an answer notifies again.
+  static func newsKey(_ summary: SessionSummary, level: Urgency?) -> String {
+    guard let level else { return "" }
+    return switch level {
+    case .question, .offer: "\(level.rawValue)#\(summary.closingMessageID ?? "")"
+    case .choice: "\(level.rawValue)#\(summary.pendingQuestion ?? "")"
+    case .permission: level.rawValue
     }
   }
 
@@ -53,10 +114,13 @@ final class Attention: NSObject, UNUserNotificationCenterDelegate {
 
   /// The badge follows, and a notification whose session no longer wants anything goes.
   func refresh() {
-    let count = waitingCount
+    let elsewhere = elsewhere()
+    let count = waitingCount(elsewhere: elsewhere)
     NSApp.dockTile.badgeLabel = count == 0 ? nil : String(count)
+    notifyElsewhere(elsewhere)
     let answered = asking.filter { id in
-      OpenSessions.shared.locate(id).map { $0.1.urgency == nil } ?? true
+      if let (_, item) = OpenSessions.shared.locate(id) { return item.urgency == nil }
+      return elsewhere[id]?.level == nil
     }
     guard !answered.isEmpty else { return }
     asking.subtract(answered)
@@ -89,6 +153,31 @@ final class Attention: NSObject, UNUserNotificationCenterDelegate {
     post(title: item.displayTitle, body: notice.body, item: item, wantsAnswer: notice.wantsAnswer)
   }
 
+  /// A session elsewhere that came to want the person, or wants something new, notifies as
+  /// its level is set to, unless it is the one watched in front of them.
+  private func notifyElsewhere(
+    _ found: [String: (project: Project, summary: SessionSummary, level: Urgency?)]
+  ) {
+    var seen: [String: String] = [:]
+    for (id, entry) in found {
+      let key = Self.newsKey(entry.summary, level: entry.level)
+      seen[id] = key
+      guard let before = seenElsewhere[id], before != key, let level = entry.level,
+        AttentionChoice.isOn(level, .notifies), !inView(sessionID: id, in: entry.project)
+      else { continue }
+      let wants = level.wants(of: entry.summary)
+      let body =
+        switch level {
+        case .permission: wants.map { String(localized: "Waiting for you: \($0)") }
+        case .choice, .question, .offer: wants
+        }
+      post(
+        title: entry.summary.displayTitle, body: body ?? RowState.waiting.label, sessionID: id,
+        wantsAnswer: true)
+    }
+    seenElsewhere = seen
+  }
+
   /// What a turn's end posts: its ask when that level notifies; otherwise "Finished its
   /// turn." when those are on, whatever the turn ended on; otherwise nothing.
   static func turnEndNotice(
@@ -105,8 +194,19 @@ final class Attention: NSObject, UNUserNotificationCenterDelegate {
       rowIsSelected: project.selectedID == item.id)
   }
 
+  /// A session elsewhere is in front of the person when the key window watches it.
+  private func inView(sessionID: String, in project: Project) -> Bool {
+    Self.isInView(
+      appIsActive: NSApp.isActive, windowIsKey: project.workspace.window?.isKeyWindow == true,
+      rowIsSelected: project.selected?.sessionID == sessionID)
+  }
+
   private func post(title: String, body: String, item: ProjectSession, wantsAnswer: Bool) {
     guard let sessionID = item.sessionID else { return }
+    post(title: title, body: body, sessionID: sessionID, wantsAnswer: wantsAnswer)
+  }
+
+  private func post(title: String, body: String, sessionID: String, wantsAnswer: Bool) {
     if wantsAnswer { asking.insert(sessionID) }
     let center = UNUserNotificationCenter.current()
     let asked =
@@ -124,15 +224,24 @@ final class Attention: NSObject, UNUserNotificationCenterDelegate {
     }
   }
 
-  /// A click brings the session's window forward with its row selected.
+  /// A click brings the session's window forward with its row selected; one live elsewhere,
+  /// watched there.
   nonisolated func userNotificationCenter(
     _ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse
   ) async {
     guard let id = response.notification.request.content.userInfo["sessionID"] as? String
     else { return }
     await MainActor.run {
-      guard let (project, item) = OpenSessions.shared.locate(id) else { return }
-      project.select(item)
+      let project: Project
+      if let (owner, item) = OpenSessions.shared.locate(id) {
+        owner.select(item)
+        project = owner
+      } else if let entry = elsewhere()[id] {
+        entry.project.openElsewhere(entry.summary)
+        project = entry.project
+      } else {
+        return
+      }
       NSApp.activate()
       project.workspace.window?.makeKeyAndOrderFront(nil)
     }

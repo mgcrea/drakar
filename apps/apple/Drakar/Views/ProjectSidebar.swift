@@ -38,17 +38,7 @@ struct SessionListView: View {
   @FocusState private var isFocused: Bool
   private var monitor: SessionMonitor { .shared }
 
-  private var groups: ProjectGroups {
-    let folder = ProjectPath.normalize(project.folder.path(percentEncoded: false))
-    let others = OpenSessions.shared.folders.filter { $0 != folder }
-    let attached = Set(project.held.compactMap(\.sessionID))
-    let inOtherWindows = Set(
-      OpenSessions.shared.projects.values.filter { $0 !== project }
-        .flatMap { $0.held.compactMap(\.sessionID) })
-    return ProjectSessions.group(
-      monitor.summaries(under: folder), folder: folder, otherFolders: others,
-      attached: attached, inOtherWindows: inOtherWindows, checkout: monitor.checkout(of:))
-  }
+  private var groups: ProjectGroups { project.groups }
 
   var body: some View {
     let _ = (picks, settingsAccount)
@@ -104,7 +94,9 @@ struct SessionListView: View {
       if !groups.elsewhere.isEmpty {
         Section("Elsewhere") {
           ForEach(groups.elsewhere) { summary in
-            SummaryRow(summary: summary, host: monitor.host(of: summary), monitor: monitor)
+            SummaryRow(
+              summary: summary, host: monitor.host(of: summary),
+              urgency: project.urgency(of: summary), monitor: monitor)
               .pressableRow(isSelected: isWatched(summary)) { openElsewhere(summary) }
               .contextMenu { menu(for: summary, ended: false) }
               .accessibilityAddTraits(.isButton)
@@ -115,7 +107,7 @@ struct SessionListView: View {
       if !groups.ended.isEmpty {
         Section(isExpanded: $showsEnded) {
           ForEach(showsAllEnded ? groups.ended : Array(groups.ended.prefix(20))) { summary in
-            SummaryRow(summary: summary, host: nil, monitor: monitor)
+            SummaryRow(summary: summary, host: nil, urgency: nil, monitor: monitor)
               .pressableRow(isSelected: isWatched(summary)) { openEnded(summary) }
               .contextMenu { menu(for: summary, ended: true) }
               .accessibilityAddTraits(.isButton)
@@ -171,12 +163,7 @@ struct SessionListView: View {
   }
 
   private func openElsewhere(_ summary: SessionSummary) {
-    if let (owner, item) = OpenSessions.shared.locate(summary.sessionID) {
-      owner.select(item)
-      owner.workspace.window?.makeKeyAndOrderFront(nil)
-    } else if let target = ResumeTarget(summary) {
-      project.attach(target, watching: true, readOnly: true)
-    }
+    project.openElsewhere(summary)
   }
 
   /// Whether the selected row is watching `summary` here, so the list shows it selected.
@@ -241,6 +228,10 @@ struct SessionListView: View {
   /// A row of Elsewhere or Ended. Resuming one live elsewhere would interleave two writers:
   /// it only forks.
   @ViewBuilder private func menu(for summary: SessionSummary, ended: Bool) -> some View {
+    if !ended, [.question, .offer].contains(project.urgency(of: summary)) {
+      Button("Dismiss") { project.dismissAsk(summary) }
+      Divider()
+    }
     if ended, let target = ResumeTarget(summary) {
       Button("Resume in This Window") { project.attach(target) }
     }
@@ -352,6 +343,8 @@ struct SummaryRow: View {
   let summary: SessionSummary
   /// Where it is live, or nil for an ended one.
   let host: String?
+  /// How much it wants the person, from outside Drakar; nil for an ended one.
+  let urgency: Urgency?
   let monitor: SessionMonitor
 
   var body: some View {
@@ -378,6 +371,7 @@ struct SummaryRow: View {
       let state = RowState(item)
       return state == .elsewhere ? .idle : state
     }
+    if let urgency { return RowState(urgency) }
     return switch summary.live?.status {
     case "busy": summary.awaitsToolResult ? .runningTool : .working
     case "waiting": .waiting
@@ -389,9 +383,10 @@ struct SummaryRow: View {
     let when = (summary.live?.updatedAt ?? summary.modified)
       .formatted(.relative(presentation: .named))
     var parts = [when]
-    let waiting =
-      OpenSessions.shared.locate(summary.sessionID)?.1.waitingFor ?? summary.live?.waitingFor
-    if let waiting { parts.insert(waiting, at: 0) }
+    let wants =
+      OpenSessions.shared.locate(summary.sessionID)?.1.wants
+      ?? urgency?.wants(of: summary) ?? summary.live?.waitingFor
+    if let wants { parts.insert(wants, at: 0) }
     if let host { parts.append(host) }
     if summary.live.map({ IDEBridge.shared.connectedPIDs.contains($0.pid) }) == true {
       parts.append(String(localized: "connected"))
@@ -413,17 +408,22 @@ enum RowState {
   case working, runningTool, waiting, choosing, asked, offered, idle, notStarted, stopped, ended,
     elsewhere
 
+  /// What a session that wants the person shows.
+  init(_ urgency: Urgency) {
+    self =
+      switch urgency {
+      case .permission: .waiting
+      case .choice: .choosing
+      case .question: .asked
+      case .offer: .offered
+      }
+  }
+
   /// What an attached session is doing.
   init(_ item: ProjectSession) {
     let session = item.session
     if let urgency = item.urgency {
-      self =
-        switch urgency {
-        case .permission: .waiting
-        case .choice: .choosing
-        case .question: .asked
-        case .offer: .offered
-        }
+      self.init(urgency)
     } else if session.transcript.isRunning {
       self = .working
     } else if item.hasStopped {

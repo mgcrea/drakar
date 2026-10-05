@@ -1,3 +1,4 @@
+import AppKit
 import DrakarKit
 import Foundation
 import Observation
@@ -232,6 +233,9 @@ final class Project {
   let workspace: Workspace
   private(set) var sessions: [ProjectSession] = []
   var selectedID: ProjectSession.ID?
+  /// Per session live elsewhere, the message id of the ask dismissed, kept with the window's
+  /// own in `StoredProject.dismissedQuestions`.
+  private(set) var dismissedElsewhere: [String: String] = [:]
   /// Whether the shown session's composer takes the focus when it appears: not when the
   /// sidebar's arrow keys or a click there chose it, so the keys keep moving in the list.
   @ObservationIgnored private(set) var focusesComposer = true
@@ -260,6 +264,8 @@ final class Project {
       item.dismissedAsk = stored?.dismissedQuestions?[target.sessionID]
       sessions.append(item)
     }
+    let own = Set(sessions.compactMap(\.sessionID))
+    dismissedElsewhere = (stored?.dismissedQuestions ?? [:]).filter { !own.contains($0.key) }
     selectedID =
       sessions.first { $0.sessionID == stored?.selected }?.id ?? sessions.first?.id
     if let selected { load(selected) }
@@ -286,6 +292,64 @@ final class Project {
 
   func session(withID sessionID: String) -> ProjectSession? {
     sessions.first { $0.sessionID == sessionID }
+  }
+
+  /// The sessions below the window's own rows: live elsewhere, and ended.
+  var groups: ProjectGroups {
+    let monitor = SessionMonitor.shared
+    let folder = ProjectPath.normalize(self.folder.path(percentEncoded: false))
+    let others = OpenSessions.shared.folders.filter { $0 != folder }
+    let attached = Set(held.compactMap(\.sessionID))
+    let inOtherWindows = Set(
+      OpenSessions.shared.projects.values.filter { $0 !== self }
+        .flatMap { $0.held.compactMap(\.sessionID) })
+    return ProjectSessions.group(
+      monitor.summaries(under: folder), folder: folder, otherFolders: others,
+      attached: attached, inOtherWindows: inOtherWindows, checkout: monitor.checkout(of:))
+  }
+
+  /// How much a session listed elsewhere wants the person.
+  func urgency(of summary: SessionSummary) -> Urgency? {
+    Urgency.of(
+      summary, recognisesAsks: AttentionChoice.recognisesAsks,
+      dismissed: dismissedElsewhere[summary.sessionID])
+  }
+
+  /// Quiets the question or offer a session elsewhere ended on, until it asks another.
+  func dismissAsk(_ summary: SessionSummary) {
+    dismissedElsewhere[summary.sessionID] = summary.closingMessageID
+    Attention.shared.refresh()
+  }
+
+  /// A session listed elsewhere, shown: in the Drakar window that holds it, or watched here.
+  func openElsewhere(_ summary: SessionSummary) {
+    if let (owner, item) = OpenSessions.shared.locate(summary.sessionID) {
+      owner.select(item)
+      owner.workspace.window?.makeKeyAndOrderFront(nil)
+    } else if let target = ResumeTarget(summary) {
+      attach(target, watching: true, readOnly: true)
+    }
+  }
+
+  /// The session elsewhere the selected row watches, while it is listed there.
+  private var watchedElsewhere: SessionSummary? {
+    guard let selected, selected.isWatching, let id = selected.sessionID else { return nil }
+    return groups.elsewhere.first { $0.sessionID == id }
+  }
+
+  /// Whether the shown session ended on a question or an offer Dismiss can quiet.
+  var canDismissSelected: Bool {
+    if selected?.closingAsk != nil { return true }
+    guard let summary = watchedElsewhere else { return false }
+    return [.question, .offer].contains(urgency(of: summary))
+  }
+
+  func dismissSelected() {
+    if let selected, selected.closingAsk != nil {
+      dismissAsk(selected)
+    } else if let summary = watchedElsewhere {
+      dismissAsk(summary)
+    }
   }
 
   /// A new session in the project's folder, on top and shown. No process until it is
@@ -444,15 +508,41 @@ final class Project {
     Attention.shared.refresh()
   }
 
-  /// The next row after the selected one that wants the person: the most urgent level that
-  /// counts first, then unread, wrapping. Never the selected row.
-  func nextNeedingAttention() -> ProjectSession? {
-    let start = sessions.firstIndex { $0.id == selectedID } ?? -1
-    let ordered = sessions[(start + 1)...] + sessions[..<max(start, 0)]
-    for level in Urgency.allCases.reversed() where AttentionChoice.isOn(level, .counts) {
-      if let item = ordered.first(where: { $0.urgency == level }) { return item }
+  /// A row ⌥⌘↓ can go to: one of the window's own, or a session listed elsewhere.
+  enum Stop {
+    case row(ProjectSession)
+    case elsewhere(SessionSummary)
+
+    var item: ProjectSession? {
+      if case .row(let item) = self { item } else { nil }
     }
-    return ordered.first { $0.isUnread }
+  }
+
+  /// The next row after the selected one that wants the person, in the list's order (the
+  /// window's own, then those elsewhere): the most urgent level that counts first, then
+  /// unread, wrapping. Never the selected row.
+  func nextNeedingAttention() -> Stop? {
+    let watched = selected.flatMap { $0.isWatching ? $0.sessionID : nil }
+    var rows: [(stop: Stop, level: Urgency?, isUnread: Bool, isSelected: Bool)] = held.map {
+      (.row($0), $0.urgency, $0.isUnread, $0.id == selectedID)
+    }
+    for summary in groups.elsewhere where summary.live != nil {
+      rows.append(
+        (.elsewhere(summary), urgency(of: summary), false, summary.sessionID == watched))
+    }
+    let start = rows.firstIndex { $0.isSelected } ?? -1
+    let ordered = rows[(start + 1)...] + rows[..<max(start, 0)]
+    for level in Urgency.allCases.reversed() where AttentionChoice.isOn(level, .counts) {
+      if let row = ordered.first(where: { $0.level == level }) { return row.stop }
+    }
+    return ordered.first { $0.isUnread }?.stop
+  }
+
+  func show(_ stop: Stop) {
+    switch stop {
+    case .row(let item): select(item)
+    case .elsewhere(let summary): openElsewhere(summary)
+    }
   }
 
   /// Quiets the row's question or offer until it asks another.
@@ -481,7 +571,9 @@ final class Project {
 
   /// Rows that want the person at a level that counts: the group's header.
   var waitingCount: Int {
-    sessions.count { item in item.urgency.map { AttentionChoice.isOn($0, .counts) } ?? false }
+    let counts = { AttentionChoice.isOn($0, .counts) }
+    return sessions.count { $0.urgency.map(counts) ?? false }
+      + groups.elsewhere.count { urgency(of: $0).map(counts) ?? false }
   }
 
   /// Sessions mid-turn: what closing the window would interrupt.
@@ -491,10 +583,13 @@ final class Project {
   var held: [ProjectSession] { sessions.filter { !$0.isWatching } }
 
   var stored: StoredProject {
-    let dismissed = held.compactMap { item -> (String, String)? in
-      guard let id = item.sessionID, let message = item.dismissedAsk else { return nil }
-      return (id, message)
-    }
+    // A session elsewhere that ended will not ask again from that message.
+    let ended = Set(groups.ended.map(\.sessionID))
+    let dismissed =
+      held.compactMap { item -> (String, String)? in
+        guard let id = item.sessionID, let message = item.dismissedAsk else { return nil }
+        return (id, message)
+      } + dismissedElsewhere.filter { !ended.contains($0.key) }.map { ($0.key, $0.value) }
     return StoredProject(
       sessions: held.compactMap(\.session.savedTarget),
       selected: selected.flatMap { $0.isWatching ? nil : $0.session.savedTarget?.sessionID },

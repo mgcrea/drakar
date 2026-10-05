@@ -22,11 +22,11 @@ struct AttentionTests {
     let b = project.newSession()
     let a = project.newSession()  // rows: a, b, c; a selected
     c.isUnread = true
-    #expect(project.nextNeedingAttention()?.id == c.id)
+    #expect(project.nextNeedingAttention()?.item?.id == c.id)
     b.isUnread = true
-    #expect(project.nextNeedingAttention()?.id == b.id)
+    #expect(project.nextNeedingAttention()?.item?.id == b.id)
     project.select(b)
-    #expect(project.nextNeedingAttention()?.id == c.id)
+    #expect(project.nextNeedingAttention()?.item?.id == c.id)
     c.isUnread = false
     #expect(project.nextNeedingAttention() == nil)
     _ = a
@@ -214,7 +214,7 @@ struct UrgencyTests {
     let unread = project.newSession()
     unread.isUnread = true
     _ = project.newSession()  // selected; rows: third, unread, item
-    #expect(project.nextNeedingAttention()?.id == item.id)
+    #expect(project.nextNeedingAttention()?.item?.id == item.id)
   }
 
   /// A restored row asks from its transcript's tail, and a dismissal survives the relaunch
@@ -352,4 +352,82 @@ struct UrgencyTests {
 /// Set from an observation callback, which may not capture a variable.
 private final class Flag: @unchecked Sendable {
   var value = false
+}
+
+@MainActor
+@Suite("What a session elsewhere wants")
+struct ElsewhereUrgencyTests {
+  private func summary(
+    status: String?, waitingFor: String? = nil, pendingQuestion: String? = nil,
+    ask: ClosingAsk? = nil, live: Bool = true
+  ) -> SessionSummary {
+    var summary = SessionSummary(
+      sessionID: "s1", account: ClaudeAccount(directory: URL(filePath: "/a"), isDefault: true),
+      file: URL(filePath: "/a/projects/p/s1.jsonl"), modified: .now, size: 1)
+    if live {
+      summary.live = LiveSession(pid: 1, sessionID: "s1", status: status, waitingFor: waitingFor)
+    }
+    summary.pendingQuestion = pendingQuestion
+    summary.closingAsk = ask
+    summary.closingMessageID = ask.map { _ in "m1" }
+    return summary
+  }
+
+  private let question = ClosingAsk(kind: .question, text: "Want me to commit it?")
+
+  @Test func waitingIsAPermissionOrAChoice() {
+    let permission = summary(status: "waiting", waitingFor: "permission prompt")
+    #expect(Urgency.of(permission, recognisesAsks: true, dismissed: nil) == .permission)
+    #expect(Urgency.permission.wants(of: permission) == "permission prompt")
+    let choice = summary(status: "waiting", pendingQuestion: "Which filename?")
+    #expect(Urgency.of(choice, recognisesAsks: true, dismissed: nil) == .choice)
+    #expect(Urgency.choice.wants(of: choice) == "Which filename?")
+  }
+
+  /// A turn that ended on a question asks once the session is idle, unless that message
+  /// was dismissed or recognition is off.
+  @Test func anIdleSessionAsksWhatItsTurnEndedOn() {
+    let asked = summary(status: "idle", ask: question)
+    #expect(Urgency.of(asked, recognisesAsks: true, dismissed: nil) == .question)
+    #expect(Urgency.question.wants(of: asked) == "Want me to commit it?")
+    #expect(Urgency.of(asked, recognisesAsks: true, dismissed: "m1") == nil)
+    #expect(Urgency.of(asked, recognisesAsks: true, dismissed: "m0") == .question)
+    #expect(Urgency.of(asked, recognisesAsks: false, dismissed: nil) == nil)
+    let offered = summary(status: "idle", ask: ClosingAsk(kind: .offer, text: "Say the word."))
+    #expect(Urgency.of(offered, recognisesAsks: true, dismissed: nil) == .offer)
+  }
+
+  /// Busy, ended, or one of Drakar's own (no registry entry): nothing to want.
+  @Test func busyOrEndedWantsNothing() {
+    #expect(
+      Urgency.of(summary(status: "busy", ask: question), recognisesAsks: true, dismissed: nil)
+        == nil)
+    #expect(
+      Urgency.of(
+        summary(status: nil, ask: question, live: false), recognisesAsks: true, dismissed: nil)
+        == nil)
+  }
+
+  /// A new ask is news; the same ask seen again is not.
+  @Test func eachAskIsItsOwnNews() {
+    let asked = summary(status: "idle", ask: question)
+    #expect(Attention.newsKey(asked, level: nil) == "")
+    #expect(Attention.newsKey(asked, level: .question) == "question#m1")
+    var next = asked
+    next.closingMessageID = "m2"
+    #expect(Attention.newsKey(next, level: .question) != Attention.newsKey(asked, level: .question))
+  }
+
+  /// A dismissal of a session elsewhere is kept with the window's, and comes back with it.
+  @Test func aDismissalElsewhereSurvivesTheRelaunch() throws {
+    let folder = FileManager.default.temporaryDirectory.appending(
+      path: "drakar-elsewhere-\(UUID().uuidString)", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    let project = Project(folder: folder)
+    project.dismissAsk(summary(status: "idle", ask: question))
+    #expect(project.dismissedElsewhere == ["s1": "m1"])
+    #expect(project.stored.dismissedQuestions == ["s1": "m1"])
+    let restored = Project(folder: folder, restoring: project.stored)
+    #expect(restored.dismissedElsewhere == ["s1": "m1"])
+  }
 }
