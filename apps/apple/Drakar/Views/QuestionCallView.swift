@@ -1,0 +1,106 @@
+import DrakarKit
+import SwiftUI
+
+/// An `AskUserQuestion` in the transcript, as the extension draws it: what became of it, and
+/// each question with the options it offered, the picked ones marked and the rest faded.
+/// Open from the start, since what was answered is the point of it.
+struct QuestionCallView: View {
+  let call: Transcript.ToolCall
+  @State private var isExpanded = true
+
+  private var questions: [UserQuestion] { UserQuestion.list(call.input) }
+  private var outcome: Transcript.QuestionOutcome { call.questionOutcome ?? .other }
+
+  private var answers: [String: String]? {
+    if case .answered(let answers) = outcome, !answers.isEmpty { return answers }
+    return nil
+  }
+
+  var body: some View {
+    DisclosureGroup(isExpanded: $isExpanded) {
+      VStack(alignment: .leading, spacing: 12) {
+        if case .declined(let reason?) = outcome {
+          Text("Reason: \(reason)").font(.callout).textSelection(.enabled)
+        }
+        ForEach(questions) { question in
+          answered(question)
+        }
+        // An answer that cannot be read back as options, or a result of another kind.
+        if let result = call.result, answers == nil, showsResult {
+          CodeBlock(text: result.content)
+            .foregroundStyle(result.isError ? .red : .primary)
+        }
+      }
+      .padding(.top, 6)
+    } label: {
+      HStack(spacing: 8) {
+        statusIcon
+        Text(questions.count == 1 ? "Question" : "Questions").fontWeight(.semibold)
+        Text(status).font(.callout).foregroundStyle(.secondary)
+      }
+    }
+    .padding(10)
+    .background(.background.secondary, in: RoundedRectangle(cornerRadius: 8))
+    .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(.separator))
+    .accessibilityIdentifier("tool.\(call.id)")
+  }
+
+  private func answered(_ question: UserQuestion) -> some View {
+    let reading = answers?[question.question].map(question.reading)
+    return VStack(alignment: .leading, spacing: 2) {
+      Text(question.question)
+        .fontWeight(.semibold)
+        .fixedSize(horizontal: false, vertical: true)
+        .textSelection(.enabled)
+        .padding(.bottom, 4)
+      ForEach(question.options, id: \.label) { option in
+        let isPicked = reading?.picked.contains(option.label) == true
+        OptionRow(
+          label: option.label, description: option.description,
+          multiSelect: question.multiSelect, isSelected: isPicked,
+          isDimmed: reading != nil && !isPicked)
+      }
+      if let typed = reading?.other {
+        OptionRow(
+          label: String(localized: "Other"), description: typed,
+          multiSelect: question.multiSelect, isSelected: true)
+      }
+    }
+  }
+
+  /// The result's own text is worth showing only when nothing above says it better.
+  private var showsResult: Bool {
+    switch outcome {
+    case .answered, .other: true
+    case .waiting, .declined, .unanswered, .sessionEnded: false
+    }
+  }
+
+  private var status: String {
+    let state =
+      switch outcome {
+      case .waiting: String(localized: "Waiting for your answer")
+      case .answered: String(localized: "Answered")
+      case .declined: String(localized: "Declined")
+      case .unanswered: String(localized: "No answer")
+      case .sessionEnded: String(localized: "Session ended before an answer")
+      case .other:
+        call.result?.isError == true ? String(localized: "Failed") : String(localized: "Done")
+      }
+    return questions.count > 1 ? "\(state) · \(questions.count) questions" : state
+  }
+
+  @ViewBuilder private var statusIcon: some View {
+    switch outcome {
+    case .waiting: Image(systemName: "questionmark.bubble").foregroundStyle(.tint)
+    case .answered: Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+    case .declined, .unanswered, .sessionEnded:
+      Image(systemName: "minus.circle.fill").foregroundStyle(.secondary)
+    case .other:
+      Image(
+        systemName: call.result?.isError == true ? "xmark.circle.fill" : "checkmark.circle.fill"
+      )
+      .foregroundStyle(call.result?.isError == true ? .red : .green)
+    }
+  }
+}

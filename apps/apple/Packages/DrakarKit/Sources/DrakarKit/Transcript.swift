@@ -43,6 +43,9 @@ public struct Transcript: Sendable, Equatable {
     public var name: String
     public var input: JSONValue
     public var result: ToolResult?
+    /// On an `AskUserQuestion` its process never got the answer to, the answers a later
+    /// prompt gave it (`UserQuestion.earlierAnswerPrompt`).
+    public var earlierAnswers: [String: String]?
 
     public init(id: String, name: String, input: JSONValue, result: ToolResult? = nil) {
       self.id = id
@@ -55,11 +58,29 @@ public struct Transcript: Sendable, Equatable {
   public struct ToolResult: Sendable, Equatable {
     public var content: String
     public var isError: Bool
+    /// An answered `AskUserQuestion`'s answers, by question, from the structured result.
+    public var answers: [String: String]?
 
-    public init(content: String, isError: Bool) {
+    public init(content: String, isError: Bool, answers: [String: String]? = nil) {
       self.content = content
       self.isError = isError
+      self.answers = answers
     }
+  }
+
+  /// What became of an `AskUserQuestion` call, read from its result as the extension reads it.
+  public enum QuestionOutcome: Sendable, Equatable {
+    /// No result yet: asked now, or asked by a process that ended before an answer.
+    case waiting
+    /// By question; empty when the result says answered but names nothing readable.
+    case answered([String: String])
+    case declined(reason: String?)
+    /// Allowed without answers, or interrupted.
+    case unanswered
+    /// The process went away while it asked.
+    case sessionEnded
+    /// A result none of the above, such as an input the tool refused.
+    case other
   }
 
   /// How the newest turn ended.
@@ -136,11 +157,43 @@ public struct Transcript: Sendable, Equatable {
 
   public init() {}
 
+  /// The `AskUserQuestion` the conversation ends on, still asking: its process ended before
+  /// an answer, and nothing came after it. Answered by a prompt from then on.
+  public var unansweredQuestion: ToolCall? {
+    unansweredQuestionIndex.flatMap { index in
+      if case .tool(let call) = entries[index].kind { return call }
+      return nil
+    }
+  }
+
+  private var unansweredQuestionIndex: Int? {
+    for index in entries.indices.reversed() where entries[index].parentToolUseID == nil {
+      switch entries[index].kind {
+      case .thinking, .notice: continue
+      case .tool(let call):
+        guard call.name == UserQuestion.toolName else { return nil }
+        switch call.questionOutcome {
+        case .waiting?, .sessionEnded?: return index
+        default: return nil
+        }
+      case .prompt, .text: return nil
+      }
+    }
+    return nil
+  }
+
   /// `running: false` for a prompt replayed from history, whose turn ended long ago.
   /// `context` labels what the editor attached (`EditorSelection.label`, several
   /// separated by commas).
   public mutating func addPrompt(_ text: String, context: String? = nil, running: Bool = true) {
     revision += 1
+    if let index = unansweredQuestionIndex, case .tool(var call) = entries[index].kind,
+      let answers = UserQuestion.earlierAnswers(
+        in: text, questions: UserQuestion.list(call.input).map(\.question))
+    {
+      call.earlierAnswers = answers
+      entries[index].kind = .tool(call)
+    }
     promptCount += 1
     let id = "prompt#\(promptCount)"
     upsert(Entry(id: id, kind: .prompt(text), context: context))
@@ -204,11 +257,17 @@ public struct Transcript: Sendable, Equatable {
         case .context, .hidden: break
         }
       }
-      for case .toolResult(let id, let content, let isError) in user.content {
+      let results = user.content.filter {
+        if case .toolResult = $0 { return true }
+        return false
+      }
+      for case .toolResult(let id, let content, let isError) in results {
         guard let index = indexByID[id], case .tool(var call) = entries[index].kind else {
           continue
         }
-        call.result = ToolResult(content: content, isError: isError)
+        call.result = ToolResult(
+          content: content, isError: isError,
+          answers: results.count == 1 ? user.questionAnswers : nil)
         entries[index].kind = .tool(call)
       }
     case .controlRequest(let request):
@@ -297,4 +356,40 @@ public struct Transcript: Sendable, Equatable {
       entries.append(entry)
     }
   }
+}
+
+extension Transcript.ToolCall {
+  /// What became of it, for an `AskUserQuestion`; nil for any other tool.
+  public var questionOutcome: Transcript.QuestionOutcome? {
+    guard name == UserQuestion.toolName else { return nil }
+    if let earlierAnswers { return .answered(earlierAnswers) }
+    guard let result else { return .waiting }
+    let text = result.content
+    if result.isError {
+      if Self.sessionEndedPrefixes.contains(where: text.hasPrefix) { return .sessionEnded }
+      if text.hasPrefix("[Request interrupted by user") { return .unanswered }
+      if text.hasPrefix(UserQuestion.declinedPrefix) {
+        let reason = text.range(of: UserQuestion.declinedReasonMarker).map {
+          String(text[$0.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return .declined(reason: reason?.isEmpty == false ? reason : nil)
+      }
+      // Drakar's own Skip said so before it sent the extension's words.
+      if text == "The user chose not to answer." { return .declined(reason: nil) }
+      return .other
+    }
+    if text == UserQuestion.unansweredMessage { return .unanswered }
+    guard UserQuestion.answeredPrefixes.contains(where: text.hasPrefix) else { return .other }
+    return .answered(
+      result.answers
+        ?? UserQuestion.answers(
+          inResult: text, questions: UserQuestion.list(input).map(\.question)) ?? [:])
+  }
+
+  /// A result written for a call whose process went away while it asked: the stream closed
+  /// under the permission request, or a resume found the call without a result.
+  static let sessionEndedPrefixes = [
+    "Tool permission request failed", "[Tool call interrupted",
+    "[Tool call result not in this copy",
+  ]
 }

@@ -47,6 +47,8 @@ final class ClaudeSession {
   /// Its files are moving to another account (`SessionMoves`): nothing is sent and no
   /// process starts, since one would resume the session where it no longer is.
   var isMoving = false
+  /// The earlier question the person closed without answering, so it is not offered again.
+  private(set) var dismissedQuestionID: String?
   /// Stands in for the located binary, in tests.
   @ObservationIgnored var executableOverride: URL?
   /// The accounts a new session's transcript is looked for in; the discovered ones, or a
@@ -258,6 +260,30 @@ final class ClaudeSession {
   func answer(_ pending: Transcript.PendingPermission, _ decision: PermissionDecision) {
     write(.permission(requestID: pending.requestID, decision))
     notingPermissions { transcript.resolvePermission(requestID: pending.requestID) }
+  }
+
+  /// The question the conversation ends on, which its process ended before it was answered
+  /// (`Transcript.unansweredQuestion`): offered again in place of the composer, as the
+  /// extension offers it, while nothing runs or waits and until it is dismissed.
+  var earlierQuestion: Transcript.ToolCall? {
+    guard canSend, transcript.pendingPermissions.isEmpty,
+      let call = transcript.unansweredQuestion, call.id != dismissedQuestionID
+    else { return nil }
+    return call
+  }
+
+  /// Answers `earlierQuestion` with a prompt, the process that asked being gone: the
+  /// resumed one reads it as the answer, and the transcript marks the question answered.
+  func answerEarlierQuestion(_ answers: [String: String]) {
+    guard let call = earlierQuestion else { return }
+    let ordered = UserQuestion.list(call.input).compactMap { question in
+      answers[question.question].map { (question: question.question, answer: $0) }
+    }
+    send(UserQuestion.earlierAnswerPrompt(ordered))
+  }
+
+  func dismissEarlierQuestion() {
+    dismissedQuestionID = earlierQuestion?.id
   }
 
   func interrupt() {

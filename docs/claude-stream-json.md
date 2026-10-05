@@ -112,6 +112,31 @@ more:
 - **Closing stdin while the request is pending** fails the call with
   `Tool permission request failed: AbortError: Stream closed`.
 
+What the VS Code extension (2.1.289) does with it, read from its webview bundle on
+2026-10-05, and what Drakar copies:
+
+- **An option may carry `preview`**, text shown beside the options while it is pointed at:
+  Markdown when it holds a fence, monospaced otherwise. 4 of 10 calls in real transcripts
+  had one.
+- **The result says what was answered twice.** The `tool_result` text is
+  `Your questions have been answered: "<q>"="<a>", "<q2>"="<a2>". You can now continue…`
+  (newer CLIs: `The user answered: … . Read the answers carefully…`), and the user line
+  beside it carries `tool_use_result` (stream) or `toolUseResult` (transcript) as
+  `{questions, answers}`. The structured one is read first, the text as a fallback. A
+  multi-select answer reads back as its labels by the longest that start it, each followed
+  by a comma and a space, the rest typed.
+- **Skip is the standard rejection** (`The user doesn't want to proceed with this tool use.
+  … STOP what you are doing and wait for the user to tell you how to proceed.`), not a
+  bespoke message, so the model waits instead of guessing. Other endings: `The user did not
+  answer the questions.` (a plain `allow`), `[Request interrupted by user for tool use]`,
+  and, for a process that went away, `Tool permission request failed…` or `[Tool call
+  interrupted…`.
+- **A question whose process ended before an answer is offered again** when the session is
+  reopened (not while another process has it), and the answer goes as a prompt:
+  `Answering your earlier question "<q>": <a>`, or for several,
+  `Answering your earlier questions:` then a `- "<q>": <a>` line each. The extension reads
+  such a prompt back to mark the question answered, and so does Drakar.
+
 ## Interrupting (verified 2026-10-03)
 
 ```jsonc

@@ -173,6 +173,52 @@ struct ClaudeSessionTests {
     #expect(lines.last?.contains("hello") == true)
   }
 
+  /// A session reopened on a question its process never got the answer to.
+  private func sessionAskingEarlier(_ id: String) throws -> ClaudeSession {
+    let file = folder.appending(path: "\(id).jsonl")
+    try Data(
+      #"{"type":"assistant","message":{"id":"m","content":[{"type":"tool_use","id":"t","name":"AskUserQuestion","input":{"questions":[{"question":"Which file?","options":[{"label":"a.txt"},{"label":"b.txt"}],"multiSelect":false}]}}],"stop_reason":"tool_use"}}"#
+        .appending("\n").utf8
+    ).write(to: file)
+    let target = ResumeTarget(
+      sessionID: id, cwd: folder.path(percentEncoded: false),
+      file: file.path(percentEncoded: false),
+      accountDirectory: folder.path(percentEncoded: false), accountIsDefault: false)
+    return ClaudeSession(folder: folder, resuming: target)
+  }
+
+  /// The question is offered again, as the extension offers it, and answered by a prompt the
+  /// resumed process reads as the answer; the question then reads as answered.
+  @Test func anEarlierQuestionIsAnsweredByAPrompt() async throws {
+    let session = try sessionAskingEarlier("s3")
+    session.executableOverride = fake
+    await session.loadHistory()
+    #expect(session.earlierQuestion?.id == "t")
+    session.answerEarlierQuestion(["Which file?": "b.txt"])
+    let lines = try await lines(count: 2)
+    session.stop()
+    #expect(
+      lines.last?.contains(#"Answering your earlier question \"Which file?\": b.txt"#) == true)
+    #expect(session.earlierQuestion == nil)
+    #expect(session.transcript.unansweredQuestion == nil)
+  }
+
+  @Test func aDismissedEarlierQuestionIsNotOfferedAgain() async throws {
+    let session = try sessionAskingEarlier("s4")
+    await session.loadHistory()
+    session.dismissEarlierQuestion()
+    #expect(session.earlierQuestion == nil)
+    #expect(session.transcript.unansweredQuestion?.id == "t")
+  }
+
+  /// Another process has the session: the question is its to answer.
+  @Test func aReadOnlySessionOffersNoEarlierQuestion() async throws {
+    let session = try sessionAskingEarlier("s5")
+    await session.loadHistory()
+    session.isReadOnly = true
+    #expect(session.earlierQuestion == nil)
+  }
+
   /// An ended session starts again on the next prompt.
   @Test func anEndedSessionStartsAgain() async throws {
     let session = ClaudeSession(folder: folder)

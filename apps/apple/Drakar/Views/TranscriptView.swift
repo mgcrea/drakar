@@ -254,6 +254,8 @@ struct EntryView: View, Equatable {
         MarkdownView(text: text)
       case .thinking(let text):
         ThinkingView(text: text)
+      case .tool(let call) where call.name == UserQuestion.toolName:
+        QuestionCallView(call: call)
       case .tool(let call):
         ToolCallView(call: call)
       case .notice(let text):

@@ -21,6 +21,27 @@ struct SessionView: View {
       Divider()
       if session.isReadOnly {
         ReadOnlyBanner(host: host) { project.fork(item) }
+      } else if let choice = pendingChoice {
+        QuestionPanel(
+          questions: UserQuestion.list(choice.request.input),
+          answer: { answers in
+            session.answer(
+              choice,
+              .allow(updatedInput: UserQuestion.answering(choice.request.input, with: answers)))
+          },
+          skip: { session.answer(choice, .deny(message: UserQuestion.declinedMessage)) }
+        )
+        .id(choice.id)
+      } else if let earlier = session.earlierQuestion {
+        QuestionPanel(
+          questions: UserQuestion.list(earlier.input),
+          answer: { answers in
+            project.takeOver(item)
+            session.answerEarlierQuestion(answers)
+          },
+          skip: session.dismissEarlierQuestion
+        )
+        .id(earlier.id)
       } else {
         ComposerView(
           text: $item.draft, canSend: session.canSend, isRunning: session.transcript.isRunning,
@@ -42,11 +63,7 @@ struct SessionView: View {
         session: session, windowAccount: AccountStore.shared.windowAccount(for: project.folder))
     }
     .sheet(item: pendingPermission) { pending in
-      if pending.request.isChoice {
-        ChoiceSheet(pending: pending) { decision in session.answer(pending, decision) }
-      } else {
-        PermissionSheet(pending: pending) { decision in session.answer(pending, decision) }
-      }
+      PermissionSheet(pending: pending) { decision in session.answer(pending, decision) }
     }
     .environment(\.sessionFolder, session.folder)
     .environment(\.openInEditor, OpenInEditorAction(workspace: workspace))
@@ -60,10 +77,18 @@ struct SessionView: View {
     return SessionMonitor.shared.host(of: summary, excluding: project)
   }
 
-  /// The first request waiting; answering it shows the next. Never dismissed except by
-  /// answering, because a request left unanswered stalls the turn forever.
+  /// The first request waiting for a permission; answering it shows the next. Never
+  /// dismissed except by answering, because a request left unanswered stalls the turn
+  /// forever. A question is answered in `QuestionPanel` instead, below the transcript.
   private var pendingPermission: Binding<Transcript.PendingPermission?> {
-    Binding(get: { session.transcript.pendingPermissions.first }, set: { _ in })
+    Binding(
+      get: { session.transcript.pendingPermissions.first { !$0.request.isChoice } },
+      set: { _ in })
+  }
+
+  /// The first `AskUserQuestion` waiting, answered in place of the composer.
+  private var pendingChoice: Transcript.PendingPermission? {
+    session.transcript.pendingPermissions.first { $0.request.isChoice }
   }
 
   private var problem: String? {

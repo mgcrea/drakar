@@ -125,11 +125,19 @@ public struct AssistantMessage: Sendable, Equatable {
 public struct UserMessage: Sendable, Equatable {
   public var content: [ContentBlock]
   public var parentToolUseID: String?
+  /// The `answers` of the structured result beside a lone tool result, which only
+  /// `AskUserQuestion`'s has: `tool_use_result` on the stream, `toolUseResult` in a
+  /// transcript. Kept alone, since a `Read`'s holds the whole file.
+  public var questionAnswers: [String: String]?
 
   init?(_ json: JSONValue) {
     guard let message = json["message"] else { return nil }
     content = ContentBlock.list(message["content"])
     parentToolUseID = json["parent_tool_use_id"]?.stringValue
+    if case .object(let answers)? = (json["tool_use_result"] ?? json["toolUseResult"])?["answers"] {
+      let strings = answers.compactMapValues(\.stringValue).filter { !$0.value.isEmpty }
+      questionAnswers = strings.isEmpty ? nil : strings
+    }
   }
 }
 
