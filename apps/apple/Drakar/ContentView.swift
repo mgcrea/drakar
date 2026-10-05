@@ -376,8 +376,10 @@ private struct WindowLevel: NSViewRepresentable {
   /// The scene's action, handed over by the first window to appear: menus and rows open
   /// windows through it.
   static var openWindow: OpenWindowAction?
-  /// The window the next one to appear joins as a tab.
+  /// The window the one being opened joins as a tab.
   private static weak var tabHost: NSWindow?
+  /// The window `openWindow` built for `tabHost`, handed over by `adopt`.
+  private static weak var opened: NSWindow?
 
   /// A window for `route`, as a tab of the key window when `asTab`. A project already
   /// open comes forward instead: one window per folder.
@@ -391,12 +393,21 @@ private struct WindowLevel: NSViewRepresentable {
     }
     tabHost = asTab ? NSApp.keyWindow : nil
     openWindow?(value: route)
+    // Joined only now: SwiftUI sizes the new window and cascades it from the key window
+    // after its content is in it, still inside `openWindow`, and a window already in the
+    // group takes the whole group to that size and place.
+    if let host = tabHost, let window = opened { join(window, to: host) }
+    tabHost = nil
+    opened = nil
   }
 
-  /// A Drakar window appeared: it joins the tab group it was opened for.
+  /// A Drakar window appeared: when `open` is building it as a tab, it is the one to join.
   static func adopt(_ window: NSWindow) {
-    guard let host = tabHost, host !== window else { return }
-    tabHost = nil
+    guard tabHost != nil, tabHost !== window else { return }
+    opened = window
+  }
+
+  private static func join(_ window: NSWindow, to host: NSWindow) {
     if host.tabbedWindows?.contains(window) != true {
       // A tab group shows each tab at its own frame: a new window's default size would
       // resize the window the moment its tab is selected.
