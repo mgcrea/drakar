@@ -22,7 +22,8 @@ struct InspectorView: View {
         .accessibilityIdentifier("inspector.filter")
       Divider()
       VerticalSplit(
-        fraction: $fraction, collapsesTop: skillsCollapsed, collapsesBottom: serversCollapsed
+        fraction: $fraction, collapsesTop: skillsCollapsed, collapsesBottom: serversCollapsed,
+        stacksFolded: true
       ) {
         SkillsPane(project: project, filter: filter, isCollapsed: $skillsCollapsed)
       } bottom: {
