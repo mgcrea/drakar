@@ -12,10 +12,6 @@ struct ContentView: View {
   @Environment(\.appearsActive) private var appearsActive
   @Environment(\.dismiss) private var dismiss
   @Environment(\.openWindow) private var openWindow
-  /// The sidebar's width, kept per window. Drakar sets it and draws the edge it is dragged
-  /// by: the split view's own edge is a couple of points to aim at.
-  @SceneStorage("drakar.sidebarWidth") private var sidebarWidth = 240.0
-  @State private var sidebarDragStart: Double?
   /// The editor's share of the window beside the session, kept per window.
   @SceneStorage("drakar.editorFraction") private var editorFraction = 0.5
   /// Whether this window floats above other apps' windows, kept per window.
@@ -31,19 +27,9 @@ struct ContentView: View {
         let workspace = project.workspace
         NavigationSplitView {
           ProjectSidebar(project: project)
-            .navigationSplitViewColumnWidth(sidebarWidth)
-            .overlay(alignment: .trailing) {
-              ResizeHandle(axis: .horizontal) { travel in
-                guard let travel else {
-                  sidebarDragStart = nil
-                  return
-                }
-                let start = sidebarDragStart ?? sidebarWidth
-                sidebarDragStart = start
-                sidebarWidth = min(max(start + travel, 200), 480)
-              }
-              .offset(x: ResizeHandle.thickness / 2)
-            }
+            .navigationSplitViewColumnWidth(min: 200, ideal: 240)
+            // The split view's own edge is half a point to aim at.
+            .background(SidebarSash())
         } detail: {
           SplitPanes(fraction: $editorFraction, showsLeading: !workspace.documents.isEmpty) {
             EditorView(workspace: workspace)
