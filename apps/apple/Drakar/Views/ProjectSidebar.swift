@@ -91,12 +91,10 @@ struct SessionListView: View {
             item: item, isSelected: item.id == project.selectedID,
             windowAccount: AccountStore.shared.windowAccount(for: project.folder)
           )
-          .contentShape(Rectangle())
-          .onTapGesture {
+          .sessionRow(isSelected: item.id == project.selectedID) {
             project.select(item, focusingComposer: false)
             isFocused = true
           }
-          .selectionBorder(item.id == project.selectedID)
           .contextMenu { menu(for: item) }
           .accessibilityIdentifier("sessions.attached.\(item.sessionID ?? item.id.uuidString)")
         }
@@ -106,10 +104,8 @@ struct SessionListView: View {
         Section("Elsewhere") {
           ForEach(groups.elsewhere) { summary in
             SummaryRow(summary: summary, host: monitor.host(of: summary), monitor: monitor)
-              .contentShape(Rectangle())
-              .onTapGesture { openElsewhere(summary) }
-              .selectionBorder(isWatched(summary))
-              .contextMenu { moveMenu(for: summary, host: monitor.host(of: summary)) }
+              .sessionRow(isSelected: isWatched(summary)) { openElsewhere(summary) }
+              .contextMenu { menu(for: summary, ended: false) }
               .accessibilityAddTraits(.isButton)
               .accessibilityIdentifier("sessions.elsewhere.\(summary.sessionID)")
           }
@@ -119,10 +115,8 @@ struct SessionListView: View {
         Section(isExpanded: $showsEnded) {
           ForEach(showsAllEnded ? groups.ended : Array(groups.ended.prefix(20))) { summary in
             SummaryRow(summary: summary, host: nil, monitor: monitor)
-              .contentShape(Rectangle())
-              .selectionBorder(isWatched(summary))
-              .onTapGesture { openEnded(summary) }
-              .contextMenu { moveMenu(for: summary, host: nil) }
+              .sessionRow(isSelected: isWatched(summary)) { openEnded(summary) }
+              .contextMenu { menu(for: summary, ended: true) }
               .accessibilityAddTraits(.isButton)
               .accessibilityIdentifier("sessions.ended.\(summary.sessionID)")
           }
@@ -197,6 +191,10 @@ struct SessionListView: View {
       Button("Dismiss") { project.dismissAsk(item) }
       Divider()
     }
+    if (item.session.resuming ?? item.session.savedTarget) != nil {
+      Button("Fork a Copy") { project.fork(item) }
+      Divider()
+    }
     if item.session.isProcessRunning {
       Button("End Session") { confirmIfRunning(item) { project.end(item) } }
     }
@@ -214,8 +212,9 @@ struct SessionListView: View {
         }
       }
     }
+    if item.sessionID != nil || item.session.savedTarget != nil { Divider() }
+    if let id = item.sessionID { copyIDButton(id) }
     if let file = item.session.savedTarget?.transcriptFile {
-      Divider()
       Button("Show Transcript in Finder") { NSWorkspace.shared.activateFileViewerSelecting([file]) }
     }
   }
@@ -238,6 +237,33 @@ struct SessionListView: View {
     }
   }
 
+  /// A row of Elsewhere or Ended. Resuming one live elsewhere would interleave two writers:
+  /// it only forks.
+  @ViewBuilder private func menu(for summary: SessionSummary, ended: Bool) -> some View {
+    if ended, let target = ResumeTarget(summary) {
+      Button("Resume in This Window") { project.attach(target) }
+    }
+    if let target = ResumeTarget(summary, forking: true) {
+      Button("Fork a Copy") { project.attach(target) }
+    }
+    if let watched = project.session(withID: summary.sessionID), watched.isWatching {
+      Button("Close") { project.remove(watched) }
+    }
+    moveMenu(for: summary, host: ended ? nil : monitor.host(of: summary))
+    Divider()
+    copyIDButton(summary.sessionID)
+    Button("Show Transcript in Finder") {
+      NSWorkspace.shared.activateFileViewerSelecting([summary.file])
+    }
+  }
+
+  private func copyIDButton(_ sessionID: String) -> some View {
+    Button("Copy Session ID") {
+      NSPasteboard.general.clearContents()
+      NSPasteboard.general.setString(sessionID, forType: .string)
+    }
+  }
+
   /// Mid-turn, stopping loses the turn: ask first.
   private func confirmIfRunning(_ item: ProjectSession, then action: @escaping () -> Void) {
     guard item.session.transcript.isRunning else { return action() }
@@ -251,14 +277,40 @@ struct SessionListView: View {
 }
 
 extension View {
-  /// The selected row's outline, in place of the list's filled highlight, and its trait.
-  fileprivate func selectionBorder(_ isSelected: Bool) -> some View {
-    listRowBackground(
-      isSelected
-        ? RoundedRectangle(cornerRadius: 5).strokeBorder(Color.accentColor, lineWidth: 1.5)
-          .padding(.horizontal, 8) : nil
-    )
-    .accessibilityAddTraits(isSelected ? .isSelected : [])
+  /// A row that acts on a click released over it, tinted while the mouse is down on it.
+  fileprivate func sessionRow(isSelected: Bool, action: @escaping () -> Void) -> some View {
+    modifier(SessionRowChrome(isSelected: isSelected, action: action))
+  }
+}
+
+/// The selected row's outline, in place of the list's filled highlight, and its trait; a
+/// faint fill while the row is pressed, gone once the pointer leaves it as a button's is.
+private struct SessionRowChrome: ViewModifier {
+  let isSelected: Bool
+  let action: () -> Void
+  @GestureState private var isPressed = false
+  @State private var size = CGSize.zero
+
+  func body(content: Content) -> some View {
+    content
+      .contentShape(Rectangle())
+      .onGeometryChange(for: CGSize.self, of: \.size) { size = $0 }
+      .gesture(
+        DragGesture(minimumDistance: 0)
+          .updating($isPressed) { value, pressed, _ in pressed = contains(value.location) }
+          .onEnded { value in if contains(value.location) { action() } }
+      )
+      .listRowBackground(
+        RoundedRectangle(cornerRadius: 5)
+          .fill(isPressed ? AnyShapeStyle(.quaternary) : AnyShapeStyle(.clear))
+          .strokeBorder(isSelected ? Color.accentColor : .clear, lineWidth: 1.5)
+          .padding(.horizontal, 8)
+      )
+      .accessibilityAddTraits(isSelected ? .isSelected : [])
+  }
+
+  private func contains(_ point: CGPoint) -> Bool {
+    CGRect(origin: .zero, size: size).contains(point)
   }
 }
 
