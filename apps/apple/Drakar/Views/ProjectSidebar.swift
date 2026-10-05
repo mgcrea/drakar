@@ -96,11 +96,12 @@ struct SessionListView: View {
           ForEach(groups.elsewhere) { summary in
             SummaryRow(
               summary: summary, host: monitor.host(of: summary),
-              urgency: project.urgency(of: summary), monitor: monitor)
-              .pressableRow(isSelected: isWatched(summary)) { openElsewhere(summary) }
-              .contextMenu { menu(for: summary, ended: false) }
-              .accessibilityAddTraits(.isButton)
-              .accessibilityIdentifier("sessions.elsewhere.\(summary.sessionID)")
+              urgency: project.urgency(of: summary), monitor: monitor
+            )
+            .pressableRow(isSelected: isWatched(summary)) { openElsewhere(summary) }
+            .contextMenu { menu(for: summary, ended: false) }
+            .accessibilityAddTraits(.isButton)
+            .accessibilityIdentifier("sessions.elsewhere.\(summary.sessionID)")
           }
         }
       }

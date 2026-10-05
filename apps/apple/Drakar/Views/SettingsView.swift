@@ -294,7 +294,11 @@ struct AttentionPane: View {
           .foregroundStyle(.secondary)
           ForEach(Urgency.allCases.reversed(), id: \.self) { level in
             GridRow {
-              Text(level.title)
+              // The mark its sidebar row shows, so the pane explains the list.
+              HStack(spacing: 7) {
+                StateDot(state: RowState(level))
+                Text(level.title)
+              }
               ForEach(AttentionFeedback.allCases, id: \.self) { feedback in
                 FeedbackToggle(level: level, feedback: feedback)
                   .disabled(!recognisesAsks && (level == .question || level == .offer))
@@ -302,7 +306,10 @@ struct AttentionPane: View {
             }
           }
           GridRow {
-            Text("Finished turn")
+            HStack(spacing: 7) {
+              Color.clear.frame(width: 7, height: 7)
+              Text("Finished turn")
+            }
             Text("")
             Text("")
             Toggle("", isOn: $notifiesTurnEnds)
