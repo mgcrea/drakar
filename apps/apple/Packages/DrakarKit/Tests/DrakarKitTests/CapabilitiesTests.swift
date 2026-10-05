@@ -220,4 +220,44 @@ struct CapabilitiesTests {
     #expect(replies.capabilities.mcpServers == nil)
     #expect(replies.statusError == "Unknown request subtype: mcp_status")
   }
+
+  private func status(_ id: String, _ server: String, _ state: String) throws -> ControlResponse {
+    try response(
+      #"{"type":"control_response","response":{"subtype":"success","request_id":""#
+        + id + #"","response":{"mcpServers":[{"name":""# + server + #"","status":""# + state
+        + #""}]}}}"#)
+  }
+
+  /// A server still connecting at the first `mcp_status`: asked again under a new id, the
+  /// later reply's servers replace the first's.
+  @Test func takesALaterStatusUnderANewID() throws {
+    var replies = CapabilityReplies(initializeID: "probe-init", statusID: "probe-mcp")
+    replies.take(try status("probe-mcp", "armada", "pending"))
+    #expect(replies.hasPendingServers)
+    let again = replies.askStatusAgain()
+    #expect(again == "probe-mcp-2")
+    #expect(replies.askStatusAgain() == "probe-mcp-3")
+    replies.take(try status(again, "armada", "connected"))
+    #expect(!replies.hasPendingServers)
+    #expect(replies.capabilities.mcpServers?.map(\.status) == [.connected])
+    // An id never asked is still not the probe's.
+    replies.take(try status("probe-mcp-9", "armada", "failed"))
+    #expect(replies.capabilities.mcpServers?.map(\.status) == [.connected])
+  }
+
+  /// A later status that fails, or answers late behind a newer one, keeps the newest list.
+  @Test func keepsTheLatestSuccessfulStatus() throws {
+    var replies = CapabilityReplies(initializeID: "probe-init", statusID: "probe-mcp")
+    replies.take(try status("probe-mcp", "armada", "pending"))
+    let second = replies.askStatusAgain()
+    let third = replies.askStatusAgain()
+    replies.take(try status(third, "armada", "connected"))
+    replies.take(try status(second, "armada", "pending"))
+    replies.take(
+      try response(
+        #"{"type":"control_response","response":{"subtype":"error","request_id":"probe-mcp-3","error":"busy"}}"#
+      ))
+    #expect(replies.capabilities.mcpServers?.map(\.status) == [.connected])
+    #expect(replies.statusError == nil)
+  }
 }

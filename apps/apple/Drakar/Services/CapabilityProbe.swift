@@ -21,14 +21,22 @@ struct ProbeOutcome: Equatable {
 enum CapabilityProbe {
   static let initializeID = "probe-init"
   static let statusID = "probe-mcp"
+  /// How long a probe may take before it is let go, whatever it read.
+  static let timeout: Duration = .seconds(20)
+  /// After input closes, how long the CLI has to exit on its own before it is terminated.
+  static let grace: Duration = .seconds(2)
+  /// While a server is still connecting, `mcp_status` is asked again this often...
+  static let statusInterval: Duration = .seconds(1)
+  /// ...until this long after the probe started; a server still connecting then is shown so.
+  static let connectingLimit: Duration = .seconds(10)
 
   /// What a new session in `folder` would load, under `account` when given (the one its
   /// lists are kept for), else under the account a new session there would take.
   /// Cancelling the calling task lets the process go as a finished probe does.
   static func run(
     folder: URL, account: ClaudeAccount? = nil, executableOverride: URL? = nil,
-    timeout: Duration = .seconds(20),
-    grace: Duration = .seconds(2)
+    timeout: Duration = timeout, grace: Duration = grace,
+    connectingLimit: Duration = connectingLimit
   ) async -> ProbeOutcome {
     guard FileManager.default.fileExists(atPath: folder.path(percentEncoded: false)) else {
       return .failed(
@@ -48,14 +56,21 @@ enum CapabilityProbe {
         arguments: ClaudeCommand(includesPartialMessages: false).arguments,
         environment: launch.environment, currentDirectory: folder))
     return await withTaskCancellationHandler {
-      await collect(from: process, timeout: timeout, grace: grace)
+      await collect(
+        from: process, timeout: timeout, grace: grace, connectingLimit: connectingLimit)
     } onCancel: {
       release(process, after: grace)
     }
   }
 
+  /// What the loop below wakes for: the process, or the next time to ask the status again.
+  private enum Input {
+    case event(AgentProcess.Event)
+    case askAgain
+  }
+
   private static func collect(
-    from process: AgentProcess, timeout: Duration, grace: Duration
+    from process: AgentProcess, timeout: Duration, grace: Duration, connectingLimit: Duration
   ) async -> ProbeOutcome {
     let events: AsyncStream<AgentProcess.Event>
     do {
@@ -66,23 +81,63 @@ enum CapabilityProbe {
       release(process, after: grace)
       return .failed(error.localizedDescription)
     }
-    let deadline = ContinuousClock.now + timeout
+    let started = ContinuousClock.now
+    let deadline = started + timeout
+    let stopAsking = started + connectingLimit
     let timer = Task {
       try? await Task.sleep(for: timeout)
       if !Task.isCancelled { release(process, after: grace) }
     }
-    defer { timer.cancel() }
+    // The process's events and the asks again, in one loop that keeps the replies.
+    let (inputs, input) = AsyncStream.makeStream(of: Input.self)
+    let pump = Task {
+      for await event in events { input.yield(.event(event)) }
+      input.finish()
+    }
+    var asking: Task<Void, Never>?
+    defer {
+      timer.cancel()
+      pump.cancel()
+      asking?.cancel()
+    }
     var replies = CapabilityReplies(initializeID: initializeID, statusID: statusID)
+    var released = false
+    func letGo() {
+      guard !released else { return }
+      released = true
+      asking?.cancel()
+      release(process, after: grace)
+    }
     var diagnostics = ""
     var status: Int32?
-    for await event in events {
-      switch event {
-      case .messages(let messages):
+    for await next in inputs {
+      switch next {
+      case .event(.messages(let messages)):
         for case .controlResponse(let response) in messages { replies.take(response) }
-        if replies.isComplete { release(process, after: grace) }
-      case .stderr(let text):
+        guard replies.isComplete, !released else { break }
+        if !replies.hasPendingServers || ContinuousClock.now >= stopAsking {
+          letGo()
+        } else if asking == nil {
+          // Every `statusInterval`, and once more at `stopAsking` to let the process go.
+          asking = Task {
+            while !Task.isCancelled {
+              let wake = min(ContinuousClock.now + statusInterval, stopAsking)
+              try? await Task.sleep(until: wake)
+              input.yield(.askAgain)
+              if wake == stopAsking { return }
+            }
+          }
+        }
+      case .askAgain:
+        guard !released else { break }
+        if ContinuousClock.now >= stopAsking {
+          letGo()
+        } else {
+          try? process.send(.mcpStatus(requestID: replies.askStatusAgain()))
+        }
+      case .event(.stderr(let text)):
         diagnostics = String((diagnostics + text).suffix(4000))
-      case .exited(let code, _):
+      case .event(.exited(let code, _)):
         status = code
       }
     }

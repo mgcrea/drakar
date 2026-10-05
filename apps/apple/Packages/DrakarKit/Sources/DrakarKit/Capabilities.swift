@@ -253,9 +253,11 @@ public struct CapabilityChanges: Sendable, Equatable {
   }
 }
 
-/// The probe's two answers as they arrive, told apart by the request ids it sent.
+/// The probe's two answers as they arrive, told apart by the request ids it sent; then,
+/// while a server is still connecting, the `mcp_status` asked again under new ids.
 public struct CapabilityReplies: Sendable, Equatable {
   public let initializeID: String
+  /// The first `mcp_status`'s id.
   public let statusID: String
   public private(set) var capabilities = ProjectCapabilities()
   public private(set) var hasInitialize = false
@@ -263,6 +265,10 @@ public struct CapabilityReplies: Sendable, Equatable {
   /// The CLI's error, when it answered a request with one.
   public private(set) var initializeError: String?
   public private(set) var statusError: String?
+  /// The ids `mcp_status` was asked again under, oldest first.
+  public private(set) var laterStatusIDs: [String] = []
+  /// How many of `laterStatusIDs` the servers come from: a reply behind a newer one is late.
+  private var takenLater = 0
 
   public init(initializeID: String, statusID: String) {
     self.initializeID = initializeID
@@ -270,6 +276,18 @@ public struct CapabilityReplies: Sendable, Equatable {
   }
 
   public var isComplete: Bool { hasInitialize && hasStatus }
+
+  /// A server listed as still connecting.
+  public var hasPendingServers: Bool {
+    capabilities.mcpServers?.contains { $0.status == .pending } == true
+  }
+
+  /// The id to ask `mcp_status` again under: `probe-mcp-2`, then `probe-mcp-3`.
+  public mutating func askStatusAgain() -> String {
+    let id = "\(statusID)-\(laterStatusIDs.count + 2)"
+    laterStatusIDs.append(id)
+    return id
+  }
 
   public mutating func take(_ response: ControlResponse) {
     switch response.requestID {
@@ -287,8 +305,15 @@ public struct CapabilityReplies: Sendable, Equatable {
       } else {
         statusError = response.error
       }
-    default:
-      break
+    case let id:
+      // A later status replaces the servers only with a newer list: an error, or a reply
+      // without one, keeps what the last one said.
+      guard let index = laterStatusIDs.firstIndex(of: id), index >= takenLater,
+        response.isSuccess,
+        let servers = ProjectCapabilities.servers(fromMCPStatus: response.response)
+      else { return }
+      capabilities.mcpServers = servers
+      takenLater = index + 1
     }
   }
 }

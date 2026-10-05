@@ -46,6 +46,38 @@ struct CapabilityProbeTests {
     #expect(exists(claude.appendingPathExtension("ended")))
   }
 
+  private func pending(_ id: String) -> String {
+    #"{"type":"control_response","response":{"subtype":"success","request_id":""# + id
+      + #"","response":{"mcpServers":[{"name":"armada","status":"pending"}]}}}"#
+  }
+
+  /// A server still connecting at the first `mcp_status`: asked again, its later status is
+  /// the one shown.
+  @Test func asksAgainWhileAServerIsConnecting() async throws {
+    let connected = status.replacingOccurrences(of: "probe-mcp", with: "probe-mcp-2")
+    let claude = try standIn(
+      "read a\nread b\necho '\(initialize)'\necho '\(pending("probe-mcp"))'\nread c\n"
+        + "case \"$c\" in *probe-mcp-2*) echo '\(connected)';; esac\ncat > /dev/null")
+    let outcome = await CapabilityProbe.run(
+      folder: folder, executableOverride: claude, grace: .milliseconds(200))
+    #expect(outcome.capabilities.mcpServers?.map(\.status) == [.connected])
+    #expect(outcome.serversProblem == nil)
+  }
+
+  /// One that never connects: the probe still ends, the server shown as connecting.
+  @Test func endsWhileAServerStaysPending() async throws {
+    let claude = try standIn(
+      "read a\nread b\necho '\(initialize)'\necho '\(pending("probe-mcp"))'\n"
+        + "while read c; do echo '\(pending("probe-mcp-2"))'; done")
+    let started = ContinuousClock.now
+    let outcome = await CapabilityProbe.run(
+      folder: folder, executableOverride: claude, grace: .milliseconds(200),
+      connectingLimit: .milliseconds(1500))
+    #expect(ContinuousClock.now - started < .seconds(5))
+    #expect(outcome.capabilities.skills?.map(\.name) == ["check"])
+    #expect(outcome.capabilities.mcpServers?.map(\.status) == [.pending])
+  }
+
   /// An older CLI that never answers `mcp_status`: the skills are kept, the servers pane
   /// says why.
   @Test func keepsTheSkillsWhenTheStatusNeverComes() async throws {
