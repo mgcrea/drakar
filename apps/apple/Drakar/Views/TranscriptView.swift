@@ -50,6 +50,9 @@ struct TranscriptView: View {
       .frame(maxWidth: .infinity)
     }
     .scrollPosition($position)
+    // A transcript shown again opens at its end rather than its top, which would blink the
+    // toolbar's scroll-edge blur off and on as it jumped down.
+    .defaultScrollAnchor(.bottom, for: .initialOffset)
     .onScrollTargetVisibilityChange(idType: String.self, threshold: 0.01) { visible in
       onScreenIDs = Set(visible)
     }
@@ -78,13 +81,14 @@ struct TranscriptView: View {
       if isFollowing { position.scrollTo(edge: .bottom) }
     }
     .accessibilityIdentifier("transcript")
-    // Always up, it takes its own room so it covers nothing; up only while the prompt is
-    // away, it floats, so coming and going does not shift the transcript under the reader.
-    .safeAreaInset(edge: .top, spacing: 0) {
-      if pinsLastPrompt, let prompt = transcript.lastPrompt { bar(for: prompt) }
-    }
+    // A card floating below the toolbar, not an inset: the scroll view's top inset is part
+    // of the toolbar's glass band, which grew when the bar arrived after the history and
+    // blinked at every switch. Always up, the transcript keeps room for it from the start, so
+    // its first lines and a jump to the prompt stop short of it; up only while the prompt is
+    // away, it covers what is under it, so coming and going does not shift the transcript.
+    .contentMargins(.top, pinsLastPrompt ? LastPromptBar.room : 0, for: .scrollContent)
     .overlay(alignment: .top) {
-      if !pinsLastPrompt, let prompt = offScreenPrompt {
+      if let prompt = pinsLastPrompt ? transcript.lastPrompt : offScreenPrompt {
         bar(for: prompt).transition(.opacity)
       }
     }
@@ -131,6 +135,9 @@ struct TranscriptView: View {
 /// The newest prompt, pinned over the transcript: a long turn pushes what was asked far above
 /// what is being done about it. Clicking scrolls back to it.
 private struct LastPromptBar: View {
+  /// What the card takes at the top of the transcript, its margin included.
+  static let room: CGFloat = 46
+
   let prompt: Transcript.Entry
   let headline: String
   let reveal: () -> Void
@@ -158,17 +165,18 @@ private struct LastPromptBar: View {
       }
       .font(.callout)
       .foregroundStyle(.secondary)
-      .padding(.horizontal, 16)
+      .padding(.horizontal, 12)
       .padding(.vertical, 6)
-      .frame(maxWidth: 820, alignment: .leading)
-      .frame(maxWidth: .infinity)
-      .contentShape(Rectangle())
+      // As the Latest button floats: a material card over the transcript.
+      .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
+      .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(.separator))
+      .shadow(color: .black.opacity(0.12), radius: 6, y: 2)
+      .contentShape(RoundedRectangle(cornerRadius: 10))
+      .frame(maxWidth: 820 - 32)
+      .padding(.horizontal, 16)
+      .padding(.top, 8)
     }
     .buttonStyle(.plain)
-    // The prompt bubble's tint, over an opaque ground so the transcript does not show through.
-    .background(.quaternary.opacity(0.6))
-    .background(.background)
-    .overlay(alignment: .bottom) { Divider() }
     .help(promptText)
     .accessibilityLabel("Your last message: \(headline)")
     .accessibilityHint("Scrolls back to it")

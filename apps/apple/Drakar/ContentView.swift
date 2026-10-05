@@ -307,20 +307,32 @@ struct ContentView: View {
 /// Applied again once the view lands in a window, since a restored window has its level
 /// asked for before it has one.
 /// The selected session, or the way to start one. Its own view, so that a switch redraws
-/// this pane alone: read in `ContentView`, the selection re-ran the window's body, and its
-/// toolbar and title blinked on every switch.
+/// this pane alone and not the window's body.
+///
+/// A session whose history is still being read stays off screen until it is in, the last one
+/// shown standing in: an empty transcript sits at the top, then jumps to the bottom when its
+/// entries land, and the toolbar's scroll-edge blur went off and back on, a blink at every
+/// switch.
 private struct SelectedSessionPane: View {
   let project: Project
+  @State private var shownID: ProjectSession.ID?
 
   var body: some View {
-    if let item = project.selected {
-      SessionView(item: item, project: project).id(item.id)
-    } else {
-      ContentUnavailableView {
-        Label("No session", systemImage: "bubble.left.and.text.bubble.right")
-      } actions: {
-        Button("New Session") { project.newSession() }
+    Group {
+      if let item = project.sessions.first(where: { $0.id == shownID }) ?? project.selected {
+        SessionView(item: item, project: project).id(item.id)
+      } else {
+        ContentUnavailableView {
+          Label("No session", systemImage: "bubble.left.and.text.bubble.right")
+        } actions: {
+          Button("New Session") { project.newSession() }
+        }
       }
+    }
+    .task(id: project.selectedID) {
+      guard let item = project.selected else { return shownID = nil }
+      await item.session.loadHistory()
+      if !Task.isCancelled { shownID = item.id }
     }
   }
 }
