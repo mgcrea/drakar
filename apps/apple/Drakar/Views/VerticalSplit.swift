@@ -33,7 +33,7 @@ struct VerticalSplit<Top: View, Bottom: View>: View {
           Divider()
         } else {
           top.frame(height: height(total))
-          Divider().overlay { handle(total) }
+          Divider().overlay { handle(total) }.zIndex(1)
         }
         if collapsesBottom {
           bottom.fixedSize(horizontal: false, vertical: true)
@@ -45,19 +45,15 @@ struct VerticalSplit<Top: View, Bottom: View>: View {
   }
 
   private func handle(_ total: CGFloat) -> some View {
-    Color.clear
-      .frame(height: 9)
-      .contentShape(Rectangle())
-      .pointerStyle(.rowResize)
-      .gesture(
-        DragGesture(minimumDistance: 1, coordinateSpace: .global)
-          .onChanged { drag in
-            let start = dragStart ?? Double(height(total) / total)
-            dragStart = start
-            fraction = Double(
-              clamp(CGFloat(start) * total + drag.translation.height, total) / total)
-          }
-          .onEnded { _ in dragStart = nil })
+    ResizeHandle(axis: .vertical) { travel in
+      guard let travel else {
+        dragStart = nil
+        return
+      }
+      let start = dragStart ?? Double(height(total) / total)
+      dragStart = start
+      fraction = Double(clamp(CGFloat(start) * total + travel, total) / total)
+    }
   }
 
   private func height(_ total: CGFloat) -> CGFloat { clamp(total * CGFloat(fraction), total) }
