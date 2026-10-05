@@ -29,7 +29,7 @@ struct ContentView: View {
           ProjectSidebar(project: project)
             .navigationSplitViewColumnWidth(min: 200, ideal: 240)
             // The split view's own edge is half a point to aim at.
-            .background(SidebarSash())
+            .background(ColumnSash(edge: .trailing))
         } detail: {
           SplitPanes(fraction: $editorFraction, showsLeading: !workspace.documents.isEmpty) {
             EditorView(workspace: workspace)
@@ -40,6 +40,7 @@ struct ContentView: View {
         .inspector(isPresented: $inspectorShown) {
           InspectorView(project: project)
             .inspectorColumnWidth(min: 220, ideal: 280, max: 420)
+            .background(ColumnSash(edge: .leading))
         }
         // Hidden after being seen: what it showed was seen.
         .onChange(of: inspectorShown) { was, now in
