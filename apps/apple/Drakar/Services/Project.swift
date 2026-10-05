@@ -4,12 +4,34 @@ import Observation
 
 /// One session as a project window holds it: the session, and what the window keeps for it
 /// while another is shown.
+/// A skill put in the composer rather than sent: the text it put there, and what it takes.
+struct SkillPrefill: Equatable {
+  var text: String
+  var hint: String
+}
+
+/// Where the inspector runs a skill.
+enum SkillTarget {
+  case newSession
+  case current
+}
+
 @Observable
 final class ProjectSession: Identifiable {
   let id = UUID()
   let session: ClaudeSession
   /// The composer's text, kept across switches.
   var draft = ""
+  /// The skill the inspector put in the draft, while it waits for its arguments.
+  var prefill: SkillPrefill?
+  /// Bumped to ask the composer for the focus.
+  var focusRequest = 0
+
+  /// What the prefilled skill takes, while the draft still starts with its name.
+  var composerHint: String? {
+    guard let prefill, draft.hasPrefix(prefill.text) else { return nil }
+    return prefill.hint
+  }
   /// A turn ended, or the process stopped, while another session was shown.
   var isUnread = false
   /// The entry at the top of the transcript when it was last shown; nil while it followed
@@ -213,6 +235,8 @@ final class Project {
   /// Whether the shown session's composer takes the focus when it appears: not when the
   /// sidebar's arrow keys or a click there chose it, so the keys keep moving in the list.
   @ObservationIgnored private(set) var focusesComposer = true
+  /// Stands in for the located binary in every session this window makes, in tests.
+  @ObservationIgnored var executableOverride: URL?
   /// The pane that had the keys at the last quit, until it takes them back.
   @ObservationIgnored private var restoredFocus: FocusedPane?
 
@@ -259,6 +283,37 @@ final class Project {
     sessions.insert(item, at: 0)
     select(item)
     return item
+  }
+
+  /// Whether a skill can go to `target`: a new session always can; the shown one only when
+  /// it could take a prompt now (not read-only, not mid-turn).
+  func canRun(in target: SkillTarget) -> Bool {
+    switch target {
+    case .newSession: true
+    case .current: selected?.session.canSend == true
+    }
+  }
+
+  /// A skill from the inspector: sent at once when it takes nothing, otherwise put at the
+  /// start of the composer with what it takes shown, the focus there.
+  func run(_ skill: SkillEntry, in target: SkillTarget) {
+    guard canRun(in: target) else { return }
+    let item: ProjectSession
+    switch target {
+    case .newSession: item = newSession()
+    case .current:
+      guard let selected else { return }
+      item = selected
+    }
+    if skill.takesArguments {
+      let text = "/\(skill.name) "
+      item.draft = text + item.draft
+      item.prefill = SkillPrefill(text: text, hint: skill.argumentHint)
+      item.focusRequest += 1
+    } else {
+      takeOver(item)
+      item.session.send("/\(skill.name)")
+    }
   }
 
   /// `target` on top and shown, or the row already holding it, taken over unless
@@ -365,6 +420,7 @@ final class Project {
   }
 
   private func make(_ session: ClaudeSession) -> ProjectSession {
+    if let executableOverride { session.executableOverride = executableOverride }
     let item = ProjectSession(session: session)
     session.onTurnEnded = { [weak self, weak item] in
       guard let self, let item else { return }

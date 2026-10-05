@@ -20,6 +20,11 @@ struct ComposerView: View {
   let projectFolder: URL
   /// Focused on appearing, unless the sidebar keeps the keys.
   var takesFocus = true
+  /// What the skill at the start of the draft takes, shown above the field: a
+  /// `TextField`'s placeholder only shows while it is empty.
+  var hint: String? = nil
+  /// A change asks for the focus: the inspector put a skill in the draft.
+  var focusRequest = 0
   /// Called when the field takes the keys.
   var focused: () -> Void = {}
 
@@ -28,6 +33,14 @@ struct ComposerView: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 6) {
+      if let hint {
+        Label(hint, systemImage: "text.cursor")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+          .lineLimit(1)
+          .help("What this skill takes after its name")
+          .accessibilityIdentifier("composer.hint")
+      }
       if !pinned.isEmpty || live != nil {
         ScrollView(.horizontal, showsIndicators: false) {
           HStack(spacing: 6) {
@@ -52,6 +65,7 @@ struct ComposerView: View {
     }
     .padding(12)
     .onAppear { if takesFocus { isFocused = true } }
+    .onChange(of: focusRequest) { isFocused = true }
     .onChange(of: isFocused) { _, focused in if focused { self.focused() } }
     // A new selection is attached again, whatever happened to the last one.
     .onChange(of: context) { leavesContextOut = false }
