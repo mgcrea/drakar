@@ -92,7 +92,7 @@ struct SessionListView: View {
             item: item, isSelected: item.id == project.selectedID,
             windowAccount: AccountStore.shared.windowAccount(for: project.folder)
           )
-          .sessionRow(isSelected: item.id == project.selectedID) {
+          .pressableRow(isSelected: item.id == project.selectedID) {
             project.select(item, focusingComposer: false)
             isFocused = true
           }
@@ -105,7 +105,7 @@ struct SessionListView: View {
         Section("Elsewhere") {
           ForEach(groups.elsewhere) { summary in
             SummaryRow(summary: summary, host: monitor.host(of: summary), monitor: monitor)
-              .sessionRow(isSelected: isWatched(summary)) { openElsewhere(summary) }
+              .pressableRow(isSelected: isWatched(summary)) { openElsewhere(summary) }
               .contextMenu { menu(for: summary, ended: false) }
               .accessibilityAddTraits(.isButton)
               .accessibilityIdentifier("sessions.elsewhere.\(summary.sessionID)")
@@ -116,7 +116,7 @@ struct SessionListView: View {
         Section(isExpanded: $showsEnded) {
           ForEach(showsAllEnded ? groups.ended : Array(groups.ended.prefix(20))) { summary in
             SummaryRow(summary: summary, host: nil, monitor: monitor)
-              .sessionRow(isSelected: isWatched(summary)) { openEnded(summary) }
+              .pressableRow(isSelected: isWatched(summary)) { openEnded(summary) }
               .contextMenu { menu(for: summary, ended: true) }
               .accessibilityAddTraits(.isButton)
               .accessibilityIdentifier("sessions.ended.\(summary.sessionID)")
@@ -274,44 +274,6 @@ struct SessionListView: View {
     alert.addButton(withTitle: String(localized: "Stop"))
     alert.addButton(withTitle: String(localized: "Cancel"))
     if alert.runModal() == .alertFirstButtonReturn { action() }
-  }
-}
-
-extension View {
-  /// A row that acts on a click released over it, tinted while the mouse is down on it.
-  fileprivate func sessionRow(isSelected: Bool, action: @escaping () -> Void) -> some View {
-    modifier(SessionRowChrome(isSelected: isSelected, action: action))
-  }
-}
-
-/// The selected row's outline, in place of the list's filled highlight, and its trait; a
-/// faint fill while the row is pressed, gone once the pointer leaves it as a button's is.
-private struct SessionRowChrome: ViewModifier {
-  let isSelected: Bool
-  let action: () -> Void
-  @GestureState private var isPressed = false
-  @State private var size = CGSize.zero
-
-  func body(content: Content) -> some View {
-    content
-      .contentShape(Rectangle())
-      .onGeometryChange(for: CGSize.self, of: \.size) { size = $0 }
-      .gesture(
-        DragGesture(minimumDistance: 0)
-          .updating($isPressed) { value, pressed, _ in pressed = contains(value.location) }
-          .onEnded { value in if contains(value.location) { action() } }
-      )
-      .listRowBackground(
-        RoundedRectangle(cornerRadius: 5)
-          .fill(isPressed ? AnyShapeStyle(.quaternary) : AnyShapeStyle(.clear))
-          .strokeBorder(isSelected ? Color.accentColor : .clear, lineWidth: 1.5)
-          .padding(.horizontal, 8)
-      )
-      .accessibilityAddTraits(isSelected ? .isSelected : [])
-  }
-
-  private func contains(_ point: CGPoint) -> Bool {
-    CGRect(origin: .zero, size: size).contains(point)
   }
 }
 

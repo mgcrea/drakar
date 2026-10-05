@@ -36,6 +36,8 @@ private struct SkillsPane: View {
   let project: Project
   let filter: String
   @Binding var isCollapsed: Bool
+  /// The last skill a click ran, so a double-click runs it once.
+  @State private var lastRun: SkillClick?
 
   private var capabilities: Capabilities { project.capabilities }
 
@@ -60,9 +62,9 @@ private struct SkillsPane: View {
           List {
             ForEach(shown) { skill in
               SkillRow(skill: skill, isMarked: project.capabilityMarks.skills.contains(skill.name))
-                .contentShape(Rectangle())
-                .onTapGesture { project.run(skill, in: .newSession) }
+                .pressableRow { clicked(skill) }
                 .accessibilityAddTraits(.isButton)
+                .accessibilityAction { clicked(skill) }
                 .accessibilityIdentifier("inspector.skill.\(skill.name)")
                 .contextMenu { menu(for: skill) }
             }
@@ -80,6 +82,15 @@ private struct SkillsPane: View {
     }
   }
 
+  /// A click runs the skill in a new session, but not again as the second click of a
+  /// double-click: that would make two sessions and send it in both.
+  private func clicked(_ skill: SkillEntry) {
+    let click = SkillClick(name: skill.name, time: ProcessInfo.processInfo.systemUptime)
+    guard click.runs(after: lastRun, within: NSEvent.doubleClickInterval) else { return }
+    lastRun = click
+    project.run(skill, in: .newSession)
+  }
+
   @ViewBuilder private func menu(for skill: SkillEntry) -> some View {
     Button("Run in Current Session") { project.run(skill, in: .current) }
       .disabled(!project.canRun(in: .current))
@@ -89,6 +100,19 @@ private struct SkillsPane: View {
       NSPasteboard.general.clearContents()
       NSPasteboard.general.setString(skill.name, forType: .string)
     }
+  }
+}
+
+/// A click on a skill row, by the skill's name and the system uptime it came at.
+struct SkillClick: Equatable {
+  let name: String
+  let time: TimeInterval
+
+  /// Whether this click runs its skill after `last`, the click that last did: not the same
+  /// skill again within `interval` (the double-click interval). Another skill always runs.
+  func runs(after last: SkillClick?, within interval: TimeInterval) -> Bool {
+    guard let last, last.name == name else { return true }
+    return time - last.time >= interval
   }
 }
 
@@ -113,6 +137,8 @@ private struct SkillRow: View {
           .lineLimit(1)
       }
     }
+    // The whole row takes the click, as a session row does, not only its text.
+    .frame(maxWidth: .infinity, alignment: .leading)
     .help(help)
     .accessibilityElement(children: .combine)
   }
@@ -355,7 +381,10 @@ struct InspectorToggle: View {
       showsDot ? marks.summary(servers: project.capabilities.lists.mcpServers ?? []) : ""
     )
     .accessibilityIdentifier("window.inspector")
-    .onChange(of: picks + "\n" + settingsAccount + "\n" + AccountStore.shared.shellAccount.key) {
+    .onChange(
+      of: picks + "\n" + settingsAccount + "\n" + AccountStore.shared.shellAccount.key,
+      initial: true
+    ) {
       project.accountMayHaveChanged()
     }
   }
