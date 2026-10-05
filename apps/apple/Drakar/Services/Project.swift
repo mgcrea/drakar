@@ -151,13 +151,20 @@ final class ProjectSession: Identifiable {
   }
 }
 
-/// What a project window keeps between launches: the sessions it held, and the one shown.
+/// What a project window keeps between launches: the sessions it held and the one shown,
+/// and the editor's tabs and the active one.
 struct StoredProject: Codable, Equatable {
   var sessions: [ResumeTarget] = []
   var selected: String?
   /// Per session id, the message id of the ask dismissed. Optional so that a window stored
   /// before the field existed still decodes.
   var dismissedQuestions: [String: String]?
+  /// The open tabs' paths, in order. Optional for the same reason.
+  var documents: [String]?
+  var activeDocument: String?
+
+  /// Nothing worth bringing back: no session and no tab.
+  var isEmpty: Bool { sessions.isEmpty && documents?.isEmpty != false }
 }
 
 /// Each project's `StoredProject`, app-wide in `UserDefaults` by folder. A window's scene
@@ -175,7 +182,7 @@ enum ProjectMemory {
     _ stored: StoredProject, for folder: URL, in defaults: UserDefaults = .standard
   ) {
     var all = all(in: defaults)
-    all[path(of: folder)] = stored.sessions.isEmpty ? nil : stored
+    all[path(of: folder)] = stored.isEmpty ? nil : stored
     defaults.set(try? JSONEncoder().encode(all), forKey: key)
   }
 
@@ -215,6 +222,7 @@ final class Project {
       sessions.first { $0.sessionID == stored?.selected }?.id ?? sessions.first?.id
     if let selected { load(selected) }
     for item in sessions { readPreview(item) }
+    workspace.restore(stored?.documents ?? [], active: stored?.activeDocument)
   }
 
   var selected: ProjectSession? { sessions.first { $0.id == selectedID } }
@@ -329,7 +337,9 @@ final class Project {
       sessions: held.compactMap(\.session.savedTarget),
       selected: selected.flatMap { $0.isWatching ? nil : $0.session.savedTarget?.sessionID },
       dismissedQuestions: dismissed.isEmpty
-        ? nil : Dictionary(dismissed, uniquingKeysWith: { first, _ in first }))
+        ? nil : Dictionary(dismissed, uniquingKeysWith: { first, _ in first }),
+      documents: workspace.documents.isEmpty ? nil : workspace.documents.map(\.path),
+      activeDocument: workspace.active?.path)
   }
 
   private func make(_ session: ClaudeSession) -> ProjectSession {

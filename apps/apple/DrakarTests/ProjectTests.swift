@@ -248,4 +248,45 @@ struct ProjectTests {
     ProjectMemory.remember(StoredProject(), for: folder, in: defaults)
     #expect(ProjectMemory.stored(for: folder, in: defaults) == nil)
   }
+
+  /// The editor's tabs come back with the window, the active one active; a file deleted
+  /// since is left out without a word.
+  @Test func theOpenTabsSurviveARelaunch() throws {
+    let names = ["a.txt", "b.txt", "c.txt"]
+    for name in names {
+      try name.write(to: folder.appending(path: name), atomically: true, encoding: .utf8)
+    }
+    let project = Project(folder: folder)
+    for name in names { project.workspace.open(folder.appending(path: name)) }
+    project.workspace.activate(
+      try #require(project.workspace.documents.first { $0.name == "b.txt" }))
+    let stored = try JSONDecoder().decode(
+      StoredProject.self, from: JSONEncoder().encode(project.stored))
+    try FileManager.default.removeItem(at: folder.appending(path: "c.txt"))
+
+    let restored = Project(folder: folder, restoring: stored)
+    #expect(restored.workspace.documents.map(\.name) == ["a.txt", "b.txt"])
+    #expect(restored.workspace.active?.name == "b.txt")
+    #expect(restored.workspace.problem == nil)
+  }
+
+  /// A window stored before tabs were kept still decodes, with its sessions.
+  @Test func aWindowStoredWithoutTabsStillDecodes() throws {
+    let json = #"{"sessions":[],"selected":"a"}"#
+    let stored = try JSONDecoder().decode(StoredProject.self, from: Data(json.utf8))
+    #expect(stored.selected == "a")
+    #expect(stored.documents == nil)
+  }
+
+  /// A folder left with tabs open and no session is still worth remembering.
+  @Test func theAppRemembersAFolderWithOnlyTabs() throws {
+    let suite = "drakar-tests-\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let stored = StoredProject(documents: [
+      folder.appending(path: "a.txt").path(percentEncoded: false)
+    ])
+    ProjectMemory.remember(stored, for: folder, in: defaults)
+    #expect(ProjectMemory.stored(for: folder, in: defaults) == stored)
+  }
 }

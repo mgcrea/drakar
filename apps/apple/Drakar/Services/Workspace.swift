@@ -82,6 +82,19 @@ final class Workspace {
     return document
   }
 
+  /// The tabs a window kept, reopened at launch: those that still read, in order, without a
+  /// word about the rest, and `active` brought forward.
+  func restore(_ paths: [String], active: String?) {
+    for path in paths where !documents.contains(where: { $0.path == path }) {
+      guard case .success(let text) = TextFile.read(URL(filePath: path)) else { continue }
+      documents.append(EditorDocument(url: URL(filePath: path), text: text))
+    }
+    if let document = documents.first(where: { $0.path == active }) ?? documents.first {
+      tree.reveal(document.path)
+      activate(document)
+    }
+  }
+
   func activate(_ document: EditorDocument) {
     activeID = document.id
     selectionMoved()
