@@ -60,7 +60,7 @@ struct SessionView: View {
       }
       let _ = (picks, settingsAccount)
       SessionFooter(
-        session: session, windowAccount: AccountStore.shared.windowAccount(for: project.folder))
+        item: item, windowAccount: AccountStore.shared.windowAccount(for: project.folder))
     }
     .sheet(item: pendingPermission) { pending in
       PermissionSheet(pending: pending) { decision in session.answer(pending, decision) }
@@ -172,21 +172,29 @@ private struct VersionLabel: View {
 }
 
 private struct SessionFooter: View {
-  let session: ClaudeSession
+  let item: ProjectSession
   /// The account new sessions in the window start under.
   let windowAccount: ClaudeAccount
+
+  private var session: ClaudeSession { item.session }
+
+  /// Known before the process starts: the newest message's model, or the one the sidebar row
+  /// read from the file.
+  private var modelID: String? {
+    ModelName.current(
+      initModel: session.transcript.session?.model,
+      messageModel: session.transcript.contextModelID ?? item.preview?.context?.modelID,
+      attachmentModel: item.preview?.modelID)
+  }
 
   var body: some View {
     HStack(spacing: 12) {
       status
       Spacer()
-      if let model = session.transcript.session?.model {
-        Text(model)
+      if let modelID {
+        Text(ModelName.display(modelID)).help(modelID)
       }
-      if let account = session.effectiveAccount, account.key != windowAccount.key {
-        Label(AccountStore.shared.profile(for: account).name, systemImage: "person.crop.circle")
-          .help("Runs under the account in \(ContentView.abbreviated(account.directory))")
-      }
+      account
       if let version = session.transcript.session?.claudeCodeVersion {
         VersionLabel(version: version, executable: session.executable)
       }
@@ -205,6 +213,30 @@ private struct SessionFooter: View {
     .foregroundStyle(.secondary)
     .padding(.horizontal, 12)
     .padding(.vertical, 6)
+  }
+
+  /// The session's account, or for one not started yet the account it will start under;
+  /// marked as its sidebar row is when it is not the window's.
+  @ViewBuilder private var account: some View {
+    let account = session.effectiveAccount ?? windowAccount
+    let profile = AccountStore.shared.profile(for: account)
+    let label = Label(
+      profile.plan.map { "\(profile.name) (\($0))" } ?? profile.name,
+      systemImage: "person.crop.circle")
+    let help =
+      session.effectiveAccount == nil
+      ? String(
+        localized: "Starts under the account in \(ContentView.abbreviated(account.directory))")
+      : String(localized: "Runs under the account in \(ContentView.abbreviated(account.directory))")
+    if account.key == windowAccount.key {
+      label.help(help)
+    } else {
+      label
+        .padding(.horizontal, 5)
+        .padding(.vertical, 1)
+        .background(Capsule().fill(.quaternary))
+        .help(help + " " + String(localized: "New sessions in this window start under another."))
+    }
   }
 
   @ViewBuilder private var status: some View {
