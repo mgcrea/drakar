@@ -1,0 +1,132 @@
+import DrakarKit
+import Foundation
+import Observation
+
+/// One project's skills and MCP servers under one account, as its `claude` would load them:
+/// read by a probe, refreshed by the project's own sessions, kept for the launch and never
+/// on disk. Every window on the folder shares it.
+@Observable
+final class Capabilities {
+  let folder: URL
+  /// `ClaudeAccount.key` of the account probed.
+  let accountKey: String
+  /// The last lists read; a failed reload leaves them.
+  private(set) var lists = ProjectCapabilities()
+  /// Why the last reading has no skills, or no servers.
+  private(set) var skillsProblem: String?
+  private(set) var serversProblem: String?
+  private(set) var diagnostics = ""
+  private(set) var isLoading = false
+  private(set) var hasLoaded = false
+
+  /// Stands in for the probe, in tests.
+  @ObservationIgnored var probe: (URL) async -> ProbeOutcome = {
+    await CapabilityProbe.run(folder: $0)
+  }
+  @ObservationIgnored private var running: Task<Void, Never>?
+  @ObservationIgnored private var rerun = false
+  @ObservationIgnored private var observers: [UUID: (CapabilityChanges) -> Void] = [:]
+
+  init(folder: URL, accountKey: String) {
+    self.folder = folder
+    self.accountKey = accountKey
+  }
+
+  /// The first time a window shows the project.
+  func loadIfNeeded() {
+    guard !hasLoaded, running == nil else { return }
+    refresh()
+  }
+
+  /// A probe now, or, while one runs, once more after it however often this is asked.
+  func refresh() {
+    if running != nil {
+      rerun = true
+      return
+    }
+    rerun = false
+    isLoading = true
+    running = Task { await self.runProbes() }
+  }
+
+  /// For a file change: only lists something already asked for.
+  func refreshIfLoaded() {
+    guard hasLoaded || running != nil else { return }
+    refresh()
+  }
+
+  /// The last window on the folder closed: its probe goes with it.
+  func cancel() {
+    running?.cancel()
+    running = nil
+    rerun = false
+    isLoading = false
+  }
+
+  /// A session in the project's own folder answered `initialize`: its skills are current.
+  func sessionReported(skills: [SkillEntry]) {
+    skillsProblem = nil
+    replace(ProjectCapabilities(skills: skills, mcpServers: lists.mcpServers))
+  }
+
+  /// `handler` hears what each new reading changed (`CapabilityChanges`), never the first.
+  func observe(_ handler: @escaping (CapabilityChanges) -> Void) -> UUID {
+    let id = UUID()
+    observers[id] = handler
+    return id
+  }
+
+  func stopObserving(_ id: UUID) {
+    observers[id] = nil
+  }
+
+  private func runProbes() async {
+    // Asks made since this task was created count for one more probe, even those made before
+    // the first one started, so `rerun` is cleared only when that probe is taken up again.
+    while true {
+      let outcome = await probe(folder)
+      if Task.isCancelled { return }
+      apply(outcome)
+      guard rerun else { break }
+      rerun = false
+    }
+    isLoading = false
+    running = nil
+  }
+
+  private func apply(_ outcome: ProbeOutcome) {
+    var next = lists
+    if let skills = outcome.capabilities.skills { next.skills = skills }
+    if let servers = outcome.capabilities.mcpServers { next.mcpServers = servers }
+    skillsProblem = outcome.skillsProblem
+    serversProblem = outcome.serversProblem
+    diagnostics = outcome.diagnostics
+    hasLoaded = true
+    replace(next)
+  }
+
+  private func replace(_ next: ProjectCapabilities) {
+    let changes = CapabilityChanges.diff(from: lists, to: next)
+    lists = next
+    guard !changes.isEmpty else { return }
+    for handler in observers.values { handler(changes) }
+  }
+}
+
+/// Every project's `Capabilities`, by folder (as `ProjectPath.normalize` writes it) and
+/// account: another account has other user skills and servers.
+final class CapabilityStore {
+  static let shared = CapabilityStore()
+
+  private var entries: [String: Capabilities] = [:]
+
+  func capabilities(for folder: URL, account: ClaudeAccount) -> Capabilities {
+    let path = ProjectPath.normalize(folder.path(percentEncoded: false))
+    let key = path + "\n" + account.key
+    if let entry = entries[key] { return entry }
+    let entry = Capabilities(
+      folder: URL(filePath: path, directoryHint: .isDirectory), accountKey: account.key)
+    entries[key] = entry
+    return entry
+  }
+}
