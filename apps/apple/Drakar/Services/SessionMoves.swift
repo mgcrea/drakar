@@ -61,19 +61,25 @@ enum SessionMoves {
     return order.compactMap { byID[$0] }
   }
 
-  /// A held session is the window's to judge; one no window holds but a process has open is
-  /// running elsewhere, even when this window watches it.
+  /// A held session busy in its window stays. One a process has open stays too, even when a
+  /// window holds it: `liveIDs` leaves out Drakar's own processes, so it is a terminal or
+  /// another app writing the transcript (a held row it resumed went read-only).
   static func classify(sessionID: String, held: Held?, liveIDs: Set<String>, host: String) -> Plan {
-    if let held { return held.isBusy ? .skip(.busy) : .move(stopping: held.hasProcess) }
+    if held?.isBusy == true { return .skip(.busy) }
     if liveIDs.contains(sessionID) { return .skip(.runningElsewhere(host)) }
-    return .move(stopping: false)
+    return .move(stopping: held?.hasProcess ?? false)
   }
 
   /// One at a time, each judged just before its move: a terminal may resume one, or the
-  /// person prompt one, while the others move.
+  /// person prompt one, while the others move. `watchers` are the rows only watching the
+  /// session, which follow the files too; `mover` stands in for `SessionMover` in tests.
   static func run(
     _ candidates: [Candidate], to target: ClaudeAccount, locate: (String) -> ClaudeSession?,
-    liveIDs: () -> Set<String>, host: (Candidate) -> String
+    liveIDs: () -> Set<String>, host: (Candidate) -> String,
+    watchers: (String) -> [ClaudeSession] = { _ in [] },
+    mover: @escaping @Sendable (URL, ClaudeAccount, ClaudeAccount) -> MoveOutcome = {
+      SessionMover.move(transcript: $0, from: $1, to: $2)
+    }
   ) async -> [Report] {
     var reports: [Report] = []
     for candidate in candidates {
@@ -87,19 +93,32 @@ enum SessionMoves {
         }
         continue
       }
-      if stopping { session?.stop() }
+      // Every row with the id: none may start a process on the old account meanwhile.
+      var rows = session.map { [$0] } ?? []
+      for watcher in watchers(candidate.sessionID) where !rows.contains(where: { $0 === watcher }) {
+        rows.append(watcher)
+      }
+      for row in rows { row.isMoving = true }
+      defer { for row in rows { row.isMoving = false } }
+      if stopping, let session, await !session.stopAndWait() {
+        reports.append(
+          Report(
+            title: candidate.title,
+            outcome: .failed(String(localized: "Claude Code did not quit in time."))))
+        continue
+      }
       let transcript = candidate.transcript
       let source = candidate.account
-      let outcome = await Task.detached {
-        SessionMover.move(transcript: transcript, from: source, to: target)
-      }.value
-      if outcome == .moved, let session {
-        session.relocate(
-          to: ResumeTarget(
-            sessionID: candidate.sessionID,
-            cwd: candidate.cwd ?? session.folder.path(percentEncoded: false),
-            file: SessionMover.destination(of: transcript, to: target).path(percentEncoded: false),
-            accountDirectory: target.key, accountIsDefault: target.isDefault))
+      let outcome = await Task.detached { mover(transcript, source, target) }.value
+      if outcome == .moved {
+        let file = SessionMover.destination(of: transcript, to: target).path(percentEncoded: false)
+        for row in rows {
+          row.relocate(
+            to: ResumeTarget(
+              sessionID: candidate.sessionID,
+              cwd: candidate.cwd ?? row.folder.path(percentEncoded: false), file: file,
+              accountDirectory: target.key, accountIsDefault: target.isDefault))
+        }
       }
       reports.append(Report(title: candidate.title, outcome: outcome))
     }
@@ -152,7 +171,11 @@ extension SessionMoves {
     let monitor = SessionMonitor.shared
     return await run(
       candidates, to: target, locate: { OpenSessions.shared.locate($0)?.1.session },
-      liveIDs: { monitor.liveIDs }, host: { hostName(of: $0) })
+      liveIDs: { monitor.liveIDs }, host: { hostName(of: $0) },
+      watchers: { id in
+        OpenSessions.shared.projects.values.compactMap { $0.session(withID: id) }
+          .filter(\.isWatching).map(\.session)
+      })
   }
 
   private static func hostName(of candidate: Candidate) -> String {
@@ -173,9 +196,8 @@ extension SessionMoves {
     let all = candidates(
       summaries: SessionMonitor.shared.summaries(under: path), held: held, notOn: target)
     let live = SessionMonitor.shared.liveIDs
-    let elsewhere = all.filter {
-      OpenSessions.shared.locate($0.sessionID) == nil && live.contains($0.sessionID)
-    }
+    // As `classify` judges them: open in another process, held by a window or not.
+    let elsewhere = all.filter { live.contains($0.sessionID) }
     let movable = all.count - elsewhere.count
     guard movable > 0 else { return }
     let store = AccountStore.shared

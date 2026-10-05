@@ -44,6 +44,9 @@ final class ClaudeSession {
   var command = ClaudeCommand()
   /// Open in another process: the transcript follows its file and nothing is sent.
   var isReadOnly = false
+  /// Its files are moving to another account (`SessionMoves`): nothing is sent and no
+  /// process starts, since one would resume the session where it no longer is.
+  var isMoving = false
   /// Stands in for the located binary, in tests.
   @ObservationIgnored var executableOverride: URL?
   /// The accounts a new session's transcript is looked for in; the discovered ones, or a
@@ -98,7 +101,7 @@ final class ClaudeSession {
   var isProcessRunning: Bool { process != nil }
 
   var canSend: Bool {
-    !isReadOnly && !historyFailed && !transcript.isRunning && phase != .starting
+    !isReadOnly && !isMoving && !historyFailed && !transcript.isRunning && phase != .starting
   }
 
   /// The history from the transcript file, once: `--resume` continues a session but does
@@ -175,7 +178,7 @@ final class ClaudeSession {
   /// Every await is a point where the window may have closed (`stop()`) or another process
   /// may have opened the session (`isReadOnly`): after each, either ends the spawn.
   private func spawn(unlessStoppedSince stops: Int) async {
-    guard stopCount == stops, process == nil, phase != .starting else { return }
+    guard stopCount == stops, process == nil, phase != .starting, !isMoving else { return }
     if resuming?.forks == true || resuming == nil {
       // A first turn that never finished (End Session, a crash) left no saved target, but
       // the transcript exists from `system/init` on: look for it.
@@ -286,6 +289,20 @@ final class ClaudeSession {
     transcript.processExited()
     if case .failed = phase { return }
     if phase == .ready || phase == .starting { phase = .exited(status: 0) }
+  }
+
+  /// `stop()`, then the process's own exit, which can take a moment: a `claude` that is
+  /// quitting may still write to the files a move is about to take. False when it is
+  /// still running after `limit`.
+  func stopAndWait(upTo limit: Duration = .seconds(5)) async -> Bool {
+    let quitting = process
+    stop()
+    let deadline = ContinuousClock.now + limit
+    while quitting?.isRunning == true {
+      guard ContinuousClock.now < deadline else { return false }
+      try? await Task.sleep(for: .milliseconds(50))
+    }
+    return true
   }
 
   /// The session's files moved to another account (`SessionMover`): its next start resumes

@@ -60,9 +60,14 @@ struct SessionMovesTests {
     #expect(
       SessionMoves.classify(sessionID: "s", held: stopped, liveIDs: [], host: "x")
         == .move(stopping: false))
+    // `liveIDs` leaves out Drakar's own children: the window's process is not "live".
     #expect(
-      SessionMoves.classify(sessionID: "s", held: idle, liveIDs: ["s"], host: "x")
+      SessionMoves.classify(sessionID: "s", held: idle, liveIDs: [], host: "x")
         == .move(stopping: true))
+    // A row the window holds that a terminal resumed (read-only): the terminal is writing it.
+    #expect(
+      SessionMoves.classify(sessionID: "s", held: stopped, liveIDs: ["s"], host: "a terminal")
+        == .skip(.runningElsewhere("a terminal")))
     #expect(
       SessionMoves.classify(sessionID: "s", held: busy, liveIDs: [], host: "x") == .skip(.busy))
     // Watched read-only in a window, open in a terminal: not held.
@@ -141,7 +146,7 @@ struct SessionMovesRunTests {
     #expect(session.isProcessRunning)
 
     let reports = await SessionMoves.run(
-      [candidate], to: b, locate: { $0 == "s1" ? session : nil }, liveIDs: { ["s1"] },
+      [candidate], to: b, locate: { $0 == "s1" ? session : nil }, liveIDs: { [] },
       host: { _ in "x" })
     #expect(reports == [SessionMoves.Report(title: "s1", outcome: .moved)])
     #expect(!session.isProcessRunning)
@@ -167,5 +172,70 @@ struct SessionMovesRunTests {
     #expect(reports == [SessionMoves.Report(title: "s2", outcome: .skipped(.busy))])
     #expect(
       FileManager.default.fileExists(atPath: candidate.transcript.path(percentEncoded: false)))
+  }
+
+  /// A stopped `claude` may still be writing as it quits: the files wait for it.
+  @Test func theStoppedProcessHasQuitBeforeTheFilesMove() async throws {
+    defer { try? FileManager.default.removeItem(at: root) }
+    let slow = root.appending(path: "slow-claude")
+    try Data(
+      "#!/bin/sh\ntrap '' TERM\ntouch \"$0.ready\"\ncat > /dev/null\nsleep 0.5\ntouch \"$0.quit\"\n"
+        .utf8
+    )
+    .write(to: slow)
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: slow.path)
+    let (session, candidate) = try heldSession("s3")
+    session.executableOverride = slow
+    await session.spawn()
+    #expect(session.isProcessRunning)
+    // Signals before the trap would kill it; the test is about one that ignores them.
+    let ready = slow.appendingPathExtension("ready").path
+    for _ in 0..<100 where !FileManager.default.fileExists(atPath: ready) {
+      try await Task.sleep(for: .milliseconds(10))
+    }
+
+    let reports = await SessionMoves.run(
+      [candidate], to: b, locate: { $0 == "s3" ? session : nil }, liveIDs: { [] },
+      host: { _ in "x" })
+    #expect(reports == [SessionMoves.Report(title: "s3", outcome: .moved)])
+    #expect(FileManager.default.fileExists(atPath: slow.appendingPathExtension("quit").path))
+  }
+
+  /// Typing in the session while its files move would resume it on the old account.
+  @Test func aSessionCannotBePromptedWhileItsFilesMove() async throws {
+    defer { try? FileManager.default.removeItem(at: root) }
+    let (session, candidate) = try heldSession("s4")
+    let b = b
+    let running = Task {
+      await SessionMoves.run(
+        [candidate], to: b, locate: { $0 == "s4" ? session : nil }, liveIDs: { [] },
+        host: { _ in "x" },
+        mover: { transcript, source, target in
+          Thread.sleep(forTimeInterval: 0.4)
+          return SessionMover.move(transcript: transcript, from: source, to: target)
+        })
+    }
+    for _ in 0..<100 where !session.isMoving { try await Task.sleep(for: .milliseconds(10)) }
+    #expect(session.isMoving)
+    #expect(!session.canSend)
+    session.send("too soon")
+    await session.spawn()
+    #expect(!session.isProcessRunning)
+
+    #expect(await running.value == [SessionMoves.Report(title: "s4", outcome: .moved)])
+    #expect(!session.isMoving)
+    #expect(session.savedTarget?.accountDirectory == b.key)
+  }
+
+  /// A row only watching the session, in this window or another, follows the files too.
+  @Test func aWatchingRowFollowsTheMove() async throws {
+    defer { try? FileManager.default.removeItem(at: root) }
+    let (held, candidate) = try heldSession("s5")
+    let watcher = ClaudeSession(folder: root, resuming: held.savedTarget)
+    let reports = await SessionMoves.run(
+      [candidate], to: b, locate: { _ in nil }, liveIDs: { [] }, host: { _ in "x" },
+      watchers: { $0 == "s5" ? [watcher] : [] })
+    #expect(reports == [SessionMoves.Report(title: "s5", outcome: .moved)])
+    #expect(watcher.savedTarget?.accountDirectory == b.key)
   }
 }
