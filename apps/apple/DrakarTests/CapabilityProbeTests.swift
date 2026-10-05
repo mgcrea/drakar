@@ -91,4 +91,18 @@ struct CapabilityProbeTests {
     }
     #expect(exists(closed))
   }
+
+  /// Cancelled before it starts: the task body cannot run before the test's next await (both
+  /// are on the main actor), so it always begins cancelled, and no `claude` is launched.
+  @Test func aProbeCancelledBeforeItStartsLaunchesNothing() async throws {
+    let claude = try standIn("touch \"$0.started\"\ncat > /dev/null")
+    let probe = Task {
+      await CapabilityProbe.run(
+        folder: folder, executableOverride: claude, grace: .milliseconds(200))
+    }
+    probe.cancel()
+    _ = await probe.value
+    try await Task.sleep(for: .milliseconds(500))
+    #expect(!exists(claude.appendingPathExtension("started")))
+  }
 }

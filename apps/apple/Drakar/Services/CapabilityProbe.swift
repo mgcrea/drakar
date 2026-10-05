@@ -32,8 +32,12 @@ enum CapabilityProbe {
       return .failed(
         String(localized: "The folder \(folder.lastPathComponent) no longer exists."))
     }
+    let environment = await ClaudeSession.environment.value
+    // Cancelled while the environment loaded: nothing has started, so nothing is launched.
+    // (Launching now would meet an already-closed input and need a hard kill.)
+    guard !Task.isCancelled else { return .failed(String(localized: "Cancelled.")) }
     let launch = ClaudeLaunch.make(
-      folder: folder, resuming: nil, environment: await ClaudeSession.environment.value,
+      folder: folder, resuming: nil, environment: environment,
       executableOverride: executableOverride)
     guard let executable = launch.executable else { return .failed(ClaudeLaunch.notFound) }
     let process = AgentProcess(
@@ -57,7 +61,7 @@ enum CapabilityProbe {
       try process.send(.initialize(requestID: initializeID))
       try process.send(.mcpStatus(requestID: statusID))
     } catch {
-      process.terminate()
+      release(process, after: grace)
       return .failed(error.localizedDescription)
     }
     let deadline = ContinuousClock.now + timeout
