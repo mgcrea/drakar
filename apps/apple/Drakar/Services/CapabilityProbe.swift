@@ -22,10 +22,12 @@ enum CapabilityProbe {
   static let initializeID = "probe-init"
   static let statusID = "probe-mcp"
 
-  /// What a new session in `folder` would load. Cancelling the calling task lets the
-  /// process go as a finished probe does.
+  /// What a new session in `folder` would load, under `account` when given (the one its
+  /// lists are kept for), else under the account a new session there would take.
+  /// Cancelling the calling task lets the process go as a finished probe does.
   static func run(
-    folder: URL, executableOverride: URL? = nil, timeout: Duration = .seconds(20),
+    folder: URL, account: ClaudeAccount? = nil, executableOverride: URL? = nil,
+    timeout: Duration = .seconds(20),
     grace: Duration = .seconds(2)
   ) async -> ProbeOutcome {
     guard FileManager.default.fileExists(atPath: folder.path(percentEncoded: false)) else {
@@ -37,7 +39,7 @@ enum CapabilityProbe {
     // (Launching now would meet an already-closed input and need a hard kill.)
     guard !Task.isCancelled else { return .failed(String(localized: "Cancelled.")) }
     let launch = ClaudeLaunch.make(
-      folder: folder, resuming: nil, environment: environment,
+      folder: folder, resuming: nil, account: account, environment: environment,
       executableOverride: executableOverride)
     guard let executable = launch.executable else { return .failed(ClaudeLaunch.notFound) }
     let process = AgentProcess(

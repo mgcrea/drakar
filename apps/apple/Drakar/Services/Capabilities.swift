@@ -8,8 +8,9 @@ import Observation
 @Observable
 final class Capabilities {
   let folder: URL
-  /// `ClaudeAccount.key` of the account probed.
-  let accountKey: String
+  /// The account the lists are for: the probe runs under it.
+  let account: ClaudeAccount
+  var accountKey: String { account.key }
   /// The last lists read; a failed reload leaves them.
   private(set) var lists = ProjectCapabilities()
   /// Why the last reading has no skills, or no servers.
@@ -19,17 +20,17 @@ final class Capabilities {
   private(set) var isLoading = false
   private(set) var hasLoaded = false
 
-  /// Stands in for the probe, in tests.
-  @ObservationIgnored var probe: (URL) async -> ProbeOutcome = {
-    await CapabilityProbe.run(folder: $0)
+  /// Stands in for the probe, in tests: the folder and the account to probe it under.
+  @ObservationIgnored var probe: (URL, ClaudeAccount) async -> ProbeOutcome = {
+    await CapabilityProbe.run(folder: $0, account: $1)
   }
   @ObservationIgnored private var running: Task<Void, Never>?
   @ObservationIgnored private var rerun = false
   @ObservationIgnored private var observers: [UUID: (CapabilityChanges) -> Void] = [:]
 
-  init(folder: URL, accountKey: String) {
+  init(folder: URL, account: ClaudeAccount) {
     self.folder = folder
-    self.accountKey = accountKey
+    self.account = account
   }
 
   /// The first time a window shows the project.
@@ -84,7 +85,7 @@ final class Capabilities {
     // Asks made since this task was created count for one more probe, even those made before
     // the first one started, so `rerun` is cleared only when that probe is taken up again.
     while true {
-      let outcome = await probe(folder)
+      let outcome = await probe(folder, account)
       if Task.isCancelled { return }
       apply(outcome)
       guard rerun else { break }
@@ -125,7 +126,7 @@ final class CapabilityStore {
     let key = path + "\n" + account.key
     if let entry = entries[key] { return entry }
     let entry = Capabilities(
-      folder: URL(filePath: path, directoryHint: .isDirectory), accountKey: account.key)
+      folder: URL(filePath: path, directoryHint: .isDirectory), account: account)
     entries[key] = entry
     return entry
   }

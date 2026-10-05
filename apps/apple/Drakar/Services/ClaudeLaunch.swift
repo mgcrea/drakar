@@ -17,13 +17,14 @@ struct ClaudeLaunch {
 
   /// `environment` is the login shell's (`ClaudeSession.environment`). A resume runs under
   /// the account that wrote it; a new session under its folder's pick, else the one in
-  /// Settings, else the shell's.
+  /// Settings, else the shell's. An explicit `account` wins over all of them: the probe runs
+  /// under the account its lists are kept for.
   static func make(
-    folder: URL, resuming: ResumeTarget?, environment: [String: String],
-    executableOverride: URL?
+    folder: URL, resuming: ResumeTarget?, account explicit: ClaudeAccount? = nil,
+    environment: [String: String], executableOverride: URL?
   ) -> ClaudeLaunch {
     var environment = environment
-    let chosen = resuming?.account ?? ClaudeChoice.account(forNewSessionIn: folder)
+    let chosen = explicit ?? resuming?.account ?? ClaudeChoice.account(forNewSessionIn: folder)
     if let chosen { environment = chosen.environment(environment) }
     let account =
       chosen

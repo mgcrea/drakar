@@ -108,13 +108,13 @@ struct SkillRunTests {
   @Test func marksFollowTheLists() async throws {
     let project = Project(folder: folder)
     let entry = project.capabilities
-    entry.probe = { _ in
+    entry.probe = { _, _ in
       ProbeOutcome(capabilities: ProjectCapabilities(skills: [], mcpServers: []))
     }
     entry.refresh()
     try await settle(entry)
     #expect(project.capabilityMarks.isEmpty)
-    entry.probe = { _ in
+    entry.probe = { _, _ in
       ProbeOutcome(
         capabilities: ProjectCapabilities(
           skills: [self.audit], mcpServers: [MCPServerEntry(name: "github", status: .failed)]))
@@ -161,7 +161,7 @@ struct SkillRunTests {
   @Test func closingTheWindowCancelsItsProbe() async throws {
     let project = Project(folder: folder)
     let entry = project.capabilities
-    entry.probe = { _ in
+    entry.probe = { _, _ in
       try? await Task.sleep(for: .seconds(5))
       return ProbeOutcome()
     }
@@ -171,6 +171,36 @@ struct SkillRunTests {
     #expect(!entry.isLoading)
   }
 
+  /// The window moving to another account takes the old account's probe with it.
+  @Test func anAccountChangeCancelsTheOldProbe() throws {
+    let other = folder.appending(path: ".claude-other", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: other, withIntermediateDirectories: true)
+    let suite = "drakar-tests-\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    ClaudeChoice.$testSuite.withValue(suite) {
+      let project = Project(folder: folder)
+      let old = project.capabilities
+      old.probe = { _, _ in
+        try? await Task.sleep(for: .seconds(5))
+        return ProbeOutcome()
+      }
+      old.refresh()
+      #expect(old.isLoading)
+      let account = ClaudeChoice.account(at: other.path(percentEncoded: false))
+      // The entry the window moves to answers at once, so no real `claude` is started.
+      CapabilityStore.shared.capabilities(for: folder, account: account).probe = { _, _ in
+        ProbeOutcome()
+      }
+      ClaudeChoice.pick(account, for: folder)
+      project.accountMayHaveChanged()
+      #expect(project.capabilities !== old)
+      #expect(project.capabilities.account == account)
+      #expect(!old.isLoading)
+      project.stopAll()
+    }
+  }
+
   /// A change to the project's `.claude/skills` reads the lists again, once, after the
   /// changes settle.
   @Test func aSkillFileChangeRefreshesOnceSettled() async throws {
@@ -178,7 +208,7 @@ struct SkillRunTests {
     project.capabilityDebounce = .milliseconds(100)
     let entry = project.capabilities
     let calls = CapabilityStoreTests.Calls()
-    entry.probe = { _ in
+    entry.probe = { _, _ in
       calls.count += 1
       return ProbeOutcome(capabilities: ProjectCapabilities(skills: [], mcpServers: []))
     }

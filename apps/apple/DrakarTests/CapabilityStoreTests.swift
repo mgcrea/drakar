@@ -12,6 +12,7 @@ struct CapabilityStoreTests {
 
   private let folder = FileManager.default.temporaryDirectory.appending(
     path: "drakar-store-\(UUID().uuidString)", directoryHint: .isDirectory)
+  private let account = ClaudeAccount(directory: URL(filePath: "/tmp/.claude-a"), isDefault: false)
 
   private func outcome(_ skills: [String], _ servers: [MCPServerEntry] = []) -> ProbeOutcome {
     ProbeOutcome(
@@ -27,9 +28,9 @@ struct CapabilityStoreTests {
 
   /// Three refreshes asked while one probe runs make one more probe, not three.
   @Test func refreshesAskedDuringAProbeRunOnceAfterIt() async throws {
-    let entry = Capabilities(folder: folder, accountKey: "a")
+    let entry = Capabilities(folder: folder, account: account)
     let calls = Calls()
-    entry.probe = { _ in
+    entry.probe = { _, _ in
       calls.count += 1
       try? await Task.sleep(for: .milliseconds(100))
       return self.outcome(["s\(calls.count)"])
@@ -45,9 +46,9 @@ struct CapabilityStoreTests {
   }
 
   @Test func loadsOnlyOnceIfNeeded() async throws {
-    let entry = Capabilities(folder: folder, accountKey: "a")
+    let entry = Capabilities(folder: folder, account: account)
     let calls = Calls()
-    entry.probe = { _ in
+    entry.probe = { _, _ in
       calls.count += 1
       return self.outcome(["s"])
     }
@@ -60,11 +61,11 @@ struct CapabilityStoreTests {
 
   /// A reload that fails keeps the lists shown, and says why beside them.
   @Test func aFailedReloadKeepsTheLastLists() async throws {
-    let entry = Capabilities(folder: folder, accountKey: "a")
-    entry.probe = { _ in self.outcome(["kept"]) }
+    let entry = Capabilities(folder: folder, account: account)
+    entry.probe = { _, _ in self.outcome(["kept"]) }
     entry.refresh()
     try await settle(entry)
-    entry.probe = { _ in .failed("Claude Code exited with status 1.") }
+    entry.probe = { _, _ in .failed("Claude Code exited with status 1.") }
     entry.refresh()
     try await settle(entry)
     #expect(entry.lists.skills?.map(\.name) == ["kept"])
@@ -72,14 +73,14 @@ struct CapabilityStoreTests {
   }
 
   @Test func theFirstListsMarkNothingAndANewSkillDoes() async throws {
-    let entry = Capabilities(folder: folder, accountKey: "a")
+    let entry = Capabilities(folder: folder, account: account)
     var seen: [CapabilityChanges] = []
     _ = entry.observe { seen.append($0) }
-    entry.probe = { _ in self.outcome(["a"]) }
+    entry.probe = { _, _ in self.outcome(["a"]) }
     entry.refresh()
     try await settle(entry)
     #expect(seen.isEmpty)
-    entry.probe = { _ in self.outcome(["a", "b"]) }
+    entry.probe = { _, _ in self.outcome(["a", "b"]) }
     entry.refresh()
     try await settle(entry)
     #expect(seen == [CapabilityChanges(addedSkills: ["b"])])
@@ -87,9 +88,9 @@ struct CapabilityStoreTests {
 
   /// A session's `initialize` knows skills, not servers.
   @Test func aSessionsSkillsReplaceOnlyTheSkills() async throws {
-    let entry = Capabilities(folder: folder, accountKey: "a")
+    let entry = Capabilities(folder: folder, account: account)
     let server = MCPServerEntry(name: "armada", status: .connected)
-    entry.probe = { _ in self.outcome(["old"], [server]) }
+    entry.probe = { _, _ in self.outcome(["old"], [server]) }
     entry.refresh()
     try await settle(entry)
     entry.sessionReported(skills: [SkillEntry(name: "new")])
@@ -99,9 +100,9 @@ struct CapabilityStoreTests {
 
   /// A file change refreshes only lists something asked for: never one nobody loaded.
   @Test func refreshIfLoadedLeavesAnUnloadedEntryAlone() async throws {
-    let entry = Capabilities(folder: folder, accountKey: "a")
+    let entry = Capabilities(folder: folder, account: account)
     let calls = Calls()
-    entry.probe = { _ in
+    entry.probe = { _, _ in
       calls.count += 1
       return self.outcome(["s"])
     }
@@ -111,8 +112,8 @@ struct CapabilityStoreTests {
   }
 
   @Test func cancellingStopsTheProbe() async throws {
-    let entry = Capabilities(folder: folder, accountKey: "a")
-    entry.probe = { _ in
+    let entry = Capabilities(folder: folder, account: account)
+    entry.probe = { _, _ in
       try? await Task.sleep(for: .seconds(5))
       return self.outcome(["late"])
     }
@@ -131,6 +132,23 @@ struct CapabilityStoreTests {
     let first = store.capabilities(for: folder, account: a)
     #expect(store.capabilities(for: folder.appending(path: ""), account: a) === first)
     #expect(store.capabilities(for: folder, account: b) !== first)
+  }
+
+  /// An entry probes under the account it is kept for, not whatever a new session in the
+  /// folder would take now.
+  @Test func anEntryProbesUnderItsOwnAccount() async throws {
+    let store = CapabilityStore()
+    let work = ClaudeAccount(directory: URL(filePath: "/tmp/.claude-work"), isDefault: false)
+    let entry = store.capabilities(for: folder, account: work)
+    final class Probed { var accounts: [ClaudeAccount] = [] }
+    let probed = Probed()
+    entry.probe = { _, account in
+      probed.accounts.append(account)
+      return self.outcome(["s"])
+    }
+    entry.loadIfNeeded()
+    try await settle(entry)
+    #expect(probed.accounts == [work])
   }
 
   /// What the CLI reads skills, commands and servers from, in the project itself.

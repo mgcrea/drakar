@@ -345,6 +345,8 @@ final class Project {
       for: folder, account: AccountStore.shared.windowAccount(for: folder))
     guard entry !== capabilities else { return }
     if let capabilityObserver { capabilities.stopObserving(capabilityObserver) }
+    // The old account's probe is nobody's now, unless another window shows its lists.
+    cancelProbeUnlessShared(capabilities)
     capabilities = entry
     capabilityMarks = CapabilityMarks()
     observeCapabilities()
@@ -380,10 +382,15 @@ final class Project {
     capabilityRefresh?.cancel()
     if let capabilityObserver { capabilities.stopObserving(capabilityObserver) }
     capabilityObserver = nil
+    cancelProbeUnlessShared(capabilities)
+  }
+
+  /// `entry`'s probe goes, unless another open window shows the same lists.
+  private func cancelProbeUnlessShared(_ entry: Capabilities) {
     let shared = OpenSessions.shared.projects.values.contains {
-      $0 !== self && $0.capabilities === capabilities
+      $0 !== self && $0.capabilities === entry
     }
-    if !shared { capabilities.cancel() }
+    if !shared { entry.cancel() }
   }
 
   /// `target` on top and shown, or the row already holding it, taken over unless

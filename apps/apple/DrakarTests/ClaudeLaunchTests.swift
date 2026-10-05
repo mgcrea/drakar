@@ -41,6 +41,29 @@ struct ClaudeLaunchTests {
     #expect(launch.executable == URL(filePath: "/bin/echo"))
   }
 
+  /// The probe runs under the account its lists are kept for, whatever the folder's pick.
+  @Test func anExplicitAccountWinsOverTheFoldersPick() throws {
+    let picked = folder.appending(path: ".claude-picked", directoryHint: .isDirectory)
+    let probed = folder.appending(path: ".claude-probed", directoryHint: .isDirectory)
+    for directory in [picked, probed] {
+      try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    }
+    let suite = "drakar-tests-\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+
+    let launch = ClaudeChoice.$testSuite.withValue(suite) {
+      ClaudeChoice.pick(ClaudeChoice.account(at: picked.path(percentEncoded: false)), for: folder)
+      return ClaudeLaunch.make(
+        folder: folder, resuming: nil,
+        account: ClaudeChoice.account(at: probed.path(percentEncoded: false)),
+        environment: ["CLAUDE_CONFIG_DIR": "/elsewhere"],
+        executableOverride: URL(filePath: "/bin/echo"))
+    }
+    #expect(launch.account?.name == "probed")
+    #expect(launch.environment["CLAUDE_CONFIG_DIR"]?.hasSuffix(".claude-probed") == true)
+  }
+
   /// A resume runs where it was written, whatever the folder's pick.
   @Test func aResumeRunsUnderItsOwnAccount() throws {
     let writer = folder.appending(path: ".claude-writer", directoryHint: .isDirectory)
