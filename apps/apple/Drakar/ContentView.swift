@@ -16,6 +16,8 @@ struct ContentView: View {
   @SceneStorage("drakar.editorFraction") private var editorFraction = 0.5
   /// Whether this window floats above other apps' windows, kept per window.
   @SceneStorage("drakar.keepsOnTop") private var keepsOnTop = false
+  /// Whether the skills and MCP servers column is shown, kept per window.
+  @SceneStorage("drakar.inspectorShown") private var inspectorShown = false
   /// The attached sessions and the one shown, as JSON (`StoredProject`).
   @SceneStorage("drakar.project") private var storedProject = ""
 
@@ -33,6 +35,18 @@ struct ContentView: View {
             SelectedSessionPane(project: project)
           }
         }
+        .inspector(isPresented: $inspectorShown) {
+          InspectorView(project: project)
+            .inspectorColumnWidth(min: 220, ideal: 280, max: 420)
+        }
+        // Hidden after being seen: what it showed was seen.
+        .onChange(of: inspectorShown) { was, now in
+          if was, !now { project.clearCapabilityMarks() }
+        }
+        // The first window on the folder reads its lists, shown or not, so a change shows on
+        // the toolbar button.
+        .task(id: ObjectIdentifier(project)) { project.capabilities.loadIfNeeded() }
+        .focusedSceneValue(\.inspectorShown, $inspectorShown)
         // The window's closing, not this view's disappearing, stops the sessions: the editor
         // appearing with the first open file must not take the running ones with it.
         .background(
@@ -77,6 +91,9 @@ struct ContentView: View {
         }
         ToolbarItem(placement: .primaryAction) {
           AccountToolbarItem(folder: project.folder)
+        }
+        ToolbarItem(placement: .primaryAction) {
+          InspectorToggle(project: project, isShown: $inspectorShown)
         }
       }
       ToolbarItem(placement: .primaryAction) {
@@ -330,7 +347,10 @@ private struct SelectedSessionPane: View {
       }
     }
     .task(id: project.selectedID) {
-      guard let item = project.selected else { return shownID = nil }
+      guard let item = project.selected else {
+        shownID = nil
+        return
+      }
       await item.session.loadHistory()
       if !Task.isCancelled { shownID = item.id }
     }

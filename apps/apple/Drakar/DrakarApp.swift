@@ -24,7 +24,10 @@ struct DrakarApp: App {
         SaveCommand()
       }
       CommandGroup(after: .textEditing) { MentionCommands() }
-      CommandGroup(after: .sidebar) { FilesCommand() }
+      CommandGroup(after: .sidebar) {
+        FilesCommand()
+        InspectorCommand()
+      }
       // ⌘P, as in VS Code and Zed: Drakar prints nothing.
       CommandGroup(replacing: .printItem) { QuickOpenCommand() }
     }
@@ -84,6 +87,20 @@ private struct FilesCommand: View {
     }
     .keyboardShortcut("e", modifiers: [.command, .shift])
     .disabled(filesCollapsed == nil)
+  }
+}
+
+/// View › Show Inspector (⌥⌘0, the inspector key of Xcode and Finder): the focused window's
+/// skills and MCP servers.
+private struct InspectorCommand: View {
+  @FocusedBinding(\.inspectorShown) private var inspectorShown
+
+  var body: some View {
+    Button(inspectorShown == true ? "Hide Inspector" : "Show Inspector") {
+      inspectorShown?.toggle()
+    }
+    .keyboardShortcut("0", modifiers: [.command, .option])
+    .disabled(inspectorShown == nil)
   }
 }
 
