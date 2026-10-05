@@ -59,6 +59,34 @@ struct CapabilityStoreTests {
     #expect(calls.count == 1)
   }
 
+  /// A first probe that read no list at all (no `claude` yet) is tried again by the next
+  /// window on the folder, though a file change still leaves it alone.
+  @Test func aFirstProbeWithoutAnyListIsTriedAgain() async throws {
+    let entry = Capabilities(folder: folder, account: account)
+    let calls = Calls()
+    entry.probe = { _, _ in
+      calls.count += 1
+      return .failed(ClaudeLaunch.notFound)
+    }
+    entry.loadIfNeeded()
+    try await settle(entry)
+    #expect(!entry.hasLoaded)
+    entry.refreshIfLoaded()
+    try await settle(entry)
+    #expect(calls.count == 1)
+    entry.probe = { _, _ in
+      calls.count += 1
+      return self.outcome(["s"])
+    }
+    entry.loadIfNeeded()
+    try await settle(entry)
+    #expect(calls.count == 2)
+    #expect(entry.hasLoaded)
+    entry.loadIfNeeded()
+    try await settle(entry)
+    #expect(calls.count == 2)
+  }
+
   /// A reload that fails keeps the lists shown, and says why beside them.
   @Test func aFailedReloadKeepsTheLastLists() async throws {
     let entry = Capabilities(folder: folder, account: account)

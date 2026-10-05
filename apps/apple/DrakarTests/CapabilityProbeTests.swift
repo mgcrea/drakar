@@ -109,13 +109,19 @@ struct CapabilityProbeTests {
 
   /// A window closed mid-probe: input closed first, so the CLI can exit on its own.
   @Test func aCancelledProbeLetsTheProcessGo() async throws {
-    let claude = try standIn("cat > /dev/null\ntouch \"$0.closed\"\nexec sleep 30")
+    let claude = try standIn(
+      "touch \"$0.started\"\ncat > /dev/null\ntouch \"$0.closed\"\nexec sleep 30")
+    let started = claude.appendingPathExtension("started")
     let closed = claude.appendingPathExtension("closed")
     let probe = Task {
       await CapabilityProbe.run(
         folder: folder, executableOverride: claude, grace: .milliseconds(200))
     }
-    try await Task.sleep(for: .milliseconds(300))
+    // Cancelled once the process runs, however long the shell environment took to load.
+    for _ in 0..<200 where !exists(started) {
+      try await Task.sleep(for: .milliseconds(25))
+    }
+    try #require(exists(started))
     probe.cancel()
     _ = await probe.value
     for _ in 0..<40 where !exists(closed) {

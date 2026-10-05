@@ -75,6 +75,21 @@ struct SkillRunTests {
     #expect(item.composerHint == "<url or topic>")
   }
 
+  /// A second skill replaces the one the inspector put there rather than stacking on it, and
+  /// the same one again is not put there twice; what was typed after it stays.
+  @Test func anotherSkillReplacesThePrefilledOne() throws {
+    let project = Project(folder: folder)
+    let item = project.newSession()
+    let fix = SkillEntry(name: "fix", argumentHint: "<issue>")
+    project.run(audit, in: .current)
+    item.draft += "the login page"
+    project.run(fix, in: .current)
+    #expect(item.draft == "/fix the login page")
+    #expect(item.composerHint == "<issue>")
+    project.run(fix, in: .current)
+    #expect(item.draft == "/fix the login page")
+  }
+
   /// A session that cannot take a prompt cannot take a skill: refused, not queued.
   @Test func aReadOnlySessionCannotRunOne() throws {
     let project = Project(folder: folder)

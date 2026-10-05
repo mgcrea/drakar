@@ -2,8 +2,6 @@ import DrakarKit
 import Foundation
 import Observation
 
-/// One session as a project window holds it: the session, and what the window keeps for it
-/// while another is shown.
 /// A skill put in the composer rather than sent: the text it put there, and what it takes.
 struct SkillPrefill: Equatable {
   var text: String
@@ -16,6 +14,8 @@ enum SkillTarget {
   case current
 }
 
+/// One session as a project window holds it: the session, and what the window keeps for it
+/// while another is shown.
 @Observable
 final class ProjectSession: Identifiable {
   let id = UUID()
@@ -320,7 +320,15 @@ final class Project {
     }
     if skill.takesArguments {
       let text = "/\(skill.name) "
-      item.draft = text + item.draft
+      // The skill the inspector put there before, or this one already, gives way: what was
+      // typed after it is kept, under the new name.
+      var rest = Substring(item.draft)
+      if let prefill = item.prefill, rest.hasPrefix(prefill.text) {
+        rest = rest.dropFirst(prefill.text.count)
+      } else if rest.hasPrefix(text) {
+        rest = rest.dropFirst(text.count)
+      }
+      item.draft = text + rest
       item.prefill = SkillPrefill(text: text, hint: skill.argumentHint)
       item.focusRequest += 1
     } else {

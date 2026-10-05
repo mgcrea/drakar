@@ -139,13 +139,26 @@ private struct SkillRow: View {
     }
     // The whole row takes the click, as a session row does, not only its text.
     .frame(maxWidth: .infinity, alignment: .leading)
-    .help(help)
+    .modifier(Tooltip(text: help))
     .accessibilityElement(children: .combine)
   }
 
-  private var help: String {
-    guard skill.takesArguments else { return skill.description }
-    return "\(skill.description)\n\n/\(skill.name) \(skill.argumentHint)"
+  /// The description, then the name with what it takes; nil when there is neither.
+  private var help: String? {
+    let parts = [
+      skill.description,
+      skill.takesArguments ? "/\(skill.name) \(skill.argumentHint)" : "",
+    ].filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    return parts.isEmpty ? nil : parts.joined(separator: "\n\n")
+  }
+}
+
+/// `.help` only when there is something to say: an empty one still attaches a tooltip.
+private struct Tooltip: ViewModifier {
+  let text: String?
+
+  func body(content: Content) -> some View {
+    if let text { content.help(text) } else { content }
   }
 }
 

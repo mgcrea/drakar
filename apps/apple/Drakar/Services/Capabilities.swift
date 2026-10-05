@@ -18,6 +18,7 @@ final class Capabilities {
   private(set) var serversProblem: String?
   private(set) var diagnostics = ""
   private(set) var isLoading = false
+  /// A probe has read at least one of the lists.
   private(set) var hasLoaded = false
 
   /// Stands in for the probe, in tests: the folder and the account to probe it under.
@@ -102,7 +103,11 @@ final class Capabilities {
     skillsProblem = outcome.skillsProblem
     serversProblem = outcome.serversProblem
     diagnostics = outcome.diagnostics
-    hasLoaded = true
+    // A reading without either list (no `claude`, or it failed to start) is not a load: the
+    // next window on the folder tries again, as "open the folder again" says.
+    if outcome.capabilities.skills != nil || outcome.capabilities.mcpServers != nil {
+      hasLoaded = true
+    }
     replace(next)
   }
 
