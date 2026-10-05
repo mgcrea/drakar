@@ -8,6 +8,10 @@ struct CodeTextView: NSViewRepresentable {
   let document: EditorDocument
   /// ⌥K in this text view; nil where there is no prompt to pin the selection to.
   var pin: (() -> Void)? = nil
+  /// Whether it takes the keys on appearing: not when a relaunch leaves them elsewhere.
+  var takesFocus = true
+  /// Called when the text view takes the keys.
+  var focused: (() -> Void)? = nil
   let selectionMoved: () -> Void
 
   func makeCoordinator() -> Coordinator {
@@ -25,6 +29,7 @@ struct CodeTextView: NSViewRepresentable {
 
     let textView = CodeNSTextView(frame: .zero, textContainer: container)
     textView.pin = pin
+    textView.focused = focused
     textView.isRichText = false
     textView.importsGraphics = false
     textView.allowsUndo = true
@@ -66,9 +71,10 @@ struct CodeTextView: NSViewRepresentable {
     let range = NSIntersectionRange(
       document.selectedRange, NSRange(location: 0, length: document.storage.length))
     textView.setSelectedRange(range)
+    let takesFocus = takesFocus
     DispatchQueue.main.async {
       textView.scrollRangeToVisible(range)
-      textView.window?.makeFirstResponder(textView)
+      if takesFocus { textView.window?.makeFirstResponder(textView) }
     }
     return scrollView
   }
@@ -273,6 +279,13 @@ final class LineNumberRuler: NSRulerView {
 /// layout ⌥K types a character), so the menu's ⌥K never fires from the editor.
 final class CodeNSTextView: NSTextView {
   var pin: (() -> Void)?
+  var focused: (() -> Void)?
+
+  override func becomeFirstResponder() -> Bool {
+    let became = super.becomeFirstResponder()
+    if became { focused?() }
+    return became
+  }
 
   /// The K key, wherever the layout puts its letter.
   static let kKeyCode: UInt16 = 40

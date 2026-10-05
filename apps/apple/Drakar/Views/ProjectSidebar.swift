@@ -137,6 +137,11 @@ struct SessionListView: View {
     .focusable()
     .focused($isFocused)
     .focusEffectDisabled()
+    // The list had the keys at the last quit: it takes them back.
+    .onAppear { if project.claimsRestoredFocus(.sessions) { isFocused = true } }
+    .onChange(of: isFocused) { _, focused in
+      if focused { project.workspace.focusedPane = .sessions }
+    }
     .onKeyPress(.downArrow) { move(1) }
     .onKeyPress(.upArrow) { move(-1) }
     .accessibilityIdentifier("sessions")

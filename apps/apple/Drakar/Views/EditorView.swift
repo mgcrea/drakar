@@ -14,7 +14,11 @@ struct EditorView: View {
       Divider()
       if let document = workspace.active {
         DiskBanner(document: document)
-        CodeTextView(document: document, pin: { workspace.pinSelection() }) {
+        CodeTextView(
+          document: document, pin: { workspace.pinSelection() },
+          takesFocus: !workspace.holdsEditorFocus,
+          focused: { workspace.focusedPane = .editor }
+        ) {
           workspace.selectionMoved()
         }
         .id(document.id)

@@ -151,8 +151,13 @@ final class ProjectSession: Identifiable {
   }
 }
 
+/// The pane of a project window the keys go to.
+enum FocusedPane: String, Codable {
+  case composer, editor, sessions
+}
+
 /// What a project window keeps between launches: the sessions it held and the one shown,
-/// and the editor's tabs and the active one.
+/// the editor's tabs and the active one, and the pane the keys were in.
 struct StoredProject: Codable, Equatable {
   var sessions: [ResumeTarget] = []
   var selected: String?
@@ -162,6 +167,7 @@ struct StoredProject: Codable, Equatable {
   /// The open tabs' paths, in order. Optional for the same reason.
   var documents: [String]?
   var activeDocument: String?
+  var focusedPane: FocusedPane?
 
   /// Nothing worth bringing back: no session and no tab.
   var isEmpty: Bool { sessions.isEmpty && documents?.isEmpty != false }
@@ -207,6 +213,8 @@ final class Project {
   /// Whether the shown session's composer takes the focus when it appears: not when the
   /// sidebar's arrow keys or a click there chose it, so the keys keep moving in the list.
   @ObservationIgnored private(set) var focusesComposer = true
+  /// The pane that had the keys at the last quit, until it takes them back.
+  @ObservationIgnored private var restoredFocus: FocusedPane?
 
   init(folder: URL, restoring stored: StoredProject? = nil) {
     self.folder = folder
@@ -222,7 +230,20 @@ final class Project {
       sessions.first { $0.sessionID == stored?.selected }?.id ?? sessions.first?.id
     if let selected { load(selected) }
     for item in sessions { readPreview(item) }
-    workspace.restore(stored?.documents ?? [], active: stored?.activeDocument)
+    workspace.restore(
+      stored?.documents ?? [], active: stored?.activeDocument, focus: stored?.focusedPane)
+    // The editor's file may be gone since: the composer takes the keys rather than nobody.
+    var focus = stored?.focusedPane ?? .composer
+    if focus == .editor, workspace.documents.isEmpty { focus = .composer }
+    focusesComposer = focus == .composer
+    restoredFocus = focus
+  }
+
+  /// Whether `pane` is the one to take the keys back after a relaunch; true once.
+  func claimsRestoredFocus(_ pane: FocusedPane) -> Bool {
+    guard restoredFocus == pane else { return false }
+    restoredFocus = nil
+    return true
   }
 
   var selected: ProjectSession? { sessions.first { $0.id == selectedID } }
@@ -339,7 +360,8 @@ final class Project {
       dismissedQuestions: dismissed.isEmpty
         ? nil : Dictionary(dismissed, uniquingKeysWith: { first, _ in first }),
       documents: workspace.documents.isEmpty ? nil : workspace.documents.map(\.path),
-      activeDocument: workspace.active?.path)
+      activeDocument: workspace.active?.path,
+      focusedPane: workspace.focusedPane)
   }
 
   private func make(_ session: ClaudeSession) -> ProjectSession {

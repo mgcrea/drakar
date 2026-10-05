@@ -289,4 +289,63 @@ struct ProjectTests {
     ProjectMemory.remember(stored, for: folder, in: defaults)
     #expect(ProjectMemory.stored(for: folder, in: defaults) == stored)
   }
+
+  private func relaunched(_ project: Project) throws -> Project {
+    let stored = try JSONDecoder().decode(
+      StoredProject.self, from: JSONEncoder().encode(project.stored))
+    return Project(folder: folder, restoring: stored)
+  }
+
+  /// The pane the keys were in comes back with the window: the editor's restored tab does
+  /// not take them from the composer, and takes them when it had them.
+  @Test func theFocusedPaneSurvivesARelaunch() throws {
+    let file = folder.appending(path: "a.txt")
+    try "a".write(to: file, atomically: true, encoding: .utf8)
+    let project = Project(folder: folder)
+    project.workspace.open(file)
+
+    project.workspace.focusedPane = .composer
+    let typing = try relaunched(project)
+    #expect(typing.workspace.focusedPane == .composer)
+    #expect(typing.focusesComposer)
+    #expect(typing.workspace.holdsEditorFocus)
+
+    project.workspace.focusedPane = .editor
+    let editing = try relaunched(project)
+    #expect(!editing.focusesComposer)
+    #expect(!editing.workspace.holdsEditorFocus)
+
+    project.workspace.focusedPane = .sessions
+    let browsing = try relaunched(project)
+    #expect(!browsing.focusesComposer)
+    #expect(browsing.claimsRestoredFocus(.sessions))
+    #expect(!browsing.claimsRestoredFocus(.sessions))  // once
+  }
+
+  /// The editor had the keys but its file is gone: the composer takes them, not nobody.
+  @Test func anEditorFocusWithNoTabLeftFallsBackToTheComposer() throws {
+    let file = folder.appending(path: "a.txt")
+    try "a".write(to: file, atomically: true, encoding: .utf8)
+    let project = Project(folder: folder)
+    project.workspace.open(file)
+    project.workspace.focusedPane = .editor
+    let stored = try JSONDecoder().decode(
+      StoredProject.self, from: JSONEncoder().encode(project.stored))
+    try FileManager.default.removeItem(at: file)
+    let restored = Project(folder: folder, restoring: stored)
+    #expect(restored.focusesComposer)
+  }
+
+  /// Choosing a tab is the user's doing: its text view takes the keys again.
+  @Test func activatingATabLetsTheEditorTakeTheKeys() throws {
+    let file = folder.appending(path: "a.txt")
+    try "a".write(to: file, atomically: true, encoding: .utf8)
+    let project = Project(folder: folder)
+    project.workspace.open(file)
+    project.workspace.focusedPane = .composer
+    let restored = try relaunched(project)
+    #expect(restored.workspace.holdsEditorFocus)
+    restored.workspace.activate(try #require(restored.workspace.active))
+    #expect(!restored.workspace.holdsEditorFocus)
+  }
 }

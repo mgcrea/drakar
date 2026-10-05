@@ -33,7 +33,8 @@ struct SessionView: View {
           },
           stop: session.interrupt,
           sessionFolder: session.folder, projectFolder: project.folder,
-          takesFocus: project.focusesComposer)
+          takesFocus: project.focusesComposer,
+          focused: { workspace.focusedPane = .composer })
       }
       let _ = (picks, settingsAccount)
       SessionFooter(

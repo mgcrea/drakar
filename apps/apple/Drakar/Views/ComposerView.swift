@@ -20,6 +20,8 @@ struct ComposerView: View {
   let projectFolder: URL
   /// Focused on appearing, unless the sidebar keeps the keys.
   var takesFocus = true
+  /// Called when the field takes the keys.
+  var focused: () -> Void = {}
 
   @State private var leavesContextOut = false
   @FocusState private var isFocused: Bool
@@ -50,6 +52,7 @@ struct ComposerView: View {
     }
     .padding(12)
     .onAppear { if takesFocus { isFocused = true } }
+    .onChange(of: isFocused) { _, focused in if focused { self.focused() } }
     // A new selection is attached again, whatever happened to the last one.
     .onChange(of: context) { leavesContextOut = false }
   }
