@@ -18,6 +18,13 @@ struct ClientMessageTests {
         + "\n")
   }
 
+  @Test func encodesMCPStatus() throws {
+    #expect(
+      try text(.mcpStatus(requestID: "probe-mcp"))
+        == #"{"request":{"subtype":"mcp_status"},"request_id":"probe-mcp","type":"control_request"}"#
+        + "\n")
+  }
+
   @Test func encodesAPrompt() throws {
     #expect(
       try text(.prompt("Run it"))

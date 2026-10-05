@@ -128,8 +128,36 @@ Captured as the `interrupt-then-turn` fixture.
 
 Other control subtypes the extension sends, unverified here:
 `set_permission_mode`, `set_model`, `set_max_thinking_tokens`, `rewind_files`,
-`mcp_status`, `mcp_toggle`, `get_usage`, `rename_session`, and the CLI may send
+`mcp_toggle`, `get_usage`, `rename_session`, and the CLI may send
 `control_cancel_request` to withdraw a pending `can_use_tool`.
+
+## Skills and MCP status (verified 2026-10-04, 2.1.288)
+
+A process started with Drakar's arguments answers two control requests before any prompt,
+in 1.2 to 1.8 s, and writes no transcript:
+
+- **`initialize`**: the reply's `response.commands` lists every command, each
+  `{name, description, argumentHint}`, with `builtin: true` on the CLI's own (58 of 161 on
+  the spike's Mac) and `aliases` on some. `argumentHint` is always there; `""` means the
+  command takes no arguments. `builtin` covers the skills the CLI bundles too (`simplify`,
+  `code-review`, `loop`): nothing tells them from `compact`. Plugin skills are namespaced
+  (`superpowers:brainstorming`), and their description starts `(superpowers) `.
+- **`mcp_status`**, sent as `{"type":"control_request","request_id":"…","request":
+  {"subtype":"mcp_status"}}`: the reply's `response.mcpServers` lists every server, each
+  `{name, status, source, scope, config}`, plus `serverInfo` (`name`, `title`, `version`)
+  and `tools` (`[{name, annotations: {readOnly, destructive}}]`) once connected, and `error`
+  when failed. Statuses seen: `connected`, `needs-auth`, `failed`, `pending`. Sources:
+  `user`, `plugin` (scope `dynamic`), `claudeai`.
+
+**`config` is the server's configuration as written, secrets included**: a user server's
+`headers.Authorization` came back as `Bearer …` in clear. Drakar never decodes it.
+
+**The process registers as a live session** while it runs: `<config>/sessions/<pid>.json`
+appears (`status: idle`, `entrypoint: claude-vscode`, a derived name) and is removed when it
+exits after its stdin closes. A process killed outright leaves it behind. Drakar's own lists
+skip its children (`LiveSession.read`); Armada shows it as an idle session for a second or two.
+
+Captured as the `capabilities` fixture, trimmed, every secret replaced.
 
 ## Observed details worth knowing
 

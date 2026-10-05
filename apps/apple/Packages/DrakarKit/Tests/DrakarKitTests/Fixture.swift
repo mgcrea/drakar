@@ -34,6 +34,11 @@ enum Fixture: String {
   /// or null with the sentence a row should show. Lines are `{"text", "kind", "shows"}`,
   /// not stream messages.
   case closingEndings = "closing-endings"
+  /// What a `claude` with no prompt answers to `initialize` and `mcp_status` (2.1.288,
+  /// 2026-10-04, the skills inspector's spike): a few commands, the CLI's own among them,
+  /// and servers in every status seen. Trimmed, and every header, env value and URL token
+  /// replaced by `drakar-fixture-secret`, the `initialize` reply's account dropped.
+  case capabilities = "capabilities"
 
   var lines: [Data] {
     get throws {
