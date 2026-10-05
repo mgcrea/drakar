@@ -3,7 +3,8 @@ import DrakarKit
 import SwiftUI
 
 /// The window's folder in the sidebar: a click expands a folder or opens a file. Its header
-/// folds the whole tree away (⇧⌘E), leaving the sessions above it the height.
+/// folds the whole tree away to the sidebar's foot (⇧⌘E), leaving the sessions above it the
+/// height.
 struct FileTreeView: View {
   let workspace: Workspace
   @Binding var isCollapsed: Bool

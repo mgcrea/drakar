@@ -148,6 +148,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   /// Quitting with unsaved tabs in any window asks first, once for all of them.
   func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+    // Not when the app hosts the tests: their tabs are not the user's, and the quit that
+    // reaches the host is usually `make run` relaunching Drakar from another checkout.
+    guard ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil else {
+      return .terminateNow
+    }
     let workspaces = Workspace.all.filter { !$0.unsavedDocuments.isEmpty }
     let running = OpenSessions.shared.runningCount
     if workspaces.isEmpty {

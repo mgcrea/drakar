@@ -23,7 +23,7 @@ struct SplitPanes<Leading: View, Trailing: View>: View {
       HStack(spacing: 0) {
         if showsLeading {
           leading.frame(width: leadingWidth(total))
-          divider(total)
+          divider(total).zIndex(1)
         }
         trailing.frame(maxWidth: .infinity)
       }
@@ -33,19 +33,15 @@ struct SplitPanes<Leading: View, Trailing: View>: View {
   private func divider(_ total: CGFloat) -> some View {
     Divider()
       .overlay {
-        Color.clear
-          .frame(width: 9)
-          .contentShape(Rectangle())
-          .pointerStyle(.columnResize)
-          .gesture(
-            DragGesture(minimumDistance: 1, coordinateSpace: .global)
-              .onChanged { drag in
-                let start = dragStart ?? Double(leadingWidth(total) / total)
-                dragStart = start
-                fraction = Double(
-                  clamp(CGFloat(start) * total + drag.translation.width, total) / total)
-              }
-              .onEnded { _ in dragStart = nil })
+        ResizeHandle(axis: .horizontal) { travel in
+          guard let travel else {
+            dragStart = nil
+            return
+          }
+          let start = dragStart ?? Double(leadingWidth(total) / total)
+          dragStart = start
+          fraction = Double(clamp(CGFloat(start) * total + travel, total) / total)
+        }
       }
   }
 

@@ -3,12 +3,13 @@ import DrakarKit
 import SwiftUI
 
 /// The project's sessions over its files, the split and which panes are folded away kept
-/// per window.
+/// per window. A new window starts with the files folded to the foot: sessions are what it
+/// is for.
 struct ProjectSidebar: View {
   let project: Project
   @SceneStorage("drakar.sessionsFraction") private var fraction = 0.38
   @SceneStorage("drakar.sessionsCollapsed") private var sessionsCollapsed = false
-  @SceneStorage("drakar.filesCollapsed") private var filesCollapsed = false
+  @SceneStorage("drakar.filesCollapsed") private var filesCollapsed = true
 
   var body: some View {
     VerticalSplit(
@@ -199,10 +200,41 @@ struct SessionListView: View {
       Button("End Session") { confirmIfRunning(item) { project.end(item) } }
     }
     Button("Remove from Window") { confirmIfRunning(item) { project.remove(item) } }
+    if let candidate = SessionMoves.candidate(for: item) {
+      let others = SessionMoves.destinations(from: candidate.account)
+      if !others.isEmpty {
+        Divider()
+        Menu("Move to") {
+          ForEach(others, id: \.key) { account in
+            Button(AccountStore.shared.profile(for: account).name) {
+              SessionMoves.moveOne(candidate, to: account)
+            }
+          }
+        }
+      }
+    }
     if item.sessionID != nil || item.session.savedTarget != nil { Divider() }
     if let id = item.sessionID { copyIDButton(id) }
     if let file = item.session.savedTarget?.transcriptFile {
       Button("Show Transcript in Finder") { NSWorkspace.shared.activateFileViewerSelecting([file]) }
+    }
+  }
+
+  /// An elsewhere row running in another process cannot move; the menu says where it runs.
+  @ViewBuilder private func moveMenu(for summary: SessionSummary, host: String?) -> some View {
+    let others = SessionMoves.destinations(from: summary.account)
+    if !others.isEmpty {
+      Menu("Move to") {
+        ForEach(others, id: \.key) { account in
+          Button(AccountStore.shared.profile(for: account).name) {
+            SessionMoves.moveOne(SessionMoves.candidate(for: summary), to: account)
+          }
+          .disabled(host != nil)
+        }
+        if let host {
+          Text("Running in \(host)")
+        }
+      }
     }
   }
 
@@ -218,6 +250,7 @@ struct SessionListView: View {
     if let watched = project.session(withID: summary.sessionID), watched.isWatching {
       Button("Close") { project.remove(watched) }
     }
+    moveMenu(for: summary, host: ended ? nil : monitor.host(of: summary))
     Divider()
     copyIDButton(summary.sessionID)
     Button("Show Transcript in Finder") {
