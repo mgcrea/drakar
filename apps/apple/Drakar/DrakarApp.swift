@@ -123,6 +123,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   /// Every window's sessions are stopped, not left to the windows closing: a `claude` must
   /// not outlive the app that was working with it.
   func applicationWillTerminate(_ notification: Notification) {
+    // Before the sessions stop: the windows on screen, for a launch macOS restores none.
+    if ReopenedWindows.isEnabled { ReopenedWindows.shared.record() }
     for project in OpenSessions.shared.projects.values { project.stopAll() }
     IDEBridge.shared.stop()
   }

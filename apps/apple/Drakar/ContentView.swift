@@ -40,6 +40,9 @@ struct ContentView: View {
             workspace.window = window
             WindowCloseGuard.install(
               on: window, for: workspace, running: { [weak project] in project?.runningCount ?? 0 })
+            if let next = ReopenedWindows.shared.arrived(window, folder: project.folder) {
+              WindowTabs.open(next, asTab: false)
+            }
           }
         )
         // The dot in the close button, as in every document window.
@@ -99,7 +102,25 @@ struct ContentView: View {
       project?.stopAll()
       OpenSessions.shared.unregister(window: windowID)
     }
-    .task { openFromLaunchArguments() }
+    .task {
+      if ReopenedWindows.isEnabled, !Self.isDebugLaunch,
+        let first = ReopenedWindows.shared.begin(launchRoute: route)
+      {
+        route = first
+      }
+      openFromLaunchArguments()
+    }
+  }
+
+  /// Launched with a debug argument that opens its own project: nothing is reopened.
+  private static var isDebugLaunch: Bool {
+    #if DEBUG
+      ["drakar.debugFolder", "drakar.debugResume"].contains {
+        UserDefaults.standard.string(forKey: $0) != nil
+      }
+    #else
+      false
+    #endif
   }
 
   private func quickOpenShown(_ workspace: Workspace) -> Binding<Bool> {
