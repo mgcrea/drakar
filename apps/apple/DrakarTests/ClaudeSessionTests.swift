@@ -54,6 +54,26 @@ struct ClaudeSessionTests {
     #expect(lines.last?.contains("hello") == true)
   }
 
+  /// The `initialize` reply reaches whoever keeps the project's skills.
+  @Test func handsOnTheInitializeReply() async throws {
+    let reply =
+      #"{"type":"control_response","response":{"subtype":"success","request_id":"init-1","response":{"commands":[{"name":"check","description":"Fix it","argumentHint":""}]}}}"#
+    let replying = folder.appending(path: "replying-claude")
+    try Data("#!/bin/sh\nread line\necho '\(reply)'\ncat > /dev/null\n".utf8).write(to: replying)
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: replying.path)
+
+    let session = ClaudeSession(folder: folder)
+    session.executableOverride = replying
+    var received: JSONValue?
+    session.onInitialized = { received = $0 }
+    await session.spawn()
+    defer { session.stop() }
+    for _ in 0..<50 where received == nil {
+      try await Task.sleep(for: .milliseconds(100))
+    }
+    #expect(ProjectCapabilities.skills(fromInitialize: received)?.map(\.name) == ["check"])
+  }
+
   /// What Settings › General picks reaches the process: the `claude` it runs and the
   /// account it runs under. Nothing else fails if the spawn stops reading them.
   @Test func runsTheClaudeAndAccountPickedInSettings() async throws {

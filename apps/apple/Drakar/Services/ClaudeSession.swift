@@ -62,6 +62,8 @@ final class ClaudeSession {
   @ObservationIgnored var onPermissionsChanged: (() -> Void)?
   /// A prompt was sent: whatever the last turn asked is answered.
   @ObservationIgnored var onPromptSent: (() -> Void)?
+  /// The process answered `initialize`: its reply, which lists the skills.
+  @ObservationIgnored var onInitialized: ((JSONValue?) -> Void)?
 
   @ObservationIgnored private var process: AgentProcess?
   @ObservationIgnored private var events: Task<Void, Never>?
@@ -197,23 +199,12 @@ final class ClaudeSession {
       command.resumeSessionID = resuming.sessionID
       command.forksSession = resuming.forks == true
     }
-    // A resume under the account that wrote it; a new session under its folder's pick, else
-    // the one in Settings, else left to the shell.
-    let chosen = resuming?.account ?? ClaudeChoice.account(forNewSessionIn: folder)
-    if let chosen { environment = chosen.environment(environment) }
-    account =
-      chosen
-      ?? ClaudeChoice.account(
-        at: environment["CLAUDE_CONFIG_DIR"]
-          ?? FileManager.default.homeDirectoryForCurrentUser.appending(path: ".claude")
-          .path(percentEncoded: false))
-    guard
-      let claude = executableOverride
-        ?? ClaudeLocator.locate(preferred: ClaudeChoice.executable, path: environment["PATH"])
-    else {
-      return fail(
-        String(localized: "Claude Code was not found. Install it, then open the folder again."))
-    }
+    let launch = ClaudeLaunch.make(
+      folder: folder, resuming: resuming, environment: environment,
+      executableOverride: executableOverride)
+    environment = launch.environment
+    account = launch.account
+    guard let claude = launch.executable else { return fail(ClaudeLaunch.notFound) }
     executable = claude
     // The last word before the process starts, with no await after it: a session live in
     // another process now is followed, not written to. The monitor may not have read the
@@ -323,6 +314,11 @@ final class ClaudeSession {
   private func apply(_ message: StreamMessage) {
     if case .rateLimit(let info) = message, let account {
       accountStore.record(info, for: account)
+    }
+    if case .controlResponse(let response) = message, response.requestID.hasPrefix("init-"),
+      response.isSuccess
+    {
+      onInitialized?(response.response)
     }
     if case .controlResponse(let response) = message, response.requestID.hasPrefix("context-") {
       if response.isSuccess, let reply = ContextUsageReply(response.response) {

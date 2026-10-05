@@ -1,0 +1,58 @@
+import DrakarKit
+import Foundation
+import Testing
+
+@testable import Drakar
+
+/// What a `claude` in a folder runs: the probe and a new session must agree on it.
+@MainActor
+@Suite("Starting claude for a folder")
+struct ClaudeLaunchTests {
+
+  private let folder: URL
+
+  init() throws {
+    folder = FileManager.default.temporaryDirectory.appending(
+      path: "drakar-launch-\(UUID().uuidString)", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+  }
+
+  /// The folder's pick wins over Settings, and reaches the environment.
+  @Test func runsUnderTheFoldersPick() throws {
+    let picked = folder.appending(path: ".claude-picked", directoryHint: .isDirectory)
+    let settings = folder.appending(path: ".claude-settings", directoryHint: .isDirectory)
+    for directory in [picked, settings] {
+      try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    }
+    let suite = "drakar-tests-\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defaults.set(settings.path(percentEncoded: false), forKey: PreferenceKey.newSessionAccount)
+    defer { defaults.removePersistentDomain(forName: suite) }
+
+    let launch = ClaudeChoice.$testSuite.withValue(suite) {
+      ClaudeChoice.pick(ClaudeChoice.account(at: picked.path(percentEncoded: false)), for: folder)
+      return ClaudeLaunch.make(
+        folder: folder, resuming: nil, environment: ["PATH": "/usr/bin"],
+        executableOverride: URL(filePath: "/bin/echo"))
+    }
+    #expect(launch.account?.name == "picked")
+    #expect(launch.environment["CLAUDE_CONFIG_DIR"]?.hasSuffix(".claude-picked") == true)
+    #expect(launch.environment["PATH"] == "/usr/bin")
+    #expect(launch.executable == URL(filePath: "/bin/echo"))
+  }
+
+  /// A resume runs where it was written, whatever the folder's pick.
+  @Test func aResumeRunsUnderItsOwnAccount() throws {
+    let writer = folder.appending(path: ".claude-writer", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: writer, withIntermediateDirectories: true)
+    let target = ResumeTarget(
+      sessionID: "s", cwd: folder.path(percentEncoded: false),
+      file: writer.appending(path: "s.jsonl").path(percentEncoded: false),
+      accountDirectory: writer.path(percentEncoded: false), accountIsDefault: false)
+    let launch = ClaudeLaunch.make(
+      folder: folder, resuming: target, environment: [:],
+      executableOverride: URL(filePath: "/bin/echo"))
+    #expect(launch.account?.name == "writer")
+    #expect(launch.environment["CLAUDE_CONFIG_DIR"]?.hasSuffix(".claude-writer") == true)
+  }
+}
