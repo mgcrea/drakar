@@ -146,7 +146,8 @@ private struct LastPromptBar: View {
     Button(action: reveal) {
       HStack(spacing: 6) {
         Image(systemName: "arrow.turn.down.right")
-        Text("You").fontWeight(.semibold)
+        // Its own size: the headline goes first, and squeezed, "You" wrapped a letter a line.
+        Text("You").fontWeight(.semibold).fixedSize()
         if let context = prompt.context {
           Label(context, systemImage: "doc.text")
             .font(.caption)
