@@ -3,12 +3,13 @@ import DrakarKit
 import SwiftUI
 
 /// The project's sessions over its files, the split and which panes are folded away kept
-/// per window.
+/// per window. A new window starts with the files folded to the foot: sessions are what it
+/// is for.
 struct ProjectSidebar: View {
   let project: Project
   @SceneStorage("drakar.sessionsFraction") private var fraction = 0.38
   @SceneStorage("drakar.sessionsCollapsed") private var sessionsCollapsed = false
-  @SceneStorage("drakar.filesCollapsed") private var filesCollapsed = false
+  @SceneStorage("drakar.filesCollapsed") private var filesCollapsed = true
 
   var body: some View {
     VerticalSplit(

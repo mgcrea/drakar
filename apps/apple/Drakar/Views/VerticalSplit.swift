@@ -7,9 +7,9 @@ struct VerticalSplit<Top: View, Bottom: View>: View {
   @Binding var fraction: Double
   var minimum: CGFloat = 90
   /// A pane folded to its own height (its header), as a collapsed section does in VS Code.
-  /// Panes fold up, never down: a folded bottom pane keeps its header under the top one and
-  /// leaves the space below empty, and a folded top one lets the bottom move up. The
-  /// fraction is kept for when they unfold.
+  /// Each folds toward its own edge: a folded top pane lets the bottom move up, a folded
+  /// bottom one sinks to the foot and gives the top the height. Both folded leave the
+  /// space between them empty. The fraction is kept for when they unfold.
   var collapsesTop = false
   var collapsesBottom = false
   @ViewBuilder let top: Top
@@ -24,13 +24,19 @@ struct VerticalSplit<Top: View, Bottom: View>: View {
         if collapsesTop {
           top.fixedSize(horizontal: false, vertical: true)
           Divider()
+          if collapsesBottom {
+            Spacer(minLength: 0)
+            Divider()
+          }
+        } else if collapsesBottom {
+          top.frame(maxHeight: .infinity)
+          Divider()
         } else {
           top.frame(height: height(total))
           Divider().overlay { handle(total) }
         }
         if collapsesBottom {
           bottom.fixedSize(horizontal: false, vertical: true)
-          Spacer(minLength: 0)
         } else {
           bottom.frame(maxHeight: .infinity)
         }
