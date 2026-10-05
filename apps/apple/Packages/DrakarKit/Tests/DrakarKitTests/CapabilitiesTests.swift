@@ -87,4 +87,137 @@ struct CapabilitiesTests {
     #expect(!kept.contains("127.0.0.1"))
     #expect(!kept.contains("cupertino-bridge"))
   }
+
+  // MARK: Names, filter, order
+
+  @Test func splitsANamespaceOffTheName() {
+    #expect(CapabilityName.namespace(of: "superpowers:brainstorming") == "superpowers")
+    #expect(CapabilityName.shortName(of: "superpowers:brainstorming") == "brainstorming")
+    #expect(CapabilityName.namespace(of: "plugin:stripe:stripe") == "plugin:stripe")
+    #expect(CapabilityName.shortName(of: "plugin:stripe:stripe") == "stripe")
+    #expect(CapabilityName.namespace(of: "check") == nil)
+    #expect(CapabilityName.shortName(of: "check") == "check")
+    // A trailing colon leaves no short name to show: the whole name stands.
+    #expect(CapabilityName.shortName(of: "odd:") == "odd:")
+    #expect(CapabilityName.namespace(of: "odd:") == nil)
+  }
+
+  /// The row shows the namespace already; its description does not repeat it.
+  @Test func dropsTheNamespaceFromThePluginsDescription() throws {
+    let skill = try #require(try skills().first { $0.name == "superpowers:brainstorming" })
+    #expect(skill.displayDescription.hasPrefix("You MUST use this"))
+    let check = try #require(try skills().first { $0.name == "check" })
+    #expect(check.displayDescription == check.description)
+  }
+
+  /// Case, accents and stray spaces do not matter; a blank filter keeps everything.
+  @Test func filtersAsAPersonTypes() {
+    let skill = SkillEntry(
+      name: "superpowers:brainstorming", description: "Explores intent before the design")
+    #expect(skill.matches(""))
+    #expect(skill.matches("   "))
+    #expect(skill.matches("  BRAIN"))
+    #expect(skill.matches("intent"))
+    #expect(!skill.matches("deploy"))
+    let audit = SkillEntry(name: "marketing:seo-audit", description: "Audit the site")
+    #expect(audit.matches("sèo"))
+    let server = MCPServerEntry(name: "plugin:stripe:stripe", status: .needsAuth)
+    #expect(server.matches("Stripe"))
+    #expect(!server.matches("armada"))
+  }
+
+  @Test func sortsSkillsByTheirShortName() throws {
+    #expect(
+      try skills().map(\.name)
+        == ["superpowers:brainstorming", "check", "distill", "marketing:seo-audit"])
+  }
+
+  /// What needs the person comes first.
+  @Test func sortsServersByWhatNeedsThePersonFirst() throws {
+    #expect(
+      try servers().map(\.name) == [
+        "tracker", "claude.ai Gmail", "plugin:stripe:stripe", "armada", "claude.ai Claude Docs",
+        "cupertino-calendar", "later",
+      ])
+  }
+
+  // MARK: Changes
+
+  private func lists(_ skills: [String], _ servers: [(String, MCPServerStatus)])
+    -> ProjectCapabilities
+  {
+    ProjectCapabilities(
+      skills: skills.map { SkillEntry(name: $0) },
+      mcpServers: servers.map { MCPServerEntry(name: $0.0, status: $0.1) })
+  }
+
+  /// The first reading of a list is not news.
+  @Test func aFirstReadingMarksNothing() {
+    let new = lists(["a"], [("s", .failed)])
+    #expect(CapabilityChanges.diff(from: nil, to: new).isEmpty)
+    #expect(CapabilityChanges.diff(from: ProjectCapabilities(), to: new).isEmpty)
+  }
+
+  @Test func marksAddedSkillsAndServersGoneWrong() {
+    let old = lists(["a"], [("up", .connected), ("waiting", .pending), ("bad", .failed)])
+    let new = lists(
+      ["a", "b"],
+      [
+        ("up", .failed), ("waiting", .needsAuth), ("bad", .connected), ("fresh", .needsAuth),
+        ("fine", .connected),
+      ])
+    let changes = CapabilityChanges.diff(from: old, to: new)
+    #expect(changes.addedSkills == ["b"])
+    // `waiting` was never connected, `bad` got better, `fine` is new and well: no mark.
+    #expect(changes.worsenedServers == ["up", "fresh"])
+  }
+
+  @Test func aRemovedRowMarksNothing() {
+    let changes = CapabilityChanges.diff(
+      from: lists(["a", "b"], [("s", .connected)]), to: lists(["a"], []))
+    #expect(changes.isEmpty)
+  }
+
+  // MARK: The probe's replies
+
+  private func response(_ line: String) throws -> ControlResponse {
+    guard case .controlResponse(let response) = try StreamMessage(line: Data(line.utf8)) else {
+      Issue.record("not a control response: \(line)")
+      throw CancellationError()
+    }
+    return response
+  }
+
+  @Test func collectsBothRepliesByTheirIDs() throws {
+    var replies = CapabilityReplies(initializeID: "probe-init", statusID: "probe-mcp")
+    for message in try Fixture.capabilities.messages {
+      if case .controlResponse(let response) = message { replies.take(response) }
+    }
+    #expect(replies.isComplete)
+    #expect(replies.capabilities.skills?.count == 4)
+    #expect(replies.capabilities.mcpServers?.count == 7)
+  }
+
+  /// A session's own context reply, or anything else, is not the probe's.
+  @Test func ignoresOtherReplies() throws {
+    var replies = CapabilityReplies(initializeID: "probe-init", statusID: "probe-mcp")
+    replies.take(
+      try response(
+        #"{"type":"control_response","response":{"subtype":"success","request_id":"context-1","response":{"commands":[]}}}"#
+      ))
+    #expect(!replies.hasInitialize)
+    #expect(replies.capabilities == ProjectCapabilities())
+  }
+
+  /// An older CLI that refuses `mcp_status` answers with an error: kept, for the pane.
+  @Test func anErrorAnswerIsKept() throws {
+    var replies = CapabilityReplies(initializeID: "probe-init", statusID: "probe-mcp")
+    replies.take(
+      try response(
+        #"{"type":"control_response","response":{"subtype":"error","request_id":"probe-mcp","error":"Unknown request subtype: mcp_status"}}"#
+      ))
+    #expect(replies.hasStatus)
+    #expect(replies.capabilities.mcpServers == nil)
+    #expect(replies.statusError == "Unknown request subtype: mcp_status")
+  }
 }

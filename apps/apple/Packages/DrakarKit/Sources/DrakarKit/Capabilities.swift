@@ -124,12 +124,171 @@ public struct ProjectCapabilities: Sendable, Equatable {
   /// `commands` at all, which is not the same as an empty list.
   public static func skills(fromInitialize reply: JSONValue?) -> [SkillEntry]? {
     guard let commands = reply?["commands"]?.arrayValue else { return nil }
-    return commands.compactMap(SkillEntry.init)
+    return sorted(commands.compactMap(SkillEntry.init))
   }
 
   /// The servers an `mcp_status` reply lists; nil when it has no `mcpServers`.
   public static func servers(fromMCPStatus reply: JSONValue?) -> [MCPServerEntry]? {
     guard let servers = reply?["mcpServers"]?.arrayValue else { return nil }
-    return servers.compactMap(MCPServerEntry.init)
+    return sorted(servers.compactMap(MCPServerEntry.init))
+  }
+}
+
+/// A plugin's skills and servers are namespaced: `superpowers:brainstorming`,
+/// `plugin:stripe:stripe`. Rows show the namespace quieter than the name.
+public enum CapabilityName {
+  /// Everything before the last colon; nil without one, or when nothing follows it.
+  public static func namespace(of name: String) -> String? {
+    guard let colon = name.lastIndex(of: ":"), name.index(after: colon) != name.endIndex
+    else { return nil }
+    return String(name[..<colon])
+  }
+
+  /// What follows the last colon, or the whole name.
+  public static func shortName(of name: String) -> String {
+    guard namespace(of: name) != nil, let colon = name.lastIndex(of: ":") else { return name }
+    return String(name[name.index(after: colon)...])
+  }
+
+  /// Case- and accent-insensitive, the query trimmed; a blank query matches everything.
+  static func matches(_ query: String, in fields: [String]) -> Bool {
+    let query = query.trimmingCharacters(in: .whitespaces)
+    return query.isEmpty || fields.contains { $0.localizedStandardContains(query) }
+  }
+}
+
+extension SkillEntry {
+  public var namespace: String? { CapabilityName.namespace(of: name) }
+  public var shortName: String { CapabilityName.shortName(of: name) }
+
+  /// The description without the `(superpowers) ` the CLI puts ahead of a plugin's.
+  public var displayDescription: String {
+    guard let namespace, description.hasPrefix("(\(namespace)) ") else { return description }
+    return String(description.dropFirst(namespace.count + 3))
+  }
+
+  public func matches(_ query: String) -> Bool {
+    CapabilityName.matches(query, in: [name, description])
+  }
+}
+
+extension MCPServerEntry {
+  public var namespace: String? { CapabilityName.namespace(of: name) }
+  public var shortName: String { CapabilityName.shortName(of: name) }
+
+  /// Failed, or waiting for the person to sign in.
+  public var isProblem: Bool { status == .failed || status == .needsAuth }
+
+  public func matches(_ query: String) -> Bool {
+    CapabilityName.matches(query, in: [name])
+  }
+}
+
+extension MCPServerStatus {
+  /// Failed first, then needing auth, then the rest.
+  var rank: Int {
+    switch self {
+    case .failed: 0
+    case .needsAuth: 1
+    case .connected, .pending, .other: 2
+    }
+  }
+}
+
+extension ProjectCapabilities {
+  /// Alphabetical by the name without its namespace, so `superpowers:brainstorming` sorts
+  /// under b; the whole name breaks a tie.
+  public static func sorted(_ skills: [SkillEntry]) -> [SkillEntry] {
+    skills.sorted { a, b in
+      switch a.shortName.localizedStandardCompare(b.shortName) {
+      case .orderedAscending: true
+      case .orderedDescending: false
+      case .orderedSame: a.name < b.name
+      }
+    }
+  }
+
+  /// What needs the person first, alphabetical within each.
+  public static func sorted(_ servers: [MCPServerEntry]) -> [MCPServerEntry] {
+    servers.sorted { a, b in
+      if a.status.rank != b.status.rank { return a.status.rank < b.status.rank }
+      return a.name.localizedStandardCompare(b.name) == .orderedAscending
+    }
+  }
+}
+
+/// What a new reading of a project's lists brings that the person should see: skills that
+/// were not there, and servers that went wrong.
+public struct CapabilityChanges: Sendable, Equatable {
+  public var addedSkills: [String]
+  /// New and failed or needing auth, or connected before and not now.
+  public var worsenedServers: [String]
+
+  public init(addedSkills: [String] = [], worsenedServers: [String] = []) {
+    self.addedSkills = addedSkills
+    self.worsenedServers = worsenedServers
+  }
+
+  public var isEmpty: Bool { addedSkills.isEmpty && worsenedServers.isEmpty }
+
+  /// A list read for the first time (`old` nil, or that list nil in it) marks nothing. A
+  /// removed row and a status that got better mark nothing either.
+  public static func diff(from old: ProjectCapabilities?, to new: ProjectCapabilities)
+    -> CapabilityChanges
+  {
+    var changes = CapabilityChanges()
+    if let before = old?.skills, let after = new.skills {
+      let known = Set(before.map(\.name))
+      changes.addedSkills = after.map(\.name).filter { !known.contains($0) }
+    }
+    if let before = old?.mcpServers, let after = new.mcpServers {
+      let previous = Dictionary(
+        before.map { ($0.name, $0.status) }, uniquingKeysWith: { first, _ in first })
+      changes.worsenedServers = after.filter { server in
+        guard let was = previous[server.name] else { return server.isProblem }
+        return was == .connected && server.status != .connected
+      }.map(\.name)
+    }
+    return changes
+  }
+}
+
+/// The probe's two answers as they arrive, told apart by the request ids it sent.
+public struct CapabilityReplies: Sendable, Equatable {
+  public let initializeID: String
+  public let statusID: String
+  public private(set) var capabilities = ProjectCapabilities()
+  public private(set) var hasInitialize = false
+  public private(set) var hasStatus = false
+  /// The CLI's error, when it answered a request with one.
+  public private(set) var initializeError: String?
+  public private(set) var statusError: String?
+
+  public init(initializeID: String, statusID: String) {
+    self.initializeID = initializeID
+    self.statusID = statusID
+  }
+
+  public var isComplete: Bool { hasInitialize && hasStatus }
+
+  public mutating func take(_ response: ControlResponse) {
+    switch response.requestID {
+    case initializeID:
+      hasInitialize = true
+      if response.isSuccess {
+        capabilities.skills = ProjectCapabilities.skills(fromInitialize: response.response)
+      } else {
+        initializeError = response.error
+      }
+    case statusID:
+      hasStatus = true
+      if response.isSuccess {
+        capabilities.mcpServers = ProjectCapabilities.servers(fromMCPStatus: response.response)
+      } else {
+        statusError = response.error
+      }
+    default:
+      break
+    }
   }
 }
