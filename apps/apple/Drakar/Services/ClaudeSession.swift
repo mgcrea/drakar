@@ -288,6 +288,17 @@ final class ClaudeSession {
     if phase == .ready || phase == .starting { phase = .exited(status: 0) }
   }
 
+  /// The session's files moved to another account (`SessionMover`): its next start resumes
+  /// `target` there, and the window's stored project names the new file. For a session
+  /// with no process; `SessionMoves` stops an idle one first.
+  func relocate(to target: ResumeTarget) {
+    resuming = target
+    savedTarget = target
+    // The process that ran under the old account is gone; until the next one starts, the
+    // session is on the account its files are under.
+    account = nil
+  }
+
   /// `message` nil keeps the reason already in `phase`.
   private func fail(_ message: String?) {
     if let message { phase = .failed(message) }
