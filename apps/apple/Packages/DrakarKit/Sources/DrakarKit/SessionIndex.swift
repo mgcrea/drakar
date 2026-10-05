@@ -88,6 +88,9 @@ public struct SessionSummary: Sendable, Hashable, Identifiable {
   /// The newest turn is a tool call nobody answered (`TranscriptTail.isAwaitingToolResult`),
   /// read with the rest so a list never reads the file again to draw a row.
   public var awaitsToolResult = false
+  /// The first question of an unanswered `AskUserQuestion` call
+  /// (`TranscriptTail.pendingUserQuestion`).
+  public var pendingQuestion: String?
   /// What the newest turn ended on (`ClosingAsk`), while nothing was sent after it, and the
   /// id of the message that asked it.
   public var closingAsk: ClosingAsk?
@@ -195,6 +198,7 @@ public enum SessionIndex {
     summary.context = tail.newestReading
     summary.modelID = tail.newestModelID
     summary.awaitsToolResult = tail.isAwaitingToolResult
+    summary.pendingQuestion = tail.pendingUserQuestion
     if let closing = tail.closingText, let ask = ClosingAsk.detect(closing.text) {
       summary.closingAsk = ask
       summary.closingMessageID = closing.messageID

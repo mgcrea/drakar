@@ -106,20 +106,30 @@ public struct TranscriptTail: Sendable {
 
   /// Whether the newest turn is an assistant's `tool_use` nobody answered: a long command,
   /// or a prompt nobody has answered. A guess, and the UI says so.
-  public var isAwaitingToolResult: Bool {
+  public var isAwaitingToolResult: Bool { !unansweredToolCalls.isEmpty }
+
+  /// The first question of an `AskUserQuestion` the newest turn called and nobody answered:
+  /// a session elsewhere waiting on a choice, which its registry only calls waiting.
+  public var pendingUserQuestion: String? {
+    unansweredToolCalls.lazy.filter { $0["name"]?.stringValue == "AskUserQuestion" }
+      .compactMap { UserQuestion.list($0["input"] ?? .null).first?.question }.first
+  }
+
+  /// The `tool_use` blocks of the newest main-thread message, when it is an assistant's.
+  private var unansweredToolCalls: [JSONValue] {
     for line in newestFirst {
       guard let json = try? JSONValue.parse(line), json["isSidechain"]?.boolValue != true
       else { continue }
       switch json["type"]?.stringValue {
       case "assistant":
-        return json["message"]?["content"]?.arrayValue?.contains {
+        return json["message"]?["content"]?.arrayValue?.filter {
           $0["type"]?.stringValue == "tool_use"
-        } ?? false
-      case "user": return false
+        } ?? []
+      case "user": return []
       default: continue
       }
     }
-    return false
+    return []
   }
 
   /// The text the newest main-thread turn ended on, when its last message ended the turn

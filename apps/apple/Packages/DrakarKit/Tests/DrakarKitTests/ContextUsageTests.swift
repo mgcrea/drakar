@@ -72,6 +72,21 @@ struct ContextUsageTests {
     #expect(!tail([warmTurn]).isAwaitingToolResult)
   }
 
+  /// A session elsewhere waiting on an `AskUserQuestion` shows what it asks; any other tool
+  /// call, or one answered, asks nothing.
+  @Test func seesAnUnansweredQuestion() {
+    let asking =
+      #"{"type":"assistant","message":{"id":"m","content":[{"type":"tool_use","id":"t","name":"AskUserQuestion","input":{"questions":[{"question":"Which filename?","header":"File","options":[{"label":"a.txt"}],"multiSelect":false}]}}]}}"#
+    let bash =
+      #"{"type":"assistant","message":{"id":"m","content":[{"type":"tool_use","id":"t","name":"Bash","input":{}}]}}"#
+    let answered =
+      #"{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t","content":"a.txt"}]}}"#
+    #expect(tail([asking]).pendingUserQuestion == "Which filename?")
+    #expect(tail([asking]).isAwaitingToolResult)
+    #expect(tail([asking, answered]).pendingUserQuestion == nil)
+    #expect(tail([bash]).pendingUserQuestion == nil)
+  }
+
   /// `suffixOf` takes the last 64KB of a mapped file and knows whether it cut a line.
   @Test func takesTheEndOfALongFile() throws {
     let filler = String(repeating: "x", count: 70_000)
