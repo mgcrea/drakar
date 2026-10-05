@@ -96,4 +96,101 @@ struct SkillRunTests {
     #expect(item.session.transcript.isRunning)
     #expect(!project.canRun(in: .current))
   }
+
+  private func settle(_ entry: Capabilities) async throws {
+    for _ in 0..<100 where entry.isLoading {
+      try await Task.sleep(for: .milliseconds(20))
+    }
+  }
+
+  /// A window marks what a new reading brought; running the skill, or hiding the inspector,
+  /// clears it.
+  @Test func marksFollowTheLists() async throws {
+    let project = Project(folder: folder)
+    let entry = project.capabilities
+    entry.probe = { _ in
+      ProbeOutcome(capabilities: ProjectCapabilities(skills: [], mcpServers: []))
+    }
+    entry.refresh()
+    try await settle(entry)
+    #expect(project.capabilityMarks.isEmpty)
+    entry.probe = { _ in
+      ProbeOutcome(
+        capabilities: ProjectCapabilities(
+          skills: [self.audit], mcpServers: [MCPServerEntry(name: "github", status: .failed)]))
+    }
+    entry.refresh()
+    try await settle(entry)
+    #expect(project.capabilityMarks.skills == [audit.name])
+    #expect(project.capabilityMarks.servers == ["github"])
+    project.run(audit, in: .newSession)
+    #expect(project.capabilityMarks.skills.isEmpty)
+    project.unmarkServer("github")
+    #expect(project.capabilityMarks.isEmpty)
+  }
+
+  /// A worktree is another checkout: its session does not speak for the project's list.
+  @Test func onlyTheProjectsOwnFolderSpeaksForIt() {
+    let project = Project(folder: folder)
+    let worktree = ClaudeSession(
+      folder: folder.appending(path: ".claude/worktrees/x", directoryHint: .isDirectory))
+    #expect(!project.speaksForProject(worktree))
+  }
+
+  /// A session started in the project's folder, under the window's account, brings its
+  /// skills to the inspector.
+  @Test func aSessionsInitializeReplyRefreshesTheSkills() async throws {
+    let reply =
+      #"{"type":"control_response","response":{"subtype":"success","request_id":"init-1","response":{"commands":[{"name":"fresh","description":"","argumentHint":""}]}}}"#
+    let script = folder.appending(path: "claude")
+    try Data("#!/bin/sh\nread line\necho '\(reply)'\ncat > /dev/null\n".utf8).write(to: script)
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script.path)
+    let project = Project(folder: folder)
+    project.executableOverride = script
+    let item = project.newSession()
+    defer { project.stopAll() }
+    await item.session.spawn()
+    for _ in 0..<50 where project.capabilities.lists.skills == nil {
+      try await Task.sleep(for: .milliseconds(100))
+    }
+    #expect(project.speaksForProject(item.session))
+    #expect(project.capabilities.lists.skills?.map(\.name) == ["fresh"])
+  }
+
+  /// The last window on a folder closing takes its probe with it.
+  @Test func closingTheWindowCancelsItsProbe() async throws {
+    let project = Project(folder: folder)
+    let entry = project.capabilities
+    entry.probe = { _ in
+      try? await Task.sleep(for: .seconds(5))
+      return ProbeOutcome()
+    }
+    entry.refresh()
+    #expect(entry.isLoading)
+    project.stopAll()
+    #expect(!entry.isLoading)
+  }
+
+  /// A change to the project's `.claude/skills` reads the lists again, once, after the
+  /// changes settle.
+  @Test func aSkillFileChangeRefreshesOnceSettled() async throws {
+    let project = Project(folder: folder)
+    project.capabilityDebounce = .milliseconds(100)
+    let entry = project.capabilities
+    let calls = CapabilityStoreTests.Calls()
+    entry.probe = { _ in
+      calls.count += 1
+      return ProbeOutcome(capabilities: ProjectCapabilities(skills: [], mcpServers: []))
+    }
+    entry.refresh()
+    try await settle(entry)
+    let skill = folder.appending(path: ".claude/skills/x", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: skill, withIntermediateDirectories: true)
+    try Data("---\nname: x\n---\n".utf8).write(to: skill.appending(path: "SKILL.md"))
+    for _ in 0..<50 where calls.count < 2 {
+      try await Task.sleep(for: .milliseconds(100))
+    }
+    try await settle(entry)
+    #expect(calls.count == 2)
+  }
 }

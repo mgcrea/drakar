@@ -132,4 +132,29 @@ struct CapabilityStoreTests {
     #expect(store.capabilities(for: folder.appending(path: ""), account: a) === first)
     #expect(store.capabilities(for: folder, account: b) !== first)
   }
+
+  /// What the CLI reads skills, commands and servers from, in the project itself.
+  @Test func knowsWhichFilesChangeTheLists() {
+    let root = "/p"
+    #expect(Workspace.touchesCapabilities(["/p/.mcp.json"], root: root))
+    #expect(Workspace.touchesCapabilities(["/p/.claude/skills/x/SKILL.md"], root: root))
+    #expect(Workspace.touchesCapabilities(["/p/.claude/skills"], root: root))
+    #expect(Workspace.touchesCapabilities(["/p/.claude/commands/deploy.md"], root: root))
+    #expect(Workspace.touchesCapabilities(["/p/.claude/settings.json"], root: root))
+    #expect(Workspace.touchesCapabilities(["/p/.claude/settings.local.json"], root: root))
+    #expect(!Workspace.touchesCapabilities(["/p/.claude/worktrees/a/.mcp.json"], root: root))
+    #expect(!Workspace.touchesCapabilities(["/p/sub/.mcp.json"], root: root))
+    #expect(!Workspace.touchesCapabilities(["/p/src/main.swift"], root: root))
+    #expect(!Workspace.touchesCapabilities(["/other/.mcp.json"], root: root))
+  }
+
+  @Test func summarisesMarksForTheToolbar() {
+    var marks = CapabilityMarks()
+    marks.add(CapabilityChanges(addedSkills: ["a", "b"], worsenedServers: ["github"]))
+    let servers = [MCPServerEntry(name: "github", status: .failed)]
+    #expect(marks.summary(servers: servers) == "2 new skills · github: Failed")
+    var one = CapabilityMarks()
+    one.add(CapabilityChanges(addedSkills: ["a"]))
+    #expect(one.summary(servers: []) == "1 new skill")
+  }
 }

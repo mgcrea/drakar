@@ -237,12 +237,22 @@ final class Project {
   @ObservationIgnored private(set) var focusesComposer = true
   /// Stands in for the located binary in every session this window makes, in tests.
   @ObservationIgnored var executableOverride: URL?
+  /// The lists the inspector shows: this folder's under the window's account.
+  private(set) var capabilities: Capabilities
+  /// What the lists brought since the inspector was last seen.
+  private(set) var capabilityMarks = CapabilityMarks()
+  /// How long file changes settle before the lists are read again; tests shorten it.
+  @ObservationIgnored var capabilityDebounce: Duration = .seconds(2)
+  @ObservationIgnored private var capabilityObserver: UUID?
+  @ObservationIgnored private var capabilityRefresh: Task<Void, Never>?
   /// The pane that had the keys at the last quit, until it takes them back.
   @ObservationIgnored private var restoredFocus: FocusedPane?
 
   init(folder: URL, restoring stored: StoredProject? = nil) {
     self.folder = folder
     workspace = Workspace(folder: folder)
+    capabilities = CapabilityStore.shared.capabilities(
+      for: folder, account: AccountStore.shared.windowAccount(for: folder))
     for target in stored?.sessions ?? [] {
       guard !sessions.contains(where: { $0.sessionID == target.sessionID }) else { continue }
       let folder = URL(filePath: target.cwd, directoryHint: .isDirectory)
@@ -261,6 +271,8 @@ final class Project {
     if focus == .editor, workspace.documents.isEmpty { focus = .composer }
     focusesComposer = focus == .composer
     restoredFocus = focus
+    observeCapabilities()
+    workspace.onCapabilityFilesChanged = { [weak self] in self?.capabilityFilesChanged() }
   }
 
   /// Whether `pane` is the one to take the keys back after a relaunch; true once.
@@ -298,6 +310,7 @@ final class Project {
   /// start of the composer with what it takes shown, the focus there.
   func run(_ skill: SkillEntry, in target: SkillTarget) {
     guard canRun(in: target) else { return }
+    capabilityMarks.skills.remove(skill.name)
     let item: ProjectSession
     switch target {
     case .newSession: item = newSession()
@@ -314,6 +327,63 @@ final class Project {
       takeOver(item)
       item.session.send("/\(skill.name)")
     }
+  }
+
+  /// Hiding the inspector after it was on screen: everything was seen.
+  func clearCapabilityMarks() {
+    capabilityMarks = CapabilityMarks()
+  }
+
+  /// A server row was opened.
+  func unmarkServer(_ name: String) {
+    capabilityMarks.servers.remove(name)
+  }
+
+  /// The window's account may be another now: the lists follow it.
+  func accountMayHaveChanged() {
+    let entry = CapabilityStore.shared.capabilities(
+      for: folder, account: AccountStore.shared.windowAccount(for: folder))
+    guard entry !== capabilities else { return }
+    if let capabilityObserver { capabilities.stopObserving(capabilityObserver) }
+    capabilities = entry
+    capabilityMarks = CapabilityMarks()
+    observeCapabilities()
+    entry.loadIfNeeded()
+  }
+
+  /// A session's `initialize` lists the project's skills only from the project's own
+  /// folder, under the account the lists are for: a worktree is another checkout.
+  func speaksForProject(_ session: ClaudeSession) -> Bool {
+    ProjectPath.normalize(session.folder.path(percentEncoded: false))
+      == ProjectPath.normalize(folder.path(percentEncoded: false))
+      && session.account?.key == capabilities.accountKey
+  }
+
+  private func observeCapabilities() {
+    capabilityObserver = capabilities.observe { [weak self] changes in
+      self?.capabilityMarks.add(changes)
+    }
+  }
+
+  private func capabilityFilesChanged() {
+    capabilityRefresh?.cancel()
+    let delay = capabilityDebounce
+    capabilityRefresh = Task { [weak self] in
+      try? await Task.sleep(for: delay)
+      guard !Task.isCancelled else { return }
+      self?.capabilities.refreshIfLoaded()
+    }
+  }
+
+  /// The window is going: its probe too, unless another window shows the same lists.
+  private func releaseCapabilities() {
+    capabilityRefresh?.cancel()
+    if let capabilityObserver { capabilities.stopObserving(capabilityObserver) }
+    capabilityObserver = nil
+    let shared = OpenSessions.shared.projects.values.contains {
+      $0 !== self && $0.capabilities === capabilities
+    }
+    if !shared { capabilities.cancel() }
   }
 
   /// `target` on top and shown, or the row already holding it, taken over unless
@@ -391,6 +461,7 @@ final class Project {
 
   func stopAll() {
     for item in sessions { item.session.stop() }
+    releaseCapabilities()
   }
 
   /// Rows that want the person at a level that counts: the group's header.
@@ -437,6 +508,12 @@ final class Project {
       Attention.shared.refresh()
       guard let self, let item, item.id != self.selectedID, item.hasStopped else { return }
       item.isUnread = true
+    }
+    session.onInitialized = { [weak self, weak session] reply in
+      guard let self, let session, self.speaksForProject(session),
+        let skills = ProjectCapabilities.skills(fromInitialize: reply)
+      else { return }
+      self.capabilities.sessionReported(skills: skills)
     }
     return item
   }

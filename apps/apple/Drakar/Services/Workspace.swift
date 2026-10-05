@@ -60,6 +60,9 @@ final class Workspace {
   /// delegate weakly.
   @ObservationIgnored var closeGuard: WindowCloseGuard?
 
+  /// A file the project's skills, commands or servers are read from changed.
+  @ObservationIgnored var onCapabilityFilesChanged: (() -> Void)?
+
   // MARK: - Tabs
 
   /// Opens `url` in a tab, or brings its tab forward, and selects `range` (UTF-16
@@ -214,10 +217,29 @@ final class Workspace {
       path.hasPrefix(resolvedRoot) ? tree.root + path.dropFirst(resolvedRoot.count) : path
     }.map(FileTree.normalized).filter(tree.isRelevant)
     guard !paths.isEmpty else { return }
+    if Self.touchesCapabilities(paths, root: tree.root) { onCapabilityFilesChanged?() }
     tree.refresh(changedPaths: paths)
     for document in documents
     where paths.contains(where: { document.path == $0 || document.path.hasPrefix($0 + "/") }) {
       document.diskChanged()
+    }
+  }
+
+  /// What the CLI reads from the project itself: `.mcp.json`, and `.claude/skills/`,
+  /// `.claude/commands/` and `.claude/settings*.json`. A worktree's copies are another
+  /// checkout's, and a subfolder's `.mcp.json` is not the project's.
+  static func touchesCapabilities(_ paths: [String], root: String) -> Bool {
+    paths.contains { path in
+      guard path.hasPrefix(root + "/") else { return false }
+      let relative = path.dropFirst(root.count + 1)
+      if relative == ".mcp.json" { return true }
+      for folder in [".claude/skills", ".claude/commands"]
+      where relative == folder || relative.hasPrefix(folder + "/") {
+        return true
+      }
+      let inClaude = relative.hasPrefix(".claude/") ? relative.dropFirst(".claude/".count) : ""
+      return inClaude.hasPrefix("settings") && inClaude.hasSuffix(".json")
+        && !inClaude.contains("/")
     }
   }
 
