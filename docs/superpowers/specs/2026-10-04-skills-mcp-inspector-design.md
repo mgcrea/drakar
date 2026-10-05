@@ -144,7 +144,9 @@ Inside, top to bottom:
   would get. That part of `ClaudeSession.start` (shell environment, `ClaudeChoice`'s
   account and executable, `executableOverride`) moves into one helper both use. It sends
   `initialize` and `mcpStatus`, waits for both replies up to 20 s, then closes stdin, and
-  terminates the process if it is still there 2 s later. Never a hard kill first: that
+  terminates the process if it is still there 2 s later. While a server is still `pending`
+  it asks `mcp_status` again every second (`probe-mcp-2`, `probe-mcp-3`, ...), keeping the
+  newest list, until none is pending or 10 s after it started. Never a hard kill first: that
   leaves the registry entry behind.
 - **`Capabilities`** (`@Observable`), one per project and account, in a store keyed by
   `ProjectPath.normalize(folder)` (the key `ProjectList` and `OpenSessions` use) and the
@@ -170,9 +172,11 @@ Inside, top to bottom:
   in its own folder, as their sessions run.
 - **Home never probes.** Only projects open in a window or tab do: a probe per tracked
   project would start every stdio server once per project.
-- **Accounts.** The probe runs under the account a new session in the folder would
-  (`ClaudeChoice.account(forNewSessionIn:)`). Picking another account for the window binds
-  the project to that account's entry, probed if it has not been.
+- **Accounts.** A window's entry is the account a new session in the folder would take
+  (its pick, else Settings', else the shell's), and the entry's probe runs under that
+  account, passed to the launch, not re-resolved. Picking another account for the window
+  binds the project to that account's entry, probed if it has not been, and lets the old
+  entry's probe go unless another window shows it.
 
 ### Running a skill
 
