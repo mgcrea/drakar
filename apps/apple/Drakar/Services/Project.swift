@@ -61,7 +61,11 @@ final class ProjectSession: Identifiable {
   /// What stands for the history until it is read.
   private var unloadedPreview: SessionSummary? { session.hasLoadedHistory ? nil : preview }
 
-  var displayTitle: String {
+  var displayTitle: String { knownTitle ?? String(localized: "New session") }
+
+  /// The name, title or first prompt; nil before there is any, where the row says "New
+  /// session".
+  var knownTitle: String? {
     if let title = session.title { return title }
     for entry in session.transcript.entries {
       if case .prompt(let text) = entry.kind { return String(text.prefix(80)) }
@@ -69,7 +73,7 @@ final class ProjectSession: Identifiable {
     if let preview = unloadedPreview, let title = preview.title ?? preview.lastPrompt {
       return String(title.prefix(80))
     }
-    return String(localized: "New session")
+    return nil
   }
 
   /// What the first waiting permission request wants: "Bash: make test".
@@ -512,11 +516,26 @@ final class Project {
     let session = ClaudeSession(
       folder: URL(filePath: target.cwd, directoryHint: .isDirectory), resuming: target)
     session.isReadOnly = readOnly
+    if target.forks == true, let name = forkName(for: target) { session.rename(to: name) }
     let item = make(session)
     item.isWatching = watching
     sessions.insert(item, at: 0)
     select(item)
     return item
+  }
+
+  /// "Pineapple (fork #2)" for a copy of `target`: its title, numbered after every fork of
+  /// it the folder lists, in the window's rows and on disk. Nil when it has no title yet.
+  private func forkName(for target: ResumeTarget) -> String? {
+    let listed = SessionMonitor.shared.summaries(
+      under: ProjectPath.normalize(folder.path(percentEncoded: false)))
+    let original =
+      session(withID: target.sessionID)?.knownTitle
+      ?? listed.first { $0.sessionID == target.sessionID }
+      .flatMap { $0.title ?? $0.lastPrompt.map { String($0.prefix(80)) } }
+    guard let original else { return nil }
+    return SessionTitle.forkName(
+      of: original, among: sessions.compactMap(\.knownTitle) + listed.compactMap(\.title))
   }
 
   /// A watched row becomes one of the window's own, on top: it was prompted, or attached.
@@ -527,9 +546,10 @@ final class Project {
     sessions.insert(item, at: 0)
   }
 
-  /// A copy of a session open elsewhere, continued under a new id beside it.
+  /// A copy of a session open elsewhere, continued under a new id beside it. Its own
+  /// transcript first: a fork still running its first process resumes its original.
   @discardableResult func fork(_ item: ProjectSession) -> ProjectSession {
-    guard var target = item.session.resuming ?? item.session.savedTarget else { return item }
+    guard var target = item.session.savedTarget ?? item.session.resuming else { return item }
     target.forks = true
     return attach(target)
   }
@@ -542,6 +562,13 @@ final class Project {
   }
 
   var canForkSelected: Bool { selected.map(canFork) ?? false }
+
+  /// Whether `item` can take a name: not while another process has it, or its files move.
+  func canRename(_ item: ProjectSession) -> Bool {
+    !item.session.isReadOnly && !item.session.isMoving
+  }
+
+  var canRenameSelected: Bool { selected.map(canRename) ?? false }
 
   func forkSelected() {
     if let selected, canFork(selected) { fork(selected) }

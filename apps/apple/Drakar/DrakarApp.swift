@@ -113,6 +113,10 @@ private struct SessionCommands: View {
       .keyboardShortcut("n")
       .disabled(project == nil)
     ForkSessionCommand(project: project)
+    Button("Rename Session…") {
+      if let selected = project?.selected { RenameSessionPrompt.run(for: selected) }
+    }
+    .disabled(project?.canRenameSelected != true)
     Button("Next Session Needing You") {
       if let project, let next = project.nextNeedingAttention() { project.show(next) }
     }

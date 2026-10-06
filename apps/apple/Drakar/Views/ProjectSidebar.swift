@@ -181,11 +181,13 @@ struct SessionListView: View {
       Button("Dismiss") { project.dismissAsk(item) }
       Divider()
     }
+    Button("Rename…") { RenameSessionPrompt.run(for: item) }
+      .disabled(!project.canRename(item))
     if (item.session.resuming ?? item.session.savedTarget) != nil {
       Button("Fork a Copy") { project.fork(item) }
         .disabled(!project.canFork(item))
-      Divider()
     }
+    Divider()
     if item.session.isProcessRunning {
       Button("End Session") { confirmIfRunning(item) { project.end(item) } }
     }

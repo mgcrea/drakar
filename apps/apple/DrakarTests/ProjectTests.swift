@@ -66,6 +66,34 @@ struct ProjectTests {
     #expect(original.session.isReadOnly)
   }
 
+  /// Each copy is numbered after its original's title, a copy of a copy as the next one.
+  @Test func forksAreNumberedAfterTheirOriginal() async throws {
+    try Data(
+      [
+        #"{"type":"user","cwd":"/w","message":{"role":"user","content":"go"}}"#,
+        #"{"type":"ai-title","aiTitle":"Pineapple"}"#,
+      ].joined(separator: "\n").appending("\n").utf8
+    ).write(to: folder.appending(path: "a.jsonl"))
+    let project = Project(folder: folder)
+    let original = project.attach(target("a"))
+    await original.session.loadHistory()
+
+    let first = project.fork(original)
+    let second = project.fork(original)
+    let third = project.fork(first)
+    #expect(first.displayTitle == "Pineapple (fork)")
+    #expect(second.displayTitle == "Pineapple (fork #2)")
+    #expect(third.displayTitle == "Pineapple (fork #3)")
+    #expect(original.displayTitle == "Pineapple")
+  }
+
+  /// A row whose title is not known yet has nothing to number: the CLI keeps the copied one.
+  @Test func aForkOfAnUntitledRowTakesNoName() {
+    let project = Project(folder: folder)
+    let fork = project.fork(project.attach(target("a")))
+    #expect(fork.session.title == nil)
+  }
+
   /// A session opened from Elsewhere or Ended is looked at there, not made the window's
   /// own, until it is taken over: prompted, or attached.
   @Test func aWatchedSessionStaysOutOfTheWindowUntilTakenOver() {
