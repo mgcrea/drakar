@@ -209,6 +209,28 @@ config directories, when a session was resumed after switching `CLAUDE_CONFIG_DI
 opens a session another process has open (the registry at `<config>/sessions/<pid>.json`
 says which; Armada's `docs/claude-code-sessions.md` describes it).
 
+## Ending another process's session (verified 2026-10-06, 2.1.288; extension 2.1.289)
+
+How "Move to This Window" takes a session from the app running it. A headless
+stream-json `claude` signalled while idle exits in about a second: SIGINT with status 0,
+SIGTERM 143, SIGHUP 129. Each time its `sessions/<pid>.json` and the `.key` beside it are
+removed and the transcript ends whole (`cost-state` last). SIGTERM mid-turn is clean too:
+during thinking, nothing is left half-written; during a Bash call, the CLI kills the
+tool's child (exit 137) and writes a `tool_result` with its partial output before
+exiting, and a resume reads that turn as cut short. The CLI's own debug log shows the
+shutdown is graceful: MCP servers exit cleanly and SessionEnd hooks run.
+
+The VS Code panel whose process got **SIGINT shows nothing**. After **SIGTERM** it shows
+"Claude Code process exited with code 143" and the stderr tail. Either way **the next
+message typed there resumes the same id** (`--resume=<id>`, a new pid, the same
+transcript) without a word. The registry entry can appear already `busy`. So the app a
+session moved from can take it back at any time. Drakar sends SIGTERM, which leaves that
+panel saying the process ended, and a window running a session gives way the moment
+another process registers it (`OpenSessions.liveChanged`).
+
+A `claude` started from a VS Code session's shell registers as `claude-vscode`: the
+entrypoint comes from the environment it inherits.
+
 ## What the extension passes as of 2.1.288
 
 Read off its running processes on 2026-10-03, beyond the arguments above:

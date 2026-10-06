@@ -20,7 +20,13 @@ struct SessionView: View {
       }
       Divider()
       if session.isReadOnly {
-        ReadOnlyBanner(host: host) { project.fork(item) }
+        ReadOnlyBanner(
+          host: host, fork: { project.fork(item) },
+          moveHere: elsewhereSummary.flatMap { summary in
+            summary.live == nil
+              ? nil
+              : (Project.canMoveHere(summary), { MoveHere.confirm(summary, into: project) })
+          })
       } else if let choice = pendingChoice {
         QuestionPanel(
           questions: UserQuestion.list(choice.request.input),
@@ -70,14 +76,17 @@ struct SessionView: View {
     .environment(\.openInEditor, OpenInEditorAction(workspace: workspace))
   }
 
+  private var elsewhereSummary: SessionSummary? {
+    guard let id = item.sessionID else { return nil }
+    return SessionMonitor.shared.all.first { $0.sessionID == id }
+  }
+
   /// Where the session is open, from the registry, for the banner.
   private var host: String { elsewhere.host }
 
   /// The process that has the session open, from its own record, and where it runs.
   private var elsewhere: (status: ElsewhereStatus, host: String) {
-    guard let id = item.sessionID,
-      let summary = SessionMonitor.shared.all.first(where: { $0.sessionID == id })
-    else { return (.open, String(localized: "another app")) }
+    guard let summary = elsewhereSummary else { return (.open, String(localized: "another app")) }
     return (
       ElsewhereStatus(summary.live), SessionMonitor.shared.host(of: summary, excluding: project)
     )
@@ -130,10 +139,12 @@ private struct ProblemBanner: View {
 }
 
 /// In place of the composer while another process has the session open: two writers on one
-/// transcript would interleave its history.
+/// transcript would interleave its history. Another app's session can move here between
+/// turns (`moveHere`: whether it can now, and the move).
 private struct ReadOnlyBanner: View {
   let host: String
   let fork: () -> Void
+  let moveHere: (enabled: Bool, move: () -> Void)?
 
   var body: some View {
     HStack {
@@ -143,6 +154,15 @@ private struct ReadOnlyBanner: View {
       Button("Fork a Copy", action: fork)
         .help("Continue a copy under a new id, leaving the original where it is.")
         .accessibilityIdentifier("session.fork")
+      if let moveHere {
+        Button("Move Here…", action: moveHere.move)
+          .disabled(!moveHere.enabled)
+          .help(
+            moveHere.enabled
+              ? "End it in \(host) and go on with it in this window."
+              : "It can move here once its turn in \(host) ends.")
+          .accessibilityIdentifier("session.moveHere")
+      }
     }
     .padding(12)
   }

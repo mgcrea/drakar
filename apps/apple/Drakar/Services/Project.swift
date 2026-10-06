@@ -547,6 +547,24 @@ final class Project {
     if let selected, canFork(selected) { fork(selected) }
   }
 
+  /// Whether another app's process has `summary` open between turns, so that it can be
+  /// ended for the session to move here. One in another Drakar window has no `live`.
+  static func canMoveHere(_ summary: SessionSummary) -> Bool {
+    guard let live = summary.live else { return false }
+    return live.status != "busy"
+  }
+
+  /// Ends the process that has `summary` open and makes the session one of this window's
+  /// rows, read-only until the registry says that process is gone (`liveChanged`). False
+  /// when it was not ended: it started a turn, or is no longer the process listed.
+  @discardableResult func moveHere(_ summary: SessionSummary) -> Bool {
+    guard Self.canMoveHere(summary), let live = summary.live, let target = ResumeTarget(summary),
+      LiveSession.end(live, account: summary.account)
+    else { return false }
+    attach(target, readOnly: true)
+    return true
+  }
+
   func select(_ item: ProjectSession, focusingComposer: Bool = true) {
     focusesComposer = focusingComposer
     selectedID = item.id
