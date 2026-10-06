@@ -38,7 +38,7 @@ struct SessionPills: View {
     } label: {
       Label(PermissionMode.title(of: shown), systemImage: mode?.symbol ?? "questionmark.circle")
     }
-    .pill(tint: mode == .bypass ? .red : nil)
+    .pill()
     .help("Permission mode. ⇧Tab moves to the next.")
     .accessibilityIdentifier("composer.mode")
   }
@@ -65,7 +65,7 @@ struct SessionPills: View {
     } label: {
       Label(Self.modelLabel(for: session, in: models), systemImage: "cpu")
     }
-    .pill(tint: nil)
+    .pill()
     .help("Model")
     .accessibilityIdentifier("composer.model")
   }
@@ -125,8 +125,8 @@ struct SessionPills: View {
 }
 
 extension View {
-  /// A composer pill: a borderless menu in a capsule, red for Bypass.
-  fileprivate func pill(tint: Color?) -> some View {
+  /// A composer pill: a borderless menu in a capsule.
+  fileprivate func pill() -> some View {
     self
       .menuStyle(.borderlessButton)
       .menuIndicator(.visible)
@@ -134,7 +134,6 @@ extension View {
       .font(.caption)
       .padding(.horizontal, 7)
       .padding(.vertical, 3)
-      .background((tint ?? Color.secondary).opacity(tint == nil ? 0.12 : 0.2), in: Capsule())
-      .foregroundStyle(tint ?? .primary)
+      .background(Color.secondary.opacity(0.12), in: Capsule())
   }
 }

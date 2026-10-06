@@ -57,7 +57,7 @@ In the pill's order, which ⇧Tab cycles through as the CLI does:
 | `acceptEdits` | Edit automatically | `pencil` | Always |
 | `plan` | Plan | `list.bullet.clipboard` | Always |
 | `auto` | Auto | `wand.and.stars` | When the session's model says `supportsAutoMode` |
-| `bypassPermissions` | Bypass permissions | `exclamationmark.shield` | Settings allows it, and the process (if any) started with the flag; tinted red |
+| `bypassPermissions` | Bypass permissions | `exclamationmark.shield` | Settings allows it, and the process (if any) started with the flag |
 
 `manual` (the CLI's other name for `default`) and `dontAsk` are not offered. A mode the CLI
 reports that is not in the table shows as its raw value.
@@ -115,7 +115,7 @@ models…"; a probe that fails shows its reason. No list is written into Drakar.
 ```
 
 - The pills sit on a row under the field, left of Send, `.caption`, capsule backgrounds as
-  the context chips have. Bypass's capsule is red.
+  the context chips have; Bypass looks like the others.
 - Menus: the mode menu lists the offered modes with their symbols, the current one checked;
   the model menu as above.
 - ⇧Tab in the field moves to the next offered mode.
