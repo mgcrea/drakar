@@ -24,6 +24,12 @@ public enum ClientMessage: Sendable, Equatable {
   /// Switch the running session's permission mode; answered with `{"mode": …}`, then a
   /// `status` line. Bypass is refused unless the process started able to take it.
   case setPermissionMode(requestID: String, mode: String)
+  /// Switch the running session's effort, as a flag setting: the process's alone, never
+  /// written to `settings.json`. Answered with an empty success, a level the model does not
+  /// take included (docs/claude-stream-json.md, "Effort").
+  case setEffort(requestID: String, level: String)
+  /// The process's settings; `applied` says the model and effort it runs with.
+  case getSettings(requestID: String)
   /// Names the session as `/rename` does: the process appends the `custom-title` line and
   /// keeps the name for its own later writes (docs/claude-stream-json.md, "Session titles").
   case renameSession(requestID: String, title: String, sessionID: String)
@@ -67,6 +73,15 @@ public enum ClientMessage: Sendable, Equatable {
     case .setPermissionMode(let id, let mode):
       Self.controlRequest(
         id, ["subtype": .string("set_permission_mode"), "mode": .string(mode)])
+    case .setEffort(let id, let level):
+      Self.controlRequest(
+        id,
+        [
+          "subtype": .string("apply_flag_settings"),
+          "settings": .object(["effortLevel": .string(level)]),
+        ])
+    case .getSettings(let id):
+      Self.controlRequest(id, ["subtype": .string("get_settings")])
     case .renameSession(let id, let title, let sessionID):
       // `source: host` as the extension sends it.
       Self.controlRequest(

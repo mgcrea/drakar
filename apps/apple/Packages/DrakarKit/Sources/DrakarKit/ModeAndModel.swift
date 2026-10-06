@@ -54,18 +54,21 @@ public struct ModelOption: Sendable, Hashable, Identifiable {
   public var displayName: String
   public var description: String
   public var supportsAutoMode: Bool
+  /// The effort levels it takes, lowest first; none for a model without effort (Haiku).
+  public var effortLevels: [String]
 
   public var id: String { value }
 
   public init(
     value: String, resolvedModel: String? = nil, displayName: String, description: String = "",
-    supportsAutoMode: Bool = false
+    supportsAutoMode: Bool = false, effortLevels: [String] = []
   ) {
     self.value = value
     self.resolvedModel = resolvedModel
     self.displayName = displayName
     self.description = description
     self.supportsAutoMode = supportsAutoMode
+    self.effortLevels = effortLevels
   }
 
   init?(_ json: JSONValue) {
@@ -74,11 +77,47 @@ public struct ModelOption: Sendable, Hashable, Identifiable {
       value: value, resolvedModel: json["resolvedModel"]?.stringValue,
       displayName: json["displayName"]?.stringValue ?? value,
       description: json["description"]?.stringValue ?? "",
-      supportsAutoMode: json["supportsAutoMode"]?.boolValue ?? false)
+      supportsAutoMode: json["supportsAutoMode"]?.boolValue ?? false,
+      effortLevels: json["supportsEffort"]?.boolValue == true
+        ? json["supportedEffortLevels"]?.arrayValue?.compactMap(\.stringValue) ?? [] : [])
   }
 
   /// The models an `initialize` reply lists, in its order; nil when it has no `models`.
   public static func list(fromInitialize reply: JSONValue?) -> [ModelOption]? {
     reply?["models"]?.arrayValue?.compactMap(ModelOption.init)
+  }
+}
+
+/// An effort level, as the CLI names it: `low`, `medium`, `high`, `xhigh`, `max`. The model
+/// says which it takes (`ModelOption.effortLevels`), so the list is never written here.
+public enum EffortLevel {
+  /// `raw`'s title, or `raw` itself for a level Drakar does not know.
+  public static func title(of raw: String) -> String {
+    switch raw {
+    case "low": String(localized: "Low")
+    case "medium": String(localized: "Medium")
+    case "high": String(localized: "High")
+    case "xhigh": String(localized: "Extra high")
+    case "max": String(localized: "Max")
+    default: raw
+    }
+  }
+
+  /// A gauge filling with the level.
+  public static func symbol(of raw: String?) -> String {
+    switch raw {
+    case "low": "gauge.with.dots.needle.0percent"
+    case "medium": "gauge.with.dots.needle.33percent"
+    case "high": "gauge.with.dots.needle.50percent"
+    case "xhigh": "gauge.with.dots.needle.67percent"
+    case "max": "gauge.with.dots.needle.100percent"
+    default: "gauge.with.dots.needle.bottom.50percent"
+    }
+  }
+
+  /// The effort a `get_settings` reply says the process applies; nil for a model without
+  /// effort.
+  public static func applied(fromSettings reply: JSONValue?) -> String? {
+    reply?["applied"]?["effort"]?.stringValue
   }
 }

@@ -9,6 +9,9 @@ public struct ClaudeCommand: Sendable, Equatable {
   public var model: String?
   /// `default`, `acceptEdits`, `plan` or `bypassPermissions`; nil leaves the default.
   public var permissionMode: String?
+  /// `low` to `max`, as the model's `supportedEffortLevels` list them; nil leaves the user's
+  /// `effortLevel`, else the model's own.
+  public var effort: String?
   /// `--allow-dangerously-skip-permissions`: Bypass permissions can be switched to later,
   /// without the session starting in it.
   public var allowsBypass = false
@@ -48,6 +51,7 @@ public struct ClaudeCommand: Sendable, Equatable {
     if let thinkingDisplay { arguments += ["--thinking-display", thinkingDisplay] }
     if let model { arguments += ["--model", model] }
     if let permissionMode { arguments += ["--permission-mode", permissionMode] }
+    if let effort { arguments += ["--effort", effort] }
     if allowsBypass { arguments.append("--allow-dangerously-skip-permissions") }
     // One argument, `--resume=<id>`, as the extension passes it, so an id can never be
     // read as a flag.

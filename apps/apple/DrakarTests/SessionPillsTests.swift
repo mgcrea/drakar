@@ -13,7 +13,7 @@ struct SessionPillsTests {
   private let models = [
     ModelOption(
       value: "default", resolvedModel: "claude-opus-5-5", displayName: "Default (recommended)",
-      supportsAutoMode: true),
+      supportsAutoMode: true, effortLevels: ["low", "medium", "high", "xhigh", "max"]),
     ModelOption(
       value: "haiku", resolvedModel: "claude-haiku-4-5-20251001", displayName: "Haiku 4.5"),
   ]
@@ -81,6 +81,26 @@ struct SessionPillsTests {
       }
       #expect(SessionPills.modelLabel(for: session, in: models) == "Sonnet 5.5 · 1M")
       #expect(SessionPills.option(for: session, in: models)?.value == "default")
+    }
+  }
+
+  /// The model's own levels; none for a model without effort, or before the list is known.
+  @Test func offersTheModelsEffortLevels() {
+    scoped {
+      let session = ClaudeSession(folder: folder)
+      #expect(SessionPills.effortLevels(session, models: models).count == 5)
+      #expect(SessionPills.effortLevels(session, models: nil).isEmpty)
+      session.setModel("haiku")
+      #expect(SessionPills.effortLevels(session, models: models).isEmpty)
+    }
+  }
+
+  @Test func labelsTheEffort() {
+    scoped {
+      let session = ClaudeSession(folder: folder)
+      #expect(SessionPills.effortLabel(for: session) == "Default")
+      session.setEffort("xhigh")
+      #expect(SessionPills.effortLabel(for: session) == "Extra high")
     }
   }
 }

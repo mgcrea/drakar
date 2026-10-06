@@ -36,6 +36,18 @@ struct ClientMessageTests {
         + "\n")
   }
 
+  /// Effort goes as a flag setting: the process's alone, never written to settings.json.
+  @Test func encodesTheEffortSwitchAndItsReadBack() throws {
+    #expect(
+      try text(.setEffort(requestID: "effort-1", level: "high"))
+        == #"{"request":{"settings":{"effortLevel":"high"},"subtype":"apply_flag_settings"},"request_id":"effort-1","type":"control_request"}"#
+        + "\n")
+    #expect(
+      try text(.getSettings(requestID: "settings-2"))
+        == #"{"request":{"subtype":"get_settings"},"request_id":"settings-2","type":"control_request"}"#
+        + "\n")
+  }
+
   @Test func encodesAPrompt() throws {
     #expect(
       try text(.prompt("Run it"))

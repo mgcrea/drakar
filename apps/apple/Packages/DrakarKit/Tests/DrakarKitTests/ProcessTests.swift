@@ -12,6 +12,13 @@ struct ClaudeCommandTests {
     #expect(command.arguments.contains("--allow-dangerously-skip-permissions"))
   }
 
+  @Test func passesEffortWhenAsked() {
+    #expect(!ClaudeCommand().arguments.contains("--effort"))
+    var command = ClaudeCommand()
+    command.effort = "xhigh"
+    #expect(command.arguments.joined(separator: " ").contains("--effort xhigh"))
+  }
+
   @Test func passesTheExtensionsArguments() {
     #expect(
       ClaudeCommand().arguments == [
