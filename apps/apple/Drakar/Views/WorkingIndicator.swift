@@ -3,6 +3,8 @@ import SwiftUI
 /// What the transcript shows while Claude works, after the extension: a glyph that pulses out
 /// to a star and back, beside a verb that types itself in and changes every few seconds.
 struct WorkingIndicator: View {
+  /// Said in place of the verbs while it holds, such as "Retrying (2/10)".
+  var status: String?
   @State private var verb = Self.verbs.randomElement()!
   /// The line as drawn, mid-way through typing in `verb` over the one before it.
   @State private var shown = String(repeating: " ", count: Self.width)
@@ -18,9 +20,9 @@ struct WorkingIndicator: View {
       Text(shown).fontWeight(.medium)
     }
     .accessibilityElement(children: .ignore)
-    .accessibilityLabel("Working")
+    .accessibilityLabel(status ?? "Working")
     .task { await rotateVerbs() }
-    .task(id: verb) { await typeIn(verb + "...") }
+    .task(id: status ?? verb) { await typeIn((status ?? verb) + "...") }
   }
 
   /// A new verb after 2s, then 3s, then every 5s.

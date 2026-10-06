@@ -61,6 +61,14 @@ public enum SystemEvent: Sendable, Equatable {
   /// `requesting` before each API call; `permissionMode` set when the mode changed, by a
   /// `set_permission_mode` or the CLI itself.
   case status(String?, permissionMode: String?)
+  /// The conversation was summarised to free context: `auto` or `manual` (`/compact`), and
+  /// how many tokens it held before.
+  case compacted(trigger: String?, preTokens: Int?)
+  /// A request failed and will be tried again.
+  case apiRetry(APIRetry)
+  /// A note the CLI shows its own user, such as fast mode being turned off; `isError` when
+  /// it is coloured as one.
+  case notification(text: String, isError: Bool)
   case other(subtype: String, raw: JSONValue)
 
   init?(_ json: JSONValue) {
@@ -72,8 +80,33 @@ public enum SystemEvent: Sendable, Equatable {
     case "status":
       self = .status(
         json["status"]?.stringValue, permissionMode: json["permissionMode"]?.stringValue)
+    case "compact_boundary":
+      let metadata = json["compact_metadata"]
+      self = .compacted(
+        trigger: metadata?["trigger"]?.stringValue, preTokens: metadata?["pre_tokens"]?.intValue)
+    case "api_retry":
+      self = .apiRetry(
+        APIRetry(
+          attempt: json["attempt"]?.intValue, maxRetries: json["max_retries"]?.intValue,
+          delayMS: json["retry_delay_ms"]?.intValue))
+    case "notification":
+      guard let text = json["text"]?.stringValue else { return nil }
+      self = .notification(text: text, isError: json["color"]?.stringValue == "error")
     default: self = .other(subtype: subtype, raw: json)
     }
+  }
+}
+
+/// `system/api_retry`: which attempt is next, of how many, after how long.
+public struct APIRetry: Sendable, Equatable {
+  public var attempt: Int?
+  public var maxRetries: Int?
+  public var delayMS: Int?
+
+  public init(attempt: Int?, maxRetries: Int?, delayMS: Int?) {
+    self.attempt = attempt
+    self.maxRetries = maxRetries
+    self.delayMS = delayMS
   }
 }
 
@@ -264,12 +297,25 @@ public struct TurnResult: Sendable, Equatable {
   /// An interrupt ends the turn as `error_during_execution` with `is_error: true`; it is
   /// the user's own doing and must not be shown as a failure.
   public var wasInterrupted: Bool { terminalReason == "aborted_streaming" }
+  /// Why an `error_*` turn failed, such as "Reached maximum number of turns (3)". A failed
+  /// `success` (an API error) says it in `text` instead.
+  public var errors: [String]
+
+  /// What to tell the person about a turn that failed; nil for one that did not, or that
+  /// they interrupted.
+  public var failureText: String? {
+    guard isError, !wasInterrupted else { return nil }
+    let reason = errors.isEmpty ? (text ?? "") : errors.joined(separator: "\n")
+    let trimmed = reason.trimmingCharacters(in: .whitespacesAndNewlines)
+    return trimmed.isEmpty ? String(localized: "The turn failed (\(subtype)).") : trimmed
+  }
 
   init?(_ json: JSONValue) {
     guard let subtype = json["subtype"]?.stringValue else { return nil }
     self.subtype = subtype
     isError = json["is_error"]?.boolValue ?? (subtype != "success")
     sessionID = json["session_id"]?.stringValue
+    errors = json["errors"]?.arrayValue?.compactMap(\.stringValue) ?? []
     text = json["result"]?.stringValue
     totalCostUSD = json["total_cost_usd"]?.numberValue
     durationMS = json["duration_ms"]?.intValue
@@ -288,7 +334,24 @@ public struct ControlRequest: Sendable, Equatable {
 
   public enum Kind: Sendable, Equatable {
     case canUseTool(PermissionRequest)
+    /// An MCP server asking the person something. Sent whatever the client registered, and
+    /// waited on with no deadline.
+    case elicitation(serverName: String?, message: String?)
+    /// Requests the CLI sends only to a client that registered for them in `initialize`
+    /// (hooks, SDK MCP servers, dialog kinds), which Drakar does not.
     case other(subtype: String, raw: JSONValue)
+  }
+
+  /// What goes back without asking the person: an elicitation is declined, as the extension
+  /// declines it, and anything else refused as the SDK refuses it, so that the CLI never
+  /// waits on a request nobody will answer. Nil for a permission, which is the person's.
+  public var reply: ClientMessage? {
+    switch kind {
+    case .canUseTool: nil
+    case .elicitation: .declineElicitation(requestID: requestID)
+    case .other(let subtype, _):
+      .refuse(requestID: requestID, error: "Unsupported control request subtype: \(subtype)")
+    }
   }
 
   init?(_ json: JSONValue) {
@@ -300,6 +363,10 @@ public struct ControlRequest: Sendable, Equatable {
     case "can_use_tool":
       guard let permission = PermissionRequest(request) else { return nil }
       kind = .canUseTool(permission)
+    case "elicitation":
+      kind = .elicitation(
+        serverName: request["mcp_server_name"]?.stringValue,
+        message: request["message"]?.stringValue)
     default: kind = .other(subtype: subtype, raw: request)
     }
   }

@@ -33,6 +33,10 @@ public enum ClientMessage: Sendable, Equatable {
   /// Names the session as `/rename` does: the process appends the `custom-title` line and
   /// keeps the name for its own later writes (docs/claude-stream-json.md, "Session titles").
   case renameSession(requestID: String, title: String, sessionID: String)
+  /// The answer to an `elicitation`: no answer from the person.
+  case declineElicitation(requestID: String)
+  /// The answer to a request Drakar cannot serve, so that the CLI stops waiting on it.
+  case refuse(requestID: String, error: String)
 
   public var json: JSONValue {
     switch self {
@@ -90,6 +94,22 @@ public enum ClientMessage: Sendable, Equatable {
           "subtype": .string("rename_session"), "title": .string(title),
           "source": .string("host"), "session_id": .string(sessionID),
         ])
+    case .declineElicitation(let id):
+      .object([
+        "type": .string("control_response"),
+        "response": .object([
+          "subtype": .string("success"),
+          "request_id": .string(id),
+          "response": .object(["action": .string("decline")]),
+        ]),
+      ])
+    case .refuse(let id, let error):
+      .object([
+        "type": .string("control_response"),
+        "response": .object([
+          "subtype": .string("error"), "request_id": .string(id), "error": .string(error),
+        ]),
+      ])
     }
   }
 

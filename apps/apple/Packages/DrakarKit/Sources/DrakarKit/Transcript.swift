@@ -42,6 +42,8 @@ public struct Transcript: Sendable, Equatable {
     case tool(ToolCall)
     /// Text the CLI writes as a user turn, such as `[Request interrupted by user]`.
     case notice(String)
+    /// Why a turn failed, or a note the CLI colours as an error.
+    case failure(String)
   }
 
   public struct ToolCall: Sendable, Equatable {
@@ -142,7 +144,7 @@ public struct Transcript: Sendable, Equatable {
         if let messageID, id != messageID { break scan }
         messageID = id
         parts.insert(text, at: 0)
-      case .prompt, .tool, .notice: break scan
+      case .prompt, .tool, .notice, .failure: break scan
       }
     }
     let text = parts.joined(separator: "\n\n").trimmingCharacters(in: .whitespacesAndNewlines)
@@ -156,6 +158,10 @@ public struct Transcript: Sendable, Equatable {
   }
   /// True from a prompt until its `result`.
   public private(set) var isRunning = false
+  /// A request that failed and is about to be tried again, until anything else arrives.
+  public private(set) var retry: APIRetry?
+  /// From a `compacting` status until the compaction lands or the turn ends.
+  public private(set) var isCompacting = false
   /// Bumped by every change, so a view can react to "something changed" without
   /// comparing the whole history.
   public private(set) var revision = 0
@@ -186,7 +192,7 @@ public struct Transcript: Sendable, Equatable {
   private var unansweredQuestionIndex: Int? {
     for index in entries.indices.reversed() where entries[index].parentToolUseID == nil {
       switch entries[index].kind {
-      case .thinking, .notice: continue
+      case .thinking, .notice, .failure: continue
       case .tool(let call):
         guard call.name == UserQuestion.toolName else { return nil }
         switch call.questionOutcome {
@@ -220,9 +226,13 @@ public struct Transcript: Sendable, Equatable {
   }
 
   mutating func addNotice(_ text: String, parent: String? = nil) {
+    addNote(.notice(text), parent: parent)
+  }
+
+  private mutating func addNote(_ kind: Kind, parent: String? = nil) {
     revision += 1
     noticeCount += 1
-    upsert(Entry(id: "notice#\(noticeCount)", kind: .notice(text), parentToolUseID: parent))
+    upsert(Entry(id: "notice#\(noticeCount)", kind: kind, parentToolUseID: parent))
   }
 
   /// Call after answering a permission request, so it leaves the pending list.
@@ -244,8 +254,21 @@ public struct Transcript: Sendable, Equatable {
   public mutating func apply(_ message: StreamMessage, at time: Date = .now) {
     revision += 1
     switch message {
+    case .system(.apiRetry), .rateLimit, .controlResponse: break
+    default: retry = nil
+    }
+    switch message {
     case .system(.initialized(let info)):
       session = info
+    case .system(.apiRetry(let retry)):
+      self.retry = retry
+    case .system(.status(let status, _)):
+      isCompacting = status == "compacting"
+    case .system(.compacted(let trigger, let preTokens)):
+      isCompacting = false
+      addNotice(Self.compactionNote(trigger: trigger, preTokens: preTokens))
+    case .system(.notification(let text, let isError)):
+      addNote(isError ? .failure(text) : .notice(text))
     case .assistant(let assistant):
       // A `<synthetic>` turn ("You've hit your session limit", an API error) is written by
       // the CLI, not the API: its usage is all zeros and says nothing of the context.
@@ -290,9 +313,13 @@ public struct Transcript: Sendable, Equatable {
         entries[index].kind = .tool(call)
       }
     case .controlRequest(let request):
-      if case .canUseTool(let permission) = request.kind {
+      switch request.kind {
+      case .canUseTool(let permission):
         pendingPermissions.append(
           PendingPermission(requestID: request.requestID, request: permission))
+      case .elicitation(let server, let question):
+        addNotice(Self.declinedQuestionNote(server: server, question: question))
+      case .other: break
       }
     case .controlCancelRequest(let id):
       resolvePermission(requestID: id)
@@ -300,12 +327,46 @@ public struct Transcript: Sendable, Equatable {
       lastResult = result
       turnEnd = result.wasInterrupted ? .interrupted : result.isError ? .failed : .completed
       isRunning = false
+      isCompacting = false
+      if let failure = result.failureText, !endsSaying(failure) { addNote(.failure(failure)) }
       // A turn that ended cannot still be asking, nor thinking.
       pendingPermissions.removeAll()
       stopThinking()
     case .system, .controlResponse, .rateLimit, .unknown:
       break
     }
+  }
+
+  /// The main thread's newest text already says `failure`: an API error the CLI wrote as
+  /// its own assistant turn before the result repeating it.
+  private func endsSaying(_ failure: String) -> Bool {
+    for entry in entries.reversed() where entry.parentToolUseID == nil {
+      switch entry.kind {
+      case .thinking: continue
+      case .text(let text): return text.contains(failure)
+      default: return false
+      }
+    }
+    return false
+  }
+
+  static func compactionNote(trigger: String?, preTokens: Int?) -> String {
+    let tokens = preTokens.map { $0.formatted(.number.notation(.compactName)) }
+    return switch (trigger, tokens) {
+    case (let trigger?, let tokens?):
+      String(localized: "Conversation compacted (\(trigger), \(tokens) tokens before)")
+    case (nil, let tokens?): String(localized: "Conversation compacted (\(tokens) tokens before)")
+    case (let trigger?, nil): String(localized: "Conversation compacted (\(trigger))")
+    case (nil, nil): String(localized: "Conversation compacted")
+    }
+  }
+
+  static func declinedQuestionNote(server: String?, question: String?) -> String {
+    let asker = server ?? String(localized: "An MCP server")
+    let note = String(
+      localized: "\(asker) asked a question Drakar cannot show yet, so it was declined")
+    guard let question, !question.isEmpty else { return note }
+    return "\(note): \(question)"
   }
 
   private mutating func apply(_ event: StreamEvent, parent: String?, at time: Date) {
@@ -384,7 +445,7 @@ public struct Transcript: Sendable, Equatable {
   private static func isEmptyText(_ kind: Kind) -> Bool {
     switch kind {
     case .text(let text), .thinking(let text): text.isEmpty
-    case .prompt, .tool, .notice: false
+    case .prompt, .tool, .notice, .failure: false
     }
   }
 

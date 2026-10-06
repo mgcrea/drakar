@@ -562,6 +562,10 @@ final class ClaudeSession {
       }
       return
     }
+    // Not `write`: a reply that cannot be written must not mark the session failed.
+    if case .controlRequest(let request) = message, let reply = request.reply {
+      try? process?.send(reply)
+    }
     let waiting = transcript.pendingPermissions.count
     transcript.apply(message)
     if unsentName != nil { sendUnsentName() }

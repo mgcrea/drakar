@@ -46,7 +46,7 @@ Every line has `type`. Observed in the spike, in order of a turn:
 | `stream_event` | `event: {type: message_start \| content_block_start \| content_block_delta \| content_block_stop \| message_delta \| message_stop}` | Only with `--include-partial-messages`. Deltas seen: `text_delta`, `thinking_delta`, `signature_delta`, `input_json_delta`. |
 | `assistant` | `message` (an API message) | **Emitted once per content block, not once per message.** A thinking block and a tool_use block of the same turn arrive as two `assistant` lines sharing one `message.id`, each holding only its own block. Merge by `message.id`. |
 | `user` | `message.content[]` of `tool_result` | Plus `tool_use_result` with the tool's structured output (Bash: `stdout`, `stderr`, `interrupted`). |
-| `control_request` | `request.subtype = can_use_tool` | `tool_name`, `display_name`, `input`, `description`, `permission_suggestions[]`, `blocked_path`. Must be answered or the turn waits forever. |
+| `control_request` | `request.subtype = can_use_tool` | `tool_name`, `display_name`, `input`, `description`, `permission_suggestions[]`, `blocked_path`. Must be answered or the turn waits forever. Other subtypes: "Lines beside the conversation" below. |
 | `result` | `success` (also error subtypes) | `session_id`, `total_cost_usd`, `usage`, `duration_api_ms`, `stop_reason`. Ends a turn, not the process. |
 
 Every line after init carries `session_id` and a `uuid`; model output carries
@@ -223,6 +223,22 @@ Before any prompt, no API call:
 The VS Code extension writes a picked effort into the user's `settings.json`
 (`updateSettings("userSettings", {effortLevel})`). Drakar sends it as a flag setting, so a
 pick lasts for its session as the model's does.
+
+## Lines beside the conversation (read from the 2.1.288 source, 2026-10-06; not yet captured)
+
+What the CLI says that is not a block of the conversation, and what Drakar does with it.
+Read out of the CLI's bundled JavaScript and the extension's (2.1.289), not seen on a live
+stream yet:
+
+| Line | Shape | Drakar |
+| --- | --- | --- |
+| `control_request` `elicitation` | `mcp_server_name`, `message`, `mode`, `url`, `requested_schema` | An MCP server asking the person. Sent whatever the client registered, and **waited on with no deadline**. Declined with `{"action":"decline"}`, as the extension declines it (its host passes no handler), and noted in the transcript. |
+| `control_request` `hook_callback`, `mcp_message`, `request_user_dialog` | | Sent only to a client that registered hooks, SDK MCP servers or `supportedDialogKinds` in `initialize`; Drakar registers none. Any subtype Drakar does not serve is answered `{"subtype":"error","error":"Unsupported control request subtype: <x>"}`, the SDK's own answer, so that nothing waits. |
+| `result` with an `error_*` subtype | `errors: [String]` (`error_max_turns`, `error_max_budget_usd`, `error_during_execution`) | The reason is in `errors`, not `result`. A failed `success` (an API error) says it in `result`, after an `assistant` line of model `<synthetic>` saying the same. Shown in red unless the last text already says it; an interrupt is not a failure. |
+| `system` `api_retry` | `attempt`, `max_retries`, `retry_delay_ms`, `error_status`, `error` | The working indicator reads "Retrying (2/10)" until the next line. |
+| `system` `status` `compacting` | `status: "compacting"`, then `compact_result` / `compact_error` | The working indicator reads "Compacting". |
+| `system` `compact_boundary` | `compact_metadata: {trigger: auto \| manual, pre_tokens, post_tokens?}` | A note: "Conversation compacted (auto, 617K tokens before)". The transcript file writes the same line camelCased (`compactMetadata.preTokens`), which history does not read: it notes the `isCompactSummary` prompt instead. |
+| `system` `notification` | `key`, `text`, `priority`, `color?`, `timeout_ms?` | A note, red when `color` is `error`. |
 
 ## Observed details worth knowing
 

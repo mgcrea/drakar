@@ -31,6 +31,17 @@ struct TranscriptView: View {
   @State private var revisionWhenLeft: Int?
   @State private var thinkingDisclosure = ThinkingDisclosure()
 
+  /// What the turn is held up by, said instead of a verb.
+  private var workingStatus: String? {
+    if let retry = transcript.retry {
+      return switch (retry.attempt, retry.maxRetries) {
+      case (let attempt?, let max?): String(localized: "Retrying (\(attempt)/\(max))")
+      default: String(localized: "Retrying")
+      }
+    }
+    return transcript.isCompacting ? String(localized: "Compacting") : nil
+  }
+
   var body: some View {
     ScrollView {
       LazyVStack(alignment: .leading, spacing: 14) {
@@ -41,7 +52,7 @@ struct TranscriptView: View {
         }
         // Not while a permission waits on the user: nothing is being worked on then.
         if transcript.isRunning && transcript.pendingPermissions.isEmpty {
-          WorkingIndicator()
+          WorkingIndicator(status: workingStatus)
         }
       }
       .scrollTargetLayout()
@@ -266,6 +277,14 @@ struct EntryView: View, Equatable {
         )
         .font(.callout)
         .foregroundStyle(.secondary)
+      case .failure(let text):
+        Label(text, systemImage: "exclamationmark.triangle")
+          .font(.callout)
+          .foregroundStyle(.red)
+          .textSelection(.enabled)
+          .padding(.trailing, 30)
+          .frame(maxWidth: .infinity, alignment: .leading)
+          .copyOnHover(text)
       }
     }
     .padding(.leading, entry.parentToolUseID == nil ? 0 : 20)
