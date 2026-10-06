@@ -62,8 +62,8 @@ enum PreferenceKey {
   /// The model new sessions start with (a `value` of `initialize`'s `models`); empty for
   /// Claude Code's default.
   static let defaultModel = "drakar.defaultModel"
-  /// Whether the model menus list older pinned models (Opus 4.8) beside the current ones; on
-  /// unless turned off.
+  /// Whether the model menus list older pinned models (Opus 4.8) beside the current ones; off
+  /// unless turned on.
   static let showsLegacyModels = "drakar.showsLegacyModels"
   /// The permission mode new sessions start with (`PermissionMode`'s raw value); empty for
   /// Claude Code's default.
@@ -128,10 +128,10 @@ enum ClaudeChoice {
     return stored(PreferenceKey.defaultModel)
   }
 
-  /// The model menus list older pinned models. On by default.
+  /// The model menus list older pinned models. Off by default.
   static var showsLegacyModels: Bool {
     _ = AttentionDefaults.shared.revision
-    return defaults.object(forKey: PreferenceKey.showsLegacyModels) as? Bool ?? true
+    return defaults.object(forKey: PreferenceKey.showsLegacyModels) as? Bool ?? false
   }
 
   /// `models` as the menus offer them: without the older ones unless Settings shows them,
@@ -402,7 +402,7 @@ private struct ClaudeSection: View {
   @AppStorage(PreferenceKey.allowsBypass) private var allowsBypass = true
   @AppStorage(PreferenceKey.defaultModel) private var defaultModel = ""
   @AppStorage(PreferenceKey.defaultMode) private var defaultMode = ""
-  @AppStorage(PreferenceKey.showsLegacyModels) private var showsLegacyModels = true
+  @AppStorage(PreferenceKey.showsLegacyModels) private var showsLegacyModels = false
   /// The login shell's `CLAUDE_CONFIG_DIR`, for the account whose models are listed.
   @State private var shellDirectory: String?
   @State private var installs: [Install] = []

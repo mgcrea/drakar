@@ -416,7 +416,8 @@ struct ClaudeSessionTests {
     for count in 1...2 {
       await session.spawn()
       for _ in 0..<50 {
-        runs = ((try? String(contentsOf: script.appendingPathExtension("args"), encoding: .utf8))
+        runs =
+          ((try? String(contentsOf: script.appendingPathExtension("args"), encoding: .utf8))
           ?? "").split(separator: "\n").map(String.init)
         if runs.count >= count { break }
         try await Task.sleep(for: .milliseconds(100))
