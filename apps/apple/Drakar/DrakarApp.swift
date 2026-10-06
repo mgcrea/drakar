@@ -121,6 +121,23 @@ private struct SessionCommands: View {
     Button("Dismiss") { project?.dismissSelected() }
       .keyboardShortcut("d", modifiers: [.command, .option])
       .disabled(project?.canDismissSelected != true)
+    AnswerCommands(project: project)
+  }
+}
+
+/// Session > Answer Yes (⌥⌘Y) and Answer No (⌥⌘N), apart so that only they redraw as the
+/// shown session's transcript streams.
+private struct AnswerCommands: View {
+  let project: Project?
+
+  var body: some View {
+    let answerable = project?.yesOrNoSelected != nil
+    Button("Answer Yes") { project?.answerYesSelected() }
+      .keyboardShortcut("y", modifiers: [.command, .option])
+      .disabled(!answerable)
+    Button("Answer No") { project?.answerNoSelected() }
+      .keyboardShortcut("n", modifiers: [.command, .option])
+      .disabled(!answerable)
   }
 }
 

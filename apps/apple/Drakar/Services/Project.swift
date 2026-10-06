@@ -352,6 +352,40 @@ final class Project {
     }
   }
 
+  /// The question the shown session ended on, when a bare "Yes" answers it and its composer
+  /// could send one: the toolbar's Yes and No, Session > Answer Yes and Answer No. Never for
+  /// a session live elsewhere, which Drakar only watches.
+  var yesOrNoSelected: ClosingAsk? {
+    guard let selected, selected.session.canSend,
+      selected.session.transcript.pendingPermissions.isEmpty,
+      let ask = selected.closingAsk, ask.isYesOrNo
+    else { return nil }
+    return ask
+  }
+
+  /// Sends "Yes" to the shown session, as its composer would, leaving the draft as it is.
+  func answerYesSelected() {
+    guard yesOrNoSelected != nil, let selected else { return }
+    takeOver(selected)
+    selected.session.send("Yes")
+  }
+
+  /// Starts the shown session's reply with "No, " and focuses it, since a bare "No" mostly
+  /// earns a "What would you like instead?"; `bare` sends just that. A draft already
+  /// written is kept.
+  func answerNoSelected(bare: Bool = false) {
+    guard yesOrNoSelected != nil, let selected else { return }
+    if bare {
+      takeOver(selected)
+      selected.session.send("No")
+      return
+    }
+    if selected.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+      selected.draft = "No, "
+    }
+    selected.focusRequest += 1
+  }
+
   /// A new session in the project's folder, on top and shown. No process until it is
   /// prompted.
   @discardableResult func newSession() -> ProjectSession {

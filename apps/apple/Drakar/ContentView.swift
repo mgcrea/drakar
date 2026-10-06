@@ -93,6 +93,9 @@ struct ContentView: View {
             .accessibilityIdentifier("window.closeProject")
         }
         ToolbarItem(placement: .primaryAction) {
+          YesNoToolbarItem(project: project)
+        }
+        ToolbarItem(placement: .primaryAction) {
           ForkToolbarButton(project: project)
         }
         ToolbarItem(placement: .primaryAction) {

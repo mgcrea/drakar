@@ -118,6 +118,61 @@ struct ProjectTests {
     #expect(project.selected?.session.resuming?.forks == true)
   }
 
+  /// A session attached with `ask` as what its file's newest turn ended on, and a `claude`
+  /// that takes prompts and says nothing.
+  private func asking(_ ask: ClosingAsk, in project: Project) throws -> ProjectSession {
+    let script = folder.appending(path: "claude")
+    try Data("#!/bin/sh\ncat > /dev/null\n".utf8).write(to: script)
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script.path)
+    project.executableOverride = script
+    let item = project.attach(target("a"))
+    var summary = SessionSummary(
+      sessionID: "a", account: ClaudeAccount(directory: folder, isDefault: false),
+      file: folder.appending(path: "a.jsonl"), modified: .now, size: 1)
+    summary.closingAsk = ask
+    summary.closingMessageID = "m1"
+    item.preview = summary
+    return item
+  }
+
+  @Test func yesAnswersAYesOrNoQuestion() throws {
+    let project = Project(folder: folder)
+    let item = try asking(
+      ClosingAsk(kind: .question, text: "Does this look right?", isYesOrNo: true), in: project)
+    defer { project.stopAll() }
+    item.draft = "half a thought"
+    #expect(project.yesOrNoSelected?.text == "Does this look right?")
+    project.answerYesSelected()
+    #expect(item.session.transcript.entries.last?.headline == "Yes")
+    #expect(item.draft == "half a thought")
+    #expect(project.yesOrNoSelected == nil)
+  }
+
+  /// A "No" mostly comes with what to do instead: it starts the reply.
+  @Test func noStartsTheReply() throws {
+    let project = Project(folder: folder)
+    let item = try asking(
+      ClosingAsk(kind: .question, text: "Want me to push?", isYesOrNo: true), in: project)
+    defer { project.stopAll() }
+    project.answerNoSelected()
+    #expect(item.draft == "No, ")
+    #expect(item.focusRequest == 1)
+    #expect(item.session.transcript.entries.isEmpty)
+    project.answerNoSelected(bare: true)
+    #expect(item.session.transcript.entries.last?.headline == "No")
+  }
+
+  @Test func aQuestionThatNeedsWordsHasNoYesOrNo() throws {
+    let project = Project(folder: folder)
+    let item = try asking(ClosingAsk(kind: .question, text: "Which option?"), in: project)
+    defer { project.stopAll() }
+    #expect(project.yesOrNoSelected == nil)
+    project.answerYesSelected()
+    project.answerNoSelected()
+    #expect(item.session.transcript.entries.isEmpty)
+    #expect(item.draft.isEmpty)
+  }
+
   @Test func aForkOfAWatchedSessionIsTheWindowsOwn() {
     let project = Project(folder: folder)
     let watched = project.attach(target("a"), watching: true, readOnly: true)
