@@ -500,6 +500,19 @@ final class Project {
     return attach(target)
   }
 
+  /// Whether `item` has a transcript to copy and no turn writing it: a fork taken mid-turn
+  /// would copy a history that can end on a tool call with no result.
+  func canFork(_ item: ProjectSession) -> Bool {
+    (item.session.resuming ?? item.session.savedTarget) != nil
+      && !item.session.transcript.isRunning
+  }
+
+  var canForkSelected: Bool { selected.map(canFork) ?? false }
+
+  func forkSelected() {
+    if let selected, canFork(selected) { fork(selected) }
+  }
+
   func select(_ item: ProjectSession, focusingComposer: Bool = true) {
     focusesComposer = focusingComposer
     selectedID = item.id

@@ -112,6 +112,7 @@ private struct SessionCommands: View {
     Button("New Session") { project?.newSession() }
       .keyboardShortcut("n")
       .disabled(project == nil)
+    ForkSessionCommand(project: project)
     Button("Next Session Needing You") {
       if let project, let next = project.nextNeedingAttention() { project.show(next) }
     }
@@ -120,6 +121,18 @@ private struct SessionCommands: View {
     Button("Dismiss") { project?.dismissSelected() }
       .keyboardShortcut("d", modifiers: [.command, .option])
       .disabled(project?.canDismissSelected != true)
+  }
+}
+
+/// Session > Fork Session (⇧⌘D), apart so that only it redraws as the shown session's
+/// transcript streams.
+private struct ForkSessionCommand: View {
+  let project: Project?
+
+  var body: some View {
+    Button("Fork Session") { project?.forkSelected() }
+      .keyboardShortcut("d", modifiers: [.command, .shift])
+      .disabled(project?.canForkSelected != true)
   }
 }
 

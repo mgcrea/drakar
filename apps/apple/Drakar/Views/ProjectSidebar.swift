@@ -183,6 +183,7 @@ struct SessionListView: View {
     }
     if (item.session.resuming ?? item.session.savedTarget) != nil {
       Button("Fork a Copy") { project.fork(item) }
+        .disabled(!project.canFork(item))
       Divider()
     }
     if item.session.isProcessRunning {

@@ -88,6 +88,36 @@ struct ProjectTests {
     #expect(project.stored.sessions.map(\.sessionID) == ["b", "a"])
   }
 
+  /// Nothing to copy before the first finished turn, and nothing whole during one.
+  @Test func onlyASessionWithATranscriptAndNoTurnRunningForks() throws {
+    let project = Project(folder: folder)
+    let fresh = project.newSession()
+    #expect(!project.canFork(fresh))
+    #expect(!project.canForkSelected)
+    project.forkSelected()
+    #expect(project.sessions.count == 1)
+
+    let script = folder.appending(path: "claude")
+    try Data("#!/bin/sh\ncat > /dev/null\n".utf8).write(to: script)
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script.path)
+    project.executableOverride = script
+    let attached = project.attach(target("a"))
+    defer { project.stopAll() }
+    #expect(project.canForkSelected)
+    attached.session.send("hello")
+    #expect(attached.session.transcript.isRunning)
+    #expect(!project.canForkSelected)
+  }
+
+  @Test func forkingTheSelectedSessionShowsTheCopy() {
+    let project = Project(folder: folder)
+    let original = project.attach(target("a"))
+    project.forkSelected()
+    #expect(project.sessions.count == 2)
+    #expect(project.selectedID != original.id)
+    #expect(project.selected?.session.resuming?.forks == true)
+  }
+
   @Test func aForkOfAWatchedSessionIsTheWindowsOwn() {
     let project = Project(folder: folder)
     let watched = project.attach(target("a"), watching: true, readOnly: true)
