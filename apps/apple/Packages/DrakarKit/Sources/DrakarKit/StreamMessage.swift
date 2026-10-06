@@ -431,6 +431,21 @@ public struct PermissionRequest: Sendable, Equatable {
   /// An `AskUserQuestion` waiting on a choice, not a tool waiting on permission.
   public var isChoice: Bool { kind == .question }
 
+  public init(
+    toolName: String, displayName: String? = nil, input: JSONValue, description: String? = nil,
+    toolUseID: String?, kind: ToolKind
+  ) {
+    self.toolName = toolName
+    self.displayName = displayName
+    self.input = input
+    self.description = description
+    suggestions = []
+    blockedPath = nil
+    requiresUserInteraction = false
+    self.toolUseID = toolUseID
+    self.kind = kind
+  }
+
   init?(_ request: JSONValue) {
     guard let toolName = request["tool_name"]?.stringValue else { return nil }
     self.toolName = toolName

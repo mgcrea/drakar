@@ -61,6 +61,11 @@ enum Fixture: String {
   /// The transcript line Claude Code 2.1.288 wrote for a prompt sent with a 64×64 red PNG
   /// and a text document `notes.txt` (2026-10-06): blocks kept as sent, keys trimmed.
   case historyWithAttachments = "history-with-attachments"
+  /// A Codex turn (codex-cli 0.160.1, 2026-10-06, docs/codex-app-server.md): reasoning, a
+  /// file created after an approval, a command declined, the answer streamed, usage with the
+  /// window, the end. Server lines only; ids shortened, paths and account scrubbed. Not
+  /// stream-json: read with `CodexTranslator`.
+  case codexTurn = "codex-turn"
 
   var lines: [Data] {
     get throws {

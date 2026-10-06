@@ -1,0 +1,17 @@
+{"method":"thread/started","params":{"thread":{"id":"thread-1","sessionId":"thread-1","cwd":"/Users/me/project","model":"gpt-6-astra","reasoningEffort":"low","cliVersion":"0.160.1","status":{"type":"idle"}}}}
+{"method":"turn/started","params":{"threadId":"thread-1","turn":{"id":"turn-1","items":[],"status":"inProgress","error":null}}}
+{"method":"item/started","params":{"item":{"type":"userMessage","id":"user-1","clientId":null,"content":[{"type":"text","text":"Create hello.txt with hi, then run touch from-shell.txt.","text_elements":[]}]},"threadId":"thread-1","turnId":"turn-1"}}
+{"method":"item/started","params":{"item":{"type":"reasoning","id":"rs-1","summary":[],"content":[]},"threadId":"thread-1","turnId":"turn-1"}}
+{"method":"item/reasoning/summaryPartAdded","params":{"threadId":"thread-1","turnId":"turn-1","itemId":"rs-1","summaryIndex":0}}
+{"method":"item/reasoning/summaryTextDelta","params":{"threadId":"thread-1","turnId":"turn-1","itemId":"rs-1","delta":"**Planning the file**","summaryIndex":0}}
+{"method":"item/completed","params":{"item":{"type":"reasoning","id":"rs-1","summary":["**Planning the file**"],"content":[]},"threadId":"thread-1","turnId":"turn-1"}}
+{"method":"item/started","params":{"item":{"type":"fileChange","id":"patch-1","changes":[{"path":"/Users/me/project/hello.txt","kind":{"type":"add"},"diff":"hi\n"}],"status":"inProgress"},"threadId":"thread-1","turnId":"turn-1"}}
+{"method":"item/fileChange/requestApproval","id":0,"params":{"threadId":"thread-1","turnId":"turn-1","itemId":"patch-1","reason":null,"grantRoot":null}}
+{"method":"serverRequest/resolved","params":{"threadId":"thread-1","requestId":0}}
+{"method":"item/completed","params":{"item":{"type":"fileChange","id":"patch-1","changes":[{"path":"/Users/me/project/hello.txt","kind":{"type":"add"},"diff":"hi\n"}],"status":"completed"},"threadId":"thread-1","turnId":"turn-1"}}
+{"method":"item/commandExecution/requestApproval","id":1,"params":{"kind":"command","threadId":"thread-1","turnId":"turn-1","itemId":"exec-1","command":"/bin/zsh -lc 'touch from-shell.txt'","cwd":"/Users/me/project","commandActions":[{"type":"unknown","command":"touch from-shell.txt"}],"availableDecisions":["accept","cancel"]}}
+{"method":"serverRequest/resolved","params":{"threadId":"thread-1","requestId":1}}
+{"method":"item/started","params":{"item":{"type":"agentMessage","id":"msg-1","text":"","phase":"final_answer"},"threadId":"thread-1","turnId":"turn-1"}}
+{"method":"item/agentMessage/delta","params":{"threadId":"thread-1","turnId":"turn-1","itemId":"msg-1","delta":"Created hello.txt containing `hi`; the shell command was rejected."}}
+{"method":"thread/tokenUsage/updated","params":{"threadId":"thread-1","turnId":"turn-1","tokenUsage":{"total":{"totalTokens":42676,"inputTokens":42628,"cachedInputTokens":28288,"cacheWriteInputTokens":0,"outputTokens":48,"reasoningOutputTokens":0},"last":{"totalTokens":21369,"inputTokens":21364,"cachedInputTokens":21120,"cacheWriteInputTokens":0,"outputTokens":5,"reasoningOutputTokens":0},"modelContextWindow":258400}}}
+{"method":"turn/completed","params":{"threadId":"thread-1","turn":{"id":"turn-1","items":[],"status":"completed","error":null,"durationMs":21426}}}
