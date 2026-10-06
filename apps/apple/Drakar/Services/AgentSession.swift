@@ -296,7 +296,7 @@ final class AgentSession {
     // Named, so that the CLI's lifecycle lines say when it is taken, and it can be cancelled.
     let uuid = UUID().uuidString.lowercased()
     let command = AgentCommand.prompt(
-      text: text, context: context.map(\.promptContext), uuid: uuid, attachments: attachments)
+      text: text, context: context, uuid: uuid, attachments: attachments)
     if canQueue {
       transcript.queue(
         QueuedPrompt(uuid: uuid, text: text, context: label, attachments: previews))

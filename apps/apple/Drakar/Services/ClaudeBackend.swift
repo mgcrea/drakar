@@ -55,7 +55,9 @@ final class ClaudeBackend: AgentBackend {
     switch command {
     case .prompt(let text, let context, let uuid, let attachments):
       return (
-        .prompt(text, context: context, uuid: uuid, attachments: attachments.map(\.block)), nil
+        .prompt(
+          text, context: context.map(\.promptContext), uuid: uuid,
+          attachments: attachments.map(\.block)), nil
       )
     case .answer(let id, let decision):
       return (.permission(requestID: id, decision), nil)

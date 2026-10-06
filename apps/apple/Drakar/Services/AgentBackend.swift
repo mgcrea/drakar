@@ -51,7 +51,7 @@ struct AgentLaunch {
 
 /// What the person does, in no agent's words.
 enum AgentCommand {
-  case prompt(text: String, context: [String], uuid: String, attachments: [Attachment])
+  case prompt(text: String, context: [EditorSelection], uuid: String, attachments: [Attachment])
   case answer(requestID: String, decision: PermissionDecision)
   case interrupt(cancelQueued: Bool)
   case cancelQueued(uuid: String)
