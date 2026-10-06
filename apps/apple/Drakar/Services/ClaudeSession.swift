@@ -274,6 +274,9 @@ final class ClaudeSession {
     self.transcript = transcript
     self.follower = follower
     hasLoadedHistory = true
+    // Said where the next message would be sent from: a session another process runs sends
+    // nothing from here.
+    if !isReadOnly { self.transcript.noteColdCache() }
     // Prompts typed while the history was being read go after it.
     for prompt in promptsDuringLoad {
       self.transcript.addPrompt(

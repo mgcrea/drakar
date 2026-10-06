@@ -428,6 +428,18 @@ Mid-turn: answered in 35 ms (before the turn's
 nothing to stderr in this build, so this rests on the timing: 35 and 19 ms in one run, not
 a network round trip). Drakar asks after every `result`. Capture: `Fixtures/context-usage.jsonl`.
 
+## Prompt cache (checked 2026-10-06, Claude Code 2.1.289)
+
+An `assistant` line's `message.usage` splits what the request wrote to the cache by how
+long it stays: `cache_creation: {ephemeral_5m_input_tokens, ephemeral_1h_input_tokens}`,
+summing to `cache_creation_input_tokens`. A subscription session measured wrote only to
+the hour-long cache. Transcript lines carry the same object and a `timestamp`. Nothing
+reports the cache between requests, so Drakar reckons it as the VS Code extension's webview
+does: from when the request behind the newest main-thread message was sent (the prompt or
+tool result before it, else the message's arrival), for an hour if that message wrote any
+hour-long tokens, five minutes if it wrote five-minute ones, the earlier TTL if it only read,
+and unknown if it neither read nor wrote. A compaction makes it cold until a newer message.
+
 ## Raw captures
 
 The captures this was written from are trimmed into

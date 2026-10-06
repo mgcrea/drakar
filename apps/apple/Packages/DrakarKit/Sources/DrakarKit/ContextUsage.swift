@@ -6,12 +6,20 @@ public struct TokenUsage: Sendable, Equatable, Hashable {
   public var cacheCreation: Int
   public var cacheRead: Int
   public var output: Int
+  /// How long what this request wrote stays cached, from `cache_creation`'s split: an hour
+  /// when any of it went to the hour-long cache. Nil when it wrote nothing, or the split is
+  /// missing.
+  public var cacheWriteTTL: PromptCache.TTL?
 
-  public init(input: Int, cacheCreation: Int, cacheRead: Int, output: Int) {
+  public init(
+    input: Int, cacheCreation: Int, cacheRead: Int, output: Int,
+    cacheWriteTTL: PromptCache.TTL? = nil
+  ) {
     self.input = input
     self.cacheCreation = cacheCreation
     self.cacheRead = cacheRead
     self.output = output
+    self.cacheWriteTTL = cacheWriteTTL
   }
 
   /// Nil unless all three input figures are there: a shape change that dropped one would
@@ -21,9 +29,18 @@ public struct TokenUsage: Sendable, Equatable, Hashable {
       let creation = json["cache_creation_input_tokens"]?.intValue,
       let read = json["cache_read_input_tokens"]?.intValue
     else { return nil }
+    let split = json["cache_creation"]
+    let ttl: PromptCache.TTL? =
+      if split?["ephemeral_1h_input_tokens"]?.intValue ?? 0 > 0 {
+        .oneHour
+      } else if split?["ephemeral_5m_input_tokens"]?.intValue ?? 0 > 0 {
+        .fiveMinutes
+      } else {
+        nil
+      }
     self.init(
       input: input, cacheCreation: creation, cacheRead: read,
-      output: json["output_tokens"]?.intValue ?? 0)
+      output: json["output_tokens"]?.intValue ?? 0, cacheWriteTTL: ttl)
   }
 
   /// The whole prompt, which is the context: fresh input, plus what this request wrote to
@@ -187,9 +204,7 @@ public struct TranscriptTail: Sendable {
     else { return nil }
     return ContextReading(
       usage: usage, modelID: message["model"]?.stringValue,
-      at: json["timestamp"]?.stringValue.flatMap {
-        try? Date.ISO8601FormatStyle(includingFractionalSeconds: true).parse($0)
-      })
+      at: Transcript.timestamp(of: json))
   }
 }
 

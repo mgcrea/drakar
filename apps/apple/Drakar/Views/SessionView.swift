@@ -372,6 +372,37 @@ private struct VersionLabel: View {
   }
 }
 
+/// The prompt cache, as the extension shows it: the minutes left while warm, a dimmed timer
+/// once cold, and the sentence saying which on hover. Redrawn on each minute counted from the
+/// anchor, which is when either figure changes.
+private struct PromptCacheLabel: View {
+  let cache: PromptCache
+
+  var body: some View {
+    TimelineView(.periodic(from: cache.anchor ?? .now, by: 60)) { context in
+      Face(state: cache.state(at: context.date))
+    }
+  }
+
+  private struct Face: View {
+    let state: PromptCache.State
+
+    var body: some View {
+      Group {
+        if case .warm(let minutes) = state {
+          Label("\(minutes)m", systemImage: "timer").monospacedDigit()
+        } else {
+          Image(systemName: "timer").foregroundStyle(.tertiary)
+        }
+      }
+      .help(state.help ?? "")
+      .accessibilityElement(children: .ignore)
+      .accessibilityLabel(state.help ?? "")
+      .accessibilityIdentifier("promptCache")
+    }
+  }
+}
+
 private struct SessionFooter: View {
   let item: ProjectSession
   /// The account new sessions in the window start under.
@@ -411,6 +442,9 @@ private struct SessionFooter: View {
       } else if let version = session.transcript.writerVersion {
         // Not Drakar's process: how its version compares to Drakar's is not this session's.
         Text("Claude Code \(version)").help("The version that last wrote this session")
+      }
+      if session.transcript.promptCache.state(at: .now) != .unknown {
+        PromptCacheLabel(cache: session.transcript.promptCache)
       }
       if let cost = session.transcript.lastResult?.totalCostUSD {
         let billing = Billing(apiKeySource: session.transcript.session?.apiKeySource)

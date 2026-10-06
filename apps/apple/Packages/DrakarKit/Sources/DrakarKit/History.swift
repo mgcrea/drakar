@@ -90,11 +90,16 @@ extension Transcript {
       if let title = json["customTitle"]?.stringValue, !title.isEmpty { customTitle = title }
     case "assistant":
       historyEffort = json["effort"]?.stringValue
-      if let message = try? StreamMessage(json: json) { apply(message) }
+      if let message = try? StreamMessage(json: json) {
+        apply(message, time: Self.timestamp(of: json))
+      }
     case "user":
       if json["isMeta"]?.boolValue == true { return }
+      let time = Self.timestamp(of: json)
+      if let time { requestAt = time }
       if let mode = json["permissionMode"]?.stringValue { historyPermissionMode = mode }
       if json["isCompactSummary"]?.boolValue == true {
+        if let time { promptCache.compacted(at: time) }
         addNotice(String(localized: "Earlier conversation compacted"))
         return
       }
@@ -127,10 +132,17 @@ extension Transcript {
       if !results.isEmpty {
         var resultsOnly = user
         resultsOnly.content = results
-        apply(.user(resultsOnly))
+        apply(.user(resultsOnly), time: time)
       }
     default:
       break
+    }
+  }
+
+  /// When a transcript line was written.
+  static func timestamp(of json: JSONValue) -> Date? {
+    json["timestamp"]?.stringValue.flatMap {
+      try? Date.ISO8601FormatStyle(includingFractionalSeconds: true).parse($0)
     }
   }
 }

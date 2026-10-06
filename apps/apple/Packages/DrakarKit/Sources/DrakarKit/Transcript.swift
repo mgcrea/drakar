@@ -136,6 +136,11 @@ public struct Transcript: Sendable, Equatable {
   public private(set) var contextUsage: TokenUsage?
   /// `message.model` of that request.
   public private(set) var contextModelID: String?
+  /// How long the API keeps what the main thread's requests cached.
+  public internal(set) var promptCache = PromptCache()
+  /// When the newest main-thread request was sent, as far as anything said: a prompt, or a
+  /// user line such as a tool result. Spent by the message that answers it.
+  var requestAt: Date?
   /// The newest prompt sent, wherever the turn after it has got to.
   public var lastPrompt: Entry? {
     lastPromptID.flatMap { indexByID[$0] }.map { entries[$0] }
@@ -147,7 +152,8 @@ public struct Transcript: Sendable, Equatable {
     guard turnEnd == .completed, !isRunning, pendingPermissions.isEmpty else { return nil }
     var messageID: String?
     var parts: [String] = []
-    scan: for entry in entries.reversed() where entry.parentToolUseID == nil {
+    scan: for entry in entries.reversed()
+    where entry.parentToolUseID == nil && entry.id != Self.coldCacheNoteID {
       switch entry.kind {
       case .thinking: continue
       case .text(let text):
@@ -227,12 +233,13 @@ public struct Transcript: Sendable, Equatable {
 
   /// `running: false` for a prompt replayed from history, whose turn ended long ago.
   /// `context` labels what the editor attached (`EditorSelection.label`, several
-  /// separated by commas).
+  /// separated by commas). `time` is when a running one was sent.
   public mutating func addPrompt(
     _ text: String, context: String? = nil, attachments: [AttachmentPreview] = [],
-    running: Bool = true
+    running: Bool = true, at time: Date = .now
   ) {
     revision += 1
+    if running { requestAt = time }
     if let index = unansweredQuestionIndex, case .tool(var call) = entries[index].kind,
       let answers = UserQuestion.earlierAnswers(
         in: text, questions: UserQuestion.list(call.input).map(\.question))
@@ -259,6 +266,18 @@ public struct Transcript: Sendable, Equatable {
     noticeCount += 1
     upsert(Entry(id: "notice#\(noticeCount)", kind: kind, parentToolUseID: parent))
   }
+
+  /// After a history is read: a note that the prompt cache has likely gone cold, so the next
+  /// message re-sends the whole conversation uncached, as the extension notes it on resume.
+  /// The client's note rather than the conversation's, so the turn before it still ends on
+  /// what it ended on. One at most.
+  public mutating func noteColdCache(at now: Date = .now) {
+    guard let note = promptCache.state(at: now).resumeNote else { return }
+    revision += 1
+    upsert(Entry(id: Self.coldCacheNoteID, kind: .notice(note)))
+  }
+
+  static let coldCacheNoteID = "notice#prompt-cache"
 
   /// A prompt sent while a turn runs: shown apart until the CLI picks it up.
   public mutating func queue(_ prompt: QueuedPrompt) {
@@ -294,8 +313,15 @@ public struct Transcript: Sendable, Equatable {
     }
   }
 
-  /// `time` is when the line arrived, which times thinking streamed live.
+  /// `time` is when the line arrived, which times thinking streamed live and the prompt
+  /// cache.
   public mutating func apply(_ message: StreamMessage, at time: Date = .now) {
+    apply(message, time: time)
+  }
+
+  /// `time` nil for a history line that says not when it was written: it leaves the prompt
+  /// cache as it was.
+  mutating func apply(_ message: StreamMessage, time: Date?) {
     revision += 1
     switch message {
     case .system(.apiRetry), .rateLimit, .controlResponse: break
@@ -310,6 +336,7 @@ public struct Transcript: Sendable, Equatable {
       isCompacting = status == "compacting"
     case .system(.compacted(let trigger, let preTokens)):
       isCompacting = false
+      if let time { promptCache.compacted(at: time) }
       addNotice(Self.compactionNote(trigger: trigger, preTokens: preTokens))
     case .system(.notification(let text, let isError)):
       addNote(isError ? .failure(text) : .notice(text))
@@ -326,6 +353,11 @@ public struct Transcript: Sendable, Equatable {
       {
         contextUsage = usage
         contextModelID = assistant.model ?? contextModelID
+        if let time {
+          promptCache.record(
+            messageID: assistant.messageID, usage: usage, at: time, requestAt: requestAt)
+          requestAt = nil
+        }
       }
       if assistant.parentToolUseID == nil, assistant.stopReason == "end_turn" {
         turnEnd = .completed
@@ -334,12 +366,13 @@ public struct Transcript: Sendable, Equatable {
       for (offset, block) in assistant.content.enumerated() {
         place(
           block, id: "\(assistant.messageID)#\(index + offset)",
-          parent: assistant.parentToolUseID, replacing: true, at: time)
+          parent: assistant.parentToolUseID, replacing: true, at: time ?? .now)
       }
       blockCount[assistant.messageID] = index + assistant.content.count
     case .streamEvent(let event, let parent):
-      apply(event, parent: parent, at: time)
+      apply(event, parent: parent, at: time ?? .now)
     case .user(let user):
+      if user.parentToolUseID == nil, let time { requestAt = time }
       // Live, the CLI never echoes our prompts, so any text it writes as a user turn is a
       // note of its own: an interrupt, a background task finishing.
       for case .text(let text) in user.content {
@@ -381,7 +414,9 @@ public struct Transcript: Sendable, Equatable {
       switch state {
       case "started":
         let prompt = queuedPrompts.remove(at: index)
-        addPrompt(prompt.text, context: prompt.context, attachments: prompt.attachments)
+        addPrompt(
+          prompt.text, context: prompt.context, attachments: prompt.attachments,
+          at: time ?? .now)
       case "cancelled":
         queuedPrompts.remove(at: index)
       case "discarded", "refused":

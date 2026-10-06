@@ -143,6 +143,36 @@ struct ClaudeSessionTests {
     #expect(session.savedTarget == target)
   }
 
+  /// Resuming a session idle past its cache says the next message re-caches it; a session
+  /// another process runs sends nothing from here, so says nothing.
+  @Test func aColdHistoryIsNotedWhereTheNextMessageGoesFrom() async throws {
+    let file = folder.appending(path: "cold.jsonl")
+    try Data(
+      [
+        #"{"type":"user","timestamp":"2026-01-01T10:00:00.000Z","message":{"role":"user","content":"Hi"}}"#,
+        #"{"type":"assistant","timestamp":"2026-01-01T10:00:04.000Z","message":{"id":"m1","model":"claude-opus-5-5","content":[{"type":"text","text":"Hello"}],"usage":{"input_tokens":3,"cache_creation_input_tokens":20000,"cache_read_input_tokens":0,"output_tokens":9,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":20000}}}}"#,
+      ].joined(separator: "\n").appending("\n").utf8
+    ).write(to: file)
+    let target = ResumeTarget(
+      sessionID: "cold", cwd: folder.path(percentEncoded: false),
+      file: file.path(percentEncoded: false),
+      accountDirectory: folder.path(percentEncoded: false), accountIsDefault: false)
+
+    let session = ClaudeSession(folder: folder, resuming: target)
+    await session.loadHistory()
+    guard case .notice(let note)? = session.transcript.entries.last?.kind else {
+      Issue.record("last entry is \(String(describing: session.transcript.entries.last))")
+      return
+    }
+    #expect(note.hasPrefix("Idle "))
+    #expect(note.hasSuffix("re-cache about 20k tokens."))
+
+    let elsewhere = ClaudeSession(folder: folder, resuming: target)
+    elsewhere.isReadOnly = true
+    await elsewhere.loadHistory()
+    #expect(elsewhere.transcript.entries.last?.kind == .text("Hello"))
+  }
+
   @Test func aReadOnlySessionSendsNothing() {
     let session = ClaudeSession(folder: folder)
     session.isReadOnly = true
