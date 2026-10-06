@@ -1,7 +1,7 @@
 import Foundation
 import Synchronization
 
-/// A `claude` process speaking stream-json over its pipes.
+/// An agent's CLI speaking JSON lines over its pipes.
 ///
 /// Start it, read `events` (decoded off the main thread, in batches as the pipe delivers
 /// them), `send` messages. The stream ends after `.exited`, which comes only once stdout and
@@ -28,8 +28,15 @@ public final class AgentProcess: @unchecked Sendable {
     }
   }
 
+  /// One line of stdout: JSON, or text kept as it was (a warning printed to stdout).
+  public enum Line: Sendable, Equatable {
+    case json(JSONValue)
+    case invalid(String)
+  }
+
   public enum Event: Sendable, Equatable {
-    case messages([StreamMessage])
+    /// What the process wrote, a line each, parsed off the main thread.
+    case lines([Line])
     /// Diagnostics: the CLI's stderr is never protocol.
     case stderr(String)
     /// The process ended. `remainder` holds bytes it wrote after its last newline.
@@ -85,8 +92,7 @@ public final class AgentProcess: @unchecked Sendable {
         return
       }
       let lines = self.state.withLock { $0.lines.append(chunk) }
-      let messages = lines.map(Self.decode)
-      if !messages.isEmpty { continuation.yield(.messages(messages)) }
+      if !lines.isEmpty { continuation.yield(.lines(lines.map(Self.parse))) }
     }
     errors.fileHandleForReading.readabilityHandler = { [weak self] handle in
       let chunk = handle.availableData
@@ -112,9 +118,14 @@ public final class AgentProcess: @unchecked Sendable {
     return events
   }
 
-  public func send(_ message: ClientMessage) throws {
+  public func send(line: Data) throws {
     guard process.isRunning else { throw Failure.notRunning }
-    try input.fileHandleForWriting.write(contentsOf: message.line())
+    try input.fileHandleForWriting.write(contentsOf: line)
+  }
+
+  /// `json` as one line, encoded as `ClientMessage` encodes its own (`JSONValue.line()`).
+  public func send(_ json: JSONValue) throws {
+    try send(line: json.line())
   }
 
   /// Ends input; the CLI exits cleanly once its current turn is done.
@@ -165,9 +176,7 @@ public final class AgentProcess: @unchecked Sendable {
     continuation.finish()
   }
 
-  /// A line that is not protocol (a warning printed to stdout) is kept, not dropped.
-  private static func decode(_ line: Data) -> StreamMessage {
-    (try? StreamMessage(line: line))
-      ?? .unknown(type: "invalid-line", raw: .string(String(decoding: line, as: UTF8.self)))
+  private static func parse(_ line: Data) -> Line {
+    (try? JSONValue.parse(line)).map(Line.json) ?? .invalid(String(decoding: line, as: UTF8.self))
   }
 }

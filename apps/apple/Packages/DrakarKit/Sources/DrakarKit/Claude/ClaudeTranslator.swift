@@ -275,3 +275,19 @@ extension ClaudeTranslator {
     return events
   }
 }
+
+extension AgentProcess {
+  public func send(_ message: ClientMessage) throws { try send(line: message.line()) }
+}
+
+extension StreamMessage {
+  /// A line as stream-json; one that is not (no JSON, or no `type`) is kept, not dropped.
+  public init(_ line: AgentProcess.Line) {
+    switch line {
+    case .json(let json):
+      self = (try? StreamMessage(json: json)) ?? .unknown(type: "invalid-line", raw: json)
+    case .invalid(let text):
+      self = .unknown(type: "invalid-line", raw: .string(text))
+    }
+  }
+}

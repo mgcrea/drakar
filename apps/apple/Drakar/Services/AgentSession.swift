@@ -573,8 +573,8 @@ final class AgentSession {
 
   private func handle(_ event: AgentProcess.Event) {
     switch event {
-    case .messages(let messages):
-      for message in messages { apply(message) }
+    case .lines(let lines):
+      for line in lines { apply(StreamMessage(line)) }
     case .stderr(let text):
       diagnostics = String((diagnostics + text).suffix(4000))
     case .exited(let status, _):

@@ -111,7 +111,7 @@ struct AgentProcessTests {
 
   private func messages(_ events: [AgentProcess.Event]) -> [StreamMessage] {
     events.flatMap { event -> [StreamMessage] in
-      if case .messages(let batch) = event { return batch }
+      if case .lines(let batch) = event { return batch.map(StreamMessage.init) }
       return []
     }
   }

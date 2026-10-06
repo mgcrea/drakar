@@ -112,8 +112,10 @@ enum CapabilityProbe {
     var status: Int32?
     for await next in inputs {
       switch next {
-      case .event(.messages(let messages)):
-        for case .controlResponse(let response) in messages { replies.take(response) }
+      case .event(.lines(let lines)):
+        for case .controlResponse(let response) in lines.map(StreamMessage.init) {
+          replies.take(response)
+        }
         guard replies.isComplete, !released else { break }
         if !replies.hasPendingServers || ContinuousClock.now >= stopAsking {
           letGo()
