@@ -41,6 +41,22 @@ struct SessionView: View {
                     : (Project.canMoveHere(summary), { MoveHere.confirm(summary, into: project) })
                 })
             }
+          } else if let plan = pendingPlan {
+            Docked {
+              PlanPanel(
+                plan: PlanApproval.plan(plan.request.input) ?? "",
+                offersAutoMode: offersAutoMode,
+                approve: { editsManually in
+                  session.approvePlan(
+                    plan, editsManually: editsManually,
+                    autoMode: offersAutoMode)
+                },
+                keepPlanning: { feedback in
+                  session.answer(plan, PlanApproval.keepPlanning(feedback: feedback))
+                }
+              )
+              .id(plan.id)
+            }
           } else if let choice = pendingChoice {
             Docked {
               QuestionPanel(
@@ -68,6 +84,15 @@ struct SessionView: View {
               .id(earlier.id)
             }
           } else {
+            if let todos = runningTodos {
+              // In the composer's column, floating as it does.
+              TodoStrip(todos: todos)
+                .glassEffect(.regular, in: .rect(cornerRadius: 10))
+                .frame(maxWidth: 820 - 32)
+                .padding(.horizontal, 16)
+                .padding(.bottom, 6)
+                .frame(maxWidth: .infinity)
+            }
             ComposerView(
               text: $item.draft, canSend: session.canSend,
               isRunning: session.transcript.isRunning,
@@ -132,8 +157,29 @@ struct SessionView: View {
   /// forever. A question is answered in `QuestionPanel` instead, below the transcript.
   private var pendingPermission: Binding<Transcript.PendingPermission?> {
     Binding(
-      get: { session.transcript.pendingPermissions.first { !$0.request.isChoice } },
+      get: {
+        session.transcript.pendingPermissions.first { !$0.request.isChoice && !$0.request.isPlan }
+      },
       set: { _ in })
+  }
+
+  /// The newest todo list while a turn runs and some of it is left.
+  private var runningTodos: [Todo]? {
+    guard session.transcript.isRunning, let todos = session.transcript.todos,
+      todos.contains(where: { $0.status != .completed })
+    else { return nil }
+    return todos
+  }
+
+  /// The session's model takes auto mode, as the mode pill reads it.
+  private var offersAutoMode: Bool {
+    SessionPills.offeredModes(session, models: ModelCatalog.shared.models(for: account))
+      .contains(.auto)
+  }
+
+  /// The first plan waiting, answered in place of the composer.
+  private var pendingPlan: Transcript.PendingPermission? {
+    session.transcript.pendingPermissions.first { $0.request.isPlan }
   }
 
   /// The first `AskUserQuestion` waiting, answered in place of the composer.

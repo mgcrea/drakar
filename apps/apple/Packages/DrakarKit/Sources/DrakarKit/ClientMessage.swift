@@ -131,8 +131,9 @@ public enum PermissionDecision: Sendable, Equatable {
   /// the user edited. `updatedPermissions` carries any of the request's suggestions the
   /// user chose ("always allow"), passed back as they arrived.
   case allow(updatedInput: JSONValue, updatedPermissions: [JSONValue] = [])
-  /// Refuse, with the reason the model is told.
-  case deny(message: String)
+  /// Refuse, with the reason the model is told. `interrupt` ends the turn as well, as the
+  /// extension's plain "No" does.
+  case deny(message: String, interrupt: Bool = false)
 
   var json: JSONValue {
     switch self {
@@ -140,8 +141,10 @@ public enum PermissionDecision: Sendable, Equatable {
       var object: [String: JSONValue] = ["behavior": .string("allow"), "updatedInput": input]
       if !permissions.isEmpty { object["updatedPermissions"] = .array(permissions) }
       return .object(object)
-    case .deny(let message):
-      return .object(["behavior": .string("deny"), "message": .string(message)])
+    case .deny(let message, let interrupt):
+      var object: [String: JSONValue] = ["behavior": .string("deny"), "message": .string(message)]
+      if interrupt { object["interrupt"] = .bool(true) }
+      return .object(object)
     }
   }
 }

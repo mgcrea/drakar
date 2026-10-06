@@ -240,6 +240,44 @@ stream yet:
 | `system` `compact_boundary` | `compact_metadata: {trigger: auto \| manual, pre_tokens, post_tokens?}` | A note: "Conversation compacted (auto, 617K tokens before)". The transcript file writes the same line camelCased (`compactMetadata.preTokens`), which history does not read: it notes the `isCompactSummary` prompt instead. |
 | `system` `notification` | `key`, `text`, `priority`, `color?`, `timeout_ms?` | A note, red when `color` is `error`. |
 
+## Plans, todos and subagents (verified 2026-10-06, 2.1.288; extension 2.1.289)
+
+Captured live on `haiku` (fixtures `plan-request` and `subagent-and-todos`).
+
+**ExitPlanMode** arrives as a `can_use_tool` with `input: {plan, planFilePath}` (the plan is
+also written to `~/.claude/plans/<slug>.md` first), `requires_user_interaction: true` and no
+suggestions. The extension's three answers, which Drakar's plan panel sends as they are:
+
+| Choice | Answer |
+| --- | --- |
+| Yes, and auto-accept edits (or "use auto mode" when the model takes it) | `set_permission_mode` `acceptEdits` (or `auto`), then `allow` with the input unchanged. The extension retries in `acceptEdits` when `auto` is refused; Drakar offers `auto` only when the model reports `supportsAutoMode`, and a refusal shows under the mode pill. |
+| Yes, and approve edits manually | `allow` with `updatedPermissions: [{type: setMode, mode: default, destination: session}]` |
+| No, keep planning | `deny`, `message: "User chose to stay in plan mode and continue planning"`, `interrupt: true`: the CLI writes its own rejection, `[Request interrupted by user]`, and an interrupted result |
+| Send feedback and keep planning | `deny`, `message` the extension's rejection prefix ("…The user provided the following reason for the rejection:", then a space) and the feedback, no `interrupt`: Claude reads it and plans again |
+
+**TodoWrite** is deferred (a `ToolSearch` loads it first) and carries the whole list each
+time: `{todos: [{content, activeForm, status: pending | in_progress | completed}]}`. The
+structured result has `oldTodos` and `newTodos`.
+
+**Agent** (the Task tool): the model picks the foreground or the background.
+
+- In the **background** the tool result comes at once ("Async agent launched…", structured
+  `{isAsync: true, status: "async_launched", agentId, outputFile}`), the turn may end, and
+  nothing from inside the subagent is forwarded.
+- In the **foreground** the CLI forwards, with `parent_tool_use_id` set to the Agent call's
+  id, the subagent's prompt (a `user` text line, with `subagent_type` and `task_description`)
+  and its tool calls and results, **but none of its text or thinking** without
+  `--forward-subagent-text`. The tool result is the report inside a "[Subagent hand-back]"
+  frame; the structured result has it clean in `content[].text`, with `status: "completed"`,
+  `totalTokens`, `totalToolUseCount`, `totalDurationMs`.
+- Either way, `system` lines follow it: `task_started` (`task_id`, `tool_use_id`,
+  `description`, `is_backgrounded`, `spawn_depth`, `task_type: local_agent`), `task_progress`
+  (`usage: {total_tokens, tool_uses, duration_ms}`, `last_tool_name`, `description` such as
+  "Running Find all…"), `task_updated` (`task_id` and `patch: {status, end_time}` only), and
+  `task_notification` (`status`, `summary`, `usage`, `output_file`). A background agent's
+  end also arrives as a `<task-notification>` user text. `background_tasks_changed` lists
+  what runs in the background.
+
 ## Observed details worth knowing
 
 - **Read-only commands never ask.** `echo amiral` ran with no `can_use_tool`; `touch`

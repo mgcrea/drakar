@@ -15,6 +15,20 @@ extension PermissionRequest {
   public var summary: String { Self.summary(toolName: toolName, input: input) }
 
   static func summary(toolName: String, input: JSONValue) -> String {
+    switch toolName {
+    case PlanApproval.toolName:
+      // Its first line with text, a heading's marks left off.
+      let title = (PlanApproval.plan(input) ?? "").split(whereSeparator: \.isNewline).lazy
+        .map { $0.trimmingCharacters(in: CharacterSet(charactersIn: "# ").union(.whitespaces)) }
+        .first { !$0.isEmpty }
+      return title ?? ""
+    case TodoList.toolName:
+      let todos = TodoList.todos(input)
+      let done = String(localized: "\(TodoList.progress(todos)) done")
+      guard let current = TodoList.current(todos) else { return done }
+      return "\(done) · \(current.activeForm ?? current.content)"
+    default: break
+    }
     let key: String? =
       switch toolName {
       case "Bash": "command"

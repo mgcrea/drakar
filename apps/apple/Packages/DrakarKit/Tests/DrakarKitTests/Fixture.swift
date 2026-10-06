@@ -44,6 +44,15 @@ enum Fixture: String {
   /// `set_model` (`r2`) and `set_permission_mode` (`r3` acceptEdits, `r4` bypassPermissions
   /// refused, `r5` auto, `r6` plan) with the `status` lines that followed. Ids zeroed.
   case modeAndModel = "mode-and-model"
+  /// A `haiku` turn in acceptEdits (2.1.288, 2026-10-06): a foreground `Agent` whose
+  /// subagent ran one Bash, with its `task_*` lines and the lines the CLI forwards from inside
+  /// it (its prompt, its tool call and result, `parent_tool_use_id` set), then a `TodoWrite`
+  /// of two items. Hooks, stream events, thinking, `init` and `status` dropped; paths scrubbed.
+  case subagentAndTodos = "subagent-and-todos"
+  /// A turn in plan mode (2.1.288, 2026-10-06) ending on `ExitPlanMode`'s `can_use_tool`
+  /// (`plan`, `planFilePath`), answered `deny` with `interrupt: true`: the CLI's own
+  /// rejection, `[Request interrupted by user]`, and an interrupted result. Trimmed the same way.
+  case planRequest = "plan-request"
 
   var lines: [Data] {
     get throws {

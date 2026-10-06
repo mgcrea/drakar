@@ -87,7 +87,7 @@ final class ProjectSession: Identifiable {
   /// How much this session wants the person, from the most urgent thing it waits on.
   var urgency: Urgency? {
     if let pending = session.transcript.pendingPermissions.first {
-      return pending.request.isChoice ? .choice : .permission
+      return pending.request.isChoice || pending.request.isPlan ? .choice : .permission
     }
     switch closingAsk?.kind {
     case .question: return .question
@@ -100,6 +100,9 @@ final class ProjectSession: Identifiable {
   var wants: String? {
     if let pending = session.transcript.pendingPermissions.first, pending.request.isChoice {
       return UserQuestion.list(pending.request.input).first?.question ?? waitingFor
+    }
+    if let pending = session.transcript.pendingPermissions.first, pending.request.isPlan {
+      return String(localized: "Claude has finished a plan and is waiting for your review.")
     }
     return waitingFor ?? closingAsk?.text
   }

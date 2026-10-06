@@ -1,0 +1,115 @@
+import DrakarKit
+import Foundation
+import Testing
+
+/// A subagent, as the CLI reports it: `task_*` lines keyed by the `Agent` call that started
+/// it, and, for one in the foreground, its prompt and tool calls under that call's id.
+@Suite("Subagents")
+struct AgentTaskTests {
+
+  private let agentID = "toolu_014p1beTxR9BEAEKj43FmLUA"
+
+  private func transcript(upTo count: Int? = nil) throws -> Transcript {
+    var transcript = Transcript()
+    transcript.addPrompt("Run it")
+    let messages = try Fixture.subagentAndTodos.messages
+    for message in messages.prefix(count ?? messages.count) { transcript.apply(message) }
+    return transcript
+  }
+
+  @Test func decodesEveryCapturedLine() throws {
+    for fixture in [Fixture.subagentAndTodos, .planRequest] {
+      for message in try fixture.messages {
+        if case .unknown(let type, _) = message { Issue.record("unmodelled line: \(type)") }
+      }
+    }
+  }
+
+  /// While it runs: what it was asked, its newest tool, and what it has used so far.
+  @Test func followsARunningSubagent() throws {
+    // Up to and including its `task_progress`.
+    let transcript = try transcript(upTo: 5)
+    let task = try #require(transcript.agentTasks[agentID])
+    #expect(task.status == .running)
+    #expect(task.prompt?.hasPrefix("Find all .txt files") == true)
+    #expect(task.lastToolName == "Bash")
+    #expect(task.toolUses == 1)
+    #expect(task.totalTokens == 34399)
+    #expect(task.progressLine == "Bash · 1 tool · 34K tokens · 6s")
+  }
+
+  /// Its prompt is the card's, not a note in the conversation.
+  @Test func itsPromptIsNotANote() throws {
+    let transcript = try transcript()
+    for entry in transcript.entries {
+      if case .notice(let text) = entry.kind { Issue.record("a note: \(text)") }
+    }
+  }
+
+  @Test func endsWithItsReport() throws {
+    let transcript = try transcript()
+    let task = try #require(transcript.agentTasks[agentID])
+    #expect(task.status == .completed)
+    #expect(task.summary?.hasPrefix("Found 2 .txt files") == true)
+    let call = try #require(
+      transcript.entries.lazy.compactMap { entry -> Transcript.ToolCall? in
+        if case .tool(let call) = entry.kind, call.id == self.agentID { return call }
+        return nil
+      }.first)
+    let report = try #require(call.result?.agentReport)
+    #expect(report.status == "completed")
+    #expect(report.text?.hasPrefix("Found 2 .txt files") == true)
+    #expect(report.toolUses == 1)
+  }
+
+  /// Its tool calls are its own: under the `Agent` call, not the session's.
+  @Test func groupsItsToolCallsUnderTheAgent() throws {
+    let transcript = try transcript()
+    let children = transcript.entries.filter { $0.parentToolUseID == agentID }
+    #expect(children.count == 1)
+    guard case .tool(let call)? = children.first?.kind else {
+      Issue.record("not a tool call: \(String(describing: children.first?.kind))")
+      return
+    }
+    #expect(call.name == "Bash")
+    #expect(call.result?.content == "./a.txt\n./b.txt")
+  }
+
+  /// The view draws the session's own entries, and a subagent's inside its card; a line
+  /// whose call is not in this transcript stays where it is.
+  @Test func groupsForTheView() throws {
+    var transcript = try transcript()
+    transcript.apply(
+      try StreamMessage(
+        line: Data(
+          #"{"type":"assistant","message":{"id":"m9","role":"assistant","content":[{"type":"text","text":"lost"}]},"parent_tool_use_id":"gone","session_id":"s"}"#
+            .utf8)))
+    let groups = transcript.grouped()
+    #expect(!groups.top.contains { $0.parentToolUseID == agentID })
+    #expect(groups.top.contains { $0.parentToolUseID == "gone" })
+    #expect(groups.children[agentID]?.count == 1)
+    #expect(groups.top.count + 1 == transcript.entries.count)
+  }
+
+  /// One sent to the background answers at once, and finishes in a notification that may come
+  /// a turn later.
+  @Test func followsABackgroundSubagentToItsEnd() throws {
+    var transcript = Transcript()
+    transcript.addPrompt("Run it")
+    let lines = [
+      #"{"type":"assistant","message":{"id":"m1","role":"assistant","content":[{"type":"tool_use","id":"bg","name":"Agent","input":{"description":"Look around","prompt":"Look"}}]},"parent_tool_use_id":null,"session_id":"s"}"#,
+      #"{"type":"system","subtype":"task_started","task_id":"t9","tool_use_id":"bg","description":"Look around","is_backgrounded":true,"task_type":"local_agent","session_id":"s"}"#,
+      #"{"type":"user","message":{"role":"user","content":[{"tool_use_id":"bg","type":"tool_result","content":[{"type":"text","text":"Async agent launched successfully."}]}]},"parent_tool_use_id":null,"session_id":"s","tool_use_result":{"isAsync":true,"status":"async_launched","agentId":"t9"}}"#,
+      #"{"type":"result","subtype":"success","is_error":false,"result":"Started","session_id":"s"}"#,
+    ]
+    for line in lines { transcript.apply(try StreamMessage(line: Data(line.utf8))) }
+    #expect(transcript.agentTasks["bg"]?.isBackgrounded == true)
+    #expect(transcript.agentTasks["bg"]?.status == .running)
+    transcript.apply(
+      try StreamMessage(
+        line: Data(
+          #"{"type":"system","subtype":"task_updated","task_id":"t9","patch":{"status":"failed"},"session_id":"s"}"#
+            .utf8)))
+    #expect(transcript.agentTasks["bg"]?.status == .failed)
+  }
+}

@@ -371,6 +371,14 @@ final class ClaudeSession {
     return LiveSession.read(account: target.account).contains { $0.sessionID == target.sessionID }
   }
 
+  /// Runs the plan: with edits accepted, in auto mode when `autoMode`, the mode switched
+  /// first as the extension switches it; or each edit approved, which leaves plan mode for
+  /// the default one.
+  func approvePlan(_ pending: Transcript.PendingPermission, editsManually: Bool, autoMode: Bool) {
+    if !editsManually { setMode(autoMode ? .auto : .acceptEdits) }
+    answer(pending, PlanApproval.approve(pending.request.input, editsManually: editsManually))
+  }
+
   func answer(_ pending: Transcript.PendingPermission, _ decision: PermissionDecision) {
     write(.permission(requestID: pending.requestID, decision))
     notingPermissions { transcript.resolvePermission(requestID: pending.requestID) }

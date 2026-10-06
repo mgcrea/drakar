@@ -69,6 +69,8 @@ public enum SystemEvent: Sendable, Equatable {
   /// A note the CLI shows its own user, such as fast mode being turned off; `isError` when
   /// it is coloured as one.
   case notification(text: String, isError: Bool)
+  /// A subagent started, worked, changed status or ended.
+  case task(TaskEvent)
   case other(subtype: String, raw: JSONValue)
 
   init?(_ json: JSONValue) {
@@ -92,6 +94,9 @@ public enum SystemEvent: Sendable, Equatable {
     case "notification":
       guard let text = json["text"]?.stringValue else { return nil }
       self = .notification(text: text, isError: json["color"]?.stringValue == "error")
+    case _ where TaskEvent.Kind(rawValue: subtype) != nil:
+      guard let event = TaskEvent(json, subtype: subtype) else { return nil }
+      self = .task(event)
     default: self = .other(subtype: subtype, raw: json)
     }
   }
@@ -165,12 +170,16 @@ public struct UserMessage: Sendable, Equatable {
   /// `AskUserQuestion`'s has: `tool_use_result` on the stream, `toolUseResult` in a
   /// transcript. Kept alone, since a `Read`'s holds the whole file.
   public var questionAnswers: [String: String]?
+  /// An `Agent` call's report, from the same structured result.
+  public var agentReport: AgentReport?
 
   init?(_ json: JSONValue) {
     guard let message = json["message"] else { return nil }
     content = ContentBlock.list(message["content"])
     parentToolUseID = json["parent_tool_use_id"]?.stringValue
-    if case .object(let answers)? = (json["tool_use_result"] ?? json["toolUseResult"])?["answers"] {
+    let structured = json["tool_use_result"] ?? json["toolUseResult"]
+    agentReport = AgentReport(structured)
+    if case .object(let answers)? = structured?["answers"] {
       let strings = answers.compactMapValues(\.stringValue).filter { !$0.value.isEmpty }
       questionAnswers = strings.isEmpty ? nil : strings
     }

@@ -68,11 +68,17 @@ public struct Transcript: Sendable, Equatable {
     public var isError: Bool
     /// An answered `AskUserQuestion`'s answers, by question, from the structured result.
     public var answers: [String: String]?
+    /// An `Agent` call's report, from the structured result.
+    public var agentReport: AgentReport?
 
-    public init(content: String, isError: Bool, answers: [String: String]? = nil) {
+    public init(
+      content: String, isError: Bool, answers: [String: String]? = nil,
+      agentReport: AgentReport? = nil
+    ) {
       self.content = content
       self.isError = isError
       self.answers = answers
+      self.agentReport = agentReport
     }
   }
 
@@ -158,6 +164,12 @@ public struct Transcript: Sendable, Equatable {
   }
   /// True from a prompt until its `result`.
   public private(set) var isRunning = false
+  /// The newest list the main thread's `TodoWrite` wrote.
+  public private(set) var todos: [Todo]?
+  /// Subagents, by the `Agent` call that started each.
+  public private(set) var agentTasks: [String: AgentTask] = [:]
+  /// `task_updated` names only the task; this finds its call.
+  private var agentCallByTask: [String: String] = [:]
   /// A request that failed and is about to be tried again, until anything else arrives.
   public private(set) var retry: APIRetry?
   /// From a `compacting` status until the compaction lands or the turn ends.
@@ -269,6 +281,11 @@ public struct Transcript: Sendable, Equatable {
       addNotice(Self.compactionNote(trigger: trigger, preTokens: preTokens))
     case .system(.notification(let text, let isError)):
       addNote(isError ? .failure(text) : .notice(text))
+    case .system(.task(let event)):
+      if let call = event.toolUseID { agentCallByTask[event.taskID] = call }
+      if let call = event.toolUseID ?? agentCallByTask[event.taskID] {
+        agentTasks[call, default: AgentTask()].apply(event)
+      }
     case .assistant(let assistant):
       // A `<synthetic>` turn ("You've hit your session limit", an API error) is written by
       // the CLI, not the API: its usage is all zeros and says nothing of the context.
@@ -295,6 +312,9 @@ public struct Transcript: Sendable, Equatable {
       // note of its own: an interrupt, a background task finishing.
       for case .text(let text) in user.content {
         switch UserText.classify(text) {
+        // A subagent's prompt, forwarded from inside it: the card's, not a note.
+        case .prompt(let prompt) where user.parentToolUseID != nil:
+          agentTasks[user.parentToolUseID!, default: AgentTask()].prompt = prompt
         case .prompt(let note), .notice(let note): addNotice(note, parent: user.parentToolUseID)
         case .context, .hidden: break
         }
@@ -309,7 +329,8 @@ public struct Transcript: Sendable, Equatable {
         }
         call.result = ToolResult(
           content: content, isError: isError,
-          answers: results.count == 1 ? user.questionAnswers : nil)
+          answers: results.count == 1 ? user.questionAnswers : nil,
+          agentReport: results.count == 1 ? user.agentReport : nil)
         entries[index].kind = .tool(call)
       }
     case .controlRequest(let request):
@@ -410,6 +431,8 @@ public struct Transcript: Sendable, Equatable {
         call.result = existing.result
       }
       kind = .tool(call)
+      // Whole, not from a block start, whose input is still empty.
+      if replacing, parent == nil, name == TodoList.toolName { todos = TodoList.todos(input) }
     case .toolResult, .other:
       return
     }
