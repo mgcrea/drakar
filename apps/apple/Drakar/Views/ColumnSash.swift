@@ -173,7 +173,7 @@ private final class SashView: NSView {
 
   override func draw(_ dirtyRect: NSRect) {
     guard isLit else { return }
-    NSColor.controlAccentColor.setFill()
+    Theme.nsAccent.setFill()
     NSRect(
       x: bounds.midX - ResizeHandle.lineWidth / 2, y: 0, width: ResizeHandle.lineWidth,
       height: bounds.height

@@ -4,7 +4,7 @@ import SwiftUI
 
 // MARK: - Settings
 
-/// The panes, and the order they sit in: General, Transcript, Attention, About.
+/// The panes, and the order they sit in: General, Transcript, Theme, Attention, About.
 ///
 /// An entitlement pane joins only when something is actually sold: before a StoreKit
 /// product is registered it would be a button that fails.
@@ -13,6 +13,7 @@ import SwiftUI
 enum SettingsPane: String, SupportKitSettings.SettingsPane {
   case general
   case transcript
+  case theme
   case attention
   case about
 
@@ -20,6 +21,7 @@ enum SettingsPane: String, SupportKitSettings.SettingsPane {
     switch self {
     case .general: "General"
     case .transcript: "Transcript"
+    case .theme: "Theme"
     case .attention: "Attention"
     case .about: "About"
     }
@@ -29,6 +31,7 @@ enum SettingsPane: String, SupportKitSettings.SettingsPane {
     switch self {
     case .general: "gearshape"
     case .transcript: "text.bubble"
+    case .theme: "paintpalette"
     case .attention: "bell.badge"
     case .about: "info.circle"
     }
@@ -70,6 +73,8 @@ enum PreferenceKey {
   static let defaultMode = "drakar.defaultMode"
   /// The effort new sessions start with (`low` … `max`); empty for Claude Code's default.
   static let defaultEffort = "drakar.defaultEffort"
+  /// The accent colour, as `RRGGBBAA` hex; absent for the catalog's.
+  static let accentColor = "drakar.accentColor"
 }
 
 /// What Settings picked for the sessions Drakar starts.
@@ -267,6 +272,7 @@ struct SettingsView: View {
       switch pane {
       case .general: GeneralPane()
       case .transcript: TranscriptPane()
+      case .theme: ThemePane()
       case .attention: AttentionPane()
       case .about:
         AboutSettingsPane(app: Support.app, preferIssueTracker: Support.preferIssueTracker)
@@ -313,6 +319,31 @@ struct TranscriptPane: View {
       } footer: {
         Text(
           "Pinned at the top of the transcript; click it to scroll back to the message. When off, it shows only once the message has scrolled out of view."
+        )
+      }
+    }
+    .formStyle(.grouped)
+  }
+}
+
+/// How Drakar is coloured: the accent, for now. Picking the default again forgets the key,
+/// so a later change to the default reaches everyone who never chose.
+struct ThemePane: View {
+  @AppStorage(PreferenceKey.accentColor) private var accent = ""
+
+  var body: some View {
+    Form {
+      Section {
+        SwatchColorPicker(
+          "Accent colour", value: SwatchColor(hex: accent) ?? Theme.defaultAccent,
+          default: Theme.defaultAccent, palette: Theme.accentPalette
+        ) { picked in
+          accent = picked?.hex ?? ""
+        }
+        .accessibilityIdentifier("settings.accentColor")
+      } footer: {
+        Text(
+          "Folders, the selected row, prominent buttons, the pane handles and the controls that take a tint."
         )
       }
     }

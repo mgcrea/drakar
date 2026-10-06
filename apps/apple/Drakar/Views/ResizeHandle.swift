@@ -28,7 +28,7 @@ struct ResizeHandle: View {
       .overlay {
         if isLit || isDragging {
           Rectangle()
-            .fill(Color.accentColor)
+            .fill(Theme.accent)
             .frame(
               width: axis == .horizontal ? Self.lineWidth : nil,
               height: axis == .vertical ? Self.lineWidth : nil)

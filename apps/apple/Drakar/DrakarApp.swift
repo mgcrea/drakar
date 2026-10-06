@@ -13,6 +13,7 @@ struct DrakarApp: App {
     // session picker, and SwiftUI reopens each project's window at the next launch.
     WindowGroup(for: WindowRoute.self) { $route in
       ContentView(route: $route)
+        .themed()
     }
     .commands {
       SupportCommands(app: Support.app, preferIssueTracker: Support.preferIssueTracker)
@@ -37,6 +38,7 @@ struct DrakarApp: App {
     // open their settings through HostedWindow instead.
     Settings {
       SettingsView()
+        .themed()
     }
   }
 }

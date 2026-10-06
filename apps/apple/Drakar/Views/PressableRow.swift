@@ -28,7 +28,7 @@ struct PressableRowChrome: ViewModifier {
       .listRowBackground(
         RoundedRectangle(cornerRadius: 5)
           .fill(isPressed ? AnyShapeStyle(.quaternary) : AnyShapeStyle(.clear))
-          .strokeBorder(isSelected ? Color.accentColor : .clear, lineWidth: 1.5)
+          .strokeBorder(isSelected ? Theme.accent : .clear, lineWidth: 1.5)
           .padding(.horizontal, 8)
       )
       .accessibilityAddTraits(isSelected ? .isSelected : [])

@@ -52,7 +52,7 @@ private struct FileRow: View {
           .opacity(row.node.isDirectory ? 1 : 0)
           .frame(width: 10)
         Image(systemName: row.node.isDirectory ? "folder" : "doc.text")
-          .foregroundStyle(row.node.isDirectory ? Color.accentColor : .secondary)
+          .foregroundStyle(row.node.isDirectory ? Theme.accent : .secondary)
           .frame(width: 16)
         Text(row.node.name)
           .lineLimit(1)

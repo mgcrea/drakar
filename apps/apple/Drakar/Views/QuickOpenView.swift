@@ -36,7 +36,7 @@ struct QuickOpenView: View {
               MatchRow(match: match, isSelected: index == selected)
             }
             .buttonStyle(.plain)
-            .listRowBackground(index == selected ? Color.accentColor.opacity(0.25) : Color.clear)
+            .listRowBackground(index == selected ? Theme.accent.opacity(0.25) : Color.clear)
             .id(index)
             .accessibilityIdentifier("quickOpen.match.\(match.path)")
           }

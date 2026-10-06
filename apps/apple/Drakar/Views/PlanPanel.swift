@@ -111,7 +111,7 @@ struct PlanPanel: View {
       }
     }
     .buttonStyle(.bordered)
-    .tint(prominent ? .accentColor : nil)
+    .tint(prominent ? Theme.accent : nil)
     .accessibilityIdentifier(id)
   }
 }
