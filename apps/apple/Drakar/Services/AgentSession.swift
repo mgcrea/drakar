@@ -67,8 +67,9 @@ final class AgentSession {
   private(set) var pillNote: String?
   /// Where `initialize`'s model list goes; tests give their own.
   @ObservationIgnored var catalog: ModelCatalog = .shared
-  /// What to put back if a switch is refused, by request id.
-  @ObservationIgnored private var revertOnError: [String: () -> Void] = [:]
+  /// Switches the CLI has not answered, oldest first: which pill, and what puts it back if
+  /// refused.
+  @ObservationIgnored private var unansweredChanges: [UnansweredChange] = []
   /// The name given here, by a rename or to a fork: shown at once, ahead of the history's.
   private(set) var name: String?
   /// The earlier question the person closed without answering, so it is not offered again.
@@ -197,10 +198,11 @@ final class AgentSession {
     guard let process else { return }
     permissionMode = mode.rawValue
     guard let id = try? backend.send(.setMode(mode.rawValue), to: process) else { return }
-    revertOnError[id] = { [weak self] in
-      self?.modePick = previousPick
-      self?.permissionMode = previousMode
-    }
+    unansweredChanges.append(
+      .init(id: id, pill: .mode) { [weak self] in
+        self?.modePick = previousPick
+        self?.permissionMode = previousMode
+      })
   }
 
   /// `value` as `initialize`'s `models` give it; `default` is Claude Code's own.
@@ -210,7 +212,8 @@ final class AgentSession {
     modelPick = value
     guard let process else { return }
     guard let id = try? backend.send(.setModel(value), to: process) else { return }
-    revertOnError[id] = { [weak self] in self?.modelPick = previous }
+    unansweredChanges.append(
+      .init(id: id, pill: .model) { [weak self] in self?.modelPick = previous })
   }
 
   /// `level` as the model's `effortLevels` give it. At once on a running process, as a flag
@@ -221,7 +224,25 @@ final class AgentSession {
     effortPick = level
     guard let process else { return }
     guard let id = try? backend.send(.setEffort(level), to: process) else { return }
-    revertOnError[id] = { [weak self] in self?.effortPick = previous }
+    unansweredChanges.append(
+      .init(id: id, pill: .effort) { [weak self] in self?.effortPick = previous })
+  }
+
+  /// A refusal puts back its own pick only. A later switch of the same pill still in
+  /// flight shows over it, and takes over what to put back should it be refused too.
+  private func changeAnswered(_ id: String, refusal: String?) {
+    guard let index = unansweredChanges.firstIndex(where: { $0.id == id }) else {
+      if let refusal { pillNote = refusal }
+      return
+    }
+    let change = unansweredChanges.remove(at: index)
+    guard let refusal else { return }
+    if let later = unansweredChanges[index...].firstIndex(where: { $0.pill == change.pill }) {
+      unansweredChanges[later].revert = change.revert
+    } else {
+      change.revert()
+    }
+    pillNote = refusal
   }
 
   /// The CLI's word on its mode, whoever changed it: the pill shows it, and a restart
@@ -367,6 +388,8 @@ final class AgentSession {
     do {
       let stream = try process.start()
       self.process = process
+      // A switch the previous process never answered never will be.
+      unansweredChanges.removeAll()
       launchedWithBypass = start.allowsBypass
       unsentName = nil
       try backend.started(process, then: pendingPrompt)
@@ -614,11 +637,7 @@ final class AgentSession {
     case .contextReported(let reply):
       reportedContext = reply
     case .changeAnswered(let id, let refusal):
-      let revert = revertOnError.removeValue(forKey: id)
-      if let refusal {
-        revert?()
-        pillNote = refusal
-      }
+      changeAnswered(id, refusal: refusal)
     case .queueChanged:
       break
     }
@@ -654,4 +673,13 @@ final class AgentSession {
     ].joined(separator: ":")
     return environment
   }
+}
+
+/// A mode, model or effort switch sent and not yet answered.
+private struct UnansweredChange {
+  enum Pill { case mode, model, effort }
+
+  var id: String
+  var pill: Pill
+  var revert: () -> Void
 }

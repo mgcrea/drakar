@@ -140,6 +140,39 @@ struct AgentSessionPillsTests {
     }
   }
 
+  /// Review Focus 5: two changes in flight, the first refused and the second taken. The
+  /// refusal puts back its own pick only, and says why. The stand-in waits for both, and its
+  /// success carries no `mode`, so the pill is not set back by the CLI's echo.
+  @Test func aRefusalLeavesALaterPick() async throws {
+    try await scoped {
+      let script = try standIn(
+        "claude",
+        """
+        first=""
+        while read -r line; do
+          case "$line" in *set_permission_mode*)
+            id=$(printf '%s' "$line" | sed -E 's/.*"request_id":"([^"]*)".*/\\1/')
+            if [ -z "$first" ]; then first=$id; continue; fi
+            printf '%s\\n' "{\\"type\\":\\"control_response\\",\\"response\\":{\\"subtype\\":\\"error\\",\\"request_id\\":\\"$first\\",\\"error\\":\\"Not launched for it\\"}}"
+            printf '%s\\n' "{\\"type\\":\\"control_response\\",\\"response\\":{\\"subtype\\":\\"success\\",\\"request_id\\":\\"$id\\"}}"
+          esac
+        done
+        """)
+      let session = AgentSession(folder: folder)
+      session.executableOverride = script
+      await session.spawn()
+      defer { session.stop() }
+      session.setMode(.bypass)
+      session.setMode(.plan)
+      try await waitUntil { session.pillNote != nil }
+      // Long enough for the success line, which follows the refusal, to land too.
+      try await Task.sleep(for: .milliseconds(300))
+      #expect(session.pillNote == "Not launched for it")
+      #expect(session.modePick == .plan)
+      #expect(session.shownMode == "plan")
+    }
+  }
+
   /// The CLI leaves Plan on its own once a plan is approved: the pill follows.
   @Test func aStatusLineMovesTheMode() async throws {
     try await scoped {
