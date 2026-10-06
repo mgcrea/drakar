@@ -12,6 +12,11 @@ struct SessionView: View {
   private var session: ClaudeSession { item.session }
   private var workspace: Workspace { project.workspace }
 
+  /// The account the session runs, or will start, under.
+  private var account: ClaudeAccount {
+    session.effectiveAccount ?? AccountStore.shared.windowAccount(for: project.folder)
+  }
+
   var body: some View {
     VStack(spacing: 0) {
       TranscriptView(transcript: session.transcript, anchor: $item.scrollAnchor)
@@ -56,7 +61,9 @@ struct SessionView: View {
           sessionFolder: session.folder, projectFolder: project.folder,
           takesFocus: project.focusesComposer,
           hint: item.composerHint, focusRequest: item.focusRequest,
-          focused: { workspace.focusedPane = .composer })
+          focused: { workspace.focusedPane = .composer },
+          pills: SessionPills(session: session, folder: project.folder, account: account),
+          cycleMode: { SessionPills.cycle(session, account: account) })
       }
       let _ = (picks, settingsAccount)
       SessionFooter(
@@ -229,8 +236,13 @@ private struct SessionFooter: View {
     HStack(spacing: 12) {
       status
       Spacer()
-      if let modelID {
-        Text(ModelName.display(modelID)).help(modelID)
+      if elsewhere != nil {
+        if let mode = session.transcript.historyPermissionMode {
+          Text(PermissionMode.title(of: mode))
+        }
+        if let modelID {
+          Text(ModelName.display(modelID)).help(modelID)
+        }
       }
       account
       if let version = session.transcript.session?.claudeCodeVersion {

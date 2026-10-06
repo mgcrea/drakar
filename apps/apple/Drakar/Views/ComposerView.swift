@@ -27,6 +27,10 @@ struct ComposerView: View {
   var focusRequest = 0
   /// Called when the field takes the keys.
   var focused: () -> Void = {}
+  /// The session's mode and model, on the row under the field, left of Send.
+  var pills: SessionPills? = nil
+  /// ⇧Tab in the field: the next permission mode.
+  var cycleMode: (() -> Void)? = nil
 
   @State private var leavesContextOut = false
   @FocusState private var isFocused: Bool
@@ -78,13 +82,31 @@ struct ComposerView: View {
   }
 
   private var field: some View {
-    HStack(alignment: .bottom, spacing: 8) {
+    VStack(alignment: .leading, spacing: 6) {
       TextField("Ask Claude to do something…", text: $text, axis: .vertical)
         .textFieldStyle(.plain)
         .lineLimit(1...10)
         .focused($isFocused)
         .onSubmit(submit)
+        // ⇧Tab arrives as backtab; plain Tab is left to focus traversal.
+        .onKeyPress(keys: [.tab, KeyEquivalent("\u{19}")]) { press in
+          guard press.modifiers.contains(.shift) || press.key == KeyEquivalent("\u{19}"),
+            let cycleMode
+          else { return .ignored }
+          cycleMode()
+          return .handled
+        }
         .accessibilityIdentifier("composer.field")
+      HStack(spacing: 8) {
+        if let pills { pills }
+        Spacer(minLength: 0)
+        button
+      }
+    }
+  }
+
+  @ViewBuilder private var button: some View {
+    Group {
       if isRunning {
         Button("Stop", systemImage: "stop.circle.fill", action: stop)
           .keyboardShortcut(".", modifiers: .command)
