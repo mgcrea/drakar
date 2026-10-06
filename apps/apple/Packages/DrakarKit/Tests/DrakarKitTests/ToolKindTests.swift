@@ -76,4 +76,19 @@ struct ToolKindTests {
     #expect(change?.addedCount == 1)
     #expect(FileChange(path: "/a", edits: []) == nil)
   }
+
+  @Test func separatesCodexHunksByTheirGap() {
+    let update = PatchText.lines("@@ -1,2 +1,2 @@\n a\n-b\n+c\n@@ -10,2 +10,3 @@\n x\n+y\n z\n")
+    #expect(
+      update.lines == [
+        DiffLine(.context, "a"), DiffLine(.removed, "b"), DiffLine(.added, "c"),
+        DiffLine(.gap(7), ""),
+        DiffLine(.context, "x"), DiffLine(.added, "y"), DiffLine(.context, "z"),
+      ])
+    let adjacent = PatchText.lines("@@ -1 +1 @@\n-a\n+b\n@@ -2 +2 @@\n-c\n+d\n")
+    #expect(!adjacent.lines.contains { if case .gap = $0.kind { true } else { false } })
+    // An insertion's hunk names the line before it: line 2 is left out.
+    let insertion = PatchText.lines("@@ -1 +1 @@\n-a\n+b\n@@ -2,0 +3 @@\n+c\n")
+    #expect(insertion.lines[2] == DiffLine(.gap(1), ""))
+  }
 }

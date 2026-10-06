@@ -71,7 +71,17 @@ public enum PatchText {
       return (raw.map { DiffLine(.added, $0) }, true)
     }
     var lines: [DiffLine] = []
-    for line in raw where !line.hasPrefix("@@") && !line.hasPrefix("\\") {
+    /// The first old line after the previous hunk.
+    var previousEnd: Int?
+    for line in raw where !line.hasPrefix("\\") {
+      if line.hasPrefix("@@") {
+        guard let (start, count) = oldRange(line) else { continue }
+        if let previousEnd, start > previousEnd {
+          lines.append(DiffLine(.gap(start - previousEnd), ""))
+        }
+        previousEnd = start + count
+        continue
+      }
       switch line.first {
       case "+": lines.append(DiffLine(.added, String(line.dropFirst())))
       case "-": lines.append(DiffLine(.removed, String(line.dropFirst())))
@@ -79,5 +89,18 @@ public enum PatchText {
       }
     }
     return (lines, false)
+  }
+
+  /// The old side of a `@@ -a,b +c,d @@` header: its first line and how many it spans. A
+  /// hunk spanning none names the line before it, so it starts one after.
+  private static func oldRange(_ header: String) -> (start: Int, count: Int)? {
+    guard let minus = header.split(separator: " ").first(where: { $0.hasPrefix("-") }) else {
+      return nil
+    }
+    let parts = minus.dropFirst().split(separator: ",", omittingEmptySubsequences: false)
+    guard let start = Int(parts[0]) else { return nil }
+    let count = parts.count > 1 ? Int(parts[1]) : 1
+    guard let count else { return nil }
+    return (count == 0 ? start + 1 : start, count)
   }
 }
