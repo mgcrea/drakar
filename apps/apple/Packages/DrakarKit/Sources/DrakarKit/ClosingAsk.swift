@@ -28,10 +28,14 @@ public struct ClosingAsk: Sendable, Hashable {
   public var kind: Kind
   /// The sentence a row and a notification show.
   public var text: String
+  /// A bare "Yes" answers it ("Does this section look right?"): the only question in the
+  /// closing paragraphs, neither a choice nor followed by an open one.
+  public var isYesOrNo: Bool
 
-  public init(kind: Kind, text: String) {
+  public init(kind: Kind, text: String, isYesOrNo: Bool = false) {
     self.kind = kind
     self.text = text
+    self.isYesOrNo = isYesOrNo
   }
 
   /// Asks without a question mark, at the start of a sentence, folded.
@@ -49,13 +53,25 @@ public struct ClosingAsk: Sendable, Hashable {
     "let me know if", "feel free to", "if you want", "if you'd like", "if you like", "say the word",
     "say if you want", "happy to",
   ]
+  /// How a question a bare "Yes" answers opens, folded.
+  public static let yesOrNoOpenings = [
+    "should ", "shall ", "want me to", "do ", "does ", "is ", "are ", "would ", "can i ",
+    "may i ", "ok to", "okay to", "ready to",
+  ]
+  /// Tags that make a sentence one, folded: "Sound good?".
+  public static let yesOrNoTags = [
+    "sound good?", "look good?", "look right?", "make sense?", " ok?", " okay?",
+  ]
   /// What a row and a notification show at most.
   public static let maxLength = 140
 
   public static func detect(_ text: String) -> ClosingAsk? {
     let sentences = paragraphs(of: stripped(text)).suffix(2).flatMap(sentences(of:))
-    if let sentence = sentences.last(where: isQuestion) {
-      return ClosingAsk(kind: .question, text: shortened(sentence))
+    let questions = sentences.filter(isQuestion)
+    if let sentence = questions.last {
+      return ClosingAsk(
+        kind: .question, text: shortened(sentence),
+        isYesOrNo: questions.count == 1 && isYesOrNo(sentence))
     }
     if let sentence = sentences.last(where: isOffer) {
       return ClosingAsk(kind: .offer, text: shortened(sentence))
@@ -124,6 +140,20 @@ public struct ClosingAsk: Sendable, Hashable {
     if signOffs.contains(where: folded.hasPrefix) { return false }
     if let last = sentence.last, last == "?" || last == "？" { return true }
     return asks.contains(where: folded.hasPrefix) || requests.contains(where: folded.contains)
+  }
+
+  /// A choice ("…, or remove it first?") or a second, open question ("…, and which approach
+  /// should we use?") needs words; after a semicolon, the clause that asks is the last.
+  static func isYesOrNo(_ sentence: String) -> Bool {
+    let folded = folded(sentence)
+    if folded.contains(" or ")
+      || folded.contains(#/,\s*(and\s+)?(which|what|how|where|when|who|why)\b/#)
+    {
+      return false
+    }
+    let clause = folded.split(separator: ";").last?.trimmingCharacters(in: .whitespaces) ?? folded
+    return yesOrNoOpenings.contains(where: clause.hasPrefix)
+      || yesOrNoTags.contains(where: folded.hasSuffix)
   }
 
   static func isOffer(_ sentence: String) -> Bool {

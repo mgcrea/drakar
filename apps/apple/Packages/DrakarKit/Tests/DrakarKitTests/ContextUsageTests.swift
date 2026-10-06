@@ -242,7 +242,9 @@ struct ContextUsageTests {
     defer { try? FileManager.default.removeItem(at: file) }
     let account = ClaudeAccount(directory: file.deletingLastPathComponent(), isDefault: false)
     let summary = try #require(SessionIndex.summary(of: file, account: account))
-    #expect(summary.closingAsk == ClosingAsk(kind: .question, text: "Want me to commit it?"))
+    #expect(
+      summary.closingAsk
+        == ClosingAsk(kind: .question, text: "Want me to commit it?", isYesOrNo: true))
     #expect(summary.closingMessageID == "m1")
   }
 }
