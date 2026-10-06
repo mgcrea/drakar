@@ -1,0 +1,124 @@
+{
+  "exited" : {
+    "agentTasks" : [
+
+    ],
+    "closingText" : "msg_011Cfm8ajnWxmfSVWsKJbAG3|Banana.",
+    "contextModelID" : "claude-haiku-4-5-20251001",
+    "contextUsage" : "10/3986/48438/4/oneHour",
+    "entries" : [
+      {
+        "attachments" : [
+
+        ],
+        "id" : "prompt#1",
+        "kind" : "prompt",
+        "text" : "Count to five.",
+        "thinkingLive" : false,
+        "thinkingTimed" : false
+      },
+      {
+        "attachments" : [
+
+        ],
+        "id" : "msg_011Cfm8YvxQepoWZNL7seLET#0",
+        "kind" : "text",
+        "text" : "Longships were the remarkable vessels of the Vikings, designed for both open-ocean voyages and shallow-draft river navigation. These sleek wooden ships featured a shallow hull, allowing them to traverse coastal waters and inland rivers with ease. Powered by sail and oars, longships could carry 50 to 100 warriors and their cargo across treacherous seas. Their design reflected authentic Norse craftsmanship, with overlapping planks and curved prows often decorated with intimidating dragon heads. Longships revolutionized medieval warfare and exploration, enabling Norse raiders and traders to reach distant lands from North America to the Mediterranean. Their speed and maneuverability made them formidable weapons, while their shallow draft allowed Vikings to penetrate deep into Europe via river systems, leaving an indelible mark on history.",
+        "thinkingLive" : false,
+        "thinkingTimed" : false
+      },
+      {
+        "attachments" : [
+
+        ],
+        "id" : "prompt#2",
+        "kind" : "prompt",
+        "text" : "Now say the word banana.",
+        "thinkingLive" : false,
+        "thinkingTimed" : false
+      },
+      {
+        "attachments" : [
+
+        ],
+        "id" : "msg_011Cfm8ajnWxmfSVWsKJbAG3#0",
+        "kind" : "text",
+        "text" : "Banana.",
+        "thinkingLive" : false,
+        "thinkingTimed" : false
+      }
+    ],
+    "isCompacting" : false,
+    "isRunning" : false,
+    "lastTurn" : "text=Banana.|cost=0.07246|duration=1025",
+    "pending" : [
+
+    ],
+    "promptCache" : "warm(minutesLeft: 51)",
+    "queued" : [
+
+    ],
+    "turnEnd" : "completed"
+  },
+  "running" : {
+    "agentTasks" : [
+
+    ],
+    "closingText" : "msg_011Cfm8ajnWxmfSVWsKJbAG3|Banana.",
+    "contextModelID" : "claude-haiku-4-5-20251001",
+    "contextUsage" : "10/3986/48438/4/oneHour",
+    "entries" : [
+      {
+        "attachments" : [
+
+        ],
+        "id" : "prompt#1",
+        "kind" : "prompt",
+        "text" : "Count to five.",
+        "thinkingLive" : false,
+        "thinkingTimed" : false
+      },
+      {
+        "attachments" : [
+
+        ],
+        "id" : "msg_011Cfm8YvxQepoWZNL7seLET#0",
+        "kind" : "text",
+        "text" : "Longships were the remarkable vessels of the Vikings, designed for both open-ocean voyages and shallow-draft river navigation. These sleek wooden ships featured a shallow hull, allowing them to traverse coastal waters and inland rivers with ease. Powered by sail and oars, longships could carry 50 to 100 warriors and their cargo across treacherous seas. Their design reflected authentic Norse craftsmanship, with overlapping planks and curved prows often decorated with intimidating dragon heads. Longships revolutionized medieval warfare and exploration, enabling Norse raiders and traders to reach distant lands from North America to the Mediterranean. Their speed and maneuverability made them formidable weapons, while their shallow draft allowed Vikings to penetrate deep into Europe via river systems, leaving an indelible mark on history.",
+        "thinkingLive" : false,
+        "thinkingTimed" : false
+      },
+      {
+        "attachments" : [
+
+        ],
+        "id" : "prompt#2",
+        "kind" : "prompt",
+        "text" : "Now say the word banana.",
+        "thinkingLive" : false,
+        "thinkingTimed" : false
+      },
+      {
+        "attachments" : [
+
+        ],
+        "id" : "msg_011Cfm8ajnWxmfSVWsKJbAG3#0",
+        "kind" : "text",
+        "text" : "Banana.",
+        "thinkingLive" : false,
+        "thinkingTimed" : false
+      }
+    ],
+    "isCompacting" : false,
+    "isRunning" : false,
+    "lastTurn" : "text=Banana.|cost=0.07246|duration=1025",
+    "pending" : [
+
+    ],
+    "promptCache" : "warm(minutesLeft: 51)",
+    "queued" : [
+
+    ],
+    "turnEnd" : "completed"
+  }
+}

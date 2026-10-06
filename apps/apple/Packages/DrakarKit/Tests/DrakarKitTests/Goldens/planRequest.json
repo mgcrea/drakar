@@ -1,0 +1,184 @@
+{
+  "exited" : {
+    "agentTasks" : [
+
+    ],
+    "contextModelID" : "claude-sonnet-5-5",
+    "contextUsage" : "2/3880/54738/24/oneHour",
+    "entries" : [
+      {
+        "attachments" : [
+
+        ],
+        "id" : "prompt#1",
+        "kind" : "prompt",
+        "text" : "Run it",
+        "thinkingLive" : false,
+        "thinkingTimed" : false
+      },
+      {
+        "attachments" : [
+
+        ],
+        "id" : "toolu_01Eeboz2vSyZwKWS8C7rC8PA",
+        "kind" : "tool",
+        "thinkingLive" : false,
+        "thinkingTimed" : false,
+        "tool" : {
+          "id" : "toolu_01Eeboz2vSyZwKWS8C7rC8PA",
+          "input" : "{\n  \"content\" : \"# Add hello.txt\\n\\n## Context\\nAdd a file `hello.txt` containing `hi` to the working directory (`/Users/me/project`).\\n\\n## Steps\\n1. Confirm `hello.txt` doesn't already exist in the folder, so nothing gets overwritten.\\n2. Create `hello.txt` with the content `hi` using the Write tool.\\n3. Read the file back to verify it contains exactly `hi`.\\n\",\n  \"file_path\" : \"/Users/me/.claude/plans/plan-how-to-add-steady-petal.md\"\n}",
+          "isError" : false,
+          "name" : "Write",
+          "result" : "File created successfully at: /Users/me/.claude/plans/plan-how-to-add-steady-petal.md (file state is current in your context — no need to Read it back)",
+          "summary" : "/Users/me/.claude/plans/plan-how-to-add-steady-petal.md"
+        }
+      },
+      {
+        "attachments" : [
+
+        ],
+        "id" : "toolu_01Uf1ZezZyZUPTqgmPKbzUVx",
+        "kind" : "tool",
+        "thinkingLive" : false,
+        "thinkingTimed" : false,
+        "tool" : {
+          "id" : "toolu_01Uf1ZezZyZUPTqgmPKbzUVx",
+          "input" : "{\n  \"max_results\" : 1,\n  \"query\" : \"select:ExitPlanMode\"\n}",
+          "isError" : false,
+          "name" : "ToolSearch",
+          "result" : "",
+          "summary" : "select:ExitPlanMode"
+        }
+      },
+      {
+        "attachments" : [
+
+        ],
+        "id" : "toolu_01CCZh57dthfdqy6ere3n884",
+        "kind" : "tool",
+        "thinkingLive" : false,
+        "thinkingTimed" : false,
+        "tool" : {
+          "id" : "toolu_01CCZh57dthfdqy6ere3n884",
+          "input" : "{\n  \"plan\" : \"# Add hello.txt\\n\\n## Context\\nAdd a file `hello.txt` containing `hi` to the working directory (`/Users/me/project`).\\n\\n## Steps\\n1. Confirm `hello.txt` doesn't already exist in the folder, so nothing gets overwritten.\\n2. Create `hello.txt` with the content `hi` using the Write tool.\\n3. Read the file back to verify it contains exactly `hi`.\\n\",\n  \"planFilePath\" : \"/Users/me/.claude/plans/plan-how-to-add-steady-petal.md\"\n}",
+          "isError" : true,
+          "name" : "ExitPlanMode",
+          "result" : "The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). STOP what you are doing and wait for the user to tell you how to proceed.\n\nNote: The user's next message may contain a correction or preference. Pay close attention — if they explain what went wrong or how they'd prefer you to work, consider saving that to memory for future sessions.",
+          "summary" : "Add hello.txt"
+        }
+      },
+      {
+        "attachments" : [
+
+        ],
+        "id" : "notice#1",
+        "kind" : "notice",
+        "text" : "Request interrupted by user",
+        "thinkingLive" : false,
+        "thinkingTimed" : false
+      }
+    ],
+    "isCompacting" : false,
+    "isRunning" : false,
+    "lastTurn" : "text=-|cost=0.1367102|duration=5952",
+    "pending" : [
+
+    ],
+    "promptCache" : "warm(minutesLeft: 51)",
+    "queued" : [
+
+    ],
+    "turnEnd" : "interrupted"
+  },
+  "running" : {
+    "agentTasks" : [
+
+    ],
+    "contextModelID" : "claude-sonnet-5-5",
+    "contextUsage" : "2/3880/54738/24/oneHour",
+    "entries" : [
+      {
+        "attachments" : [
+
+        ],
+        "id" : "prompt#1",
+        "kind" : "prompt",
+        "text" : "Run it",
+        "thinkingLive" : false,
+        "thinkingTimed" : false
+      },
+      {
+        "attachments" : [
+
+        ],
+        "id" : "toolu_01Eeboz2vSyZwKWS8C7rC8PA",
+        "kind" : "tool",
+        "thinkingLive" : false,
+        "thinkingTimed" : false,
+        "tool" : {
+          "id" : "toolu_01Eeboz2vSyZwKWS8C7rC8PA",
+          "input" : "{\n  \"content\" : \"# Add hello.txt\\n\\n## Context\\nAdd a file `hello.txt` containing `hi` to the working directory (`/Users/me/project`).\\n\\n## Steps\\n1. Confirm `hello.txt` doesn't already exist in the folder, so nothing gets overwritten.\\n2. Create `hello.txt` with the content `hi` using the Write tool.\\n3. Read the file back to verify it contains exactly `hi`.\\n\",\n  \"file_path\" : \"/Users/me/.claude/plans/plan-how-to-add-steady-petal.md\"\n}",
+          "isError" : false,
+          "name" : "Write",
+          "result" : "File created successfully at: /Users/me/.claude/plans/plan-how-to-add-steady-petal.md (file state is current in your context — no need to Read it back)",
+          "summary" : "/Users/me/.claude/plans/plan-how-to-add-steady-petal.md"
+        }
+      },
+      {
+        "attachments" : [
+
+        ],
+        "id" : "toolu_01Uf1ZezZyZUPTqgmPKbzUVx",
+        "kind" : "tool",
+        "thinkingLive" : false,
+        "thinkingTimed" : false,
+        "tool" : {
+          "id" : "toolu_01Uf1ZezZyZUPTqgmPKbzUVx",
+          "input" : "{\n  \"max_results\" : 1,\n  \"query\" : \"select:ExitPlanMode\"\n}",
+          "isError" : false,
+          "name" : "ToolSearch",
+          "result" : "",
+          "summary" : "select:ExitPlanMode"
+        }
+      },
+      {
+        "attachments" : [
+
+        ],
+        "id" : "toolu_01CCZh57dthfdqy6ere3n884",
+        "kind" : "tool",
+        "thinkingLive" : false,
+        "thinkingTimed" : false,
+        "tool" : {
+          "id" : "toolu_01CCZh57dthfdqy6ere3n884",
+          "input" : "{\n  \"plan\" : \"# Add hello.txt\\n\\n## Context\\nAdd a file `hello.txt` containing `hi` to the working directory (`/Users/me/project`).\\n\\n## Steps\\n1. Confirm `hello.txt` doesn't already exist in the folder, so nothing gets overwritten.\\n2. Create `hello.txt` with the content `hi` using the Write tool.\\n3. Read the file back to verify it contains exactly `hi`.\\n\",\n  \"planFilePath\" : \"/Users/me/.claude/plans/plan-how-to-add-steady-petal.md\"\n}",
+          "isError" : true,
+          "name" : "ExitPlanMode",
+          "result" : "The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). STOP what you are doing and wait for the user to tell you how to proceed.\n\nNote: The user's next message may contain a correction or preference. Pay close attention — if they explain what went wrong or how they'd prefer you to work, consider saving that to memory for future sessions.",
+          "summary" : "Add hello.txt"
+        }
+      },
+      {
+        "attachments" : [
+
+        ],
+        "id" : "notice#1",
+        "kind" : "notice",
+        "text" : "Request interrupted by user",
+        "thinkingLive" : false,
+        "thinkingTimed" : false
+      }
+    ],
+    "isCompacting" : false,
+    "isRunning" : false,
+    "lastTurn" : "text=-|cost=0.1367102|duration=5952",
+    "pending" : [
+
+    ],
+    "promptCache" : "warm(minutesLeft: 51)",
+    "queued" : [
+
+    ],
+    "turnEnd" : "interrupted"
+  }
+}

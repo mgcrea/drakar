@@ -1,0 +1,84 @@
+{
+  "exited" : {
+    "agentTasks" : [
+
+    ],
+    "contextModelID" : "claude-haiku-4-5-20251001",
+    "contextUsage" : "10/24494/22383/6/oneHour",
+    "entries" : [
+      {
+        "attachments" : [
+
+        ],
+        "id" : "prompt#1",
+        "kind" : "prompt",
+        "text" : "Run it",
+        "thinkingLive" : false,
+        "thinkingTimed" : false
+      },
+      {
+        "attachments" : [
+
+        ],
+        "id" : "msg_011Cfgi4kP6AUDLvL2hN6E14#0",
+        "kind" : "thinking",
+        "text" : "The user is asking me to count slowly from 1 to 40, one number per line. This is a straightforward task. Let me do this:\n\nI'll output the numbers 1 through 40, each on its own line.",
+        "thinkingLive" : false,
+        "thinkingTimed" : false
+      }
+    ],
+    "isCompacting" : false,
+    "isRunning" : false,
+    "lastTurn" : "text=1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\n13\n14\n15\n16\n17\n18\n19\n20\n21\n22\n23\n24\n25\n26\n27\n28\n29\n30\n31\n32\n33\n34\n35\n36\n37\n38\n39\n40|cost=0.052933299999999996|duration=2346",
+    "pending" : [
+
+    ],
+    "promptCache" : "warm(minutesLeft: 50)",
+    "queued" : [
+
+    ],
+    "session" : "15421acf-7a9b-4276-834b-836905775f14|/tmp/drakar-probe|claude-haiku-4-5-20251001|default|2.1.288|none|Task,Artifact,ArtifactComments",
+    "turnEnd" : "completed"
+  },
+  "running" : {
+    "agentTasks" : [
+
+    ],
+    "contextModelID" : "claude-haiku-4-5-20251001",
+    "contextUsage" : "10/24494/22383/6/oneHour",
+    "entries" : [
+      {
+        "attachments" : [
+
+        ],
+        "id" : "prompt#1",
+        "kind" : "prompt",
+        "text" : "Run it",
+        "thinkingLive" : false,
+        "thinkingTimed" : false
+      },
+      {
+        "attachments" : [
+
+        ],
+        "id" : "msg_011Cfgi4kP6AUDLvL2hN6E14#0",
+        "kind" : "thinking",
+        "text" : "The user is asking me to count slowly from 1 to 40, one number per line. This is a straightforward task. Let me do this:\n\nI'll output the numbers 1 through 40, each on its own line.",
+        "thinkingLive" : false,
+        "thinkingTimed" : false
+      }
+    ],
+    "isCompacting" : false,
+    "isRunning" : false,
+    "lastTurn" : "text=1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\n13\n14\n15\n16\n17\n18\n19\n20\n21\n22\n23\n24\n25\n26\n27\n28\n29\n30\n31\n32\n33\n34\n35\n36\n37\n38\n39\n40|cost=0.052933299999999996|duration=2346",
+    "pending" : [
+
+    ],
+    "promptCache" : "warm(minutesLeft: 50)",
+    "queued" : [
+
+    ],
+    "session" : "15421acf-7a9b-4276-834b-836905775f14|/tmp/drakar-probe|claude-haiku-4-5-20251001|default|2.1.288|none|Task,Artifact,ArtifactComments",
+    "turnEnd" : "completed"
+  }
+}

@@ -1,0 +1,54 @@
+{
+  "exited" : {
+    "agentTasks" : [
+
+    ],
+    "entries" : [
+      {
+        "attachments" : [
+
+        ],
+        "id" : "prompt#1",
+        "kind" : "prompt",
+        "text" : "Run it",
+        "thinkingLive" : false,
+        "thinkingTimed" : false
+      }
+    ],
+    "isCompacting" : false,
+    "isRunning" : false,
+    "pending" : [
+
+    ],
+    "promptCache" : "unknown",
+    "queued" : [
+
+    ]
+  },
+  "running" : {
+    "agentTasks" : [
+
+    ],
+    "entries" : [
+      {
+        "attachments" : [
+
+        ],
+        "id" : "prompt#1",
+        "kind" : "prompt",
+        "text" : "Run it",
+        "thinkingLive" : false,
+        "thinkingTimed" : false
+      }
+    ],
+    "isCompacting" : false,
+    "isRunning" : true,
+    "pending" : [
+
+    ],
+    "promptCache" : "unknown",
+    "queued" : [
+
+    ]
+  }
+}

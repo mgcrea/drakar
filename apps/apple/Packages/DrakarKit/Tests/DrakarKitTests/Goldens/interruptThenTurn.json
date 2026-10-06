@@ -1,0 +1,166 @@
+{
+  "exited" : {
+    "agentTasks" : [
+
+    ],
+    "closingText" : "msg_011Cff5anzNS1CWa4Axzd3r3|ready",
+    "contextModelID" : "claude-haiku-4-5-20251001",
+    "contextUsage" : "10/982/31654/4/oneHour",
+    "entries" : [
+      {
+        "attachments" : [
+
+        ],
+        "id" : "prompt#1",
+        "kind" : "prompt",
+        "text" : "Run it",
+        "thinkingLive" : false,
+        "thinkingTimed" : false
+      },
+      {
+        "attachments" : [
+
+        ],
+        "id" : "msg_011Cff5aghqqBb8XZgyRua3g#0",
+        "kind" : "thinking",
+        "text" : "",
+        "thinkingLive" : false,
+        "thinkingTimed" : true
+      },
+      {
+        "attachments" : [
+
+        ],
+        "id" : "msg_011Cff5aghqqBb8XZgyRua3g#1",
+        "kind" : "text",
+        "text" : "# The Last Command",
+        "thinkingLive" : false,
+        "thinkingTimed" : false
+      },
+      {
+        "attachments" : [
+
+        ],
+        "id" : "notice#1",
+        "kind" : "notice",
+        "text" : "Request interrupted by user",
+        "thinkingLive" : false,
+        "thinkingTimed" : false
+      },
+      {
+        "attachments" : [
+
+        ],
+        "id" : "msg_011Cff5anzNS1CWa4Axzd3r3#0",
+        "kind" : "thinking",
+        "text" : "",
+        "thinkingLive" : false,
+        "thinkingTimed" : true
+      },
+      {
+        "attachments" : [
+
+        ],
+        "id" : "msg_011Cff5anzNS1CWa4Axzd3r3#1",
+        "kind" : "text",
+        "text" : "ready",
+        "thinkingLive" : false,
+        "thinkingTimed" : false
+      }
+    ],
+    "isCompacting" : false,
+    "isRunning" : false,
+    "lastTurn" : "text=ready|cost=0.006311400000000001|duration=1154",
+    "pending" : [
+
+    ],
+    "promptCache" : "warm(minutesLeft: 51)",
+    "queued" : [
+
+    ],
+    "session" : "67fcedb5-2cdf-485f-86fe-809426e33328|/Users/me/project|claude-haiku-4-5-20251001|default|2.1.284|-|Bash,Edit,Read",
+    "turnEnd" : "completed"
+  },
+  "running" : {
+    "agentTasks" : [
+
+    ],
+    "closingText" : "msg_011Cff5anzNS1CWa4Axzd3r3|ready",
+    "contextModelID" : "claude-haiku-4-5-20251001",
+    "contextUsage" : "10/982/31654/4/oneHour",
+    "entries" : [
+      {
+        "attachments" : [
+
+        ],
+        "id" : "prompt#1",
+        "kind" : "prompt",
+        "text" : "Run it",
+        "thinkingLive" : false,
+        "thinkingTimed" : false
+      },
+      {
+        "attachments" : [
+
+        ],
+        "id" : "msg_011Cff5aghqqBb8XZgyRua3g#0",
+        "kind" : "thinking",
+        "text" : "",
+        "thinkingLive" : false,
+        "thinkingTimed" : true
+      },
+      {
+        "attachments" : [
+
+        ],
+        "id" : "msg_011Cff5aghqqBb8XZgyRua3g#1",
+        "kind" : "text",
+        "text" : "# The Last Command",
+        "thinkingLive" : false,
+        "thinkingTimed" : false
+      },
+      {
+        "attachments" : [
+
+        ],
+        "id" : "notice#1",
+        "kind" : "notice",
+        "text" : "Request interrupted by user",
+        "thinkingLive" : false,
+        "thinkingTimed" : false
+      },
+      {
+        "attachments" : [
+
+        ],
+        "id" : "msg_011Cff5anzNS1CWa4Axzd3r3#0",
+        "kind" : "thinking",
+        "text" : "",
+        "thinkingLive" : false,
+        "thinkingTimed" : true
+      },
+      {
+        "attachments" : [
+
+        ],
+        "id" : "msg_011Cff5anzNS1CWa4Axzd3r3#1",
+        "kind" : "text",
+        "text" : "ready",
+        "thinkingLive" : false,
+        "thinkingTimed" : false
+      }
+    ],
+    "isCompacting" : false,
+    "isRunning" : false,
+    "lastTurn" : "text=ready|cost=0.006311400000000001|duration=1154",
+    "pending" : [
+
+    ],
+    "promptCache" : "warm(minutesLeft: 51)",
+    "queued" : [
+
+    ],
+    "session" : "67fcedb5-2cdf-485f-86fe-809426e33328|/Users/me/project|claude-haiku-4-5-20251001|default|2.1.284|-|Bash,Edit,Read",
+    "turnEnd" : "completed"
+  }
+}

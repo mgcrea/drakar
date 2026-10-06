@@ -1,0 +1,160 @@
+{
+  "exited" : {
+    "agentTasks" : [
+
+    ],
+    "closingText" : "msg_011CfepvGS9kuPpReEATjK21|Amiral.",
+    "contextModelID" : "claude-haiku-4-5-20251001",
+    "contextUsage" : "8/1040/31661/1/oneHour",
+    "entries" : [
+      {
+        "attachments" : [
+
+        ],
+        "id" : "prompt#1",
+        "kind" : "prompt",
+        "text" : "Run it",
+        "thinkingLive" : false,
+        "thinkingTimed" : false
+      },
+      {
+        "attachments" : [
+
+        ],
+        "id" : "msg_011Cfepv7wBhSFqcdc8EA391#0",
+        "kind" : "thinking",
+        "text" : "",
+        "thinkingLive" : false,
+        "thinkingTimed" : true
+      },
+      {
+        "attachments" : [
+
+        ],
+        "id" : "toolu_01GGE8TDFnCoR7JQYCRuSz9e",
+        "kind" : "tool",
+        "thinkingLive" : false,
+        "thinkingTimed" : false,
+        "tool" : {
+          "id" : "toolu_01GGE8TDFnCoR7JQYCRuSz9e",
+          "input" : "{\n  \"command\" : \"echo amiral\",\n  \"description\" : \"Run echo command with amiral argument\"\n}",
+          "isError" : false,
+          "name" : "Bash",
+          "result" : "amiral",
+          "summary" : "echo amiral"
+        }
+      },
+      {
+        "attachments" : [
+
+        ],
+        "id" : "msg_011CfepvGS9kuPpReEATjK21#0",
+        "kind" : "thinking",
+        "text" : "",
+        "thinkingLive" : false,
+        "thinkingTimed" : true
+      },
+      {
+        "attachments" : [
+
+        ],
+        "id" : "msg_011CfepvGS9kuPpReEATjK21#1",
+        "kind" : "text",
+        "text" : "Amiral.",
+        "thinkingLive" : false,
+        "thinkingTimed" : false
+      }
+    ],
+    "isCompacting" : false,
+    "isRunning" : false,
+    "lastTurn" : "text=Amiral.|cost=0.0704391|duration=3483",
+    "pending" : [
+
+    ],
+    "promptCache" : "warm(minutesLeft: 51)",
+    "queued" : [
+
+    ],
+    "session" : "84e79584-4dcd-48db-b738-57f6d1946155|/Users/me/project|claude-haiku-4-5-20251001|default|2.1.284|-|Bash,Edit,Read",
+    "turnEnd" : "completed"
+  },
+  "running" : {
+    "agentTasks" : [
+
+    ],
+    "closingText" : "msg_011CfepvGS9kuPpReEATjK21|Amiral.",
+    "contextModelID" : "claude-haiku-4-5-20251001",
+    "contextUsage" : "8/1040/31661/1/oneHour",
+    "entries" : [
+      {
+        "attachments" : [
+
+        ],
+        "id" : "prompt#1",
+        "kind" : "prompt",
+        "text" : "Run it",
+        "thinkingLive" : false,
+        "thinkingTimed" : false
+      },
+      {
+        "attachments" : [
+
+        ],
+        "id" : "msg_011Cfepv7wBhSFqcdc8EA391#0",
+        "kind" : "thinking",
+        "text" : "",
+        "thinkingLive" : false,
+        "thinkingTimed" : true
+      },
+      {
+        "attachments" : [
+
+        ],
+        "id" : "toolu_01GGE8TDFnCoR7JQYCRuSz9e",
+        "kind" : "tool",
+        "thinkingLive" : false,
+        "thinkingTimed" : false,
+        "tool" : {
+          "id" : "toolu_01GGE8TDFnCoR7JQYCRuSz9e",
+          "input" : "{\n  \"command\" : \"echo amiral\",\n  \"description\" : \"Run echo command with amiral argument\"\n}",
+          "isError" : false,
+          "name" : "Bash",
+          "result" : "amiral",
+          "summary" : "echo amiral"
+        }
+      },
+      {
+        "attachments" : [
+
+        ],
+        "id" : "msg_011CfepvGS9kuPpReEATjK21#0",
+        "kind" : "thinking",
+        "text" : "",
+        "thinkingLive" : false,
+        "thinkingTimed" : true
+      },
+      {
+        "attachments" : [
+
+        ],
+        "id" : "msg_011CfepvGS9kuPpReEATjK21#1",
+        "kind" : "text",
+        "text" : "Amiral.",
+        "thinkingLive" : false,
+        "thinkingTimed" : false
+      }
+    ],
+    "isCompacting" : false,
+    "isRunning" : false,
+    "lastTurn" : "text=Amiral.|cost=0.0704391|duration=3483",
+    "pending" : [
+
+    ],
+    "promptCache" : "warm(minutesLeft: 51)",
+    "queued" : [
+
+    ],
+    "session" : "84e79584-4dcd-48db-b738-57f6d1946155|/Users/me/project|claude-haiku-4-5-20251001|default|2.1.284|-|Bash,Edit,Read",
+    "turnEnd" : "completed"
+  }
+}

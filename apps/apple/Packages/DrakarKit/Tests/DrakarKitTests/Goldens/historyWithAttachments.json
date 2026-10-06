@@ -1,0 +1,60 @@
+{
+  "exited" : {
+    "agentTasks" : [
+
+    ],
+    "entries" : [
+      {
+        "attachments" : [
+          "AttachmentPreview(kind: DrakarKit.Attachment.Kind.image, name: nil, thumbnail: Optional(326 bytes))",
+          "AttachmentPreview(kind: DrakarKit.Attachment.Kind.text, name: Optional(\"notes.txt\"), thumbnail: nil)"
+        ],
+        "id" : "prompt#1",
+        "kind" : "prompt",
+        "text" : "In one short sentence: what colour is the image, and what is the secret word in notes.txt? No tools.",
+        "thinkingLive" : false,
+        "thinkingTimed" : false
+      }
+    ],
+    "historyPermissionMode" : "default",
+    "isCompacting" : false,
+    "isRunning" : false,
+    "pending" : [
+
+    ],
+    "promptCache" : "unknown",
+    "queued" : [
+
+    ],
+    "writerVersion" : "2.1.288"
+  },
+  "running" : {
+    "agentTasks" : [
+
+    ],
+    "entries" : [
+      {
+        "attachments" : [
+          "AttachmentPreview(kind: DrakarKit.Attachment.Kind.image, name: nil, thumbnail: Optional(326 bytes))",
+          "AttachmentPreview(kind: DrakarKit.Attachment.Kind.text, name: Optional(\"notes.txt\"), thumbnail: nil)"
+        ],
+        "id" : "prompt#1",
+        "kind" : "prompt",
+        "text" : "In one short sentence: what colour is the image, and what is the secret word in notes.txt? No tools.",
+        "thinkingLive" : false,
+        "thinkingTimed" : false
+      }
+    ],
+    "historyPermissionMode" : "default",
+    "isCompacting" : false,
+    "isRunning" : false,
+    "pending" : [
+
+    ],
+    "promptCache" : "unknown",
+    "queued" : [
+
+    ],
+    "writerVersion" : "2.1.288"
+  }
+}

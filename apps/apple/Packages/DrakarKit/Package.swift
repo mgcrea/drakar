@@ -18,6 +18,8 @@ let package = Package(
     .target(name: "DrakarKit"),
     .testTarget(
       name: "DrakarKitTests", dependencies: ["DrakarKit"],
+      // Goldens are read from the source tree by path, not bundled.
+      exclude: ["Goldens"],
       // Lines captured from the real CLI; docs/claude-stream-json.md says how.
       resources: [.copy("Fixtures")]),
   ]
