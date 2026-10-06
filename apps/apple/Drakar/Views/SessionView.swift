@@ -9,6 +9,9 @@ struct SessionView: View {
   @AppStorage(PreferenceKey.accountForFolder) private var picks = ""
   @AppStorage(PreferenceKey.newSessionAccount) private var settingsAccount = ""
 
+  /// How far above the bottom bar the transcript starts fading out.
+  private static let fade: CGFloat = 24
+
   private var session: ClaudeSession { item.session }
   private var workspace: Workspace { project.workspace }
 
@@ -18,69 +21,94 @@ struct SessionView: View {
   }
 
   var body: some View {
-    VStack(spacing: 0) {
-      TranscriptView(transcript: session.transcript, anchor: $item.scrollAnchor)
-      if let problem {
-        ProblemBanner(message: problem, diagnostics: session.diagnostics)
+    TranscriptView(transcript: session.transcript, anchor: $item.scrollAnchor)
+      // Below the transcript's end, not after it: the history scrolls on under the composer
+      // to the window's edge, and the scroll view keeps room for it as it grows. An inset and
+      // not a `safeAreaBar`, whose scroll edge effect on the Mac is a band across the pane,
+      // whatever its style, that put the card back in a tray.
+      .safeAreaInset(edge: .bottom, spacing: 0) {
+        VStack(spacing: 0) {
+          if let problem {
+            Docked { ProblemBanner(message: problem, diagnostics: session.diagnostics) }
+          }
+          if session.isReadOnly {
+            Docked {
+              ReadOnlyBanner(
+                host: host, fork: { project.fork(item) },
+                moveHere: elsewhereSummary.flatMap { summary in
+                  summary.live == nil
+                    ? nil
+                    : (Project.canMoveHere(summary), { MoveHere.confirm(summary, into: project) })
+                })
+            }
+          } else if let choice = pendingChoice {
+            Docked {
+              QuestionPanel(
+                questions: UserQuestion.list(choice.request.input),
+                answer: { answers in
+                  session.answer(
+                    choice,
+                    .allow(
+                      updatedInput: UserQuestion.answering(choice.request.input, with: answers)))
+                },
+                skip: { session.answer(choice, .deny(message: UserQuestion.declinedMessage)) }
+              )
+              .id(choice.id)
+            }
+          } else if let earlier = session.earlierQuestion {
+            Docked {
+              QuestionPanel(
+                questions: UserQuestion.list(earlier.input),
+                answer: { answers in
+                  project.takeOver(item)
+                  session.answerEarlierQuestion(answers)
+                },
+                skip: session.dismissEarlierQuestion
+              )
+              .id(earlier.id)
+            }
+          } else {
+            ComposerView(
+              text: $item.draft, canSend: session.canSend,
+              isRunning: session.transcript.isRunning,
+              context: workspace.selection, pinned: workspace.pinned,
+              unpin: { selection in workspace.pinned.removeAll { $0 == selection } },
+              send: { text, context in
+                project.takeOver(item)
+                session.send(text, context: context)
+                workspace.pinned = []
+              },
+              stop: session.interrupt,
+              sessionFolder: session.folder, projectFolder: project.folder,
+              takesFocus: project.focusesComposer,
+              hint: item.composerHint, focusRequest: item.focusRequest,
+              focused: { workspace.focusedPane = .composer },
+              pills: SessionPills(session: session, folder: project.folder, account: account),
+              cycleMode: { SessionPills.cycle(session, account: account) })
+          }
+          let _ = (picks, settingsAccount)
+          SessionFooter(
+            item: item, windowAccount: AccountStore.shared.windowAccount(for: project.folder),
+            elsewhere: session.isReadOnly ? elsewhere : nil)
+        }
+        // What scrolls under fades out above the card, and is gone by the footer's line.
+        .background {
+          Rectangle()
+            .fill(.background)
+            .mask(
+              LinearGradient(
+                stops: [.init(color: .clear, location: 0), .init(color: .black, location: 0.45)],
+                startPoint: .top, endPoint: .bottom)
+            )
+            .padding(.top, -Self.fade)
+            .allowsHitTesting(false)
+        }
       }
-      Divider()
-      if session.isReadOnly {
-        ReadOnlyBanner(
-          host: host, fork: { project.fork(item) },
-          moveHere: elsewhereSummary.flatMap { summary in
-            summary.live == nil
-              ? nil
-              : (Project.canMoveHere(summary), { MoveHere.confirm(summary, into: project) })
-          })
-      } else if let choice = pendingChoice {
-        QuestionPanel(
-          questions: UserQuestion.list(choice.request.input),
-          answer: { answers in
-            session.answer(
-              choice,
-              .allow(updatedInput: UserQuestion.answering(choice.request.input, with: answers)))
-          },
-          skip: { session.answer(choice, .deny(message: UserQuestion.declinedMessage)) }
-        )
-        .id(choice.id)
-      } else if let earlier = session.earlierQuestion {
-        QuestionPanel(
-          questions: UserQuestion.list(earlier.input),
-          answer: { answers in
-            project.takeOver(item)
-            session.answerEarlierQuestion(answers)
-          },
-          skip: session.dismissEarlierQuestion
-        )
-        .id(earlier.id)
-      } else {
-        ComposerView(
-          text: $item.draft, canSend: session.canSend, isRunning: session.transcript.isRunning,
-          context: workspace.selection, pinned: workspace.pinned,
-          unpin: { selection in workspace.pinned.removeAll { $0 == selection } },
-          send: { text, context in
-            project.takeOver(item)
-            session.send(text, context: context)
-            workspace.pinned = []
-          },
-          stop: session.interrupt,
-          sessionFolder: session.folder, projectFolder: project.folder,
-          takesFocus: project.focusesComposer,
-          hint: item.composerHint, focusRequest: item.focusRequest,
-          focused: { workspace.focusedPane = .composer },
-          pills: SessionPills(session: session, folder: project.folder, account: account),
-          cycleMode: { SessionPills.cycle(session, account: account) })
+      .sheet(item: pendingPermission) { pending in
+        PermissionSheet(pending: pending) { decision in session.answer(pending, decision) }
       }
-      let _ = (picks, settingsAccount)
-      SessionFooter(
-        item: item, windowAccount: AccountStore.shared.windowAccount(for: project.folder),
-        elsewhere: session.isReadOnly ? elsewhere : nil)
-    }
-    .sheet(item: pendingPermission) { pending in
-      PermissionSheet(pending: pending) { decision in session.answer(pending, decision) }
-    }
-    .environment(\.sessionFolder, session.folder)
-    .environment(\.openInEditor, OpenInEditorAction(workspace: workspace))
+      .environment(\.sessionFolder, session.folder)
+      .environment(\.openInEditor, OpenInEditorAction(workspace: workspace))
   }
 
   private var elsewhereSummary: SessionSummary? {
@@ -119,6 +147,20 @@ struct SessionView: View {
     case .exited(let status) where status != 0:
       String(localized: "Claude Code exited with status \(status).")
     case .idle, .starting, .ready, .exited: nil
+    }
+  }
+}
+
+/// A panel in the composer's place, or above it, that stays a band across the pane as before
+/// the composer floated: a question's options and a banner's text read on the window's
+/// background, not on the transcript scrolling under it.
+private struct Docked<Content: View>: View {
+  @ViewBuilder let content: Content
+
+  var body: some View {
+    VStack(spacing: 0) {
+      Divider()
+      content.background(.background)
     }
   }
 }
@@ -167,7 +209,8 @@ private struct ReadOnlyBanner: View {
           .help(
             moveHere.enabled
               ? "End it in \(host) and go on with it in this window."
-              : "It can move here once its turn in \(host) ends.")
+              : "It can move here once its turn in \(host) ends."
+          )
           .accessibilityIdentifier("session.moveHere")
       }
     }

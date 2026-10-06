@@ -17,7 +17,7 @@ Settled with the person on 2026-10-06.
 
 | Question | Decision |
 | --- | --- |
-| Where | Two pills under the composer's field, left of Send |
+| Where | On the composer's toolbar under the field, as the extension has them: the model on the left, the mode on the right beside Send |
 | A new session's mode and model | Settings' default mode and model, else Claude Code's. A pill change lasts for its session (revised the same day: folders no longer remember picks) |
 | Effort | Not now |
 | Bypass permissions | A Settings switch, on by default. On, sessions start with `--allow-dangerously-skip-permissions`, which makes Bypass available. Bypass is not tinted. Settings' default mode can be Bypass while the switch is on |
@@ -114,8 +114,9 @@ models…"; a probe that fails shows its reason. No list is written into Drakar.
 └──────────────────────────────────────────────────────────┘
 ```
 
-- The pills sit on a row under the field, left of Send, `.caption`, capsule backgrounds as
-  the context chips have; Bypass looks like the others.
+- The pills sit on the toolbar under the field: the model on the left in a capsule, the mode
+  on the right beside Send with a capsule only under the pointer, `.callout`, no menu
+  indicator. Both brighten under the pointer; Bypass looks like the others.
 - Menus: the mode menu lists the offered modes with their symbols, the current one checked;
   the model menu as above.
 - ⇧Tab in the field moves to the next offered mode.

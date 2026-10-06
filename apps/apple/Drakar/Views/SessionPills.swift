@@ -1,10 +1,11 @@
 import DrakarKit
 import SwiftUI
 
-/// The session's permission mode and model, under the composer's field: a pick applies to a
-/// running session at once, else at its start; new sessions start with Settings' defaults
+/// The session's permission mode and model, on the composer's toolbar as the extension has
+/// them: the model on the left, the mode on the right beside Send. A pick applies to a running
+/// session at once, else at its start; new sessions start with Settings' defaults
 /// (docs/superpowers/specs/2026-10-06-mode-and-model-pills-design.md).
-struct SessionPills: View {
+struct SessionPills {
   let session: ClaudeSession
   let folder: URL
   /// The account the session runs, or will start, under: whose models the menu lists.
@@ -12,10 +13,10 @@ struct SessionPills: View {
 
   private var catalog: ModelCatalog { .shared }
 
-  var body: some View {
+  /// The model, and why the last change was refused if it was.
+  var model: some View {
     let models = catalog.models(for: account)
-    HStack(spacing: 6) {
-      modeMenu(models)
+    return HStack(spacing: 6) {
       modelMenu(models)
       if let note = session.pillNote {
         Text(note).font(.caption).foregroundStyle(.red).lineLimit(1).help(note)
@@ -23,6 +24,8 @@ struct SessionPills: View {
     }
     .onAppear { catalog.load(folder: folder, account: account) }
   }
+
+  var mode: some View { modeMenu(catalog.models(for: account)) }
 
   private func modeMenu(_ models: [ModelOption]?) -> some View {
     let shown = session.shownMode
@@ -37,8 +40,9 @@ struct SessionPills: View {
       }
     } label: {
       Label(PermissionMode.title(of: shown), systemImage: mode?.symbol ?? "questionmark.circle")
+        .pill(filled: false)
     }
-    .pill()
+    .pillMenu()
     .help("Permission mode. ⇧Tab moves to the next.")
     .accessibilityIdentifier("composer.mode")
   }
@@ -64,8 +68,9 @@ struct SessionPills: View {
       }
     } label: {
       Label(Self.modelLabel(for: session, in: models), systemImage: "cpu")
+        .pill(filled: true)
     }
-    .pill()
+    .pillMenu()
     .help("Model")
     .accessibilityIdentifier("composer.model")
   }
@@ -125,15 +130,36 @@ struct SessionPills: View {
 }
 
 extension View {
-  /// A composer pill: a borderless menu in a capsule.
-  fileprivate func pill() -> some View {
+  /// A composer pill's menu: its label drawn as is, with no indicator, as the extension's.
+  fileprivate func pillMenu() -> some View {
     self
-      .menuStyle(.borderlessButton)
-      .menuIndicator(.visible)
+      .menuStyle(.button)
+      .buttonStyle(.plain)
+      .menuIndicator(.hidden)
       .fixedSize()
-      .font(.caption)
-      .padding(.horizontal, 7)
-      .padding(.vertical, 3)
-      .background(Color.secondary.opacity(0.12), in: Capsule())
+  }
+
+  /// A composer pill's label: a capsule behind the model, only under the pointer for the mode.
+  fileprivate func pill(filled: Bool) -> some View {
+    modifier(PillChrome(filled: filled))
+  }
+}
+
+private struct PillChrome: ViewModifier {
+  let filled: Bool
+  @State private var isHovered = false
+
+  func body(content: Content) -> some View {
+    content
+      .font(.callout)
+      .foregroundStyle(isHovered ? .primary : .secondary)
+      .padding(.horizontal, 8)
+      .padding(.vertical, 4)
+      .background(
+        Color.secondary.opacity(isHovered ? 0.2 : filled ? 0.12 : 0), in: Capsule()
+      )
+      .contentShape(Capsule())
+      .onHover { isHovered = $0 }
+      .animation(.easeOut(duration: 0.12), value: isHovered)
   }
 }
