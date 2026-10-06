@@ -114,10 +114,17 @@ public struct MCPServerEntry: Sendable, Hashable, Identifiable {
 public struct ProjectCapabilities: Sendable, Equatable {
   public var skills: [SkillEntry]?
   public var mcpServers: [MCPServerEntry]?
+  /// The models the account offers, from the same `initialize` reply; nil until one listed
+  /// them.
+  public var models: [ModelOption]?
 
-  public init(skills: [SkillEntry]? = nil, mcpServers: [MCPServerEntry]? = nil) {
+  public init(
+    skills: [SkillEntry]? = nil, mcpServers: [MCPServerEntry]? = nil,
+    models: [ModelOption]? = nil
+  ) {
     self.skills = skills
     self.mcpServers = mcpServers
+    self.models = models
   }
 
   /// The skills an `initialize` reply lists, the CLI's own left out; nil when it has no
@@ -295,6 +302,7 @@ public struct CapabilityReplies: Sendable, Equatable {
       hasInitialize = true
       if response.isSuccess {
         capabilities.skills = ProjectCapabilities.skills(fromInitialize: response.response)
+        capabilities.models = ModelOption.list(fromInitialize: response.response)
       } else {
         initializeError = response.error
       }
