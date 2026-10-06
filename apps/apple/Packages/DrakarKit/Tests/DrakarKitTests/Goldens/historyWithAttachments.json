@@ -6,8 +6,8 @@
     "entries" : [
       {
         "attachments" : [
-          "AttachmentPreview(kind: DrakarKit.Attachment.Kind.image, name: nil, thumbnail: Optional(326 bytes))",
-          "AttachmentPreview(kind: DrakarKit.Attachment.Kind.text, name: Optional(\"notes.txt\"), thumbnail: nil)"
+          "image|-|326",
+          "text|notes.txt|-"
         ],
         "id" : "prompt#1",
         "kind" : "prompt",
@@ -35,8 +35,8 @@
     "entries" : [
       {
         "attachments" : [
-          "AttachmentPreview(kind: DrakarKit.Attachment.Kind.image, name: nil, thumbnail: Optional(326 bytes))",
-          "AttachmentPreview(kind: DrakarKit.Attachment.Kind.text, name: Optional(\"notes.txt\"), thumbnail: nil)"
+          "image|-|326",
+          "text|notes.txt|-"
         ],
         "id" : "prompt#1",
         "kind" : "prompt",

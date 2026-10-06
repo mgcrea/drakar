@@ -96,6 +96,16 @@ struct TranscriptSnapshot: Codable, Equatable {
     unansweredQuestion = t.unansweredQuestion?.id
   }
 
+  private static func attachment(_ a: AttachmentPreview) -> String {
+    let kind =
+      switch a.kind {
+      case .image: "image"
+      case .pdf: "pdf"
+      case .text: "text"
+      }
+    return [kind, a.name ?? "-", a.thumbnail.map { "\($0.count)" } ?? "-"].joined(separator: "|")
+  }
+
   private static func entry(_ e: Transcript.Entry) -> Entry {
     var kind = ""
     var text: String?
@@ -117,7 +127,7 @@ struct TranscriptSnapshot: Codable, Equatable {
     }
     return Entry(
       id: e.id, kind: kind, text: text, tool: tool, parent: e.parentToolUseID,
-      context: e.context, attachments: e.attachments.map { "\($0)" },
+      context: e.context, attachments: e.attachments.map(Self.attachment),
       thinkingLive: e.thinkingSince != nil, thinkingTimed: e.thinkingDuration != nil)
   }
 }
