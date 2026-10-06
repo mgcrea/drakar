@@ -233,8 +233,15 @@ struct SessionListView: View {
   /// A row of Elsewhere or Ended. Resuming one live elsewhere would interleave two writers:
   /// it forks, or moves here once the app running it has been told to let it go.
   @ViewBuilder private func menu(for summary: SessionSummary, ended: Bool) -> some View {
-    if !ended, [.question, .offer].contains(project.urgency(of: summary)) {
+    let showable = !ended && ShowInVSCode.canShow(summary)
+    let dismissable = !ended && [.question, .offer].contains(project.urgency(of: summary))
+    if showable {
+      Button("Show in VS Code") { ShowInVSCode.show(summary) }
+    }
+    if dismissable {
       Button("Dismiss") { project.dismissAsk(summary) }
+    }
+    if showable || dismissable {
       Divider()
     }
     if ended, let target = ResumeTarget(summary) {
