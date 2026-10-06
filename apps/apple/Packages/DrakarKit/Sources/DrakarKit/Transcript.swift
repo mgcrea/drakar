@@ -1,16 +1,7 @@
 import Foundation
 
-/// A session's conversation, folded out of the stream one message at a time.
-///
-/// What the view draws, and the only place that knows the protocol's quirks:
-///
-/// - the CLI sends one `assistant` line **per content block**, every one carrying the same
-///   message id, so the n-th line for an id is block n of that message;
-/// - under `--include-partial-messages` the same block also arrives as a `content_block_start`
-///   and its deltas, *before* its `assistant` line, so both paths address one entry, keyed
-///   `<message id>#<block index>`, and the whole block replaces the streamed text when it lands;
-/// - a tool call and its result arrive in different messages and meet by `tool_use_id`;
-/// - the CLI does not echo the user's prompt, so `addPrompt` puts it in.
+/// A session's conversation, as its agent's events built it (`AgentEvent`): what the view
+/// draws. It knows no wire format; each agent's translator does (`ClaudeTranslator`).
 public struct Transcript: Sendable, Equatable {
   public struct Entry: Sendable, Equatable, Identifiable {
     public let id: String
@@ -119,7 +110,6 @@ public struct Transcript: Sendable, Equatable {
   public private(set) var entries: [Entry] = []
   public private(set) var session: SessionInfo?
   public private(set) var pendingPermissions: [PendingPermission] = []
-  public private(set) var lastResult: TurnResult?
   /// How the newest turn ended; nil while it runs, before any turn, and after a prompt.
   /// Live, from its `result`; in history, which has none, from `stop_reason: end_turn`.
   public private(set) var turnEnd: TurnEnd?
@@ -191,8 +181,6 @@ public struct Transcript: Sendable, Equatable {
   public private(set) var todos: [Todo]?
   /// Subagents, by the `Agent` call that started each.
   public private(set) var agentTasks: [String: AgentTask] = [:]
-  /// `task_updated` names only the task; this finds its call.
-  private var agentCallByTask: [String: String] = [:]
   /// A request that failed and is about to be tried again, until anything else arrives.
   public private(set) var retry: APIRetry?
   /// From a `compacting` status until the compaction lands or the turn ends.
@@ -202,11 +190,6 @@ public struct Transcript: Sendable, Equatable {
   public private(set) var revision = 0
 
   private var indexByID: [String: Int] = [:]
-  /// Blocks seen per assistant message, which is how a per-block `assistant` line learns
-  /// its index.
-  private var blockCount: [String: Int] = [:]
-  /// The message a stream event belongs to, per subagent (nil key: the main thread).
-  private var streamingMessage: [String?: String] = [:]
   private var promptCount = 0
   private var lastPromptID: String?
   private var noticeCount = 0
@@ -322,131 +305,6 @@ public struct Transcript: Sendable, Equatable {
     }
   }
 
-  /// `time` is when the line arrived, which times thinking streamed live and the prompt
-  /// cache.
-  public mutating func apply(_ message: StreamMessage, at time: Date = .now) {
-    apply(message, time: time)
-  }
-
-  /// `time` nil for a history line that says not when it was written: it leaves the prompt
-  /// cache as it was.
-  mutating func apply(_ message: StreamMessage, time: Date?) {
-    revision += 1
-    switch message {
-    case .system(.apiRetry), .rateLimit, .controlResponse: break
-    default: retry = nil
-    }
-    switch message {
-    case .system(.initialized(let info)):
-      session = info
-    case .system(.apiRetry(let retry)):
-      self.retry = retry
-    case .system(.status(let status, _)):
-      isCompacting = status == "compacting"
-    case .system(.compacted(let trigger, let preTokens)):
-      isCompacting = false
-      if let time { promptCache.compacted(at: time) }
-      addNotice(Self.compactionNote(trigger: trigger, preTokens: preTokens))
-    case .system(.notification(let text, let isError)):
-      addNote(isError ? .failure(text) : .notice(text))
-    case .system(.task(let event)):
-      if let call = event.toolUseID { agentCallByTask[event.taskID] = call }
-      if let call = event.toolUseID ?? agentCallByTask[event.taskID] {
-        agentTasks[call, default: AgentTask()].apply(event.update)
-      }
-    case .assistant(let assistant):
-      // A `<synthetic>` turn ("You've hit your session limit", an API error) is written by
-      // the CLI, not the API: its usage is all zeros and says nothing of the context.
-      if assistant.parentToolUseID == nil, assistant.model != TranscriptTail.syntheticModel,
-        let usage = assistant.usage
-      {
-        contextUsage = usage
-        contextModelID = assistant.model ?? contextModelID
-        if let time {
-          promptCache.record(
-            messageID: assistant.messageID, usage: usage, at: time, requestAt: requestAt)
-          requestAt = nil
-        }
-      }
-      if assistant.parentToolUseID == nil, assistant.stopReason == "end_turn" {
-        turnEnd = .completed
-      }
-      let index = blockCount[assistant.messageID, default: 0]
-      for (offset, block) in assistant.content.enumerated() {
-        placeBlock(
-          block, id: "\(assistant.messageID)#\(index + offset)",
-          parent: assistant.parentToolUseID, replacing: true, at: time ?? .now)
-      }
-      blockCount[assistant.messageID] = index + assistant.content.count
-    case .streamEvent(let event, let parent):
-      apply(event, parent: parent, at: time ?? .now)
-    case .user(let user):
-      if user.parentToolUseID == nil, let time { requestAt = time }
-      // Live, the CLI never echoes our prompts, so any text it writes as a user turn is a
-      // note of its own: an interrupt, a background task finishing.
-      for case .text(let text) in user.content {
-        switch UserText.classify(text) {
-        // A subagent's prompt, forwarded from inside it: the card's, not a note.
-        case .prompt(let prompt) where user.parentToolUseID != nil:
-          agentTasks[user.parentToolUseID!, default: AgentTask()].prompt = prompt
-        case .prompt(let note), .notice(let note): addNotice(note, parent: user.parentToolUseID)
-        case .context, .hidden: break
-        }
-      }
-      let results = user.content.filter {
-        if case .toolResult = $0 { return true }
-        return false
-      }
-      for case .toolResult(let id, let content, let isError) in results {
-        guard let index = indexByID[id], case .tool(var call) = entries[index].kind else {
-          continue
-        }
-        call.result = ToolResult(
-          content: content, isError: isError,
-          answers: results.count == 1 ? user.questionAnswers : nil,
-          agentReport: results.count == 1 ? user.agentReport : nil)
-        entries[index].kind = .tool(call)
-      }
-    case .controlRequest(let request):
-      switch request.kind {
-      case .canUseTool(let permission):
-        pendingPermissions.append(
-          PendingPermission(requestID: request.requestID, request: permission))
-      case .elicitation(let server, let question):
-        addNotice(Self.declinedQuestionNote(server: server, question: question))
-      case .other: break
-      }
-    case .controlCancelRequest(let id):
-      resolvePermission(requestID: id)
-    case .commandLifecycle(let uuid, let state):
-      guard let index = queuedPrompts.firstIndex(where: { $0.uuid == uuid }) else { break }
-      switch state {
-      case "started":
-        let prompt = queuedPrompts.remove(at: index)
-        addPrompt(
-          prompt.text, context: prompt.context, attachments: prompt.attachments,
-          at: time ?? .now)
-      case "cancelled":
-        queuedPrompts.remove(at: index)
-      case "discarded", "refused":
-        let prompt = queuedPrompts.remove(at: index)
-        addNotice(String(localized: "Claude Code did not take a queued message: \(prompt.text)"))
-      default: break
-      }
-    case .result(let result):
-      lastResult = result
-      turnEnd = result.wasInterrupted ? .interrupted : result.isError ? .failed : .completed
-      isRunning = false
-      isCompacting = false
-      if let failure = result.failureText, !endsSaying(failure) { addNote(.failure(failure)) }
-      // A turn that ended cannot still be asking, nor thinking.
-      pendingPermissions.removeAll()
-      stopThinking()
-    case .system, .controlResponse, .rateLimit, .unknown:
-      break
-    }
-  }
-
   /// `time` is when the event arrived: what times thinking streamed live and a prompt taken
   /// from the queue.
   public mutating func apply(_ event: AgentEvent, at time: Date = .now) {
@@ -463,6 +321,7 @@ public struct Transcript: Sendable, Equatable {
     case .turnEnded(let summary):
       lastTurn = summary
       turnEnd = summary.outcome
+      retry = nil
       isRunning = false
       isCompacting = false
       if let failure = summary.failureText, !endsSaying(failure) { addNote(.failure(failure)) }
@@ -598,74 +457,6 @@ public struct Transcript: Sendable, Equatable {
       localized: "\(asker) asked a question Drakar cannot show yet, so it was declined")
     guard let question, !question.isEmpty else { return note }
     return "\(note): \(question)"
-  }
-
-  private mutating func apply(_ event: StreamEvent, parent: String?, at time: Date) {
-    switch event {
-    case .messageStart(let id):
-      streamingMessage[parent] = id
-    case .blockStart(let index, let block):
-      guard let message = streamingMessage[parent] else { return }
-      placeBlock(block, id: "\(message)#\(index)", parent: parent, replacing: false, at: time)
-    case .blockDelta(let index, let delta):
-      guard let message = streamingMessage[parent],
-        let position = indexByID["\(message)#\(index)"]
-      else { return }
-      switch (entries[position].kind, delta) {
-      case (.text(let text), .text(let more)): entries[position].kind = .text(text + more)
-      case (.thinking(let text), .thinking(let more)):
-        entries[position].kind = .thinking(text + more)
-      default: break  // tool input fragments only parse whole; the `assistant` line brings it
-      }
-    case .messageStop:
-      streamingMessage[parent] = nil
-    case .blockStop, .messageDelta, .other:
-      break
-    }
-  }
-
-  /// Puts a block at `id`. A tool call is keyed by its own id rather than its position, so
-  /// that its result can find it; the position key is aliased to it for the stream path.
-  private mutating func placeBlock(
-    _ block: ContentBlock, id: String, parent: String?, replacing: Bool, at time: Date
-  ) {
-    let kind: Kind
-    var key = id
-    switch block {
-    case .text(let text): kind = .text(text)
-    case .thinking(let text): kind = .thinking(text)
-    case .toolUse(let toolID, let name, let input):
-      key = toolID
-      var call = ToolCall(
-        id: toolID, name: name, input: input, kind: ClaudeTools.kind(name: name, input: input))
-      if let index = indexByID[toolID], case .tool(let existing) = entries[index].kind {
-        call.result = existing.result
-      }
-      kind = .tool(call)
-      // Whole, not from a block start, whose input is still empty.
-      if replacing, parent == nil, call.kind == .todos { todos = TodoList.todos(input) }
-    case .toolResult, .other:
-      return
-    }
-    if let index = indexByID[key] ?? indexByID[id] {
-      // The stream path made this entry; the whole block replaces it. Never with nothing:
-      // a block start is empty by definition, and a thinking block can land whole with its
-      // text withheld after its deltas showed some.
-      if replacing && !Self.isEmptyText(kind) { entries[index].kind = kind }
-      if replacing, let since = entries[index].thinkingSince {
-        entries[index].thinkingSince = nil
-        entries[index].thinkingDuration = time.timeIntervalSince(since)
-        thinkingIDs.remove(key)
-      }
-    } else {
-      var entry = Entry(id: key, kind: kind, parentToolUseID: parent)
-      if !replacing, case .thinking = kind {
-        entry.thinkingSince = time
-        thinkingIDs.insert(key)
-      }
-      upsert(entry)
-    }
-    indexByID[id] = indexByID[key]
   }
 
   /// Thinking whose block never landed did not finish: it has no duration.

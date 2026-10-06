@@ -7,7 +7,7 @@ import Testing
 struct PlanApprovalTests {
 
   private func request() throws -> Transcript.PendingPermission {
-    var transcript = Transcript()
+    var transcript = ClaudeFeed()
     transcript.addPrompt("Plan it")
     for message in try Fixture.planRequest.messages {
       transcript.apply(message)
@@ -66,7 +66,7 @@ struct PlanApprovalTests {
   }
 
   @Test func theCardSaysWhatBecameOfThePlan() throws {
-    var transcript = Transcript()
+    var transcript = ClaudeFeed()
     transcript.addPrompt("Plan it")
     for message in try Fixture.planRequest.messages { transcript.apply(message) }
     let call = try #require(

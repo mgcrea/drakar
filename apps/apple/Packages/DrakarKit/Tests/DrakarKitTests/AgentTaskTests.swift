@@ -9,8 +9,8 @@ struct AgentTaskTests {
 
   private let agentID = "toolu_014p1beTxR9BEAEKj43FmLUA"
 
-  private func transcript(upTo count: Int? = nil) throws -> Transcript {
-    var transcript = Transcript()
+  private func transcript(upTo count: Int? = nil) throws -> ClaudeFeed {
+    var transcript = ClaudeFeed()
     transcript.addPrompt("Run it")
     let messages = try Fixture.subagentAndTodos.messages
     for message in messages.prefix(count ?? messages.count) { transcript.apply(message) }
@@ -116,7 +116,7 @@ struct AgentTaskTests {
   /// One sent to the background answers at once, and finishes in a notification that may come
   /// a turn later.
   @Test func followsABackgroundSubagentToItsEnd() throws {
-    var transcript = Transcript()
+    var transcript = ClaudeFeed()
     transcript.addPrompt("Run it")
     let lines = [
       #"{"type":"assistant","message":{"id":"m1","role":"assistant","content":[{"type":"tool_use","id":"bg","name":"Agent","input":{"description":"Look around","prompt":"Look"}}]},"parent_tool_use_id":null,"session_id":"s"}"#,

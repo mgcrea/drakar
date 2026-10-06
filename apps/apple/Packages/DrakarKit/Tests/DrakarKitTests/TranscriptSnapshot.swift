@@ -64,8 +64,8 @@ struct TranscriptSnapshot: Codable, Equatable {
     }
     pending = t.pendingPermissions.map { "\($0.requestID)|\($0.request.toolName)" }
     turnEnd = t.turnEnd.map { "\($0)" }
-    lastTurn = t.lastResult.map {
-      "text=\($0.text ?? "-")|cost=\($0.totalCostUSD.map { "\($0)" } ?? "-")"
+    lastTurn = t.lastTurn.map {
+      "text=\($0.text ?? "-")|cost=\($0.costUSD.map { "\($0)" } ?? "-")"
         + "|duration=\($0.durationMS.map(String.init) ?? "-")"
     }
     title = t.title

@@ -5,8 +5,8 @@ import Testing
 @Suite("Folding the stream into a transcript")
 struct TranscriptTests {
 
-  private func transcript(_ fixture: Fixture, prompt: String = "Run it") throws -> Transcript {
-    var transcript = Transcript()
+  private func transcript(_ fixture: Fixture, prompt: String = "Run it") throws -> ClaudeFeed {
+    var transcript = ClaudeFeed()
     transcript.addPrompt(prompt)
     for message in try fixture.messages { transcript.apply(message) }
     return transcript
@@ -35,7 +35,7 @@ struct TranscriptTests {
   /// The same capture with the stream events taken out is what a session without
   /// `--include-partial-messages` sees; it must fold to the same transcript.
   @Test func foldsTheSameWithoutPartialMessages() throws {
-    var whole = Transcript()
+    var whole = ClaudeFeed()
     whole.addPrompt("Run it")
     for message in try Fixture.turnWithTool.messages {
       if case .streamEvent = message { continue }
@@ -45,7 +45,7 @@ struct TranscriptTests {
   }
 
   @Test func streamsTextBeforeTheWholeBlockLands() throws {
-    var transcript = Transcript()
+    var transcript = ClaudeFeed()
     let messages = try Fixture.turnWithTool.messages
     // Stop right after the last text delta, before its `assistant` line.
     let lastDelta = try #require(
@@ -61,11 +61,11 @@ struct TranscriptTests {
     let transcript = try transcript(.turnWithTool)
     #expect(transcript.session?.sessionID == "84e79584-4dcd-48db-b738-57f6d1946155")
     #expect(!transcript.isRunning)
-    #expect(transcript.lastResult?.text == "Amiral.")
+    #expect(transcript.lastTurn?.text == "Amiral.")
   }
 
   @Test func holdsAPermissionRequestUntilAnswered() throws {
-    var transcript = Transcript()
+    var transcript = ClaudeFeed()
     transcript.addPrompt("Touch it")
     let messages = try Fixture.permissionRequest.messages
     let request = try #require(
@@ -94,7 +94,7 @@ struct TranscriptTests {
   }
 
   @Test func aCancelledRequestLeavesThePendingList() throws {
-    var transcript = Transcript()
+    var transcript = ClaudeFeed()
     for message in try Fixture.permissionRequest.messages {
       transcript.apply(message)
       if case .controlRequest(let request) = message {
@@ -138,7 +138,7 @@ struct TranscriptTests {
     #"{"type":"result","subtype":"success","is_error":false,"result":"Built. Want me to commit it?"}"#
 
   @Test func aTurnThatEndedHasItsClosingText() throws {
-    var transcript = Transcript()
+    var transcript = ClaudeFeed()
     transcript.addPrompt("Build it")
     transcript.apply(try message(asking))
     #expect(transcript.closingText == nil)  // still running
@@ -159,7 +159,7 @@ struct TranscriptTests {
       #"{"type":"result","subtype":"error_during_execution","is_error":true,"terminal_reason":"aborted_streaming"}"#,
       #"{"type":"result","subtype":"error_max_turns","is_error":true}"#,
     ] {
-      var transcript = Transcript()
+      var transcript = ClaudeFeed()
       transcript.addPrompt("Build it")
       transcript.apply(try message(asking))
       transcript.apply(try message(result))
@@ -168,7 +168,7 @@ struct TranscriptTests {
   }
 
   @Test func aPromptAfterItTakesItAway() throws {
-    var transcript = Transcript()
+    var transcript = ClaudeFeed()
     transcript.addPrompt("Build it")
     transcript.apply(try message(asking))
     transcript.apply(try message(succeeded))
@@ -178,7 +178,7 @@ struct TranscriptTests {
   }
 
   @Test func aTurnEndingOnAToolCallHasNone() throws {
-    var transcript = Transcript()
+    var transcript = ClaudeFeed()
     transcript.addPrompt("Build it")
     transcript.apply(
       try message(
@@ -190,7 +190,7 @@ struct TranscriptTests {
 
   /// A subagent's words are its own; the turn closes on the main thread's.
   @Test func aSubagentsQuestionIsNotTheTurns() throws {
-    var transcript = Transcript()
+    var transcript = ClaudeFeed()
     transcript.addPrompt("Build it")
     transcript.apply(
       try message(
@@ -205,7 +205,7 @@ struct TranscriptTests {
   }
 
   @Test func joinsTheTextBlocksOfTheLastMessage() throws {
-    var transcript = Transcript()
+    var transcript = ClaudeFeed()
     transcript.addPrompt("Build it")
     transcript.apply(
       try message(
@@ -223,7 +223,7 @@ struct TranscriptTests {
   /// whole block landing.
   @Test func timesThinkingStreamedLive() throws {
     let start = Date(timeIntervalSinceReferenceDate: 1000)
-    var transcript = Transcript()
+    var transcript = ClaudeFeed()
     transcript.addPrompt("Think")
     transcript.apply(
       try message(#"{"type":"stream_event","event":{"type":"message_start","message":{"id":"m1"}}}"#),
@@ -249,7 +249,7 @@ struct TranscriptTests {
   /// Without its stream events, from a file or without partial messages, nothing says when
   /// thinking began.
   @Test func thinkingThatLandedWholeHasNoDuration() throws {
-    var transcript = Transcript()
+    var transcript = ClaudeFeed()
     transcript.addPrompt("Think")
     transcript.apply(
       try message(
@@ -263,7 +263,7 @@ struct TranscriptTests {
   /// A turn cut short mid-thought is no longer thinking, and its thinking never finished.
   @Test func anEndedTurnStopsItsThinking() throws {
     for end in [succeeded, nil] {
-      var transcript = Transcript()
+      var transcript = ClaudeFeed()
       transcript.addPrompt("Think")
       transcript.apply(
         try message(#"{"type":"stream_event","event":{"type":"message_start","message":{"id":"m1"}}}"#))

@@ -76,7 +76,7 @@ struct PresentationTests {
   }
 
   @Test func aDeadProcessLeavesNothingRunningOrPending() throws {
-    var transcript = Transcript()
+    var transcript = ClaudeFeed()
     transcript.addPrompt("Touch it")
     for message in try Fixture.permissionRequest.messages {
       transcript.apply(message)

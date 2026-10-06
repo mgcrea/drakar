@@ -446,7 +446,7 @@ private struct SessionFooter: View {
       if session.transcript.promptCache.state(at: .now) != .unknown {
         PromptCacheLabel(cache: session.transcript.promptCache)
       }
-      if let cost = session.transcript.lastResult?.totalCostUSD {
+      if let cost = session.transcript.lastTurn?.costUSD {
         let billing = Billing(apiKeySource: session.transcript.session?.apiKeySource)
         let amount = cost.formatted(.currency(code: "USD").precision(.fractionLength(4)))
         Text(billing == .subscription ? "≈ \(amount)" : amount)

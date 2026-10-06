@@ -12,8 +12,8 @@ struct NothingSilentTests {
     try StreamMessage(line: Data(line.utf8))
   }
 
-  private func transcript(_ lines: [String]) throws -> Transcript {
-    var transcript = Transcript()
+  private func transcript(_ lines: [String]) throws -> ClaudeFeed {
+    var transcript = ClaudeFeed()
     transcript.addPrompt("Run it")
     for line in lines { transcript.apply(try message(line)) }
     return transcript

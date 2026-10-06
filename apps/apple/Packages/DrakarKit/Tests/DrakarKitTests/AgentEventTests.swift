@@ -67,7 +67,10 @@ struct AgentEventTests {
     t.apply(.itemStarted(shell("c1")))
     t.apply(.toolResult(callID: "c1", .init(content: "out", isError: false)))
     t.apply(.itemCompleted(shell("c1")))
-    guard case .tool(let call) = t.entries.first?.kind else { return }
+    guard case .tool(let call) = t.entries.first?.kind else {
+      Issue.record("\(t.entries)")
+      return
+    }
     #expect(call.result?.content == "out")
   }
 
@@ -82,6 +85,7 @@ struct AgentEventTests {
     #expect(t.entries.last?.kind == .failure("Overloaded"))
     #expect(t.entries[1].thinkingSince == nil)
     #expect(t.lastTurn?.outcome == .failed)
+    #expect(t.retry == nil)
   }
 
   @Test func aQueuedPromptJoinsWhenTaken() {

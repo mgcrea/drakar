@@ -38,7 +38,7 @@ struct InterruptTests {
   }
 
   @Test func theTranscriptShowsTheInterruptAndCarriesOn() throws {
-    var transcript = Transcript()
+    var transcript = ClaudeFeed()
     transcript.addPrompt("Write a story")
     var sawInterruptedResult = false
     for message in try Fixture.interruptThenTurn.messages {

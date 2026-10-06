@@ -7,6 +7,7 @@ public struct TranscriptFollower: Sendable {
   /// Bytes read so far.
   public private(set) var offset: UInt64 = 0
   private var buffer = LineBuffer()
+  private var translator = ClaudeTranslator()
 
   public init(file: URL) {
     self.file = file
@@ -22,6 +23,7 @@ public struct TranscriptFollower: Sendable {
     if size < offset {
       offset = 0
       buffer = LineBuffer()
+      translator = ClaudeTranslator()
       transcript = Transcript()
     }
     guard size > offset else { return }
@@ -29,7 +31,9 @@ public struct TranscriptFollower: Sendable {
     let data = try handle.read(upToCount: Int(size - offset)) ?? Data()
     offset += UInt64(data.count)
     for line in buffer.append(data) {
-      if let json = try? JSONValue.parse(line) { transcript.applyHistory(json) }
+      guard let json = try? JSONValue.parse(line) else { continue }
+      let time = ClaudeTranslator.timestamp(of: json)
+      for event in translator.history(json) { transcript.apply(event, at: time ?? .now) }
     }
     transcript.processExited()
   }

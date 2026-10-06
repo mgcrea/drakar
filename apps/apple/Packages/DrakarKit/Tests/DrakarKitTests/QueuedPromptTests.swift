@@ -25,7 +25,7 @@ struct QueuedPromptTests {
   /// The capture: a text-only turn, "banana" queued during it and "cherry" queued and
   /// cancelled. Banana waits through the first turn and starts its own.
   @Test func aPromptQueuedDuringATextTurnStartsTheNextOne() throws {
-    var transcript = Transcript()
+    var transcript = ClaudeFeed()
     transcript.addPrompt("Write a 120-word paragraph about longships. No tools.")
     let messages = try Fixture.queuedPrompts.messages
     for message in messages.prefix(2) { transcript.apply(message) }
@@ -55,7 +55,7 @@ struct QueuedPromptTests {
 
   /// Picked up mid-turn, after a tool's result: the prompt lands there, and the turn runs on.
   @Test func aPromptPickedUpMidTurnLandsWhereTheCLITookIt() throws {
-    var transcript = Transcript()
+    var transcript = ClaudeFeed()
     transcript.addPrompt("Run three commands")
     transcript.apply(
       try message(
@@ -77,7 +77,7 @@ struct QueuedPromptTests {
 
   /// A prompt the CLI will not run leaves the queue, saying so.
   @Test func aRefusedPromptLeavesTheQueue() throws {
-    var transcript = Transcript()
+    var transcript = ClaudeFeed()
     transcript.addPrompt("Go")
     transcript.queue(QueuedPrompt(uuid: banana, text: "Also"))
     transcript.apply(

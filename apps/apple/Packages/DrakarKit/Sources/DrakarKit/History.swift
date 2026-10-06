@@ -62,13 +62,13 @@ extension Transcript {
   /// 2.1.288), so a resumed window draws its past from here and its future from the
   /// process. Lines are read in file order; a branch left by a rewind is not followed.
   public static func history(lines: [Data]) -> Transcript {
-    var transcript = Transcript()
+    var feed = ClaudeFeed()
     for line in lines {
       guard let json = try? JSONValue.parse(line) else { continue }
-      transcript.applyHistory(json)
+      feed.applyHistory(json)
     }
-    transcript.processExited()
-    return transcript
+    feed.processExited()
+    return feed.transcript
   }
 
   public static func history(contentsOf file: URL) throws -> Transcript {
@@ -76,73 +76,5 @@ extension Transcript {
     var lines = buffer.append(try Data(contentsOf: file))
     if !buffer.remainder.isEmpty { lines.append(buffer.remainder) }
     return history(lines: lines)
-  }
-
-  /// One transcript line. Unknown entry types (attachments, snapshots, cost records) and
-  /// subagent sidechains are skipped.
-  public mutating func applyHistory(_ json: JSONValue) {
-    guard json["isSidechain"]?.boolValue != true else { return }
-    if let version = json["version"]?.stringValue, !version.isEmpty { writerVersion = version }
-    switch json["type"]?.stringValue {
-    case "ai-title":
-      if let title = json["aiTitle"]?.stringValue, !title.isEmpty { aiTitle = title }
-    case "custom-title":
-      if let title = json["customTitle"]?.stringValue, !title.isEmpty { customTitle = title }
-    case "assistant":
-      historyEffort = json["effort"]?.stringValue
-      if let message = try? StreamMessage(json: json) {
-        apply(message, time: Self.timestamp(of: json))
-      }
-    case "user":
-      if json["isMeta"]?.boolValue == true { return }
-      let time = Self.timestamp(of: json)
-      if let time { requestAt = time }
-      if let mode = json["permissionMode"]?.stringValue { historyPermissionMode = mode }
-      if json["isCompactSummary"]?.boolValue == true {
-        if let time { promptCache.compacted(at: time) }
-        addNotice(String(localized: "Earlier conversation compacted"))
-        return
-      }
-      guard case .user(let user)? = try? StreamMessage(json: json) else { return }
-      let texts = user.content.compactMap { block -> String? in
-        if case .text(let text) = block { return text }
-        return nil
-      }
-      var prompt: [String] = []
-      var context: [String] = []
-      for text in texts {
-        switch UserText.classify(text) {
-        case .prompt(let part): prompt.append(part)
-        case .notice(let note): addNotice(note, parent: user.parentToolUseID)
-        case .context(let label): context.append(label)
-        case .hidden: break
-        }
-      }
-      if !prompt.isEmpty || !user.attachments.isEmpty {
-        addPrompt(
-          prompt.joined(separator: "\n\n"),
-          context: context.isEmpty ? nil : context.joined(separator: ", "),
-          attachments: user.attachments, running: false)
-      }
-      // Tool results go through the live path, which pairs them with their calls.
-      let results = user.content.filter {
-        if case .toolResult = $0 { return true }
-        return false
-      }
-      if !results.isEmpty {
-        var resultsOnly = user
-        resultsOnly.content = results
-        apply(.user(resultsOnly), time: time)
-      }
-    default:
-      break
-    }
-  }
-
-  /// When a transcript line was written.
-  static func timestamp(of json: JSONValue) -> Date? {
-    json["timestamp"]?.stringValue.flatMap {
-      try? Date.ISO8601FormatStyle(includingFractionalSeconds: true).parse($0)
-    }
   }
 }

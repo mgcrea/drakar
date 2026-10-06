@@ -47,7 +47,7 @@ struct TranscriptGoldenTests {
       let history = Transcript.history(lines: try scenario.fixture.lines)
       return (history, history)
     }
-    var transcript = Transcript()
+    var transcript = ClaudeFeed()
     if scenario == .queuedPrompts {
       transcript.addPrompt("Count to five.", at: start)
       transcript.queue(
@@ -64,7 +64,7 @@ struct TranscriptGoldenTests {
     }
     var exited = transcript
     exited.processExited()
-    return (transcript, exited)
+    return (transcript.transcript, exited.transcript)
   }
 
   static func goldenURL(_ scenario: Scenario) -> URL {

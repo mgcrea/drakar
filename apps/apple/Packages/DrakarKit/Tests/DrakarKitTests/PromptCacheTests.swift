@@ -35,7 +35,7 @@ struct PromptCacheTests {
   /// Anchored on when the prompt went, not when the answer came: the cache was written by
   /// the request.
   @Test func isWarmFromThePromptForAnHour() throws {
-    var transcript = Transcript()
+    var transcript = ClaudeFeed()
     transcript.addPrompt("Hi", at: start)
     transcript.apply(try reply("m1", wrote1h: 20_840), at: at(5))
     let cache = transcript.promptCache
@@ -46,7 +46,7 @@ struct PromptCacheTests {
   }
 
   @Test func aFiveMinuteWriteLastsFiveMinutes() throws {
-    var transcript = Transcript()
+    var transcript = ClaudeFeed()
     transcript.addPrompt("Hi", at: start)
     transcript.apply(try reply("m1", wrote5m: 4_000), at: at(2))
     #expect(transcript.promptCache.state(at: at(60)) == .warm(minutesLeft: 4))
@@ -55,7 +55,7 @@ struct PromptCacheTests {
 
   /// A request that only read the cache refreshed it for as long as it was written for.
   @Test func aReadKeepsTheTTLAndMovesTheAnchor() throws {
-    var transcript = Transcript()
+    var transcript = ClaudeFeed()
     transcript.addPrompt("Hi", at: start)
     transcript.apply(try reply("m1", wrote1h: 20_000), at: at(3))
     transcript.apply(try toolResult("t1"), at: at(600))
@@ -65,7 +65,7 @@ struct PromptCacheTests {
 
   /// A request that neither read nor wrote the cache says nothing of it.
   @Test func isUnknownWithoutCacheTokens() throws {
-    var transcript = Transcript()
+    var transcript = ClaudeFeed()
     #expect(transcript.promptCache.state(at: start) == .unknown)
     transcript.addPrompt("Hi", at: start)
     transcript.apply(try reply("m1", wrote1h: 20_000), at: at(3))
@@ -75,7 +75,7 @@ struct PromptCacheTests {
 
   /// Every block of a message is its own line; the first one placed the anchor.
   @Test func keepsTheAnchorAcrossAMessagesLines() throws {
-    var transcript = Transcript()
+    var transcript = ClaudeFeed()
     transcript.apply(try reply("m1", wrote1h: 20_000), at: start)
     transcript.apply(try reply("m1", wrote1h: 20_000), at: at(120))
     #expect(transcript.promptCache.state(at: at(600)) == .warm(minutesLeft: 50))
@@ -83,7 +83,7 @@ struct PromptCacheTests {
 
   /// A subagent has its own cache, and a `<synthetic>` line was never a request.
   @Test func ignoresSubagentsAndSyntheticLines() throws {
-    var transcript = Transcript()
+    var transcript = ClaudeFeed()
     transcript.addPrompt("Hi", at: start)
     transcript.apply(try reply("m1", wrote1h: 20_000), at: at(3))
     transcript.apply(try reply("s1", wrote5m: 900, parent: "agent1"), at: at(1200))
@@ -93,7 +93,7 @@ struct PromptCacheTests {
 
   /// What was cached is not what the compacted conversation sends, until a request after it.
   @Test func aCompactionIsColdUntilTheNextMessage() throws {
-    var transcript = Transcript()
+    var transcript = ClaudeFeed()
     transcript.addPrompt("Hi", at: start)
     transcript.apply(try reply("m1", wrote1h: 20_000), at: at(3))
     transcript.apply(
@@ -227,7 +227,7 @@ struct PromptCacheTests {
   }
 
   @Test func theNoteJoinsTheTranscriptOnlyWhenCold() throws {
-    var transcript = Transcript()
+    var transcript = ClaudeFeed()
     transcript.addPrompt("Hi", at: start)
     transcript.apply(try reply("m1", wrote5m: 4_000), at: at(2))
     transcript.noteColdCache(at: at(60))

@@ -204,7 +204,7 @@ public struct TranscriptTail: Sendable {
     else { return nil }
     return ContextReading(
       usage: usage, modelID: message["model"]?.stringValue,
-      at: Transcript.timestamp(of: json))
+      at: ClaudeTranslator.timestamp(of: json))
   }
 }
 

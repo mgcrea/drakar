@@ -107,7 +107,7 @@ struct ContextUsageTests {
   }
 
   @Test func theStreamCarriesUsageIntoTheTranscript() throws {
-    var transcript = Transcript()
+    var transcript = ClaudeFeed()
     for message in try Fixture.contextUsage.messages { transcript.apply(message) }
     let usage = try #require(transcript.contextUsage)
     #expect(usage.total > 0)
@@ -116,7 +116,7 @@ struct ContextUsageTests {
 
   /// A subagent's request has its own context, which is not the session's.
   @Test func aSubagentsUsageLeavesTheSessionsAlone() throws {
-    var transcript = Transcript()
+    var transcript = ClaudeFeed()
     transcript.apply(
       try StreamMessage(
         line: Data(
@@ -158,7 +158,7 @@ struct ContextUsageTests {
     let transcript = Transcript.history(lines: [Data(warmTurn.utf8), Data(syntheticTurn.utf8)])
     #expect(transcript.contextUsage?.total == 100_281)
     #expect(transcript.contextModelID == "claude-opus-5-5")
-    var live = Transcript()
+    var live = ClaudeFeed()
     live.apply(try StreamMessage(line: Data(warmTurn.utf8)))
     live.apply(try StreamMessage(line: Data(syntheticTurn.utf8)))
     #expect(live.contextUsage?.total == 100_281)

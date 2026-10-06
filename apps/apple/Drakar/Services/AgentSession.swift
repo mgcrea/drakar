@@ -100,6 +100,7 @@ final class AgentSession {
   @ObservationIgnored private var turnEndDeferred = false
 
   @ObservationIgnored private var process: AgentProcess?
+  @ObservationIgnored private var translator = ClaudeTranslator()
   @ObservationIgnored private var events: Task<Void, Never>?
   @ObservationIgnored private var requestCount = 0
   @ObservationIgnored private var historyLoad: Task<Void, Never>?
@@ -639,7 +640,7 @@ final class AgentSession {
       try? process?.send(reply)
     }
     let waiting = transcript.pendingPermissions.count
-    transcript.apply(message)
+    for event in translator.translate(message, at: .now) { transcript.apply(event) }
     if unsentName != nil { sendUnsentName() }
     if transcript.pendingPermissions.count > waiting,
       let pending = transcript.pendingPermissions.last

@@ -5,8 +5,8 @@ import Testing
 @Suite("Todos")
 struct TodoListTests {
 
-  private func transcript() throws -> Transcript {
-    var transcript = Transcript()
+  private func transcript() throws -> ClaudeFeed {
+    var transcript = ClaudeFeed()
     transcript.addPrompt("Run it")
     for message in try Fixture.subagentAndTodos.messages { transcript.apply(message) }
     return transcript
@@ -25,7 +25,7 @@ struct TodoListTests {
 
   /// The newest list is the one that holds; a subagent's own is not the session's.
   @Test func theNewestMainThreadListHolds() throws {
-    var transcript = Transcript()
+    var transcript = ClaudeFeed()
     transcript.addPrompt("Run it")
     func write(_ id: String, _ status: String, parent: String? = nil) throws {
       let parentJSON = parent.map { "\"\($0)\"" } ?? "null"
