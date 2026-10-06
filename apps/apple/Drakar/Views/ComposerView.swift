@@ -43,7 +43,7 @@ struct ComposerView: View {
   /// Why the last things offered were not all attached.
   var attachmentNote: String? = nil
   var removeAttachment: (Attachment) -> Void = { _ in }
-  /// Files or an image to attach: pasted, or picked with the paperclip.
+  /// Files or an image to attach: pasted, or picked with the +.
   var attach: ([AttachmentSource]) -> Void = { _ in }
 
   @State private var leavesContextOut = false
@@ -207,16 +207,18 @@ struct ComposerView: View {
     .accessibilityIdentifier("composer.field")
   }
 
-  /// The model on the left; the mode and Send on the right, as the extension lays them out.
+  /// Attach and the model on the left; the mode and Send on the right, as the extension lays
+  /// them out. The extension's + opens a menu whose other entries (an @-mention, the browser)
+  /// Drakar has not got, so this one picks files straight away.
   private var toolbar: some View {
     HStack(spacing: 4) {
-      if let pills { pills.model }
-      Button("Attach", systemImage: "paperclip") { attach(AttachmentIntake.choose()) }
+      Button("Attach", systemImage: "plus") { attach(AttachmentIntake.choose()) }
         .labelStyle(.iconOnly)
         .buttonStyle(.borderless)
         .foregroundStyle(.secondary)
         .help("Attach images or files (or paste, or drop them on the session)")
         .accessibilityIdentifier("composer.attach")
+      if let pills { pills.model }
       Spacer(minLength: 8)
       if let pills { pills.mode }
       button

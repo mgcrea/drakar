@@ -101,7 +101,7 @@ enum AttachmentIntake {
     }
   }
 
-  /// The Open panel behind the composer's paperclip.
+  /// The Open panel behind the composer's +.
   @MainActor static func choose() -> [AttachmentSource] {
     let panel = NSOpenPanel()
     panel.allowsMultipleSelection = true
