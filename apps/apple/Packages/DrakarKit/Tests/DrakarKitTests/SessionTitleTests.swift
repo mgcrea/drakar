@@ -36,7 +36,8 @@ struct SessionTitleTests {
       SessionTitle.forkName(
         of: "Pineapple", among: ["Pineapple pie (fork #5)", "Pine (fork #4)", "(fork #9)"])
         == "Pineapple (fork)")
-    #expect(SessionTitle.forkName(of: "Notes on (fork)ing", among: []) == "Notes on (fork)ing (fork)")
+    #expect(
+      SessionTitle.forkName(of: "Notes on (fork)ing", among: []) == "Notes on (fork)ing (fork)")
   }
 
   @Test func aNameIsCleanedAsTheCLICleansIt() {
@@ -94,8 +95,10 @@ struct SessionTitleTests {
   /// `custom-title` line (checked on 2.1.288).
   @Test func encodesARename() throws {
     let line = String(
-      decoding: try ClientMessage.renameSession(requestID: "rename-1", title: "Plum", sessionID: "abc")
-        .line(), as: UTF8.self)
+      decoding: try ClientMessage.renameSession(
+        requestID: "rename-1", title: "Plum", sessionID: "abc"
+      )
+      .line(), as: UTF8.self)
     #expect(
       line
         == #"{"request":{"session_id":"abc","source":"host","subtype":"rename_session","title":"Plum"},"request_id":"rename-1","type":"control_request"}"#
