@@ -140,6 +140,19 @@ public struct SessionInfo: Sendable, Equatable {
   public var apiKeySource: String?
   public var tools: [String]
 
+  public init(
+    sessionID: String, cwd: String? = nil, model: String? = nil, permissionMode: String? = nil,
+    agentVersion: String? = nil, apiKeySource: String? = nil, tools: [String] = []
+  ) {
+    self.sessionID = sessionID
+    self.cwd = cwd
+    self.model = model
+    self.permissionMode = permissionMode
+    self.agentVersion = agentVersion
+    self.apiKeySource = apiKeySource
+    self.tools = tools
+  }
+
   init?(_ json: JSONValue) {
     guard let sessionID = json["session_id"]?.stringValue else { return nil }
     self.sessionID = sessionID

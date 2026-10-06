@@ -141,6 +141,10 @@ public struct Transcript: Sendable, Equatable {
   public private(set) var contextUsage: TokenUsage?
   /// `message.model` of that request.
   public private(set) var contextModelID: String?
+  /// How the newest turn ended, as its agent summed it up.
+  public private(set) var lastTurn: TurnSummary?
+  /// The model's context window, when the agent says it.
+  public private(set) var contextWindow: Int?
   /// How long the API keeps what the main thread's requests cached.
   public internal(set) var promptCache = PromptCache()
   /// When the newest main-thread request was sent, as far as anything said: a prompt, or a
@@ -348,7 +352,7 @@ public struct Transcript: Sendable, Equatable {
     case .system(.task(let event)):
       if let call = event.toolUseID { agentCallByTask[event.taskID] = call }
       if let call = event.toolUseID ?? agentCallByTask[event.taskID] {
-        agentTasks[call, default: AgentTask()].apply(event)
+        agentTasks[call, default: AgentTask()].apply(event.update)
       }
     case .assistant(let assistant):
       // A `<synthetic>` turn ("You've hit your session limit", an API error) is written by
@@ -369,7 +373,7 @@ public struct Transcript: Sendable, Equatable {
       }
       let index = blockCount[assistant.messageID, default: 0]
       for (offset, block) in assistant.content.enumerated() {
-        place(
+        placeBlock(
           block, id: "\(assistant.messageID)#\(index + offset)",
           parent: assistant.parentToolUseID, replacing: true, at: time ?? .now)
       }
@@ -443,6 +447,127 @@ public struct Transcript: Sendable, Equatable {
     }
   }
 
+  /// `time` is when the event arrived: what times thinking streamed live and a prompt taken
+  /// from the queue.
+  public mutating func apply(_ event: AgentEvent, at time: Date = .now) {
+    revision += 1
+    switch event {
+    case .sessionStarted(let info):
+      session = info
+    case .prompt(let prompt, let running):
+      addPrompt(
+        prompt.text, context: prompt.context, attachments: prompt.attachments, running: running,
+        at: time)
+    case .turnOutcome(let end):
+      turnEnd = end
+    case .turnEnded(let summary):
+      lastTurn = summary
+      turnEnd = summary.outcome
+      isRunning = false
+      isCompacting = false
+      if let failure = summary.failureText, !endsSaying(failure) { addNote(.failure(failure)) }
+      // A turn that ended cannot still be asking, nor thinking.
+      pendingPermissions.removeAll()
+      stopThinking()
+    case .itemStarted(let item):
+      place(item, replacing: false, at: time)
+    case .itemCompleted(let item):
+      place(item, replacing: true, at: time)
+    case .itemDelta(let id, let delta):
+      guard let position = indexByID[id] else { return }
+      switch (entries[position].kind, delta) {
+      case (.text(let text), .text(let more)): entries[position].kind = .text(text + more)
+      case (.thinking(let text), .thinking(let more)):
+        entries[position].kind = .thinking(text + more)
+      default: break
+      }
+    case .toolResult(let id, let result):
+      guard let index = indexByID[id], case .tool(var call) = entries[index].kind else { return }
+      call.result = result
+      entries[index].kind = .tool(call)
+    case .note(let note):
+      addNote(note.isFailure ? .failure(note.text) : .notice(note.text), parent: note.parent)
+    case .permissionRequested(let pending):
+      pendingPermissions.append(pending)
+    case .permissionWithdrawn(let id):
+      resolvePermission(requestID: id)
+    case .requestSent(let at):
+      requestAt = at
+    case .usage(let sample):
+      contextUsage = sample.usage
+      contextModelID = sample.model ?? contextModelID
+      if let window = sample.window { contextWindow = window }
+      if let at = sample.at {
+        promptCache.record(
+          messageID: sample.messageID, usage: sample.usage, at: at, requestAt: requestAt)
+        requestAt = nil
+      }
+    case .retrying(let retry):
+      self.retry = retry
+    case .compaction(.started):
+      isCompacting = true
+    case .compaction(.stopped):
+      isCompacting = false
+    case .compaction(.finished(let note, let at)):
+      isCompacting = false
+      if let at { promptCache.compacted(at: at) }
+      addNotice(note)
+    case .todos(let todos):
+      self.todos = todos
+    case .agentTask(let call, let update):
+      agentTasks[call, default: AgentTask()].apply(update)
+    case .queue(let id, let change):
+      guard let index = queuedPrompts.firstIndex(where: { $0.uuid == id }) else { return }
+      let prompt = queuedPrompts.remove(at: index)
+      switch change {
+      case .started:
+        addPrompt(prompt.text, context: prompt.context, attachments: prompt.attachments, at: time)
+      case .cancelled:
+        break
+      case .dropped(let agent):
+        addNotice(String(localized: "\(agent) did not take a queued message: \(prompt.text)"))
+      }
+    case .title(.custom(let title)):
+      customTitle = title
+    case .title(.ai(let title)):
+      aiTitle = title
+    case .historyMeta(.writerVersion(let version)):
+      writerVersion = version
+    case .historyMeta(.permissionMode(let mode)):
+      historyPermissionMode = mode
+    case .historyMeta(.effort(let effort)):
+      historyEffort = effort
+    }
+  }
+
+  /// Puts an item at its id. A tool call keeps a result that reached it first.
+  private mutating func place(_ item: AgentEvent.Item, replacing: Bool, at time: Date) {
+    var kind = item.kind
+    if case .tool(var call) = kind, let index = indexByID[item.id],
+      case .tool(let existing) = entries[index].kind, call.result == nil
+    {
+      call.result = existing.result
+      kind = .tool(call)
+    }
+    if let index = indexByID[item.id] {
+      // A started item is empty by definition, and a thinking block can land whole with its
+      // text withheld after its deltas showed some: never replace with nothing.
+      if replacing && !Self.isEmptyText(kind) { entries[index].kind = kind }
+      if replacing, let since = entries[index].thinkingSince {
+        entries[index].thinkingSince = nil
+        entries[index].thinkingDuration = time.timeIntervalSince(since)
+        thinkingIDs.remove(item.id)
+      }
+    } else {
+      var entry = Entry(id: item.id, kind: kind, parentToolUseID: item.parent)
+      if !replacing, case .thinking = kind {
+        entry.thinkingSince = time
+        thinkingIDs.insert(item.id)
+      }
+      upsert(entry)
+    }
+  }
+
   /// The main thread's newest text already says `failure`: an API error the CLI wrote as
   /// its own assistant turn before the result repeating it.
   private func endsSaying(_ failure: String) -> Bool {
@@ -481,7 +606,7 @@ public struct Transcript: Sendable, Equatable {
       streamingMessage[parent] = id
     case .blockStart(let index, let block):
       guard let message = streamingMessage[parent] else { return }
-      place(block, id: "\(message)#\(index)", parent: parent, replacing: false, at: time)
+      placeBlock(block, id: "\(message)#\(index)", parent: parent, replacing: false, at: time)
     case .blockDelta(let index, let delta):
       guard let message = streamingMessage[parent],
         let position = indexByID["\(message)#\(index)"]
@@ -501,7 +626,7 @@ public struct Transcript: Sendable, Equatable {
 
   /// Puts a block at `id`. A tool call is keyed by its own id rather than its position, so
   /// that its result can find it; the position key is aliased to it for the stream path.
-  private mutating func place(
+  private mutating func placeBlock(
     _ block: ContentBlock, id: String, parent: String?, replacing: Bool, at time: Date
   ) {
     let kind: Kind

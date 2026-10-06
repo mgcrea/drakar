@@ -40,6 +40,21 @@ public struct TaskEvent: Sendable, Equatable {
     totalTokens = json["usage"]?["total_tokens"]?.intValue
     durationMS = json["usage"]?["duration_ms"]?.intValue
   }
+
+  /// The same, in no agent's words.
+  var update: AgentTaskUpdate {
+    var update = AgentTaskUpdate()
+    update.isStart = kind == .started
+    update.description = description
+    update.isBackgrounded = isBackgrounded
+    update.status = status
+    update.summary = summary
+    update.lastToolName = lastToolName
+    update.toolUses = toolUses
+    update.totalTokens = totalTokens
+    update.durationMS = durationMS
+    return update
+  }
 }
 
 extension Transcript {
@@ -112,17 +127,18 @@ public struct AgentTask: Sendable, Equatable {
     return parts.isEmpty ? nil : parts.joined(separator: " · ")
   }
 
-  mutating func apply(_ event: TaskEvent) {
-    if let description = event.description, event.kind == .started || self.description == nil {
+  mutating func apply(_ update: AgentTaskUpdate) {
+    if let description = update.description, update.isStart || self.description == nil {
       self.description = description
     }
-    if let isBackgrounded = event.isBackgrounded { self.isBackgrounded = isBackgrounded }
-    if let status = event.status { self.status = Status(status) }
-    if let summary = event.summary { self.summary = summary }
-    lastToolName = event.lastToolName ?? lastToolName
-    toolUses = event.toolUses ?? toolUses
-    totalTokens = event.totalTokens ?? totalTokens
-    durationMS = event.durationMS ?? durationMS
+    if let isBackgrounded = update.isBackgrounded { self.isBackgrounded = isBackgrounded }
+    if let status = update.status { self.status = Status(status) }
+    if let summary = update.summary { self.summary = summary }
+    if let prompt = update.prompt { self.prompt = prompt }
+    lastToolName = update.lastToolName ?? lastToolName
+    toolUses = update.toolUses ?? toolUses
+    totalTokens = update.totalTokens ?? totalTokens
+    durationMS = update.durationMS ?? durationMS
   }
 }
 
