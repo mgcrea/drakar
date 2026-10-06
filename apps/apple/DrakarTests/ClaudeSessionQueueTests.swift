@@ -77,6 +77,50 @@ struct ClaudeSessionQueueTests {
     #expect(interrupt?.contains(#""cancel_queued":true"#) == true)
   }
 
+  /// A turn that ends with a prompt queued waits to say so, since the prompt usually starts the
+  /// next one; when it is cancelled instead, the end is said after all, once.
+  @Test func aTurnEndIsSaidOnceTheQueueEmptiesWithoutATurn() async throws {
+    let answering = folder.appending(path: "claude-answering")
+    let result =
+      #"{"type":"result","subtype":"success","is_error":false,"result":"ok","session_id":"s"}"#
+    let cancelled =
+      #"{"type":"command_lifecycle","command_uuid":"%s","state":"cancelled","session_id":"s"}"#
+    try Data(
+      """
+      #!/bin/sh
+      while IFS= read -r line; do
+        printf '%s\\n' "$line" >> "$0.stdin"
+        case "$line" in
+          *'"second"'*)
+            uuid=$(printf '%s' "$line" | sed -n 's/.*"uuid":"\\([^"]*\\)".*/\\1/p')
+            printf '%s\\n' '\(result)'
+            printf '\(cancelled)\\n' "$uuid";;
+        esac
+      done
+
+      """.utf8
+    ).write(to: answering)
+    try FileManager.default.setAttributes(
+      [.posixPermissions: 0o755], ofItemAtPath: answering.path)
+    let session = ClaudeSession(folder: folder)
+    session.executableOverride = answering
+    var ends = 0
+    session.onTurnEnded = { ends += 1 }
+    session.send("first")
+    for _ in 0..<50 where !session.isProcessRunning {
+      try await Task.sleep(for: .milliseconds(100))
+    }
+    defer { session.stop() }
+    session.send("second")
+    #expect(session.transcript.queuedPrompts.count == 1)
+    for _ in 0..<50 where !session.transcript.queuedPrompts.isEmpty {
+      try await Task.sleep(for: .milliseconds(100))
+    }
+    #expect(session.transcript.queuedPrompts.isEmpty)
+    #expect(!session.transcript.isRunning)
+    #expect(ends == 1)
+  }
+
   /// Every prompt is named, so the CLI's lifecycle lines can be matched to it.
   @Test func theFirstPromptIsNamedToo() async throws {
     let session = try await running()

@@ -92,6 +92,9 @@ final class ClaudeSession {
   @ObservationIgnored var onInitialized: ((JSONValue?) -> Void)?
   /// The commands and skills changed mid-session: the new list, as `initialize` lists them.
   @ObservationIgnored var onCommandsChanged: ((JSONValue) -> Void)?
+  /// A turn ended with prompts queued, and nobody was told yet: the next lifecycle line says
+  /// whether one starts a turn or the queue empties without one.
+  @ObservationIgnored private var turnEndDeferred = false
 
   @ObservationIgnored private var process: AgentProcess?
   @ObservationIgnored private var events: Task<Void, Never>?
@@ -608,12 +611,21 @@ final class ClaudeSession {
       onPermissionRequested?(pending)
     }
     permissionsMayHaveChanged(from: waiting)
+    if turnEndDeferred, case .commandLifecycle = message {
+      if transcript.isRunning {
+        turnEndDeferred = false
+      } else if transcript.queuedPrompts.isEmpty {
+        turnEndDeferred = false
+        onTurnEnded?()
+      }
+    }
     if case .result = message {
       if savedTarget == nil { savedTarget = findTarget() }
       // Not `write`: a failed context request must not mark the session failed.
       try? process?.send(.contextUsage(requestID: nextRequestID("context")))
-      // Not while a queued prompt is about to start the next one.
-      if transcript.queuedPrompts.isEmpty { onTurnEnded?() }
+      // Not while a queued prompt is about to start the next one: said once the queue
+      // empties without a turn, should it be cancelled or refused instead.
+      if transcript.queuedPrompts.isEmpty { onTurnEnded?() } else { turnEndDeferred = true }
     }
   }
 

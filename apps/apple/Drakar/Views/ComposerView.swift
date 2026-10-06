@@ -145,7 +145,7 @@ struct ComposerView: View {
 
   private var field: some View {
     TextField(
-      isRunning ? "Queue another message…" : "Ask Claude to do something…", text: $text,
+      isRunning && canSend ? "Queue another message…" : "Ask Claude to do something…", text: $text,
       axis: .vertical
     )
     .textFieldStyle(.plain)
