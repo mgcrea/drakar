@@ -52,15 +52,20 @@ public struct Transcript: Sendable, Equatable {
     public var id: String
     public var name: String
     public var input: JSONValue
+    /// What it does, read once where it was made.
+    public var kind: ToolKind
     public var result: ToolResult?
     /// On an `AskUserQuestion` its process never got the answer to, the answers a later
     /// prompt gave it (`UserQuestion.earlierAnswerPrompt`).
     public var earlierAnswers: [String: String]?
 
-    public init(id: String, name: String, input: JSONValue, result: ToolResult? = nil) {
+    public init(
+      id: String, name: String, input: JSONValue, kind: ToolKind, result: ToolResult? = nil
+    ) {
       self.id = id
       self.name = name
       self.input = input
+      self.kind = kind
       self.result = result
     }
   }
@@ -220,7 +225,7 @@ public struct Transcript: Sendable, Equatable {
       switch entries[index].kind {
       case .thinking, .notice, .failure: continue
       case .tool(let call):
-        guard call.name == UserQuestion.toolName else { return nil }
+        guard call.kind == .question else { return nil }
         switch call.questionOutcome {
         case .waiting?, .sessionEnded?: return index
         default: return nil
@@ -506,13 +511,14 @@ public struct Transcript: Sendable, Equatable {
     case .thinking(let text): kind = .thinking(text)
     case .toolUse(let toolID, let name, let input):
       key = toolID
-      var call = ToolCall(id: toolID, name: name, input: input)
+      var call = ToolCall(
+        id: toolID, name: name, input: input, kind: ClaudeTools.kind(name: name, input: input))
       if let index = indexByID[toolID], case .tool(let existing) = entries[index].kind {
         call.result = existing.result
       }
       kind = .tool(call)
       // Whole, not from a block start, whose input is still empty.
-      if replacing, parent == nil, name == TodoList.toolName { todos = TodoList.todos(input) }
+      if replacing, parent == nil, call.kind == .todos { todos = TodoList.todos(input) }
     case .toolResult, .other:
       return
     }
@@ -565,7 +571,7 @@ public struct Transcript: Sendable, Equatable {
 extension Transcript.ToolCall {
   /// What became of it, for an `AskUserQuestion`; nil for any other tool.
   public var questionOutcome: Transcript.QuestionOutcome? {
-    guard name == UserQuestion.toolName else { return nil }
+    guard kind == .question else { return nil }
     if let earlierAnswers { return .answered(earlierAnswers) }
     guard let result else { return .waiting }
     let text = result.content

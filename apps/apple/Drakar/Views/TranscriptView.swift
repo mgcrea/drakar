@@ -287,13 +287,13 @@ struct EntryView: View, Equatable {
       case .thinking(let text):
         ThinkingView(
           text: text, isThinking: entry.thinkingSince != nil, duration: entry.thinkingDuration)
-      case .tool(let call) where call.name == UserQuestion.toolName:
+      case .tool(let call) where call.kind == .question:
         QuestionCallView(call: call)
-      case .tool(let call) where call.name == PlanApproval.toolName:
+      case .tool(let call) where call.kind == .planApproval:
         PlanCallView(call: call, isAsked: isAsked)
-      case .tool(let call) where call.name == TodoList.toolName:
+      case .tool(let call) where call.kind == .todos:
         TodoCallView(call: call)
-      case .tool(let call) where call.name == "Agent" || call.name == "Task":
+      case .tool(let call) where call.kind.isSubagent:
         AgentCallView(call: call, task: task, children: children)
       case .tool(let call):
         ToolCallView(call: call)
@@ -376,9 +376,11 @@ struct ToolCallView: View {
     DisclosureGroup(isExpanded: $isExpanded) {
       VStack(alignment: .leading, spacing: 8) {
         // After the fact a Write's previous content is gone, so it shows as all added.
-        if let change = FileChange(toolName: call.name, input: call.input) {
+        if case .fileChange(let path, let edits) = call.kind,
+          let change = FileChange(path: path, edits: edits)
+        {
           FileChangeView(change: change)
-        } else if call.name == "Bash" && !call.summary.isEmpty {
+        } else if case .shell = call.kind, !call.summary.isEmpty {
           // The whole command, which the one-line header cuts short.
           CodeBlock(text: call.summary)
         } else {

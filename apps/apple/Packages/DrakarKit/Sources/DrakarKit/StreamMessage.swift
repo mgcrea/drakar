@@ -413,8 +413,10 @@ public struct PermissionRequest: Sendable, Equatable {
   public var requiresUserInteraction: Bool
   /// The call it asks about, which is also its transcript entry's id.
   public var toolUseID: String?
+  /// What the call does, read once from its name and input.
+  public var kind: ToolKind
   /// An `AskUserQuestion` waiting on a choice, not a tool waiting on permission.
-  public var isChoice: Bool { toolName == UserQuestion.toolName }
+  public var isChoice: Bool { kind == .question }
 
   init?(_ request: JSONValue) {
     guard let toolName = request["tool_name"]?.stringValue else { return nil }
@@ -426,6 +428,7 @@ public struct PermissionRequest: Sendable, Equatable {
     blockedPath = request["blocked_path"]?.stringValue
     requiresUserInteraction = request["requires_user_interaction"]?.boolValue ?? false
     toolUseID = request["tool_use_id"]?.stringValue
+    kind = ClaudeTools.kind(name: toolName, input: input)
   }
 }
 

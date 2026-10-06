@@ -42,7 +42,7 @@ public enum PlanApproval {
 }
 
 extension PermissionRequest {
-  public var isPlan: Bool { toolName == PlanApproval.toolName }
+  public var isPlan: Bool { kind == .planApproval }
 }
 
 extension Transcript {
@@ -58,7 +58,7 @@ extension Transcript {
 extension Transcript.ToolCall {
   /// For an `ExitPlanMode`; nil for any other tool.
   public var planOutcome: Transcript.PlanOutcome? {
-    guard name == PlanApproval.toolName else { return nil }
+    guard kind == .planApproval else { return nil }
     guard let result else { return .waiting }
     guard result.isError else { return .approved }
     guard result.content.hasPrefix(PlanApproval.feedbackPrefix) else {

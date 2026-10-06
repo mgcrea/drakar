@@ -6,7 +6,9 @@ import Testing
 struct PresentationTests {
 
   private func call(_ name: String, _ input: [String: JSONValue]) -> Transcript.ToolCall {
-    Transcript.ToolCall(id: "t", name: name, input: .object(input))
+    Transcript.ToolCall(
+      id: "t", name: name, input: .object(input),
+      kind: ClaudeTools.kind(name: name, input: .object(input)))
   }
 
   @Test func summarisesEachToolByWhatItActsOn() {

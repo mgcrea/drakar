@@ -121,39 +121,35 @@ public enum LineDiff {
   }
 }
 
-/// What an Edit, MultiEdit or Write call does to a file, as diffs a view can draw.
+/// What a file-changing call does to a file, as diffs a view can draw.
 public struct FileChange: Sendable, Equatable {
   public var path: String
   /// One diff per edit; a Write is one.
   public var diffs: [[DiffLine]]
   public var isNewFile: Bool
 
-  /// Nil for any other tool. `existing` is the file's current content, which only a
-  /// Write needs (to diff a rewrite against what it replaces); nil means the file does
-  /// not exist.
-  public init?(toolName: String, input: JSONValue, existing: String? = nil) {
-    guard let path = input["file_path"]?.stringValue else { return nil }
+  /// Nil when no edit could be read. `existing` is the file's current content, which only a
+  /// write needs (to diff a rewrite against what it replaces); nil means it does not exist.
+  public init?(path: String, edits: [FileEdit], existing: String? = nil) {
+    guard !edits.isEmpty else { return nil }
     self.path = path
-    switch toolName {
-    case "Edit":
-      guard let old = input["old_string"]?.stringValue, let new = input["new_string"]?.stringValue
-      else { return nil }
-      diffs = [LineDiff.lines(old: old, new: new)]
-      isNewFile = false
-    case "MultiEdit":
-      diffs = (input["edits"]?.arrayValue ?? []).compactMap { edit in
-        guard let old = edit["old_string"]?.stringValue, let new = edit["new_string"]?.stringValue
-        else { return nil }
-        return LineDiff.lines(old: old, new: new)
+    var diffs: [[DiffLine]] = []
+    var isNewFile = false
+    for edit in edits {
+      switch edit.change {
+      case .replace(let old, let new):
+        diffs.append(LineDiff.lines(old: old, new: new))
+      case .write(let content):
+        diffs.append(LineDiff.hunks(old: existing ?? "", new: content, context: 3))
+        isNewFile = existing == nil
+      case .patch(let text):
+        let patch = PatchText.lines(text)
+        diffs.append(patch.lines)
+        isNewFile = patch.isNewFile
       }
-      isNewFile = false
-    case "Write":
-      guard let content = input["content"]?.stringValue else { return nil }
-      diffs = [LineDiff.hunks(old: existing ?? "", new: content, context: 3)]
-      isNewFile = existing == nil
-    default:
-      return nil
     }
+    self.diffs = diffs
+    self.isNewFile = isNewFile
   }
 
   public var addedCount: Int { count(.added) }

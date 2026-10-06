@@ -63,15 +63,16 @@ struct PermissionSheet: View {
   }
 
   private static func change(for request: PermissionRequest) -> FileChange? {
+    guard case .fileChange(let path, let edits) = request.kind else { return nil }
     var existing: String?
-    if request.toolName == "Write", let path = request.input["file_path"]?.stringValue {
+    if edits.contains(where: { if case .write = $0.change { true } else { false } }) {
       let url = URL(filePath: path)
       // A diff against a huge file is unreadable anyway; past 1 MB it shows as a new file.
       if let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize, size < 1_000_000 {
         existing = try? String(contentsOf: url, encoding: .utf8)
       }
     }
-    return FileChange(toolName: request.toolName, input: request.input, existing: existing)
+    return FileChange(path: path, edits: edits, existing: existing)
   }
 
   private static func title(_ suggestion: PermissionSuggestion) -> String {
