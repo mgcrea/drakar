@@ -169,10 +169,21 @@ blame-setup: ## Teach git blame to skip the formatting-only commits
 	@git -C ../.. config blame.ignoreRevsFile .git-blame-ignore-revs
 	@echo "git blame will skip the commits in .git-blame-ignore-revs"
 
+# ── Icon ──────────────────────────────────────────────────────────────────────
+
+# The artwork is full bleed with its own square plate, so appshot only rasterises it: fraction
+# 1.0, no plate, no tint. Flattened, because the glass is drawn over the plate's own dots and
+# bends them, so the blades and the plate are one picture. design/drakar-icon.svg is written by
+# the icon exploration's generator; edit that, not the SVG or the bundle.
+icon: ## Rebuild Drakar.icon from design/drakar-icon.svg
+	appshot icon build --from ../../design/drakar-icon.svg \
+		--mark-fraction 1.0 --flatten \
+		--out Drakar/Drakar.icon
+
 # ── Clean ─────────────────────────────────────────────────────────────────────
 
 clean: ## Remove build products
 	rm -rf $(DERIVED_DATA) $(KIT)/.build
 
 .PHONY: help build build-release test test-app test-all quit run \
-	swift-format-version format-swift format-swift-check blame-setup clean
+	swift-format-version format-swift format-swift-check blame-setup icon clean
