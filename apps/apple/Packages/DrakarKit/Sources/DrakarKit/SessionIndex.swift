@@ -265,8 +265,8 @@ public struct LiveSession: Sendable, Hashable {
     return [spelled, ProjectPath.resolved(spelled)]
   }()
 
-  /// Every live session in `account`'s registry, except Drakar's own children (a window
-  /// reads those from memory) and spawns in the temporary folder.
+  /// Every live session in `account`'s registry, except Drakar's own (a window reads those
+  /// from memory) and spawns in the temporary folder.
   public static func read(
     account: ClaudeAccount, isAlive: (Int32) -> Bool = isAlive,
     parentOf: (Int32) -> Int32? = ProcessAncestry.parent,
@@ -278,19 +278,57 @@ public struct LiveSession: Sendable, Hashable {
       (try? FileManager.default.contentsOfDirectory(
         at: folder, includingPropertiesForKeys: nil, options: .skipsHiddenFiles)) ?? []
     return files.filter { $0.pathExtension == "json" }.compactMap { file in
-      guard let data = try? Data(contentsOf: file), let json = try? JSONValue.parse(data),
-        let pid = json["pid"]?.intValue.flatMap(Int32.init(exactly:)),
-        let id = json["sessionId"]?.stringValue, isAlive(pid), parentOf(pid) != ownPID
+      guard let live = entry(at: file, isAlive: isAlive),
+        !descends(live.pid, from: ownPID, parentOf: parentOf)
       else { return nil }
-      let cwd = json["cwd"]?.stringValue
-      if let cwd, temporaryDirectories.contains(ProjectPath.normalize(cwd)) { return nil }
-      return LiveSession(
-        pid: pid, sessionID: id, entrypoint: json["entrypoint"]?.stringValue,
-        status: json["status"]?.stringValue, cwd: cwd,
-        waitingFor: json["waitingFor"]?.stringValue,
-        updatedAt: json["updatedAt"]?.numberValue.map { Date(timeIntervalSince1970: $0 / 1000) })
+      if let cwd = live.cwd, temporaryDirectories.contains(ProjectPath.normalize(cwd)) {
+        return nil
+      }
+      return live
     }
     .sorted { $0.pid < $1.pid }
+  }
+
+  /// Ends the process `live` names, for its session to move into Drakar. SIGTERM: the CLI
+  /// ends cleanly, its registry entry goes, and an editor's panel says its process exited,
+  /// where SIGINT leaves the panel silent (verified 2026-10-06, 2.1.288 and the extension's
+  /// 2.1.289). Only while the registry still lists that pid with that session, so a pid
+  /// reused since is never signalled, and only between turns, so none is cut short.
+  public static func end(
+    _ live: LiveSession, account: ClaudeAccount, isAlive: (Int32) -> Bool = isAlive,
+    signal: (Int32) -> Bool = { kill($0, SIGTERM) == 0 }
+  ) -> Bool {
+    let file = account.directory.appending(path: "sessions/\(live.pid).json")
+    guard let current = entry(at: file, isAlive: isAlive), current.sessionID == live.sessionID,
+      current.status != "busy"
+    else { return false }
+    return signal(live.pid)
+  }
+
+  /// One registry file, while its process is alive.
+  private static func entry(at file: URL, isAlive: (Int32) -> Bool) -> LiveSession? {
+    guard let data = try? Data(contentsOf: file), let json = try? JSONValue.parse(data),
+      let pid = json["pid"]?.intValue.flatMap(Int32.init(exactly:)),
+      let id = json["sessionId"]?.stringValue, isAlive(pid)
+    else { return nil }
+    return LiveSession(
+      pid: pid, sessionID: id, entrypoint: json["entrypoint"]?.stringValue,
+      status: json["status"]?.stringValue, cwd: json["cwd"]?.stringValue,
+      waitingFor: json["waitingFor"]?.stringValue,
+      updatedAt: json["updatedAt"]?.numberValue.map { Date(timeIntervalSince1970: $0 / 1000) })
+  }
+
+  /// Whether `pid` runs under `ancestor`, a few levels up: a `claude` Drakar starts through
+  /// a wrapper that does not `exec` is its grandchild, and must never read as another
+  /// process's, which would make the window give its own session up.
+  static func descends(_ pid: Int32, from ancestor: Int32, parentOf: (Int32) -> Int32?) -> Bool {
+    var current = pid
+    for _ in 0..<8 {
+      guard let parent = parentOf(current), parent > 1 else { return false }
+      if parent == ancestor { return true }
+      current = parent
+    }
+    return false
   }
 
   /// Whether a process with this pid exists, including one we may not signal.
