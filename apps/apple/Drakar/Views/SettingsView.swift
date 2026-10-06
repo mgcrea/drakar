@@ -57,6 +57,11 @@ enum PreferenceKey {
   static let recognisesAsks = "drakar.recognisesAsks"
   /// Whether the last prompt stays pinned over the transcript even while it is in view.
   static let pinsLastPrompt = "drakar.pinsLastPrompt"
+  /// Whether sessions start able to switch to Bypass permissions; on unless turned off.
+  static let allowsBypass = "drakar.allowsBypass"
+  /// Folder path → `{model, mode}`, as a JSON object: what the folder's next session starts
+  /// with, from its last pills.
+  static let sessionPicksForFolder = "drakar.sessionPicksForFolder"
 }
 
 /// What Settings picked for the sessions Drakar starts.
@@ -102,6 +107,47 @@ enum ClaudeChoice {
     picks[folderKey(folder)] = account.directory.path(percentEncoded: false)
     let data = (try? JSONEncoder().encode(picks)) ?? Data("{}".utf8)
     defaults.set(String(decoding: data, as: UTF8.self), forKey: PreferenceKey.accountForFolder)
+  }
+
+  /// Sessions start with `--allow-dangerously-skip-permissions`, so the mode pill can offer
+  /// Bypass. On by default.
+  static var allowsBypass: Bool {
+    defaults.object(forKey: PreferenceKey.allowsBypass) as? Bool ?? true
+  }
+
+  /// What a folder's next session starts with, from the last pills picked there.
+  struct SessionPicks: Codable, Equatable {
+    var model: String?
+    var mode: String?
+  }
+
+  static func sessionPicks(for folder: URL) -> SessionPicks {
+    allSessionPicks[folderKey(folder)] ?? SessionPicks()
+  }
+
+  static func pickModel(_ model: String, for folder: URL) {
+    updateSessionPicks(for: folder) { $0.model = model }
+  }
+
+  /// Bypass is never remembered: no session starts in it.
+  static func pickMode(_ mode: PermissionMode, for folder: URL) {
+    guard mode != .bypass else { return }
+    updateSessionPicks(for: folder) { $0.mode = mode.rawValue }
+  }
+
+  private static var allSessionPicks: [String: SessionPicks] {
+    guard let text = stored(PreferenceKey.sessionPicksForFolder),
+      let picks = try? JSONDecoder().decode([String: SessionPicks].self, from: Data(text.utf8))
+    else { return [:] }
+    return picks
+  }
+
+  private static func updateSessionPicks(for folder: URL, _ change: (inout SessionPicks) -> Void) {
+    var all = allSessionPicks
+    change(&all[folderKey(folder), default: SessionPicks()])
+    let data = (try? JSONEncoder().encode(all)) ?? Data("{}".utf8)
+    defaults.set(
+      String(decoding: data, as: UTF8.self), forKey: PreferenceKey.sessionPicksForFolder)
   }
 
   private static var picks: [String: String] {
@@ -355,6 +401,7 @@ private struct FeedbackToggle: View {
 private struct ClaudeSection: View {
   @AppStorage(PreferenceKey.claudePath) private var claudePath = ""
   @AppStorage(PreferenceKey.newSessionAccount) private var accountPath = ""
+  @AppStorage(PreferenceKey.allowsBypass) private var allowsBypass = true
   @State private var installs: [Install] = []
   @State private var accounts: [ClaudeAccount] = []
   /// The account the login shell selects, for the first choice's label.
@@ -398,6 +445,13 @@ private struct ClaudeSection: View {
         }
       }
       .accessibilityIdentifier("settings.newSessionAccount")
+      Toggle("Allow Bypass permissions", isOn: $allowsBypass)
+        .accessibilityIdentifier("settings.allowsBypass")
+      Text(
+        "Sessions start with --allow-dangerously-skip-permissions, so Bypass can be picked in the composer. No session starts in it."
+      )
+      .font(.caption)
+      .foregroundStyle(.secondary)
     } header: {
       Text("Claude Code")
     } footer: {

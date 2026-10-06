@@ -25,6 +25,8 @@ final class Capabilities {
   @ObservationIgnored var probe: (URL, ClaudeAccount) async -> ProbeOutcome = {
     await CapabilityProbe.run(folder: $0, account: $1)
   }
+  /// Where the probe's model list goes; tests give their own.
+  @ObservationIgnored var catalog: ModelCatalog = .shared
   @ObservationIgnored private var running: Task<Void, Never>?
   @ObservationIgnored private var rerun = false
   @ObservationIgnored private var observers: [UUID: (CapabilityChanges) -> Void] = [:]
@@ -97,6 +99,7 @@ final class Capabilities {
   }
 
   private func apply(_ outcome: ProbeOutcome) {
+    if let models = outcome.capabilities.models { catalog.record(models, for: account) }
     var next = lists
     if let skills = outcome.capabilities.skills { next.skills = skills }
     if let servers = outcome.capabilities.mcpServers { next.mcpServers = servers }
