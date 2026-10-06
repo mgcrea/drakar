@@ -30,6 +30,13 @@ Found while planning against the code; each keeps the spec's intent.
 - **`FileEdit`** carries its path (`struct FileEdit { path; change }`) and `ToolKind.fileChange(path:edits:)` keeps the call's own path, so a summary still names the file when no edit parses.
 - **No `historyReader` on `AgentBackend`:** reading transcript files is disk-side and stays `TranscriptFollower` (Claude-only until slice 3), now driven by `ClaudeTranslator`.
 - **`FileChange(toolName:input:existing:)` stays** as a Claude convenience in `ClaudeTools.swift` (built on `ClaudeTools.kind`), so `DiffTests` stay as written; views use `FileChange(path:edits:existing:)`.
+- **`launch(_:) -> AgentLaunch` is synchronous**, instead of `configuration(for:) async throws`: the login shell's environment is read asynchronously by the session, which passes it in `AgentStart`.
+- **The backend holds no process:** `receive(_:from:at:)` takes one line, the process that wrote it and the time, and `send(_:to:)` takes the process. The session owns the process; the backend keeps only the stream's state (its translator, its request ids).
+- **`locateTarget(sessionID:cwd:in:)` lives on the backend**, which knows where its agent writes a session's transcript (Claude-typed until slice 3).
+- **No `approvePlan` command:** the session builds `PlanApproval.approve` and sends it as `.answer`.
+- **`ClaudeBackend.started` makes a fresh `ClaudeTranslator` per process**, so a restart never carries a previous process's stream state.
+- **`AgentCommand.prompt` carries `[EditorSelection]` and `[Attachment]`**, not wire text: the backend writes them in its agent's words (`promptContext` and `block` for Claude Code).
+- **`AgentEvent.Item` uses `AgentEvent.ItemKind`** (text, thinking or a tool call), not `Transcript.Kind`, so an agent can never place a prompt or a notice and bypass the transcript's own bookkeeping.
 
 ## Review Focus
 
