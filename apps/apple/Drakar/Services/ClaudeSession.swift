@@ -47,6 +47,20 @@ final class ClaudeSession {
   /// Its files are moving to another account (`SessionMoves`): nothing is sent and no
   /// process starts, since one would resume the session where it no longer is.
   var isMoving = false
+  /// The mode the process last reported: `system/init`, a `status` line, a confirmed
+  /// change. Nil without a process.
+  private(set) var permissionMode: String?
+  /// What this session's pills picked; nil follows the folder's pick. Frozen at each start.
+  private(set) var modePick: PermissionMode?
+  private(set) var modelPick: String?
+  /// The running process started with `--allow-dangerously-skip-permissions`.
+  private(set) var launchedWithBypass = false
+  /// Why the last change was refused, until the next change.
+  private(set) var pillNote: String?
+  /// Where `initialize`'s model list goes; tests give their own.
+  @ObservationIgnored var catalog: ModelCatalog = .shared
+  /// What to put back if a switch is refused, by request id.
+  @ObservationIgnored private var revertOnError: [String: () -> Void] = [:]
   /// The earlier question the person closed without answering, so it is not offered again.
   private(set) var dismissedQuestionID: String?
   /// Stands in for the located binary, in tests.
@@ -106,6 +120,63 @@ final class ClaudeSession {
 
   var canSend: Bool {
     !isReadOnly && !isMoving && !historyFailed && !transcript.isRunning && phase != .starting
+  }
+
+  /// The mode the pill shows: the process's while it runs, else what the next start takes.
+  var shownMode: String {
+    if isProcessRunning, let permissionMode { return permissionMode }
+    return (startingMode ?? .ask).rawValue
+  }
+
+  /// The mode the next start passes: this session's pick, else the folder's; Bypass only
+  /// while Settings allows it.
+  var startingMode: PermissionMode? {
+    let mode =
+      modePick
+      ?? (isProcessRunning
+        ? nil
+        : ClaudeChoice.sessionPicks(for: folder).mode.flatMap(PermissionMode.init(rawValue:)))
+    return mode == .bypass && !ClaudeChoice.allowsBypass ? nil : mode
+  }
+
+  /// The model picked for the session: its own, else (before a start) the folder's; nil for
+  /// Claude Code's default.
+  var pickedModel: String? {
+    modelPick ?? (isProcessRunning ? nil : ClaudeChoice.sessionPicks(for: folder).model)
+  }
+
+  /// Bypass can be picked: Settings allows it, and a running process started able to.
+  var offersBypass: Bool {
+    ClaudeChoice.allowsBypass && (!isProcessRunning || launchedWithBypass)
+  }
+
+  /// At once on a running process, mid-turn included; else at the next start. The folder
+  /// remembers it, Bypass aside.
+  func setMode(_ mode: PermissionMode) {
+    pillNote = nil
+    ClaudeChoice.pickMode(mode, for: folder)
+    let (previousPick, previousMode) = (modePick, permissionMode)
+    modePick = mode
+    guard let process else { return }
+    permissionMode = mode.rawValue
+    let id = nextRequestID("mode")
+    revertOnError[id] = { [weak self] in
+      self?.modePick = previousPick
+      self?.permissionMode = previousMode
+    }
+    try? process.send(.setPermissionMode(requestID: id, mode: mode.rawValue))
+  }
+
+  /// `value` as `initialize`'s `models` give it; `default` is Claude Code's own.
+  func setModel(_ value: String) {
+    pillNote = nil
+    ClaudeChoice.pickModel(value, for: folder)
+    let previous = modelPick
+    modelPick = value
+    guard let process else { return }
+    let id = nextRequestID("model")
+    revertOnError[id] = { [weak self] in self?.modelPick = previous }
+    try? process.send(.setModel(requestID: id, model: value))
   }
 
   /// The history from the transcript file, once: `--resume` continues a session but does
@@ -195,6 +266,12 @@ final class ClaudeSession {
     guard stillWanted(since: stops) else { return }
     if historyFailed { return fail(nil) }
     var command = command
+    // The pills' picks, frozen for this process: the session's own, else the folder's.
+    modelPick = pickedModel
+    modePick = startingMode
+    if let model = modelPick, model != "default" { command.model = model }
+    if let mode = modePick, mode != .ask { command.permissionMode = mode.rawValue }
+    command.allowsBypass = ClaudeChoice.allowsBypass
     var environment = await Self.environment.value
     guard stillWanted(since: stops) else { return }
     guard FileManager.default.fileExists(atPath: folder.path(percentEncoded: false)) else {
@@ -226,6 +303,7 @@ final class ClaudeSession {
     do {
       let stream = try process.start()
       self.process = process
+      launchedWithBypass = command.allowsBypass
       try process.send(.initialize(requestID: nextRequestID("init")))
       if let pendingPrompt {
         try process.send(pendingPrompt)
@@ -303,6 +381,7 @@ final class ClaudeSession {
     events?.cancel()
     // The cancelled event task will not report the exit, so it is recorded here.
     process = nil
+    permissionMode = nil
     transcript.processExited()
     if case .failed = phase { return }
     if phase == .ready || phase == .starting { phase = .exited(status: 0) }
@@ -359,6 +438,7 @@ final class ClaudeSession {
     case .exited(let status, _):
       notingPermissions { transcript.processExited() }
       process = nil
+      permissionMode = nil
       if case .failed = phase { return }
       phase = .exited(status: status)
       onStopped?()
@@ -372,8 +452,25 @@ final class ClaudeSession {
     if case .controlResponse(let response) = message, response.requestID.hasPrefix("init-"),
       response.isSuccess
     {
+      if let models = ModelOption.list(fromInitialize: response.response), let account {
+        catalog.record(models, for: account)
+      }
       onInitialized?(response.response)
     }
+    if case .controlResponse(let response) = message,
+      response.requestID.hasPrefix("mode-") || response.requestID.hasPrefix("model-")
+    {
+      let revert = revertOnError.removeValue(forKey: response.requestID)
+      if response.isSuccess {
+        if let mode = response.response?["mode"]?.stringValue { permissionMode = mode }
+      } else {
+        revert?()
+        pillNote = response.error ?? String(localized: "Claude Code refused the change.")
+      }
+      return
+    }
+    if case .system(.initialized(let info)) = message { permissionMode = info.permissionMode }
+    if case .system(.status(_, let mode?)) = message { permissionMode = mode }
     if case .controlResponse(let response) = message, response.requestID.hasPrefix("context-") {
       if response.isSuccess, let reply = ContextUsageReply(response.response) {
         reportedContext = reply
