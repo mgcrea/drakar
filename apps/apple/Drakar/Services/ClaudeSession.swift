@@ -59,8 +59,10 @@ final class ClaudeSession {
   private(set) var pillNote: String?
   /// Where `initialize`'s model list goes; tests give their own.
   @ObservationIgnored var catalog: ModelCatalog = .shared
-  /// What to put back if a switch is refused, by request id.
-  @ObservationIgnored private var revertOnError: [String: () -> Void] = [:]
+  /// Each switch sent and not yet answered, by request id: what its success keeps (the
+  /// folder's pick) and what its refusal puts back.
+  @ObservationIgnored private var pendingSwitches:
+    [String: (confirm: () -> Void, revert: () -> Void)] = [:]
   /// The earlier question the person closed without answering, so it is not offered again.
   private(set) var dismissedQuestionID: String?
   /// Stands in for the located binary, in tests.
@@ -151,32 +153,43 @@ final class ClaudeSession {
   }
 
   /// At once on a running process, mid-turn included; else at the next start. The folder
-  /// remembers it, Bypass aside.
+  /// remembers it, Bypass aside, once the CLI took it.
   func setMode(_ mode: PermissionMode) {
     pillNote = nil
-    ClaudeChoice.pickMode(mode, for: folder)
     let (previousPick, previousMode) = (modePick, permissionMode)
     modePick = mode
-    guard let process else { return }
+    guard let process else { return ClaudeChoice.pickMode(mode, for: folder) }
     permissionMode = mode.rawValue
     let id = nextRequestID("mode")
-    revertOnError[id] = { [weak self] in
-      self?.modePick = previousPick
-      self?.permissionMode = previousMode
-    }
+    pendingSwitches[id] = (
+      confirm: { [folder] in ClaudeChoice.pickMode(mode, for: folder) },
+      revert: { [weak self] in
+        self?.modePick = previousPick
+        self?.permissionMode = previousMode
+      }
+    )
     try? process.send(.setPermissionMode(requestID: id, mode: mode.rawValue))
   }
 
   /// `value` as `initialize`'s `models` give it; `default` is Claude Code's own.
   func setModel(_ value: String) {
     pillNote = nil
-    ClaudeChoice.pickModel(value, for: folder)
     let previous = modelPick
     modelPick = value
-    guard let process else { return }
+    guard let process else { return ClaudeChoice.pickModel(value, for: folder) }
     let id = nextRequestID("model")
-    revertOnError[id] = { [weak self] in self?.modelPick = previous }
+    pendingSwitches[id] = (
+      confirm: { [folder] in ClaudeChoice.pickModel(value, for: folder) },
+      revert: { [weak self] in self?.modelPick = previous }
+    )
     try? process.send(.setModel(requestID: id, model: value))
+  }
+
+  /// The CLI's word on its mode, whoever changed it: the pill shows it, and a restart
+  /// carries on in it.
+  private func adopt(mode: String) {
+    permissionMode = mode
+    if let known = PermissionMode(rawValue: mode) { modePick = known }
   }
 
   /// The history from the transcript file, once: `--resume` continues a session but does
@@ -455,22 +468,28 @@ final class ClaudeSession {
       if let models = ModelOption.list(fromInitialize: response.response), let account {
         catalog.record(models, for: account)
       }
+      if let mode = response.response?["current_permission_mode"]?.stringValue {
+        adopt(mode: mode)
+      }
       onInitialized?(response.response)
     }
     if case .controlResponse(let response) = message,
       response.requestID.hasPrefix("mode-") || response.requestID.hasPrefix("model-")
     {
-      let revert = revertOnError.removeValue(forKey: response.requestID)
+      let pending = pendingSwitches.removeValue(forKey: response.requestID)
       if response.isSuccess {
-        if let mode = response.response?["mode"]?.stringValue { permissionMode = mode }
+        pending?.confirm()
+        if let mode = response.response?["mode"]?.stringValue { adopt(mode: mode) }
       } else {
-        revert?()
+        pending?.revert()
         pillNote = response.error ?? String(localized: "Claude Code refused the change.")
       }
       return
     }
-    if case .system(.initialized(let info)) = message { permissionMode = info.permissionMode }
-    if case .system(.status(_, let mode?)) = message { permissionMode = mode }
+    if case .system(.initialized(let info)) = message, let mode = info.permissionMode {
+      adopt(mode: mode)
+    }
+    if case .system(.status(_, let mode?)) = message { adopt(mode: mode) }
     if case .controlResponse(let response) = message, response.requestID.hasPrefix("context-") {
       if response.isSuccess, let reply = ContextUsageReply(response.response) {
         reportedContext = reply

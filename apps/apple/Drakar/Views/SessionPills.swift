@@ -103,6 +103,11 @@ struct SessionPills: View {
 
   /// The model's own name ("Opus 5.5"), never "Default (recommended)".
   static func modelLabel(for session: ClaudeSession, in models: [ModelOption]?) -> String {
+    // Claude Code's default is whatever `settings.json` makes it: name what runs.
+    let pick = session.pickedModel
+    if pick == nil || pick == "default", let running = session.transcript.session?.model {
+      return ModelName.display(running)
+    }
     if let option = option(for: session, in: models) {
       return ModelName.display(option.resolvedModel ?? option.value)
     }

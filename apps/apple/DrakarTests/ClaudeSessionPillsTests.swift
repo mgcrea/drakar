@@ -136,6 +136,8 @@ struct ClaudeSessionPillsTests {
       #expect(session.pillNote == "Not launched for it")
       #expect(session.modePick == nil)
       #expect(session.shownMode == "default")
+      // Nor does the folder keep what was refused.
+      #expect(ClaudeChoice.sessionPicks(for: folder).mode == nil)
     }
   }
 
@@ -182,6 +184,46 @@ struct ClaudeSessionPillsTests {
       let account = try #require(session.account)
       try await waitUntil { catalog.models(for: account) != nil }
       #expect(catalog.models(for: account)?.map(\.value) == ["default", "haiku"])
+    }
+  }
+
+  /// Plan, approved: the CLI moves to Edit on its own, and a restart carries on there.
+  @Test func aModeTheCLIChoseSurvivesARestart() async throws {
+    try await scoped {
+      let status =
+        #"{"type":"system","subtype":"status","status":null,"permissionMode":"acceptEdits"}"#
+      let script = try standIn(
+        "claude",
+        "printf '%s\\n' \"$*\" >> \"$0.args\"\nread line\nprintf '%s\\n' '\(status)'\ncat > /dev/null"
+      )
+      let session = ClaudeSession(folder: folder)
+      session.executableOverride = script
+      session.setMode(.plan)
+      await session.spawn()
+      try await waitUntil { session.permissionMode == "acceptEdits" }
+      session.stop()
+      #expect(session.shownMode == "acceptEdits")
+      await session.spawn()
+      defer { session.stop() }
+      let args = try await read(script.appendingPathExtension("args")) {
+        $0.split(separator: "\n").count >= 2
+      }
+      #expect(args.split(separator: "\n").last?.contains("--permission-mode acceptEdits") == true)
+    }
+  }
+
+  /// `settings.json` may start it elsewhere than the pick: the pill says what the CLI says.
+  @Test func theStartSaysWhichModeItIsIn() async throws {
+    try await scoped {
+      let reply =
+        #"{"type":"control_response","response":{"subtype":"success","request_id":"init-1","response":{"commands":[],"current_permission_mode":"acceptEdits"}}}"#
+      let script = try standIn("claude", "read line\necho '\(reply)'\ncat > /dev/null")
+      let session = ClaudeSession(folder: folder)
+      session.executableOverride = script
+      await session.spawn()
+      defer { session.stop() }
+      try await waitUntil { session.permissionMode != nil }
+      #expect(session.shownMode == "acceptEdits")
     }
   }
 }

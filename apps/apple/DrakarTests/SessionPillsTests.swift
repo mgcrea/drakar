@@ -25,6 +25,12 @@ struct SessionPillsTests {
     try ClaudeChoice.$testSuite.withValue(suite, operation: body)
   }
 
+  private func scoped(_ body: () async throws -> Void) async rethrows {
+    let suite = "drakar-pill-\(UUID().uuidString)"
+    defer { UserDefaults().removePersistentDomain(forName: suite) }
+    try await ClaudeChoice.$testSuite.withValue(suite, operation: body)
+  }
+
   @Test func autoOnlyForAModelThatTakesIt() {
     scoped {
       let session = ClaudeSession(folder: folder)
@@ -53,6 +59,28 @@ struct SessionPillsTests {
       #expect(SessionPills.modelLabel(for: session, in: models) == "Haiku 4.5")
       session.setModel("claude-opus-4-8")
       #expect(SessionPills.modelLabel(for: session, in: models) == "Opus 4.8")
+    }
+  }
+
+  /// "Default" picked, `settings.json` saying Sonnet: the label is what runs.
+  @Test func labelsWhatRunsWhenTheDefaultIsPicked() async throws {
+    try await scoped {
+      try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+      let initLine =
+        #"{"type":"system","subtype":"init","cwd":"/tmp","session_id":"s1","model":"claude-sonnet-5-5[1m]"}"#
+      let script = folder.appending(path: "claude")
+      try Data("#!/bin/sh\nprintf '%s\\n' '\(initLine)'\ncat > /dev/null\n".utf8).write(to: script)
+      try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script.path)
+      let session = ClaudeSession(folder: folder)
+      session.executableOverride = script
+      session.setModel("default")
+      await session.spawn()
+      defer { session.stop() }
+      for _ in 0..<50 where session.transcript.session == nil {
+        try await Task.sleep(for: .milliseconds(100))
+      }
+      #expect(SessionPills.modelLabel(for: session, in: models) == "Sonnet 5.5 · 1M")
+      #expect(SessionPills.option(for: session, in: models)?.value == "default")
     }
   }
 }

@@ -60,4 +60,24 @@ struct SessionPicksTests {
     for _ in 0..<100 where entry.isLoading { try await Task.sleep(for: .milliseconds(20)) }
     #expect(catalog.models(for: account)?.map(\.value) == ["haiku"])
   }
+
+  /// Another window's pick, or the Settings switch, redraws the pills that read them.
+  @Test func aPickElsewhereRedrawsWhatReadsIt() {
+    scoped {
+      let redrawn = PickFlag()
+      withObservationTracking {
+        _ = ClaudeChoice.sessionPicks(for: folder)
+        _ = ClaudeChoice.allowsBypass
+      } onChange: {
+        redrawn.value = true
+      }
+      ClaudeChoice.pickModel("haiku", for: folder)
+      #expect(redrawn.value)
+    }
+  }
+}
+
+/// Set from an observation callback, which may not capture a variable.
+private final class PickFlag: @unchecked Sendable {
+  var value = false
 }

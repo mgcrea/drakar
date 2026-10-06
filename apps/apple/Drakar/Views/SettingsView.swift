@@ -112,7 +112,8 @@ enum ClaudeChoice {
   /// Sessions start with `--allow-dangerously-skip-permissions`, so the mode pill can offer
   /// Bypass. On by default.
   static var allowsBypass: Bool {
-    defaults.object(forKey: PreferenceKey.allowsBypass) as? Bool ?? true
+    _ = AttentionDefaults.shared.revision
+    return defaults.object(forKey: PreferenceKey.allowsBypass) as? Bool ?? true
   }
 
   /// What a folder's next session starts with, from the last pills picked there.
@@ -122,7 +123,8 @@ enum ClaudeChoice {
   }
 
   static func sessionPicks(for folder: URL) -> SessionPicks {
-    allSessionPicks[folderKey(folder)] ?? SessionPicks()
+    _ = AttentionDefaults.shared.revision
+    return allSessionPicks[folderKey(folder)] ?? SessionPicks()
   }
 
   static func pickModel(_ model: String, for folder: URL) {
@@ -213,7 +215,7 @@ enum AttentionChoice {
 
 /// Bumped whenever a default changes, and read by every `AttentionChoice` question:
 /// `UserDefaults` is not observable, and a switch flipped in the Attention pane has to
-/// redraw the rows and counts that read it.
+/// redraw the rows and counts that read it; so do the composer's pills, a folder's picks.
 @Observable
 final class AttentionDefaults {
   static let shared = AttentionDefaults()
@@ -448,7 +450,7 @@ private struct ClaudeSection: View {
       Toggle("Allow Bypass permissions", isOn: $allowsBypass)
         .accessibilityIdentifier("settings.allowsBypass")
       Text(
-        "Sessions start with --allow-dangerously-skip-permissions, so Bypass can be picked in the composer. No session starts in it."
+        "Sessions start with --allow-dangerously-skip-permissions, so Bypass can be picked in the composer. A folder never starts its new sessions in it."
       )
       .font(.caption)
       .foregroundStyle(.secondary)
