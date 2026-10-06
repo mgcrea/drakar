@@ -437,7 +437,7 @@ private struct SessionFooter: View {
         }
       }
       account
-      if let version = session.transcript.session?.claudeCodeVersion {
+      if let version = session.transcript.session?.agentVersion {
         VersionLabel(version: version, executable: session.executable)
       } else if let version = session.transcript.writerVersion {
         // Not Drakar's process: how its version compares to Drakar's is not this session's.

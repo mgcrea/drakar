@@ -134,7 +134,8 @@ public struct SessionInfo: Sendable, Equatable {
   public var cwd: String?
   public var model: String?
   public var permissionMode: String?
-  public var claudeCodeVersion: String?
+  /// The version of the agent's CLI that runs the session: `claude_code_version` for Claude Code.
+  public var agentVersion: String?
   /// `none` for a subscription login, else where the API key came from.
   public var apiKeySource: String?
   public var tools: [String]
@@ -145,7 +146,7 @@ public struct SessionInfo: Sendable, Equatable {
     cwd = json["cwd"]?.stringValue
     model = json["model"]?.stringValue
     permissionMode = json["permissionMode"]?.stringValue
-    claudeCodeVersion = json["claude_code_version"]?.stringValue
+    agentVersion = json["claude_code_version"]?.stringValue
     apiKeySource = json["apiKeySource"]?.stringValue
     tools = json["tools"]?.arrayValue?.compactMap(\.stringValue) ?? []
   }

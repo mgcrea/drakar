@@ -34,7 +34,7 @@ struct StreamMessageTests {
     #expect(info.sessionID == "84e79584-4dcd-48db-b738-57f6d1946155")
     #expect(info.cwd == "/Users/me/project")
     #expect(info.model == "claude-haiku-4-5-20251001")
-    #expect(info.claudeCodeVersion == DrakarKit.capturedClaudeCodeVersion)
+    #expect(info.agentVersion == DrakarKit.capturedClaudeCodeVersion)
     #expect(info.tools.contains("Bash"))
   }
 

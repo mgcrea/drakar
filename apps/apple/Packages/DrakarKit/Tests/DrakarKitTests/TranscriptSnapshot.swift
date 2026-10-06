@@ -58,7 +58,7 @@ struct TranscriptSnapshot: Codable, Equatable {
     session = t.session.map {
       [
         $0.sessionID, $0.cwd ?? "-", $0.model ?? "-", $0.permissionMode ?? "-",
-        $0.claudeCodeVersion ?? "-", $0.apiKeySource ?? "-", $0.tools.joined(separator: ","),
+        $0.agentVersion ?? "-", $0.apiKeySource ?? "-", $0.tools.joined(separator: ","),
       ]
       .joined(separator: "|")
     }
