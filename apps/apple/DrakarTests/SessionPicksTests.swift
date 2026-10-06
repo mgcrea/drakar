@@ -78,6 +78,16 @@ struct SessionPicksTests {
       #expect(redrawn.value)
     }
   }
+
+  @Test func readsTheDefaultEffort() {
+    scoped {
+      #expect(ClaudeChoice.defaultEffort == nil)
+      ClaudeChoice.defaults.set("max", forKey: PreferenceKey.defaultEffort)
+      #expect(ClaudeChoice.defaultEffort == "max")
+      ClaudeChoice.defaults.set("", forKey: PreferenceKey.defaultEffort)
+      #expect(ClaudeChoice.defaultEffort == nil)
+    }
+  }
 }
 
 /// Set from an observation callback, which may not capture a variable.

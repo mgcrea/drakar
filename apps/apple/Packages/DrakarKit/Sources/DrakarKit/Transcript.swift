@@ -127,6 +127,9 @@ public struct Transcript: Sendable, Equatable {
   /// The mode the newest prompt line was sent in, from a transcript file: what a session
   /// another process runs is in.
   public internal(set) var historyPermissionMode: String?
+  /// The effort the newest reply ran at, from a transcript file; nil when it names none (a
+  /// model without effort, such as Haiku).
+  public internal(set) var historyEffort: String?
   /// The newest main-thread request's tokens: the session's context. Subagents' are theirs.
   public private(set) var contextUsage: TokenUsage?
   /// `message.model` of that request.

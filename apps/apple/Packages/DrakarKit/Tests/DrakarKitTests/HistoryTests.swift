@@ -53,6 +53,19 @@ struct HistoryTests {
     #expect(history([#"{"type":"ai-title","aiTitle":"Hi"}"#]).historyPermissionMode == nil)
   }
 
+  /// Each reply names the effort it ran at; one from a model without effort (Haiku) names
+  /// none, and then the session has none.
+  @Test func knowsTheEffortOfTheNewestReply() {
+    let reply = { (id: String, effort: String?) in
+      let field = effort.map { #","effort":"\#($0)""# } ?? ""
+      return
+        #"{"type":"assistant"\#(field),"message":{"id":"\#(id)","role":"assistant","content":[{"type":"text","text":"ok"}]}}"#
+    }
+    #expect(history([reply("m1", "high"), reply("m2", "max")]).historyEffort == "max")
+    #expect(history([reply("m1", "high"), reply("m2", nil)]).historyEffort == nil)
+    #expect(history([#"{"type":"ai-title","aiTitle":"Hi"}"#]).historyEffort == nil)
+  }
+
   /// A resumed session goes on from its history: the next prompt and the live stream
   /// land after it.
   @Test func carriesOnLiveAfterTheHistory() throws {

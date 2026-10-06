@@ -39,4 +39,10 @@ public enum ModelName {
     if let attachmentModel, attachmentModel == message + extendedSuffix { return attachmentModel }
     return message
   }
+
+  /// The model a `get_settings` reply says the process runs (`applied.model`), whatever
+  /// `--model` or `set_model` asked of it. Never carries `[1m]`.
+  public static func applied(fromSettings reply: JSONValue?) -> String? {
+    reply?["applied"]?["model"]?.stringValue
+  }
 }

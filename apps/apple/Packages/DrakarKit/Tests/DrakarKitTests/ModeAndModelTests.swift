@@ -1,4 +1,5 @@
 import DrakarKit
+import Foundation
 import Testing
 
 @Suite("The modes and models a session can take")
@@ -92,5 +93,14 @@ struct ModeAndModelTests {
     #expect(PermissionMode.title(of: "default") == "Ask before edits")
     #expect(PermissionMode.title(of: "bypassPermissions") == "Bypass permissions")
     #expect(PermissionMode.title(of: "dontAsk") == "dontAsk")
+  }
+
+  /// `get_settings`' `applied`: the model the process runs, whatever was asked of it.
+  @Test func readsTheModelTheProcessRuns() throws {
+    let reply = try JSONValue.parse(
+      Data(#"{"applied":{"model":"claude-haiku-4-5-20251001","effort":null}}"#.utf8))
+    #expect(ModelName.applied(fromSettings: reply) == "claude-haiku-4-5-20251001")
+    #expect(EffortLevel.applied(fromSettings: reply) == nil)
+    #expect(ModelName.applied(fromSettings: .object([:])) == nil)
   }
 }

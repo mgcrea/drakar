@@ -303,9 +303,34 @@ struct ClaudeSessionPillsTests {
       let session = ClaudeSession(folder: folder)
       session.executableOverride = script
       await session.spawn()
-      defer { session.stop() }
       try await waitUntil { session.shownEffort != nil }
       #expect(session.shownEffort == "high")
+      // Ended: what the process applied went with it.
+      session.stop()
+      #expect(session.shownEffort == nil)
+      #expect(session.appliedModel == nil)
+    }
+  }
+
+  /// Settings' effort goes on the command line; a pick wins over it.
+  @Test func startsWithSettingsEffort() async throws {
+    try await scoped {
+      let script = try standIn("claude", #"printf '%s\n' "$*" >> "$0.args"; cat > /dev/null"#)
+      ClaudeChoice.defaults.set("max", forKey: PreferenceKey.defaultEffort)
+      let session = ClaudeSession(folder: folder)
+      session.executableOverride = script
+      #expect(session.shownEffort == "max")
+      await session.spawn()
+      let args = script.appendingPathExtension("args")
+      _ = try await read(args) { !$0.isEmpty }
+      session.stop()
+      session.setEffort("low")
+      await session.spawn()
+      defer { session.stop() }
+      let runs = try await read(args) { $0.split(separator: "\n").count >= 2 }
+        .split(separator: "\n")
+      #expect(runs.first?.contains("--effort max") == true)
+      #expect(runs.last?.contains("--effort low") == true)
     }
   }
 }
