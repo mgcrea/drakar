@@ -152,7 +152,7 @@ process stays up and takes the next prompt normally (`terminal_reason: "complete
 Captured as the `interrupt-then-turn` fixture.
 
 Other control subtypes the extension sends, unverified here:
-`set_permission_mode`, `set_model`, `set_max_thinking_tokens`, `rewind_files`,
+`set_max_thinking_tokens`, `rewind_files`,
 `mcp_toggle`, `get_usage`, `rename_session`, and the CLI may send
 `control_cancel_request` to withdraw a pending `can_use_tool`.
 
@@ -183,6 +183,24 @@ exits after its stdin closes. A process killed outright leaves it behind. Drakar
 skip its children (`LiveSession.read`); Armada shows it as an idle session for a second or two.
 
 Captured as the `capabilities` fixture, trimmed, every secret replaced.
+
+## Mode and model (verified 2026-10-06, 2.1.288)
+
+Before any prompt, no API call:
+
+- `initialize`'s reply has `models`, each `{value, resolvedModel, displayName, description,
+  supportsEffort, supportedEffortLevels, supportsAdaptiveThinking, supportsFastMode,
+  supportsAutoMode}`, first `default`, then the aliases, then pinned ids; and
+  `current_permission_mode`.
+- `{"subtype":"set_model","model":"sonnet"}` → empty success.
+- `{"subtype":"set_permission_mode","mode":"acceptEdits"}` → success `{"mode":"acceptEdits"}`,
+  then `{"type":"system","subtype":"status","status":null,"permissionMode":"acceptEdits"}`.
+  `auto` and `plan` likewise.
+- `bypassPermissions` without `--allow-dangerously-skip-permissions` (or
+  `--dangerously-skip-permissions`) → error `bypass_not_launched`.
+- Transcript prompt lines carry `permissionMode`.
+
+Captured as the `mode-and-model` fixture.
 
 ## Observed details worth knowing
 

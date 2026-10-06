@@ -90,6 +90,7 @@ extension Transcript {
       if let message = try? StreamMessage(json: json) { apply(message) }
     case "user":
       if json["isMeta"]?.boolValue == true { return }
+      if let mode = json["permissionMode"]?.stringValue { historyPermissionMode = mode }
       if json["isCompactSummary"]?.boolValue == true {
         addNotice(String(localized: "Earlier conversation compacted"))
         return

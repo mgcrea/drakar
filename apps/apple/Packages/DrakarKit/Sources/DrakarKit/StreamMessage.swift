@@ -58,8 +58,9 @@ public enum StreamMessageError: Error, Equatable {
 
 public enum SystemEvent: Sendable, Equatable {
   case initialized(SessionInfo)
-  /// `requesting` before each API call.
-  case status(String?)
+  /// `requesting` before each API call; `permissionMode` set when the mode changed, by a
+  /// `set_permission_mode` or the CLI itself.
+  case status(String?, permissionMode: String?)
   case other(subtype: String, raw: JSONValue)
 
   init?(_ json: JSONValue) {
@@ -68,7 +69,9 @@ public enum SystemEvent: Sendable, Equatable {
     case "init":
       guard let info = SessionInfo(json) else { return nil }
       self = .initialized(info)
-    case "status": self = .status(json["status"]?.stringValue)
+    case "status":
+      self = .status(
+        json["status"]?.stringValue, permissionMode: json["permissionMode"]?.stringValue)
     default: self = .other(subtype: subtype, raw: json)
     }
   }

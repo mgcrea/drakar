@@ -7,6 +7,15 @@ struct StreamMessageTests {
 
   /// The property everything else rests on: every line the real CLI wrote decodes into a
   /// message this package models. An `.unknown` here means a capture outgrew the decoder.
+  /// A mode change, the person's or the CLI's own, is a `status` line naming the mode.
+  @Test func readsTheModeOffAStatusLine() throws {
+    let modes = try Fixture.modeAndModel.messages.compactMap { message -> String? in
+      if case .system(.status(_, let mode?)) = message { return mode }
+      return nil
+    }
+    #expect(modes == ["acceptEdits", "auto", "plan"])
+  }
+
   @Test(arguments: [Fixture.turnWithTool, .permissionRequest, .interruptThenTurn])
   func decodesEveryCapturedLine(_ fixture: Fixture) throws {
     let messages = try fixture.messages

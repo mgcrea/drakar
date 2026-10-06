@@ -18,6 +18,12 @@ public enum ClientMessage: Sendable, Equatable {
   /// Every MCP server the process would connect, with its status and tools. Answered before
   /// any prompt (docs/claude-stream-json.md, "Skills and MCP status").
   case mcpStatus(requestID: String)
+  /// Switch the running session's model to `model` (a `value` of `initialize`'s `models`),
+  /// from its next request. Answered with an empty success.
+  case setModel(requestID: String, model: String)
+  /// Switch the running session's permission mode; answered with `{"mode": …}`, then a
+  /// `status` line. Bypass is refused unless the process started able to take it.
+  case setPermissionMode(requestID: String, mode: String)
 
   public var json: JSONValue {
     switch self {
@@ -53,6 +59,11 @@ public enum ClientMessage: Sendable, Equatable {
         id, ["subtype": .string("get_context_usage"), "detail": .string("summary")])
     case .mcpStatus(let id):
       Self.controlRequest(id, ["subtype": .string("mcp_status")])
+    case .setModel(let id, let model):
+      Self.controlRequest(id, ["subtype": .string("set_model"), "model": .string(model)])
+    case .setPermissionMode(let id, let mode):
+      Self.controlRequest(
+        id, ["subtype": .string("set_permission_mode"), "mode": .string(mode)])
     }
   }
 

@@ -39,6 +39,11 @@ enum Fixture: String {
   /// and servers in every status seen. Trimmed, and every header, env value and URL token
   /// replaced by `drakar-fixture-secret`, the `initialize` reply's account dropped.
   case capabilities = "capabilities"
+  /// A `claude` with no prompt (2.1.288, 2026-10-06, the mode and model spike): the
+  /// `initialize` reply cut to its `models` and `current_permission_mode`, then the replies to
+  /// `set_model` (`r2`) and `set_permission_mode` (`r3` acceptEdits, `r4` bypassPermissions
+  /// refused, `r5` auto, `r6` plan) with the `status` lines that followed. Ids zeroed.
+  case modeAndModel = "mode-and-model"
 
   var lines: [Data] {
     get throws {

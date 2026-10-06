@@ -107,6 +107,9 @@ public struct Transcript: Sendable, Equatable {
   /// The Claude Code version that wrote the newest history line: the session's, when another
   /// process runs it and no `system/init` says so.
   public internal(set) var writerVersion: String?
+  /// The mode the newest prompt line was sent in, from a transcript file: what a session
+  /// another process runs is in.
+  public internal(set) var historyPermissionMode: String?
   /// The newest main-thread request's tokens: the session's context. Subagents' are theirs.
   public private(set) var contextUsage: TokenUsage?
   /// `message.model` of that request.

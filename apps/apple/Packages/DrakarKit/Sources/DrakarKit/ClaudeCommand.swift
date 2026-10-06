@@ -9,6 +9,9 @@ public struct ClaudeCommand: Sendable, Equatable {
   public var model: String?
   /// `default`, `acceptEdits`, `plan` or `bypassPermissions`; nil leaves the default.
   public var permissionMode: String?
+  /// `--allow-dangerously-skip-permissions`: Bypass permissions can be switched to later,
+  /// without the session starting in it.
+  public var allowsBypass = false
   /// Stream text as it is written rather than block by block.
   public var includesPartialMessages = true
   /// `summarized` makes thinking arrive as text; without it the CLI sends thinking blocks
@@ -42,6 +45,7 @@ public struct ClaudeCommand: Sendable, Equatable {
     if let thinkingDisplay { arguments += ["--thinking-display", thinkingDisplay] }
     if let model { arguments += ["--model", model] }
     if let permissionMode { arguments += ["--permission-mode", permissionMode] }
+    if allowsBypass { arguments.append("--allow-dangerously-skip-permissions") }
     // One argument, `--resume=<id>`, as the extension passes it, so an id can never be
     // read as a flag.
     if let resumeSessionID {

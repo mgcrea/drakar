@@ -5,6 +5,13 @@ import Testing
 @Suite("Starting claude")
 struct ClaudeCommandTests {
 
+  @Test func allowsBypassOnlyWhenAsked() {
+    #expect(!ClaudeCommand().arguments.contains("--allow-dangerously-skip-permissions"))
+    var command = ClaudeCommand()
+    command.allowsBypass = true
+    #expect(command.arguments.contains("--allow-dangerously-skip-permissions"))
+  }
+
   @Test func passesTheExtensionsArguments() {
     #expect(
       ClaudeCommand().arguments == [

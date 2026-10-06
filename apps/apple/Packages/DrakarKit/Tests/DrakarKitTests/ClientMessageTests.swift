@@ -25,6 +25,17 @@ struct ClientMessageTests {
         + "\n")
   }
 
+  @Test func encodesTheModeAndModelSwitches() throws {
+    #expect(
+      try text(.setModel(requestID: "model-1", model: "sonnet"))
+        == #"{"request":{"model":"sonnet","subtype":"set_model"},"request_id":"model-1","type":"control_request"}"#
+        + "\n")
+    #expect(
+      try text(.setPermissionMode(requestID: "mode-2", mode: "plan"))
+        == #"{"request":{"mode":"plan","subtype":"set_permission_mode"},"request_id":"mode-2","type":"control_request"}"#
+        + "\n")
+  }
+
   @Test func encodesAPrompt() throws {
     #expect(
       try text(.prompt("Run it"))

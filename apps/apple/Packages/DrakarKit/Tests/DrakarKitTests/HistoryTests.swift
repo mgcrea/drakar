@@ -43,6 +43,16 @@ struct HistoryTests {
     #expect(history([#"{"type":"ai-title","aiTitle":"Hi"}"#]).writerVersion == nil)
   }
 
+  /// Each prompt line names the mode it was sent in: the newest is the session's.
+  @Test func knowsTheModeOfTheNewestPrompt() {
+    let transcript = history([
+      #"{"type":"user","permissionMode":"default","message":{"role":"user","content":"Hi"}}"#,
+      #"{"type":"user","permissionMode":"plan","message":{"role":"user","content":"Plan it"}}"#,
+    ])
+    #expect(transcript.historyPermissionMode == "plan")
+    #expect(history([#"{"type":"ai-title","aiTitle":"Hi"}"#]).historyPermissionMode == nil)
+  }
+
   /// A resumed session goes on from its history: the next prompt and the live stream
   /// land after it.
   @Test func carriesOnLiveAfterTheHistory() throws {
