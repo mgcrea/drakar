@@ -102,8 +102,11 @@ public struct Transcript: Sendable, Equatable {
   /// How the newest turn ended; nil while it runs, before any turn, and after a prompt.
   /// Live, from its `result`; in history, which has none, from `stop_reason: end_turn`.
   public private(set) var turnEnd: TurnEnd?
-  /// The session's title, from the newest `ai-title` in its history.
-  public internal(set) var title: String?
+  /// The session's title: the newest name it was given (`custom-title`), or else the newest
+  /// `ai-title`, which never replaces a name. The CLI and the extension read it the same way.
+  public var title: String? { customTitle ?? aiTitle }
+  public internal(set) var customTitle: String?
+  public internal(set) var aiTitle: String?
   /// The Claude Code version that wrote the newest history line: the session's, when another
   /// process runs it and no `system/init` says so.
   public internal(set) var writerVersion: String?

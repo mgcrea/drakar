@@ -145,14 +145,20 @@ final class OpenSessions {
   }
 
   /// The ids live in other processes now. A session listed here that another process has
-  /// open, and that has no process of its own, is read-only: two writers on one transcript
-  /// must never happen. One whose process went away catches up and can be resumed here.
+  /// open is read-only: two writers on one transcript must never happen. One running here
+  /// gives way, since someone took it up there, typically in an editor's panel after a move,
+  /// which resumes the same id without a word. One whose process went away catches up and
+  /// can be resumed here.
   func liveChanged(_ live: Set<String>) {
     for project in projects.values {
       for item in project.sessions {
         guard let id = item.sessionID else { continue }
         if live.contains(id) {
-          if !item.session.isProcessRunning { item.session.isReadOnly = true }
+          if item.session.isProcessRunning {
+            item.session.stop()
+            Attention.shared.continuedElsewhere(item, in: project)
+          }
+          item.session.isReadOnly = true
         } else if item.session.isReadOnly {
           item.session.catchUp()
           item.session.isReadOnly = false

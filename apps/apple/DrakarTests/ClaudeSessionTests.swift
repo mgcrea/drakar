@@ -350,6 +350,91 @@ struct ClaudeSessionTests {
     #expect(runs.last?.contains("--fork-session") == false)
   }
 
+  /// With no process, the name goes into the transcript, where every list reads it.
+  @Test func renamingAnIdleSessionWritesItsTranscript() async throws {
+    let file = folder.appending(path: "s1.jsonl")
+    try Data(
+      [
+        #"{"type":"user","message":{"role":"user","content":"Make it so"}}"#,
+        #"{"type":"ai-title","aiTitle":"Make it so"}"#,
+      ].joined(separator: "\n").appending("\n").utf8
+    ).write(to: file)
+    let target = ResumeTarget(
+      sessionID: "s1", cwd: folder.path(percentEncoded: false),
+      file: file.path(percentEncoded: false),
+      accountDirectory: folder.path(percentEncoded: false), accountIsDefault: false)
+    let session = ClaudeSession(folder: folder, resuming: target)
+    await session.loadHistory()
+
+    #expect(session.rename(to: "  Mine "))
+    #expect(session.title == "Mine")
+    let account = ClaudeAccount(directory: folder, isDefault: false)
+    #expect(SessionIndex.summary(of: file, account: account)?.title == "Mine")
+  }
+
+  /// A running process is told, by the id it gave, and writes the name itself.
+  @Test func renamingARunningSessionTellsTheProcess() async throws {
+    let script = folder.appending(path: "claude-init")
+    let initLine =
+      #"{"type":"system","subtype":"init","cwd":"/tmp","session_id":"s-run","model":"m"}"#
+    try Data(
+      "#!/bin/sh\nprintf '%s\\n' '\(initLine)'\ncat >> \"$0.stdin\"\n".utf8
+    ).write(to: script)
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script.path)
+    let session = ClaudeSession(folder: folder)
+    session.executableOverride = script
+    session.send("hello")
+    defer { session.stop() }
+    for _ in 0..<50 where session.sessionID != "s-run" {
+      try await Task.sleep(for: .milliseconds(100))
+    }
+    #expect(session.rename(to: "Mine"))
+    #expect(session.title == "Mine")
+    let stdin = script.appendingPathExtension("stdin")
+    var rename: String?
+    for _ in 0..<50 where rename == nil {
+      let text = (try? String(contentsOf: stdin, encoding: .utf8)) ?? ""
+      rename = text.split(separator: "\n").map(String.init).first { $0.contains("rename_session") }
+      if rename == nil { try await Task.sleep(for: .milliseconds(100)) }
+    }
+    #expect(rename?.contains(#""session_id":"s-run""#) == true)
+    #expect(rename?.contains(#""title":"Mine""#) == true)
+  }
+
+  /// A session with no transcript yet takes the name when it starts, once.
+  @Test func aNameBeforeTheFirstPromptGoesOnTheCommandLine() async throws {
+    let script = folder.appending(path: "claude-args")
+    try Data("#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$0.args\"\ncat > /dev/null\n".utf8)
+      .write(to: script)
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script.path)
+    let session = ClaudeSession(folder: folder)
+    session.executableOverride = script
+    #expect(session.rename(to: "Mine"))
+    #expect(session.title == "Mine")
+    var runs: [String] = []
+    // Each run is read before it is stopped: the script may not have written it yet.
+    for count in 1...2 {
+      await session.spawn()
+      for _ in 0..<50 {
+        runs = ((try? String(contentsOf: script.appendingPathExtension("args"), encoding: .utf8))
+          ?? "").split(separator: "\n").map(String.init)
+        if runs.count >= count { break }
+        try await Task.sleep(for: .milliseconds(100))
+      }
+      session.stop()
+    }
+    #expect(runs.count == 2)
+    #expect(runs.first?.contains("--name=Mine") == true)
+    #expect(runs.last?.contains("--name") == false)
+  }
+
+  @Test func aReadOnlySessionKeepsItsName() {
+    let session = ClaudeSession(folder: folder)
+    session.isReadOnly = true
+    #expect(!session.rename(to: "Mine"))
+    #expect(session.title == nil)
+  }
+
   @Test func aMissingTranscriptDisablesTheComposer() async {
     let target = ResumeTarget(
       sessionID: "gone", cwd: folder.path(percentEncoded: false),

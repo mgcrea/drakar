@@ -153,7 +153,7 @@ Captured as the `interrupt-then-turn` fixture.
 
 Other control subtypes the extension sends, unverified here:
 `set_max_thinking_tokens`, `rewind_files`,
-`mcp_toggle`, `get_usage`, `rename_session`, and the CLI may send
+`mcp_toggle`, `get_usage`, and the CLI may send
 `control_cancel_request` to withdraw a pending `can_use_tool`.
 
 ## Skills and MCP status (verified 2026-10-04, 2.1.288)
@@ -226,6 +226,60 @@ config directories, when a session was resumed after switching `CLAUDE_CONFIG_DI
 `--fork-session` with `--resume` continues a copy under a new id, which is how Drakar
 opens a session another process has open (the registry at `<config>/sessions/<pid>.json`
 says which; Armada's `docs/claude-code-sessions.md` describes it).
+
+## Session titles (verified 2026-10-06, 2.1.288; extension 2.1.289)
+
+A transcript carries two kinds of title line. `ai-title` (`aiTitle`) is the CLI's own
+summary, written again as it refines it. `custom-title` (`customTitle`) is a name given
+with `/rename`, `--name` or `rename_session`; every writer of one also writes an
+`agent-name` line with the same text. The newest `custom-title` wins, and an `ai-title`
+never replaces it, even a newer one: the extension's session list reads them that way,
+and so does Drakar (`Transcript.title`, `SessionIndex`).
+
+- **A fork copies the original's title.** `--fork-session` starts the new transcript with
+  the original's `ai-title` line, verbatim, and keeps it after the fork's own turns, so a
+  fork and its original list under the same title unless the fork is named.
+- **`--name=<name>`** (one argument, so a name starting with a dash is not read as a flag)
+  names a new session or a fork: a `custom-title` line at the head of the transcript,
+  written again later. A session started with a name gets no `ai-title` at all.
+- **`rename_session`** names a running session, as the extension sends it:
+
+  ```jsonc
+  {"type":"control_request","request_id":"…","request":{"subtype":"rename_session",
+    "title":"Plum","source":"host","session_id":"<id>"}}
+  ```
+
+  The CLI answers `control_response` success at once and appends `custom-title` and
+  `agent-name` lines. The process keeps the name for its own later writes.
+- **A sidecar, `<projects>/<encoded cwd>/<id>/custom-title.json`** (`{"customTitle":…}`,
+  mode 0600 in a 0700 folder), is written beside the transcript by a rename. The CLI's
+  `/resume` list takes a `custom-title` from the transcript's tail first, then the
+  sidecar, then one from its head. Renaming a session no process has open therefore takes
+  both: the line appended to the transcript, and the sidecar rewritten (Drakar's
+  `SessionTitle.write`), or the sidecar's old name returns once the line is no longer
+  near the end.
+
+## Ending another process's session (verified 2026-10-06, 2.1.288; extension 2.1.289)
+
+How "Move to This Window" takes a session from the app running it. A headless
+stream-json `claude` signalled while idle exits in about a second: SIGINT with status 0,
+SIGTERM 143, SIGHUP 129. Each time its `sessions/<pid>.json` and the `.key` beside it are
+removed and the transcript ends whole (`cost-state` last). SIGTERM mid-turn is clean too:
+during thinking, nothing is left half-written; during a Bash call, the CLI kills the
+tool's child (exit 137) and writes a `tool_result` with its partial output before
+exiting, and a resume reads that turn as cut short. The CLI's own debug log shows the
+shutdown is graceful: MCP servers exit cleanly and SessionEnd hooks run.
+
+The VS Code panel whose process got **SIGINT shows nothing**. After **SIGTERM** it shows
+"Claude Code process exited with code 143" and the stderr tail. Either way **the next
+message typed there resumes the same id** (`--resume=<id>`, a new pid, the same
+transcript) without a word. The registry entry can appear already `busy`. So the app a
+session moved from can take it back at any time. Drakar sends SIGTERM, which leaves that
+panel saying the process ended, and a window running a session gives way the moment
+another process registers it (`OpenSessions.liveChanged`).
+
+A `claude` started from a VS Code session's shell registers as `claude-vscode`: the
+entrypoint comes from the environment it inherits.
 
 ## What the extension passes as of 2.1.288
 

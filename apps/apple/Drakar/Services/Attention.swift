@@ -188,6 +188,18 @@ final class Attention: NSObject, UNUserNotificationCenterDelegate {
     return notifiesTurnEnds ? (String(localized: "Finished its turn."), false) : nil
   }
 
+  /// A session this window ran was taken up by another process, and the window gave it
+  /// way: said unless it is in front of the person, where the banner says it.
+  func continuedElsewhere(_ item: ProjectSession, in project: Project) {
+    guard !inView(item, in: project), let id = item.sessionID,
+      let summary = SessionMonitor.shared.all.first(where: { $0.sessionID == id })
+    else { return }
+    let host = SessionMonitor.shared.host(of: summary, excluding: project)
+    post(
+      title: item.displayTitle, body: String(localized: "Continued in \(host)."), item: item,
+      wantsAnswer: false)
+  }
+
   private func inView(_ item: ProjectSession, in project: Project) -> Bool {
     Self.isInView(
       appIsActive: NSApp.isActive, windowIsKey: project.workspace.window?.isKeyWindow == true,

@@ -48,6 +48,50 @@ struct SessionRegistryTests {
     #expect(live.map(\.sessionID) == ["theirs"])
   }
 
+  /// One started through a wrapper that does not `exec` is a grandchild, and still Drakar's.
+  @Test func skipsDrakarsGrandchildren() throws {
+    try write(41, #"{"pid":41,"sessionId":"mine","cwd":"/work/drakar"}"#)
+    let parents: [Int32: Int32] = [41: 50, 50: 99, 99: 1]
+    let live = LiveSession.read(
+      account: account, isAlive: { _ in true }, parentOf: { parents[$0] }, ownPID: 99,
+      temporaryDirectories: [])
+    #expect(live.isEmpty)
+  }
+
+  /// A move signals the process the registry still lists for that session, between turns.
+  @Test func endsOnlyTheProcessStillHoldingTheSession() throws {
+    try write(41, #"{"pid":41,"sessionId":"s1","status":"idle"}"#)
+    var signalled: [Int32] = []
+    let ending = LiveSession(pid: 41, sessionID: "s1")
+    #expect(
+      LiveSession.end(ending, account: account, isAlive: { _ in true }) {
+        signalled.append($0)
+        return true
+      })
+    #expect(signalled == [41])
+  }
+
+  @Test func neverEndsAReusedPidABusySessionOrAGoneOne() throws {
+    try write(41, #"{"pid":41,"sessionId":"other","status":"idle"}"#)
+    try write(42, #"{"pid":42,"sessionId":"s2","status":"busy"}"#)
+    var signalled: [Int32] = []
+    let signal: (Int32) -> Bool = {
+      signalled.append($0)
+      return true
+    }
+    let alive: (Int32) -> Bool = { _ in true }
+    #expect(
+      !LiveSession.end(
+        LiveSession(pid: 41, sessionID: "s1"), account: account, isAlive: alive, signal: signal))
+    #expect(
+      !LiveSession.end(
+        LiveSession(pid: 42, sessionID: "s2"), account: account, isAlive: alive, signal: signal))
+    #expect(
+      !LiveSession.end(
+        LiveSession(pid: 43, sessionID: "s3"), account: account, isAlive: alive, signal: signal))
+    #expect(signalled.isEmpty)
+  }
+
   @Test func skipsAProcessThatIsGone() throws {
     try write(41, #"{"pid":41,"sessionId":"s1","cwd":"/w"}"#)
     #expect(

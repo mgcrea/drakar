@@ -181,11 +181,13 @@ struct SessionListView: View {
       Button("Dismiss") { project.dismissAsk(item) }
       Divider()
     }
+    Button("Rename…") { RenameSessionPrompt.run(for: item) }
+      .disabled(!project.canRename(item))
     if (item.session.resuming ?? item.session.savedTarget) != nil {
       Button("Fork a Copy") { project.fork(item) }
         .disabled(!project.canFork(item))
-      Divider()
     }
+    Divider()
     if item.session.isProcessRunning {
       Button("End Session") { confirmIfRunning(item) { project.end(item) } }
     }
@@ -229,7 +231,7 @@ struct SessionListView: View {
   }
 
   /// A row of Elsewhere or Ended. Resuming one live elsewhere would interleave two writers:
-  /// it only forks.
+  /// it forks, or moves here once the app running it has been told to let it go.
   @ViewBuilder private func menu(for summary: SessionSummary, ended: Bool) -> some View {
     if !ended, [.question, .offer].contains(project.urgency(of: summary)) {
       Button("Dismiss") { project.dismissAsk(summary) }
@@ -237,6 +239,10 @@ struct SessionListView: View {
     }
     if ended, let target = ResumeTarget(summary) {
       Button("Resume in This Window") { project.attach(target) }
+    }
+    if !ended, summary.live != nil {
+      Button("Move to This Window…") { MoveHere.confirm(summary, into: project) }
+        .disabled(!Project.canMoveHere(summary))
     }
     if let target = ResumeTarget(summary, forking: true) {
       Button("Fork a Copy") { project.attach(target) }

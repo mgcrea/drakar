@@ -66,6 +66,34 @@ struct ProjectTests {
     #expect(original.session.isReadOnly)
   }
 
+  /// Each copy is numbered after its original's title, a copy of a copy as the next one.
+  @Test func forksAreNumberedAfterTheirOriginal() async throws {
+    try Data(
+      [
+        #"{"type":"user","cwd":"/w","message":{"role":"user","content":"go"}}"#,
+        #"{"type":"ai-title","aiTitle":"Pineapple"}"#,
+      ].joined(separator: "\n").appending("\n").utf8
+    ).write(to: folder.appending(path: "a.jsonl"))
+    let project = Project(folder: folder)
+    let original = project.attach(target("a"))
+    await original.session.loadHistory()
+
+    let first = project.fork(original)
+    let second = project.fork(original)
+    let third = project.fork(first)
+    #expect(first.displayTitle == "Pineapple (fork)")
+    #expect(second.displayTitle == "Pineapple (fork #2)")
+    #expect(third.displayTitle == "Pineapple (fork #3)")
+    #expect(original.displayTitle == "Pineapple")
+  }
+
+  /// A row whose title is not known yet has nothing to number: the CLI keeps the copied one.
+  @Test func aForkOfAnUntitledRowTakesNoName() {
+    let project = Project(folder: folder)
+    let fork = project.fork(project.attach(target("a")))
+    #expect(fork.session.title == nil)
+  }
+
   /// A session opened from Elsewhere or Ended is looked at there, not made the window's
   /// own, until it is taken over: prompted, or attached.
   @Test func aWatchedSessionStaysOutOfTheWindowUntilTakenOver() {
@@ -287,8 +315,9 @@ struct ProjectTests {
     #expect(item.stopReason == "Stopped, exit 3")
   }
 
-  /// A session running here is never flipped.
-  @Test func aRowWithItsOwnProcessIsNeverFlipped() async throws {
+  /// A session running here gives way when another process opens it: an editor's panel
+  /// typed in after a move resumes the same id, and two writers must never meet.
+  @Test func aRowWithItsOwnProcessGivesWayToAnother() async throws {
     let fake = folder.appending(path: "claude")
     try Data("#!/bin/sh\ncat >> \"$0.stdin\"\n".utf8).write(to: fake)
     try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: fake.path)
@@ -310,7 +339,37 @@ struct ProjectTests {
     OpenSessions.shared.register(project, window: window)
     defer { OpenSessions.shared.unregister(window: window) }
     OpenSessions.shared.liveChanged(["a"])
-    #expect(!item.session.isReadOnly)
+    #expect(item.session.isReadOnly)
+    #expect(!item.session.isProcessRunning)
+  }
+
+  /// Another app's session between turns: its process is ended, and the session becomes
+  /// one of the window's rows, read-only until the registry lets it go.
+  @Test func movingASessionHereEndsItsProcess() async throws {
+    let sleeper = Process()
+    sleeper.executableURL = URL(filePath: "/bin/sleep")
+    sleeper.arguments = ["30"]
+    try sleeper.run()
+    defer { if sleeper.isRunning { sleeper.terminate() } }
+    let pid = sleeper.processIdentifier
+    let sessions = folder.appending(path: "sessions")
+    try FileManager.default.createDirectory(at: sessions, withIntermediateDirectories: true)
+    try Data(#"{"pid":\#(pid),"sessionId":"a","status":"idle"}"#.utf8)
+      .write(to: sessions.appending(path: "\(pid).json"))
+    var summary = SessionSummary(
+      sessionID: "a", account: ClaudeAccount(directory: folder, isDefault: false),
+      file: folder.appending(path: "a.jsonl"), modified: .now, size: 1)
+    summary.cwd = folder.path(percentEncoded: false)
+    summary.live = LiveSession(pid: pid, sessionID: "a", status: "busy")
+    let project = Project(folder: folder)
+    #expect(!project.moveHere(summary))
+    #expect(project.sessions.isEmpty)
+    summary.live?.status = "idle"
+    #expect(project.moveHere(summary))
+    for _ in 0..<50 where sleeper.isRunning { try await Task.sleep(for: .milliseconds(100)) }
+    #expect(!sleeper.isRunning)
+    let item = try #require(project.selected)
+    #expect(item.sessionID == "a" && !item.isWatching && item.session.isReadOnly)
   }
 
   /// A window opened after a relaunch, without its scene storage, gets its rows back; one

@@ -63,6 +63,8 @@ final class ClaudeSession {
   /// folder's pick) and what its refusal puts back.
   @ObservationIgnored private var pendingSwitches:
     [String: (confirm: () -> Void, revert: () -> Void)] = [:]
+  /// The name given here, by a rename or to a fork: shown at once, ahead of the history's.
+  private(set) var name: String?
   /// The earlier question the person closed without answering, so it is not offered again.
   private(set) var dismissedQuestionID: String?
   /// Stands in for the located binary, in tests.
@@ -98,6 +100,9 @@ final class ClaudeSession {
   @ObservationIgnored private var follower: TranscriptFollower?
   /// A prompt sent before the process existed, written right after `initialize`.
   @ObservationIgnored private var pendingPrompt: ClientMessage?
+  /// A name the CLI has not recorded yet: passed with `--name` to the next start, or sent
+  /// once a running process has said which session it is.
+  @ObservationIgnored private var unsentName: String?
   /// Bumped by every `stop()`: a spawn that started before one must not start a process
   /// after it, for a window that closed or a row that was removed meanwhile.
   @ObservationIgnored private var stopCount = 0
@@ -115,8 +120,8 @@ final class ClaudeSession {
     transcript.session?.sessionID ?? (resuming?.forks == true ? nil : resuming?.sessionID)
   }
 
-  /// The title Claude Code gave the session, from its history.
-  var title: String? { transcript.title }
+  /// The session's name, or the title Claude Code gave it, from its history.
+  var title: String? { name ?? transcript.title }
 
   var isProcessRunning: Bool { process != nil }
 
@@ -294,6 +299,7 @@ final class ClaudeSession {
       command.resumeSessionID = resuming.sessionID
       command.forksSession = resuming.forks == true
     }
+    command.name = unsentName
     let launch = ClaudeLaunch.make(
       folder: folder, resuming: resuming, environment: environment,
       executableOverride: executableOverride)
@@ -317,6 +323,7 @@ final class ClaudeSession {
       let stream = try process.start()
       self.process = process
       launchedWithBypass = command.allowsBypass
+      unsentName = nil
       try process.send(.initialize(requestID: nextRequestID("init")))
       if let pendingPrompt {
         try process.send(pendingPrompt)
@@ -375,6 +382,44 @@ final class ClaudeSession {
 
   func dismissEarlierQuestion() {
     dismissedQuestionID = earlierQuestion?.id
+  }
+
+  /// Names the session as `/rename` does. A running process records it; a session with a
+  /// transcript and no process gets it written there; one with neither takes it when it
+  /// starts. False when it cannot be named: read-only, moving, or its file not writable.
+  @discardableResult func rename(to newName: String) -> Bool {
+    guard let title = SessionTitle.clean(newName), !isReadOnly, !isMoving else { return false }
+    if process != nil {
+      unsentName = title
+      sendUnsentName()
+    } else if let target = ownTarget() {
+      // Written behind no process's back: one opened elsewhere since would keep its own name.
+      guard !isLiveElsewhere(target),
+        (try? SessionTitle.write(
+          title, sessionID: target.sessionID, transcript: target.transcriptFile)) != nil
+      else { return false }
+    } else {
+      unsentName = title
+    }
+    name = title
+    return true
+  }
+
+  /// The transcript this session writes to, once it has one: never a fork's original.
+  private func ownTarget() -> ResumeTarget? {
+    if let savedTarget { return savedTarget }
+    if let resuming, resuming.forks != true { return resuming }
+    if transcript.session?.sessionID != nil { savedTarget = findTarget() }
+    return savedTarget
+  }
+
+  /// The running process is told the name once it has said which session it is.
+  private func sendUnsentName() {
+    guard let title = unsentName, process != nil, let id = sessionID else { return }
+    unsentName = nil
+    // Not `write`: a name that did not take must not mark the session failed.
+    try? process?.send(
+      .renameSession(requestID: nextRequestID("rename"), title: title, sessionID: id))
   }
 
   func interrupt() {
@@ -498,6 +543,7 @@ final class ClaudeSession {
     }
     let waiting = transcript.pendingPermissions.count
     transcript.apply(message)
+    if unsentName != nil { sendUnsentName() }
     if transcript.pendingPermissions.count > waiting,
       let pending = transcript.pendingPermissions.last
     {

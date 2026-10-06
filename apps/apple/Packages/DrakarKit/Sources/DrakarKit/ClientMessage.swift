@@ -24,6 +24,9 @@ public enum ClientMessage: Sendable, Equatable {
   /// Switch the running session's permission mode; answered with `{"mode": …}`, then a
   /// `status` line. Bypass is refused unless the process started able to take it.
   case setPermissionMode(requestID: String, mode: String)
+  /// Names the session as `/rename` does: the process appends the `custom-title` line and
+  /// keeps the name for its own later writes (docs/claude-stream-json.md, "Session titles").
+  case renameSession(requestID: String, title: String, sessionID: String)
 
   public var json: JSONValue {
     switch self {
@@ -64,6 +67,14 @@ public enum ClientMessage: Sendable, Equatable {
     case .setPermissionMode(let id, let mode):
       Self.controlRequest(
         id, ["subtype": .string("set_permission_mode"), "mode": .string(mode)])
+    case .renameSession(let id, let title, let sessionID):
+      // `source: host` as the extension sends it.
+      Self.controlRequest(
+        id,
+        [
+          "subtype": .string("rename_session"), "title": .string(title),
+          "source": .string("host"), "session_id": .string(sessionID),
+        ])
     }
   }
 
