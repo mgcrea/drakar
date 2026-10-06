@@ -307,7 +307,7 @@ struct ContentView: View {
       route = .project(URL(filePath: path, directoryHint: .isDirectory))
       open(route)  // now, not on the next update: the rest needs the project
       guard let project, let item = project.selected else { return }
-      item.session.command = ClaudeCommand(
+      (item.session.backend as? ClaudeBackend)?.command = ClaudeCommand(
         model: defaults.string(forKey: "drakar.debugModel"),
         extraArguments: defaults.string(forKey: "drakar.debugSettingSources").map {
           ["--setting-sources", $0]

@@ -2,11 +2,11 @@ import DrakarKit
 import Foundation
 import Observation
 
-/// One session in a project window: its history from disk, and a `claude` process from its
+/// One session in a project window: its history from disk, and its agent's process from its
 /// first prompt on.
 ///
-/// Main-actor state over an `AgentProcess`: events are decoded off the main thread and
-/// applied here in batches, which is all the view observes.
+/// Main-actor state over an `AgentProcess` and an `AgentBackend`: lines are parsed off the
+/// main thread, interpreted by the backend, and applied here, which is all the view observes.
 @Observable
 final class AgentSession {
   enum Phase: Equatable {
@@ -40,8 +40,8 @@ final class AgentSession {
   private(set) var savedTarget: ResumeTarget?
   /// The transcript's history was read into `transcript`.
   private(set) var hasLoadedHistory = false
-  /// The arguments the next spawn runs with (a model for a debug launch).
-  var command = ClaudeCommand()
+  /// The agent's wire format: how it starts, what its lines mean, how a command is written.
+  @ObservationIgnored let backend: AgentBackend
   /// Open in another process: the transcript follows its file and nothing is sent.
   var isReadOnly = false
   /// Its files are moving to another account (`SessionMoves`): nothing is sent and no
@@ -100,9 +100,7 @@ final class AgentSession {
   @ObservationIgnored private var turnEndDeferred = false
 
   @ObservationIgnored private var process: AgentProcess?
-  @ObservationIgnored private var translator = ClaudeTranslator()
   @ObservationIgnored private var events: Task<Void, Never>?
-  @ObservationIgnored private var requestCount = 0
   @ObservationIgnored private var historyLoad: Task<Void, Never>?
   /// True from the start for a session with a transcript, until its history is read.
   @ObservationIgnored private var isLoadingHistory = false
@@ -112,7 +110,7 @@ final class AgentSession {
   @ObservationIgnored private var historyFailed = false
   @ObservationIgnored private var follower: TranscriptFollower?
   /// A prompt sent before the process existed, written right after `initialize`.
-  @ObservationIgnored private var pendingPrompt: ClientMessage?
+  @ObservationIgnored private var pendingPrompt: AgentCommand?
   /// A name the CLI has not recorded yet: passed with `--name` to the next start, or sent
   /// once a running process has said which session it is.
   @ObservationIgnored private var unsentName: String?
@@ -120,9 +118,10 @@ final class AgentSession {
   /// after it, for a window that closed or a row that was removed meanwhile.
   @ObservationIgnored private var stopCount = 0
 
-  init(folder: URL, resuming: ResumeTarget? = nil) {
+  init(folder: URL, resuming: ResumeTarget? = nil, backend: AgentBackend = ClaudeBackend()) {
     self.folder = folder
     self.resuming = resuming
+    self.backend = backend
     savedTarget = resuming?.forks == true ? nil : resuming
     isLoadingHistory = resuming != nil
   }
@@ -197,12 +196,11 @@ final class AgentSession {
     modePick = mode
     guard let process else { return }
     permissionMode = mode.rawValue
-    let id = nextRequestID("mode")
+    guard let id = try? backend.send(.setMode(mode.rawValue), to: process) else { return }
     revertOnError[id] = { [weak self] in
       self?.modePick = previousPick
       self?.permissionMode = previousMode
     }
-    try? process.send(.setPermissionMode(requestID: id, mode: mode.rawValue))
   }
 
   /// `value` as `initialize`'s `models` give it; `default` is Claude Code's own.
@@ -211,9 +209,8 @@ final class AgentSession {
     let previous = modelPick
     modelPick = value
     guard let process else { return }
-    let id = nextRequestID("model")
+    guard let id = try? backend.send(.setModel(value), to: process) else { return }
     revertOnError[id] = { [weak self] in self?.modelPick = previous }
-    try? process.send(.setModel(requestID: id, model: value))
   }
 
   /// `level` as the model's `effortLevels` give it. At once on a running process, as a flag
@@ -223,15 +220,8 @@ final class AgentSession {
     let previous = effortPick
     effortPick = level
     guard let process else { return }
-    let id = nextRequestID("effort")
+    guard let id = try? backend.send(.setEffort(level), to: process) else { return }
     revertOnError[id] = { [weak self] in self?.effortPick = previous }
-    try? process.send(.setEffort(requestID: id, level: level))
-  }
-
-  /// What the process applies now: asked after its start and after each model or effort
-  /// change, since a model without effort (Haiku) applies none.
-  private func askAppliedSettings() {
-    try? process?.send(.getSettings(requestID: nextRequestID("settings")))
   }
 
   /// The CLI's word on its mode, whoever changed it: the pill shows it, and a restart
@@ -305,26 +295,25 @@ final class AgentSession {
     let previews = attachments.map(\.preview)
     // Named, so that the CLI's lifecycle lines say when it is taken, and it can be cancelled.
     let uuid = UUID().uuidString.lowercased()
-    let message = ClientMessage.prompt(
-      text, context: context.map(\.promptContext), uuid: uuid,
-      attachments: attachments.map(\.block))
+    let command = AgentCommand.prompt(
+      text: text, context: context.map(\.promptContext), uuid: uuid, attachments: attachments)
     if canQueue {
       transcript.queue(
         QueuedPrompt(uuid: uuid, text: text, context: label, attachments: previews))
       onPromptSent?()
-      write(message)
+      write(command)
       return
     }
     transcript.addPrompt(text, context: label, attachments: previews)
     onPromptSent?()
     if isLoadingHistory { promptsDuringLoad.append((text, label, previews)) }
     if process == nil {
-      pendingPrompt = message
+      pendingPrompt = command
       // Counted now, not when the task runs: a `stop()` before then cancels it too.
       let stops = stopCount
       Task { await spawn(unlessStoppedSince: stops) }
     } else {
-      write(message)
+      write(command)
     }
   }
 
@@ -340,7 +329,7 @@ final class AgentSession {
     if resuming?.forks == true || resuming == nil {
       // A first turn that never finished (End Session, a crash) left no saved target, but
       // the transcript exists from `system/init` on: look for it.
-      if savedTarget == nil, transcript.session?.sessionID != nil { savedTarget = findTarget() }
+      if savedTarget == nil, transcript.session?.sessionID != nil { savedTarget = locateTarget() }
       // A session whose process ended goes on under its own id, never as a fork again.
       if let saved = savedTarget { resuming = saved }
     }
@@ -348,31 +337,24 @@ final class AgentSession {
     await loadHistory()
     guard stillWanted(since: stops) else { return }
     if historyFailed { return fail(nil) }
-    var command = command
     // The pills' picks, frozen for this process: the session's own, else Settings'.
     modelPick = pickedModel
     modePick = startingMode
-    if let model = modelPick, model != "default" { command.model = model }
-    if let mode = modePick, mode != .ask { command.permissionMode = mode.rawValue }
-    command.effort = effortPick ?? ClaudeChoice.defaultEffort
-    command.allowsBypass = ClaudeChoice.allowsBypass
-    var environment = await Self.environment.value
+    let effort = effortPick ?? ClaudeChoice.defaultEffort
+    let allowsBypass = ClaudeChoice.allowsBypass
+    let environment = await Self.environment.value
     guard stillWanted(since: stops) else { return }
     guard FileManager.default.fileExists(atPath: folder.path(percentEncoded: false)) else {
       return fail(String(localized: "The folder \(folder.lastPathComponent) no longer exists."))
     }
-    if let resuming {
-      command.resumeSessionID = resuming.sessionID
-      command.forksSession = resuming.forks == true
-    }
-    command.name = unsentName
-    let launch = ClaudeLaunch.make(
+    let start = AgentStart(
       folder: folder, resuming: resuming, environment: environment,
-      executableOverride: executableOverride)
-    environment = launch.environment
+      executableOverride: executableOverride, model: modelPick, mode: modePick, effort: effort,
+      allowsBypass: allowsBypass, name: unsentName)
+    let launch = backend.launch(start)
     account = launch.account
-    guard let claude = launch.executable else { return fail(ClaudeLaunch.notFound) }
-    executable = claude
+    guard let configuration = launch.configuration else { return fail(backend.notFoundMessage) }
+    executable = launch.executable
     // The last word before the process starts, with no await after it: a session live in
     // another process now is followed, not written to. The monitor may not have read the
     // registries yet at launch, so the account's own registry is read here too.
@@ -381,21 +363,14 @@ final class AgentSession {
       _ = stillWanted(since: stops)
       return
     }
-    let process = AgentProcess(
-      .init(
-        executable: claude, arguments: command.arguments, environment: environment,
-        currentDirectory: folder))
+    let process = AgentProcess(configuration)
     do {
       let stream = try process.start()
       self.process = process
-      launchedWithBypass = command.allowsBypass
+      launchedWithBypass = start.allowsBypass
       unsentName = nil
-      try process.send(.initialize(requestID: nextRequestID("init")))
-      askAppliedSettings()
-      if let pendingPrompt {
-        try process.send(pendingPrompt)
-        self.pendingPrompt = nil
-      }
+      try backend.started(process, then: pendingPrompt)
+      pendingPrompt = nil
       phase = .ready
       events = Task { [weak self] in
         for await event in stream { self?.handle(event) }
@@ -431,7 +406,7 @@ final class AgentSession {
   }
 
   func answer(_ pending: Transcript.PendingPermission, _ decision: PermissionDecision) {
-    write(.permission(requestID: pending.requestID, decision))
+    write(.answer(requestID: pending.requestID, decision: decision))
     notingPermissions { transcript.resolvePermission(requestID: pending.requestID) }
   }
 
@@ -484,29 +459,28 @@ final class AgentSession {
   private func ownTarget() -> ResumeTarget? {
     if let savedTarget { return savedTarget }
     if let resuming, resuming.forks != true { return resuming }
-    if transcript.session?.sessionID != nil { savedTarget = findTarget() }
+    if transcript.session?.sessionID != nil { savedTarget = locateTarget() }
     return savedTarget
   }
 
   /// The running process is told the name once it has said which session it is.
   private func sendUnsentName() {
-    guard let title = unsentName, process != nil, let id = sessionID else { return }
+    guard let title = unsentName, let process, let id = sessionID else { return }
     unsentName = nil
     // Not `write`: a name that did not take must not mark the session failed.
-    try? process?.send(
-      .renameSession(requestID: nextRequestID("rename"), title: title, sessionID: id))
+    _ = try? backend.send(.rename(title: title, sessionID: id), to: process)
   }
 
   /// Stops the turn, and drops what was queued behind it: stop means stop.
   func interrupt() {
     guard transcript.isRunning else { return }
-    write(.interrupt(requestID: nextRequestID("interrupt"), cancelQueued: true))
+    write(.interrupt(cancelQueued: true))
   }
 
   /// Takes back a prompt sent while a turn ran, unless the CLI took it already; it leaves
   /// the queue on the CLI's `cancelled`.
   func cancelQueued(_ prompt: QueuedPrompt) {
-    try? process?.send(.cancelQueued(requestID: nextRequestID("cancel"), uuid: prompt.uuid))
+    if let process { _ = try? backend.send(.cancelQueued(uuid: prompt.uuid), to: process) }
   }
 
   /// Ends the process: input closed so it can finish cleanly, then terminated, because a
@@ -574,7 +548,7 @@ final class AgentSession {
   private func handle(_ event: AgentProcess.Event) {
     switch event {
     case .lines(let lines):
-      for line in lines { apply(StreamMessage(line)) }
+      for line in lines { receive(line) }
     case .stderr(let text):
       diagnostics = String((diagnostics + text).suffix(4000))
     case .exited(let status, _):
@@ -589,58 +563,16 @@ final class AgentSession {
     }
   }
 
-  private func apply(_ message: StreamMessage) {
-    if case .rateLimit(let info) = message, let account {
-      accountStore.record(info, for: account)
-    }
-    if case .controlResponse(let response) = message, response.requestID.hasPrefix("init-"),
-      response.isSuccess
-    {
-      if let models = ModelOption.list(fromInitialize: response.response), let account {
-        catalog.record(models, for: account)
-      }
-      if let mode = response.response?["current_permission_mode"]?.stringValue {
-        adopt(mode: mode)
-      }
-      onInitialized?(response.response)
-    }
-    if case .controlResponse(let response) = message,
-      ["mode-", "model-", "effort-"].contains(where: response.requestID.hasPrefix)
-    {
-      let revert = revertOnError.removeValue(forKey: response.requestID)
-      if response.isSuccess {
-        if let mode = response.response?["mode"]?.stringValue { adopt(mode: mode) }
-        if !response.requestID.hasPrefix("mode-") { askAppliedSettings() }
-      } else {
-        revert?()
-        pillNote = response.error ?? String(localized: "Claude Code refused the change.")
-      }
-      return
-    }
-    if case .system(.initialized(let info)) = message, let mode = info.permissionMode {
-      adopt(mode: mode)
-    }
-    if case .system(.status(_, let mode?)) = message { adopt(mode: mode) }
-    if case .system(.commandsChanged(let commands)) = message { onCommandsChanged?(commands) }
-    if case .controlResponse(let response) = message, response.requestID.hasPrefix("settings-") {
-      if response.isSuccess {
-        appliedEffort = EffortLevel.applied(fromSettings: response.response)
-        appliedModel = ModelName.applied(fromSettings: response.response)
-      }
-      return
-    }
-    if case .controlResponse(let response) = message, response.requestID.hasPrefix("context-") {
-      if response.isSuccess, let reply = ContextUsageReply(response.response) {
-        reportedContext = reply
-      }
-      return
-    }
-    // Not `write`: a reply that cannot be written must not mark the session failed.
-    if case .controlRequest(let request) = message, let reply = request.reply {
-      try? process?.send(reply)
-    }
+  private func receive(_ line: AgentProcess.Line) {
+    guard let process else { return }
+    let output = backend.receive(line, from: process, at: .now)
+    for signal in output.signals { handle(signal) }
     let waiting = transcript.pendingPermissions.count
-    for event in translator.translate(message, at: .now) { transcript.apply(event) }
+    var turnEnded = false
+    for event in output.events {
+      transcript.apply(event)
+      if case .turnEnded = event { turnEnded = true }
+    }
     if unsentName != nil { sendUnsentName() }
     if transcript.pendingPermissions.count > waiting,
       let pending = transcript.pendingPermissions.last
@@ -648,7 +580,7 @@ final class AgentSession {
       onPermissionRequested?(pending)
     }
     permissionsMayHaveChanged(from: waiting)
-    if turnEndDeferred, case .commandLifecycle = message {
+    if turnEndDeferred, output.signals.contains(.queueChanged) {
       if transcript.isRunning {
         turnEndDeferred = false
       } else if transcript.queuedPrompts.isEmpty {
@@ -656,51 +588,58 @@ final class AgentSession {
         onTurnEnded?()
       }
     }
-    if case .result = message {
-      if savedTarget == nil { savedTarget = findTarget() }
-      // Not `write`: a failed context request must not mark the session failed.
-      try? process?.send(.contextUsage(requestID: nextRequestID("context")))
+    if turnEnded {
+      if savedTarget == nil { savedTarget = locateTarget() }
       // Not while a queued prompt is about to start the next one: said once the queue
       // empties without a turn, should it be cancelled or refused instead.
       if transcript.queuedPrompts.isEmpty { onTurnEnded?() } else { turnEndDeferred = true }
     }
   }
 
-  /// The transcript lands under whichever account the shell selected; look for it in each.
-  /// It exists from the first prompt on, which is when `system/init` gave the id.
-  private func findTarget() -> ResumeTarget? {
-    guard let id = sessionID else { return nil }
-    for account in accounts() {
-      let projects = account.directory.appending(path: "projects")
-      let folders =
-        (try? FileManager.default.contentsOfDirectory(atPath: projects.path(percentEncoded: false)))
-        ?? []
-      for name in folders {
-        let file = projects.appending(path: "\(name)/\(id).jsonl")
-        guard FileManager.default.fileExists(atPath: file.path(percentEncoded: false)) else {
-          continue
-        }
-        return ResumeTarget(
-          sessionID: id, cwd: transcript.session?.cwd ?? folder.path(percentEncoded: false),
-          file: file.path(percentEncoded: false),
-          accountDirectory: account.directory.path(percentEncoded: false),
-          accountIsDefault: account.isDefault)
+  private func handle(_ signal: SessionSignal) {
+    switch signal {
+    case .rateLimit(let info):
+      if let account { accountStore.record(info, for: account) }
+    case .models(let models):
+      if let account { catalog.record(models, for: account) }
+    case .modeAdopted(let mode):
+      adopt(mode: mode)
+    case .initialized(let reply):
+      onInitialized?(reply)
+    case .commandsChanged(let commands):
+      onCommandsChanged?(commands)
+    case .settingsApplied(let effort, let model):
+      appliedEffort = effort
+      appliedModel = model
+    case .contextReported(let reply):
+      reportedContext = reply
+    case .changeAnswered(let id, let refusal):
+      let revert = revertOnError.removeValue(forKey: id)
+      if let refusal {
+        revert?()
+        pillNote = refusal
       }
+    case .queueChanged:
+      break
     }
-    return nil
   }
 
-  private func write(_ message: ClientMessage) {
+  /// The transcript lands under whichever account the shell selected; look for it in each.
+  /// It exists from the first prompt on, which is when the session gave its id.
+  private func locateTarget() -> ResumeTarget? {
+    guard let id = sessionID else { return nil }
+    return backend.locateTarget(
+      sessionID: id, cwd: transcript.session?.cwd ?? folder.path(percentEncoded: false),
+      in: accounts())
+  }
+
+  private func write(_ command: AgentCommand) {
+    guard let process else { return }
     do {
-      try process?.send(message)
+      try backend.send(command, to: process)
     } catch {
       phase = .failed(error.localizedDescription)
     }
-  }
-
-  private func nextRequestID(_ prefix: String) -> String {
-    requestCount += 1
-    return "\(prefix)-\(requestCount)"
   }
 
   /// The login shell's environment, read once per launch and shared by every window: a
