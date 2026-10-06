@@ -14,3 +14,30 @@ public enum ProcessAncestry {
     return info.kp_eproc.e_ppid
   }
 }
+
+extension ProcessAncestry {
+  /// The TCP ports `pid` listens on, from its open sockets; none when it is gone or not
+  /// ours to read.
+  public static func listeningPorts(of pid: Int32) -> [Int] {
+    let size = proc_pidinfo(pid, PROC_PIDLISTFDS, 0, nil, 0)
+    guard size > 0 else { return [] }
+    var descriptors = [proc_fdinfo](
+      repeating: proc_fdinfo(), count: Int(size) / MemoryLayout<proc_fdinfo>.stride)
+    let filled = proc_pidinfo(pid, PROC_PIDLISTFDS, 0, &descriptors, size)
+    guard filled > 0 else { return [] }
+    return descriptors.prefix(Int(filled) / MemoryLayout<proc_fdinfo>.stride)
+      .filter { $0.proc_fdtype == UInt32(PROX_FDTYPE_SOCKET) }
+      .compactMap { descriptor in
+        var info = socket_fdinfo()
+        let expected = Int32(MemoryLayout<socket_fdinfo>.stride)
+        guard
+          proc_pidfdinfo(pid, descriptor.proc_fd, PROC_PIDFDSOCKETINFO, &info, expected)
+            == expected,
+          info.psi.soi_kind == Int32(SOCKINFO_TCP),
+          info.psi.soi_proto.pri_tcp.tcpsi_state == TSI_S_LISTEN
+        else { return nil }
+        let port = info.psi.soi_proto.pri_tcp.tcpsi_ini.insi_lport
+        return Int(UInt16(bigEndian: UInt16(truncatingIfNeeded: port)))
+      }
+  }
+}
