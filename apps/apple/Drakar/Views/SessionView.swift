@@ -60,7 +60,8 @@ struct SessionView: View {
       }
       let _ = (picks, settingsAccount)
       SessionFooter(
-        item: item, windowAccount: AccountStore.shared.windowAccount(for: project.folder))
+        item: item, windowAccount: AccountStore.shared.windowAccount(for: project.folder),
+        elsewhere: session.isReadOnly ? elsewhere : nil)
     }
     .sheet(item: pendingPermission) { pending in
       PermissionSheet(pending: pending) { decision in session.answer(pending, decision) }
@@ -70,11 +71,16 @@ struct SessionView: View {
   }
 
   /// Where the session is open, from the registry, for the banner.
-  private var host: String {
+  private var host: String { elsewhere.host }
+
+  /// The process that has the session open, from its own record, and where it runs.
+  private var elsewhere: (status: ElsewhereStatus, host: String) {
     guard let id = item.sessionID,
       let summary = SessionMonitor.shared.all.first(where: { $0.sessionID == id })
-    else { return String(localized: "another app") }
-    return SessionMonitor.shared.host(of: summary, excluding: project)
+    else { return (.open, String(localized: "another app")) }
+    return (
+      ElsewhereStatus(summary.live), SessionMonitor.shared.host(of: summary, excluding: project)
+    )
   }
 
   /// The first request waiting for a permission; answering it shows the next. Never
@@ -144,6 +150,36 @@ private struct ReadOnlyBanner: View {
 
 /// The CLI's version, in orange outside the range Drakar was tested with: the stream
 /// protocol is undocumented, and a newer CLI can change it under the app.
+/// A session another process runs, as its footer says it: from that process's own record in
+/// the account's `sessions` folder.
+enum ElsewhereStatus: Equatable {
+  case working
+  case ready
+  /// On a permission prompt or a question: `waitingFor` says which.
+  case waiting(String?)
+  /// No record, or a status this Drakar does not know.
+  case open
+
+  init(_ live: LiveSession?) {
+    self =
+      switch live?.status {
+      case "busy": .working
+      case "idle": .ready
+      case "waiting": .waiting(live?.waitingFor)
+      default: .open
+      }
+  }
+
+  func text(in host: String) -> String {
+    switch self {
+    case .working: String(localized: "Working in \(host)")
+    case .ready: String(localized: "Ready in \(host)")
+    case .waiting: String(localized: "Waiting in \(host)")
+    case .open: String(localized: "Open in \(host)")
+    }
+  }
+}
+
 private struct VersionLabel: View {
   let version: String
   let executable: URL?
@@ -175,6 +211,8 @@ private struct SessionFooter: View {
   let item: ProjectSession
   /// The account new sessions in the window start under.
   let windowAccount: ClaudeAccount
+  /// Set for a session another process runs: its state comes from there.
+  let elsewhere: (status: ElsewhereStatus, host: String)?
 
   private var session: ClaudeSession { item.session }
 
@@ -197,6 +235,9 @@ private struct SessionFooter: View {
       account
       if let version = session.transcript.session?.claudeCodeVersion {
         VersionLabel(version: version, executable: session.executable)
+      } else if let version = session.transcript.writerVersion {
+        // Not Drakar's process: how its version compares to Drakar's is not this session's.
+        Text("Claude Code \(version)").help("The version that last wrote this session")
       }
       if let cost = session.transcript.lastResult?.totalCostUSD {
         let billing = Billing(apiKeySource: session.transcript.session?.apiKeySource)
@@ -240,6 +281,22 @@ private struct SessionFooter: View {
   }
 
   @ViewBuilder private var status: some View {
+    if let (status, host) = elsewhere {
+      let text = status.text(in: host)
+      switch status {
+      case .working: Label(text, systemImage: "circle.fill").foregroundStyle(.blue)
+      case .ready: Label(text, systemImage: "circle.fill").foregroundStyle(.green)
+      case .waiting(let what):
+        Label(text, systemImage: "circle.fill").foregroundStyle(.orange)
+          .help(what.map { String(localized: "Waiting for: \($0)") } ?? "")
+      case .open: Label(text, systemImage: "circle")
+      }
+    } else {
+      ownStatus
+    }
+  }
+
+  @ViewBuilder private var ownStatus: some View {
     switch session.phase {
     case .idle:
       Label("Not started", systemImage: "circle.dotted")
