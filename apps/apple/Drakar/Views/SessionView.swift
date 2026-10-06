@@ -21,119 +21,135 @@ struct SessionView: View {
   }
 
   var body: some View {
-    TranscriptView(transcript: session.transcript, anchor: $item.scrollAnchor)
-      // Below the transcript's end, not after it: the history scrolls on under the composer
-      // to the window's edge, and the scroll view keeps room for it as it grows. An inset and
-      // not a `safeAreaBar`, whose scroll edge effect on the Mac is a band across the pane,
-      // whatever its style, that put the card back in a tray.
-      .safeAreaInset(edge: .bottom, spacing: 0) {
-        VStack(spacing: 0) {
-          if let problem {
-            Docked { ProblemBanner(message: problem, diagnostics: session.diagnostics) }
+    TranscriptView(
+      transcript: session.transcript, anchor: $item.scrollAnchor,
+      cancelQueued: session.cancelQueued
+    )
+    // Below the transcript's end, not after it: the history scrolls on under the composer
+    // to the window's edge, and the scroll view keeps room for it as it grows. An inset and
+    // not a `safeAreaBar`, whose scroll edge effect on the Mac is a band across the pane,
+    // whatever its style, that put the card back in a tray.
+    .safeAreaInset(edge: .bottom, spacing: 0) {
+      VStack(spacing: 0) {
+        if let problem {
+          Docked { ProblemBanner(message: problem, diagnostics: session.diagnostics) }
+        }
+        if session.isReadOnly {
+          Docked {
+            ReadOnlyBanner(
+              host: host, fork: { project.fork(item) },
+              moveHere: elsewhereSummary.flatMap { summary in
+                summary.live == nil
+                  ? nil
+                  : (Project.canMoveHere(summary), { MoveHere.confirm(summary, into: project) })
+              })
           }
-          if session.isReadOnly {
-            Docked {
-              ReadOnlyBanner(
-                host: host, fork: { project.fork(item) },
-                moveHere: elsewhereSummary.flatMap { summary in
-                  summary.live == nil
-                    ? nil
-                    : (Project.canMoveHere(summary), { MoveHere.confirm(summary, into: project) })
-                })
-            }
-          } else if let plan = pendingPlan {
-            Docked {
-              PlanPanel(
-                plan: PlanApproval.plan(plan.request.input) ?? "",
-                offersAutoMode: offersAutoMode,
-                approve: { editsManually in
-                  session.approvePlan(
-                    plan, editsManually: editsManually,
-                    autoMode: offersAutoMode)
-                },
-                keepPlanning: { feedback in
-                  session.answer(plan, PlanApproval.keepPlanning(feedback: feedback))
-                }
-              )
-              .id(plan.id)
-            }
-          } else if let choice = pendingChoice {
-            Docked {
-              QuestionPanel(
-                questions: UserQuestion.list(choice.request.input),
-                answer: { answers in
-                  session.answer(
-                    choice,
-                    .allow(
-                      updatedInput: UserQuestion.answering(choice.request.input, with: answers)))
-                },
-                skip: { session.answer(choice, .deny(message: UserQuestion.declinedMessage)) }
-              )
-              .id(choice.id)
-            }
-          } else if let earlier = session.earlierQuestion {
-            Docked {
-              QuestionPanel(
-                questions: UserQuestion.list(earlier.input),
-                answer: { answers in
-                  project.takeOver(item)
-                  session.answerEarlierQuestion(answers)
-                },
-                skip: session.dismissEarlierQuestion
-              )
-              .id(earlier.id)
-            }
-          } else {
-            if let todos = runningTodos {
-              // In the composer's column, floating as it does.
-              TodoStrip(todos: todos)
-                .glassEffect(.regular, in: .rect(cornerRadius: 10))
-                .frame(maxWidth: 820 - 32)
-                .padding(.horizontal, 16)
-                .padding(.bottom, 6)
-                .frame(maxWidth: .infinity)
-            }
-            ComposerView(
-              text: $item.draft, canSend: session.canSend,
-              isRunning: session.transcript.isRunning,
-              context: workspace.selection, pinned: workspace.pinned,
-              unpin: { selection in workspace.pinned.removeAll { $0 == selection } },
-              send: { text, context in
-                project.takeOver(item)
-                session.send(text, context: context)
-                workspace.pinned = []
+        } else if let plan = pendingPlan {
+          Docked {
+            PlanPanel(
+              plan: PlanApproval.plan(plan.request.input) ?? "",
+              offersAutoMode: offersAutoMode,
+              approve: { editsManually in
+                session.approvePlan(
+                  plan, editsManually: editsManually,
+                  autoMode: offersAutoMode)
               },
-              stop: session.interrupt,
-              sessionFolder: session.folder, projectFolder: project.folder,
-              takesFocus: project.focusesComposer,
-              hint: item.composerHint, focusRequest: item.focusRequest,
-              focused: { workspace.focusedPane = .composer },
-              pills: SessionPills(session: session, folder: project.folder, account: account),
-              cycleMode: { SessionPills.cycle(session, account: account) })
-          }
-          let _ = (picks, settingsAccount)
-          SessionFooter(
-            item: item, windowAccount: AccountStore.shared.windowAccount(for: project.folder),
-            elsewhere: session.isReadOnly ? elsewhere : nil)
-        }
-        // What scrolls under fades out above the card, and is gone by the footer's line.
-        .background {
-          Rectangle()
-            .fill(.background)
-            .mask(
-              LinearGradient(
-                stops: [.init(color: .clear, location: 0), .init(color: .black, location: 0.45)],
-                startPoint: .top, endPoint: .bottom)
+              keepPlanning: { feedback in
+                session.answer(plan, PlanApproval.keepPlanning(feedback: feedback))
+              }
             )
-            .padding(.top, -Self.fade)
-            .allowsHitTesting(false)
+            .id(plan.id)
+          }
+        } else if let choice = pendingChoice {
+          Docked {
+            QuestionPanel(
+              questions: UserQuestion.list(choice.request.input),
+              answer: { answers in
+                session.answer(
+                  choice,
+                  .allow(
+                    updatedInput: UserQuestion.answering(choice.request.input, with: answers)))
+              },
+              skip: { session.answer(choice, .deny(message: UserQuestion.declinedMessage)) }
+            )
+            .id(choice.id)
+          }
+        } else if let earlier = session.earlierQuestion {
+          Docked {
+            QuestionPanel(
+              questions: UserQuestion.list(earlier.input),
+              answer: { answers in
+                project.takeOver(item)
+                session.answerEarlierQuestion(answers)
+              },
+              skip: session.dismissEarlierQuestion
+            )
+            .id(earlier.id)
+          }
+        } else {
+          if let todos = runningTodos {
+            // In the composer's column, floating as it does.
+            TodoStrip(todos: todos)
+              .glassEffect(.regular, in: .rect(cornerRadius: 10))
+              .frame(maxWidth: 820 - 32)
+              .padding(.horizontal, 16)
+              .padding(.bottom, 6)
+              .frame(maxWidth: .infinity)
+          }
+          ComposerView(
+            text: $item.draft, canSend: session.canSend || session.canQueue,
+            isRunning: session.transcript.isRunning,
+            context: workspace.selection, pinned: workspace.pinned,
+            unpin: { selection in workspace.pinned.removeAll { $0 == selection } },
+            send: { text, context in
+              project.takeOver(item)
+              session.send(text, context: context)
+              workspace.pinned = []
+            },
+            stop: session.interrupt,
+            sessionFolder: session.folder, projectFolder: project.folder,
+            takesFocus: project.focusesComposer,
+            hint: item.composerHint, focusRequest: item.focusRequest,
+            focused: { workspace.focusedPane = .composer },
+            pills: SessionPills(session: session, folder: project.folder, account: account),
+            cycleMode: { SessionPills.cycle(session, account: account) },
+            commands: project.capabilities.lists.commands ?? project.capabilities.lists.skills
+              ?? [],
+            pickCommand: { command in
+              let text = "/\(command.name) "
+              item.draft = text
+              item.prefill =
+                command.takesArguments ? SkillPrefill(text: text, hint: command.argumentHint) : nil
+            }
+          )
+          // The menu's list comes from a short probe, read once the first `/` is typed.
+          .onChange(of: item.draft.hasPrefix("/")) { _, typed in
+            if typed { project.capabilities.loadIfNeeded() }
+          }
         }
+        let _ = (picks, settingsAccount)
+        SessionFooter(
+          item: item, windowAccount: AccountStore.shared.windowAccount(for: project.folder),
+          elsewhere: session.isReadOnly ? elsewhere : nil)
       }
-      .sheet(item: pendingPermission) { pending in
-        PermissionSheet(pending: pending) { decision in session.answer(pending, decision) }
+      // What scrolls under fades out above the card, and is gone by the footer's line.
+      .background {
+        Rectangle()
+          .fill(.background)
+          .mask(
+            LinearGradient(
+              stops: [.init(color: .clear, location: 0), .init(color: .black, location: 0.45)],
+              startPoint: .top, endPoint: .bottom)
+          )
+          .padding(.top, -Self.fade)
+          .allowsHitTesting(false)
       }
-      .environment(\.sessionFolder, session.folder)
-      .environment(\.openInEditor, OpenInEditorAction(workspace: workspace))
+    }
+    .sheet(item: pendingPermission) { pending in
+      PermissionSheet(pending: pending) { decision in session.answer(pending, decision) }
+    }
+    .environment(\.sessionFolder, session.folder)
+    .environment(\.openInEditor, OpenInEditorAction(workspace: workspace))
   }
 
   private var elsewhereSummary: SessionSummary? {

@@ -67,10 +67,13 @@ final class Capabilities {
     isLoading = false
   }
 
-  /// A session in the project's own folder answered `initialize`: its skills are current.
-  func sessionReported(skills: [SkillEntry]) {
+  /// A session in the project's own folder answered `initialize`, or said its commands
+  /// changed: its skills are current, and the `/` menu's commands when it listed them.
+  func sessionReported(skills: [SkillEntry], commands: [SkillEntry]? = nil) {
     skillsProblem = nil
-    replace(ProjectCapabilities(skills: skills, mcpServers: lists.mcpServers))
+    var next = ProjectCapabilities(skills: skills, mcpServers: lists.mcpServers)
+    next.commands = commands ?? lists.commands
+    replace(next)
   }
 
   /// `handler` hears what each new reading changed (`CapabilityChanges`), never the first.
@@ -102,6 +105,7 @@ final class Capabilities {
     if let models = outcome.capabilities.models { catalog.record(models, for: account) }
     var next = lists
     if let skills = outcome.capabilities.skills { next.skills = skills }
+    if let commands = outcome.capabilities.commands { next.commands = commands }
     if let servers = outcome.capabilities.mcpServers { next.mcpServers = servers }
     skillsProblem = outcome.skillsProblem
     serversProblem = outcome.serversProblem

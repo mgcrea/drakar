@@ -1,8 +1,11 @@
 import DrakarKit
 import SwiftUI
 
-/// Where the prompt is written. Return sends, Option-Return starts a new line; while a
-/// turn runs, the button stops it.
+/// Where the prompt is written. Return sends, Option-Return starts a new line. While a turn
+/// runs, Stop ends it, and what is typed is queued: sent now, taken when the CLI can.
+///
+/// A `/` at the start opens the commands it lists, narrowed as the name is typed: ↑ and ↓
+/// move, Return or Tab writes the name in, Esc closes the list until the draft changes.
 ///
 /// The editor's open file or selection goes with the prompt, as the extension's
 /// `attachOpenFile` does by default; a click on it leaves it out of this one. Selections
@@ -31,8 +34,16 @@ struct ComposerView: View {
   var pills: SessionPills? = nil
   /// ⇧Tab in the field: the next permission mode.
   var cycleMode: (() -> Void)? = nil
+  /// What the `/` menu offers: the skills and the CLI's own commands.
+  var commands: [SkillEntry] = []
+  /// A command picked in the menu, for the caller to write into the draft.
+  var pickCommand: (SkillEntry) -> Void = { _ in }
 
   @State private var leavesContextOut = false
+  /// The menu's row under the keyboard.
+  @State private var highlighted = 0
+  /// The draft the menu was closed on with Esc; it opens again once the draft changes.
+  @State private var menuClosedOn: String?
   @FocusState private var isFocused: Bool
 
   var body: some View {
@@ -66,6 +77,9 @@ struct ComposerView: View {
             }
           }
         }
+        if !menu.isEmpty {
+          CommandMenu(commands: menu, highlighted: highlighted, pick: choose)
+        }
         field
       }
       .padding(.horizontal, 12)
@@ -94,6 +108,31 @@ struct ComposerView: View {
     .onChange(of: isFocused) { _, focused in if focused { self.focused() } }
     // A new selection is attached again, whatever happened to the last one.
     .onChange(of: context) { leavesContextOut = false }
+    .onChange(of: text) { highlighted = 0 }
+  }
+
+  /// The commands the draft's `/name` matches, while the field has the keys.
+  private var menu: [SkillEntry] {
+    guard isFocused, menuClosedOn != text, let query = SlashCommand.query(in: text) else {
+      return []
+    }
+    return SlashCommand.matches(query, in: commands)
+  }
+
+  private func choose(_ command: SkillEntry) {
+    pickCommand(command)
+    highlighted = 0
+  }
+
+  private func moveHighlight(_ step: Int) -> KeyPress.Result {
+    let count = menu.count
+    guard count > 0 else { return .ignored }
+    highlighted = (highlighted + step + count) % count
+    return .handled
+  }
+
+  private var hasText: Bool {
+    !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
   }
 
   private static let radius: CGFloat = 12
@@ -105,20 +144,35 @@ struct ComposerView: View {
   }
 
   private var field: some View {
-    TextField("Ask Claude to do something…", text: $text, axis: .vertical)
-      .textFieldStyle(.plain)
-      .lineLimit(1...10)
-      .focused($isFocused)
-      .onSubmit(submit)
-      // ⇧Tab arrives as backtab; plain Tab is left to focus traversal.
-      .onKeyPress(keys: [.tab, KeyEquivalent("\u{19}")]) { press in
-        guard press.modifiers.contains(.shift) || press.key == KeyEquivalent("\u{19}"),
-          let cycleMode
-        else { return .ignored }
+    TextField(
+      isRunning ? "Queue another message…" : "Ask Claude to do something…", text: $text,
+      axis: .vertical
+    )
+    .textFieldStyle(.plain)
+    .lineLimit(1...10)
+    .focused($isFocused)
+    .onSubmit(submit)
+    .onKeyPress(.upArrow) { moveHighlight(-1) }
+    .onKeyPress(.downArrow) { moveHighlight(1) }
+    .onKeyPress(.escape) {
+      guard !menu.isEmpty else { return .ignored }
+      menuClosedOn = text
+      return .handled
+    }
+    // ⇧Tab arrives as backtab: the next mode. Plain Tab writes the menu's pick in, else is
+    // left to focus traversal.
+    .onKeyPress(keys: [.tab, KeyEquivalent("\u{19}")]) { press in
+      if press.modifiers.contains(.shift) || press.key == KeyEquivalent("\u{19}") {
+        guard let cycleMode else { return .ignored }
         cycleMode()
         return .handled
       }
-      .accessibilityIdentifier("composer.field")
+      let menu = menu
+      guard menu.indices.contains(highlighted) else { return .ignored }
+      choose(menu[highlighted])
+      return .handled
+    }
+    .accessibilityIdentifier("composer.field")
   }
 
   /// The model on the left; the mode and Send on the right, as the extension lays them out.
@@ -135,16 +189,18 @@ struct ComposerView: View {
   }
 
   @ViewBuilder private var button: some View {
-    Group {
+    HStack(spacing: 4) {
       if isRunning {
         Button("Stop", systemImage: "stop.fill", action: stop)
           .keyboardShortcut(".", modifiers: .command)
-          .help("Stop the turn (⌘.)")
+          .help("Stop the turn and what is queued (⌘.)")
           .accessibilityIdentifier("composer.stop")
-      } else {
+      }
+      // While a turn runs, only once something is typed: it is queued behind the turn.
+      if !isRunning || hasText {
         Button("Send", systemImage: "arrow.up", action: submit)
-          .disabled(!canSend || text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-          .help("Send (Return)")
+          .disabled(!canSend || !hasText)
+          .help(isRunning ? "Queue (Return)" : "Send (Return)")
           .accessibilityIdentifier("composer.send")
       }
     }
@@ -153,7 +209,10 @@ struct ComposerView: View {
   }
 
   private func submit() {
-    guard canSend else { return }
+    // Return on the menu writes the command in rather than sending the half-typed name.
+    let menu = menu
+    if menu.indices.contains(highlighted) { return choose(menu[highlighted]) }
+    guard canSend, hasText else { return }
     send(text, pinned + (leavesContextOut ? [] : live.map { [$0] } ?? []))
     text = ""
   }
@@ -255,5 +314,60 @@ private struct SendButtonStyle: ButtonStyle {
         .onHover { isHovered = $0 }
         .animation(.easeOut(duration: 0.12), value: isHovered)
     }
+  }
+}
+
+/// The `/` menu over the field: each command's name, what it takes, and what it does.
+private struct CommandMenu: View {
+  let commands: [SkillEntry]
+  let highlighted: Int
+  let pick: (SkillEntry) -> Void
+
+  var body: some View {
+    ScrollViewReader { proxy in
+      ScrollView {
+        LazyVStack(alignment: .leading, spacing: 0) {
+          ForEach(Array(commands.enumerated()), id: \.element.id) { index, command in
+            row(command, isHighlighted: index == highlighted)
+              .id(command.id)
+          }
+        }
+      }
+      .frame(maxHeight: 240)
+      .fixedSize(horizontal: false, vertical: true)
+      .onChange(of: highlighted) { _, index in
+        guard commands.indices.contains(index) else { return }
+        proxy.scrollTo(commands[index].id)
+      }
+    }
+    .accessibilityIdentifier("composer.commands")
+  }
+
+  private func row(_ command: SkillEntry, isHighlighted: Bool) -> some View {
+    VStack(alignment: .leading, spacing: 1) {
+      HStack(spacing: 6) {
+        Text("/\(command.name)").font(.callout.monospaced().weight(.medium))
+        if command.takesArguments {
+          Text(command.argumentHint).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+        }
+      }
+      if !command.description.isEmpty {
+        Text(command.description)
+          .font(.caption)
+          .foregroundStyle(.secondary)
+          .lineLimit(1)
+      }
+    }
+    .padding(.horizontal, 8)
+    .padding(.vertical, 4)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .background(
+      isHighlighted ? AnyShapeStyle(.tint.opacity(0.18)) : AnyShapeStyle(.clear),
+      in: RoundedRectangle(cornerRadius: 6)
+    )
+    .contentShape(Rectangle())
+    .onTapGesture { pick(command) }
+    .accessibilityAddTraits(isHighlighted ? .isSelected : [])
+    .accessibilityIdentifier("composer.command.\(command.name)")
   }
 }

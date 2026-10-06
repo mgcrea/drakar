@@ -6,13 +6,16 @@ public enum ClientMessage: Sendable, Equatable {
   /// commands, skills and models.
   case initialize(requestID: String)
   /// A user turn. `context` blocks go ahead of the text, as the extension's chat sends
-  /// the open file or the selection (`EditorSelection.promptContext`).
-  case prompt(String, context: [String] = [])
+  /// the open file or the selection (`EditorSelection.promptContext`). A `uuid` makes the
+  /// CLI report where the prompt has got to (`command_lifecycle`), and names it to cancel.
+  case prompt(String, context: [String] = [], uuid: String? = nil)
   /// The answer to a `can_use_tool` request.
   case permission(requestID: String, PermissionDecision)
-  /// Stop the turn in progress. Sent by the VS Code extension; not yet exercised against
-  /// the CLI here (`docs/claude-stream-json.md`).
-  case interrupt(requestID: String)
+  /// Stop the turn in progress; with `cancelQueued`, drop the prompts waiting behind it too.
+  case interrupt(requestID: String, cancelQueued: Bool = false)
+  /// Take back a prompt sent while a turn ran, before the CLI picks it up. Answered with
+  /// `{"cancelled": true}`, and a `cancelled` lifecycle line.
+  case cancelQueued(requestID: String, uuid: String)
   /// The process's own account of its context: the window size, exact, and its breakdown.
   case contextUsage(requestID: String)
   /// Every MCP server the process would connect, with its status and tools. Answered before
@@ -42,19 +45,21 @@ public enum ClientMessage: Sendable, Equatable {
     switch self {
     case .initialize(let id):
       Self.controlRequest(id, ["subtype": .string("initialize"), "hooks": .null])
-    case .prompt(let text, let context):
-      .object([
-        "type": .string("user"),
-        "session_id": .string(""),
-        "parent_tool_use_id": .null,
-        "message": .object([
-          "role": .string("user"),
-          "content": context.isEmpty
-            ? .string(text)
-            : .array(
-              (context + [text]).map { .object(["type": .string("text"), "text": .string($0)]) }),
-        ]),
-      ])
+    case .prompt(let text, let context, let uuid):
+      .object(
+        [
+          "type": .string("user"),
+          "session_id": .string(""),
+          "parent_tool_use_id": .null,
+          "message": .object([
+            "role": .string("user"),
+            "content": context.isEmpty
+              ? .string(text)
+              : .array(
+                (context + [text]).map { .object(["type": .string("text"), "text": .string($0)]) }
+              ),
+          ]),
+        ].merging(uuid.map { ["uuid": .string($0)] } ?? [:]) { first, _ in first })
     case .permission(let id, let decision):
       .object([
         "type": .string("control_response"),
@@ -64,8 +69,15 @@ public enum ClientMessage: Sendable, Equatable {
           "response": decision.json,
         ]),
       ])
-    case .interrupt(let id):
-      Self.controlRequest(id, ["subtype": .string("interrupt")])
+    case .interrupt(let id, let cancelQueued):
+      Self.controlRequest(
+        id,
+        ["subtype": .string("interrupt")].merging(
+          cancelQueued ? ["cancel_queued": .bool(true)] : [:]
+        ) { first, _ in first })
+    case .cancelQueued(let id, let uuid):
+      Self.controlRequest(
+        id, ["subtype": .string("cancel_async_message"), "message_uuid": .string(uuid)])
     case .contextUsage(let id):
       // `summary`, not `full`: `full` counts each category through `count_tokens`.
       Self.controlRequest(

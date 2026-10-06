@@ -7,11 +7,16 @@ public struct SkillEntry: Sendable, Hashable, Identifiable {
   public var description: String
   /// What the skill takes after its name; empty when it takes nothing.
   public var argumentHint: String
+  /// The CLI's own (`/compact`, `/context`…), the skills it bundles among them.
+  public var isBuiltin: Bool
 
-  public init(name: String, description: String = "", argumentHint: String = "") {
+  public init(
+    name: String, description: String = "", argumentHint: String = "", isBuiltin: Bool = false
+  ) {
     self.name = name
     self.description = description
     self.argumentHint = argumentHint
+    self.isBuiltin = isBuiltin
   }
 
   public var id: String { name }
@@ -23,14 +28,16 @@ public struct SkillEntry: Sendable, Hashable, Identifiable {
   }
 
   /// An entry of `commands`; nil for one without a name, or for the CLI's own (`builtin`),
-  /// which covers the skills it bundles too.
-  init?(_ json: JSONValue) {
-    guard let name = json["name"]?.stringValue, !name.isEmpty,
-      json["builtin"]?.boolValue != true
+  /// which covers the skills it bundles too, unless `includingBuiltin`. Never one named
+  /// `__…`, which the CLI keeps for itself.
+  init?(_ json: JSONValue, includingBuiltin: Bool = false) {
+    let isBuiltin = json["builtin"]?.boolValue == true
+    guard let name = json["name"]?.stringValue, !name.isEmpty, !name.hasPrefix("__"),
+      includingBuiltin || !isBuiltin
     else { return nil }
     self.init(
       name: name, description: json["description"]?.stringValue ?? "",
-      argumentHint: json["argumentHint"]?.stringValue ?? "")
+      argumentHint: json["argumentHint"]?.stringValue ?? "", isBuiltin: isBuiltin)
   }
 }
 
@@ -117,21 +124,32 @@ public struct ProjectCapabilities: Sendable, Equatable {
   /// The models the account offers, from the same `initialize` reply; nil until one listed
   /// them.
   public var models: [ModelOption]?
+  /// What the `/` menu offers: the skills and the CLI's own commands; nil until a reply
+  /// listed them.
+  public var commands: [SkillEntry]?
 
   public init(
     skills: [SkillEntry]? = nil, mcpServers: [MCPServerEntry]? = nil,
-    models: [ModelOption]? = nil
+    models: [ModelOption]? = nil, commands: [SkillEntry]? = nil
   ) {
     self.skills = skills
     self.mcpServers = mcpServers
     self.models = models
+    self.commands = commands
   }
 
   /// The skills an `initialize` reply lists, the CLI's own left out; nil when it has no
   /// `commands` at all, which is not the same as an empty list.
   public static func skills(fromInitialize reply: JSONValue?) -> [SkillEntry]? {
     guard let commands = reply?["commands"]?.arrayValue else { return nil }
-    return sorted(commands.compactMap(SkillEntry.init))
+    return sorted(commands.compactMap { SkillEntry($0) })
+  }
+
+  /// Everything the `/` menu offers: the skills and the CLI's own commands, from an
+  /// `initialize` reply or the bare list `commands_changed` carries; nil without either.
+  public static func commands(fromInitialize reply: JSONValue?) -> [SkillEntry]? {
+    guard let commands = reply?.arrayValue ?? reply?["commands"]?.arrayValue else { return nil }
+    return sorted(commands.compactMap { SkillEntry($0, includingBuiltin: true) })
   }
 
   /// The servers an `mcp_status` reply lists; nil when it has no `mcpServers`.
@@ -302,6 +320,7 @@ public struct CapabilityReplies: Sendable, Equatable {
       hasInitialize = true
       if response.isSuccess {
         capabilities.skills = ProjectCapabilities.skills(fromInitialize: response.response)
+        capabilities.commands = ProjectCapabilities.commands(fromInitialize: response.response)
         capabilities.models = ModelOption.list(fromInitialize: response.response)
       } else {
         initializeError = response.error

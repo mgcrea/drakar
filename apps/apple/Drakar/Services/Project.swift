@@ -718,7 +718,15 @@ final class Project {
       guard let self, let session, self.speaksForProject(session),
         let skills = ProjectCapabilities.skills(fromInitialize: reply)
       else { return }
-      self.capabilities.sessionReported(skills: skills)
+      self.capabilities.sessionReported(
+        skills: skills, commands: ProjectCapabilities.commands(fromInitialize: reply))
+    }
+    session.onCommandsChanged = { [weak self, weak session] commands in
+      guard let self, let session, self.speaksForProject(session),
+        let skills = ProjectCapabilities.skills(fromInitialize: .object(["commands": commands]))
+      else { return }
+      self.capabilities.sessionReported(
+        skills: skills, commands: ProjectCapabilities.commands(fromInitialize: commands))
     }
     return item
   }

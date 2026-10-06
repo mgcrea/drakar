@@ -164,6 +164,9 @@ public struct Transcript: Sendable, Equatable {
   }
   /// True from a prompt until its `result`.
   public private(set) var isRunning = false
+  /// Prompts sent while a turn ran, oldest first, until the CLI takes each into a turn
+  /// (`command_lifecycle` `started`), where it joins the conversation, or drops it.
+  public private(set) var queuedPrompts: [QueuedPrompt] = []
   /// The newest list the main thread's `TodoWrite` wrote.
   public private(set) var todos: [Todo]?
   /// Subagents, by the `Agent` call that started each.
@@ -247,6 +250,12 @@ public struct Transcript: Sendable, Equatable {
     upsert(Entry(id: "notice#\(noticeCount)", kind: kind, parentToolUseID: parent))
   }
 
+  /// A prompt sent while a turn runs: shown apart until the CLI picks it up.
+  public mutating func queue(_ prompt: QueuedPrompt) {
+    revision += 1
+    queuedPrompts.append(prompt)
+  }
+
   /// Call after answering a permission request, so it leaves the pending list.
   public mutating func resolvePermission(requestID: String) {
     revision += 1
@@ -260,6 +269,15 @@ public struct Transcript: Sendable, Equatable {
     isRunning = false
     pendingPermissions.removeAll()
     stopThinking()
+    // What waited behind its turn will never run.
+    if !queuedPrompts.isEmpty {
+      let count = queuedPrompts.count
+      queuedPrompts.removeAll()
+      addNotice(
+        count == 1
+          ? String(localized: "1 queued message was not sent")
+          : String(localized: "\(count) queued messages were not sent"))
+    }
     // Its subagents went with it; no notification will say so.
     for (call, task) in agentTasks where task.status == .running {
       agentTasks[call]?.status = .ended("session ended")
@@ -348,6 +366,19 @@ public struct Transcript: Sendable, Equatable {
       }
     case .controlCancelRequest(let id):
       resolvePermission(requestID: id)
+    case .commandLifecycle(let uuid, let state):
+      guard let index = queuedPrompts.firstIndex(where: { $0.uuid == uuid }) else { break }
+      switch state {
+      case "started":
+        let prompt = queuedPrompts.remove(at: index)
+        addPrompt(prompt.text, context: prompt.context)
+      case "cancelled":
+        queuedPrompts.remove(at: index)
+      case "discarded", "refused":
+        let prompt = queuedPrompts.remove(at: index)
+        addNotice(String(localized: "Claude Code did not take a queued message: \(prompt.text)"))
+      default: break
+      }
     case .result(let result):
       lastResult = result
       turnEnd = result.wasInterrupted ? .interrupted : result.isError ? .failed : .completed
@@ -520,4 +551,20 @@ extension Transcript.ToolCall {
     "Tool permission request failed", "[Tool call interrupted",
     "[Tool call result not in this copy",
   ]
+}
+
+/// A prompt sent while a turn ran, by the `uuid` it was sent with.
+public struct QueuedPrompt: Sendable, Equatable, Identifiable {
+  public var uuid: String
+  public var text: String
+  /// What the editor attached, labelled as on a prompt.
+  public var context: String?
+
+  public var id: String { uuid }
+
+  public init(uuid: String, text: String, context: String? = nil) {
+    self.uuid = uuid
+    self.text = text
+    self.context = context
+  }
 }

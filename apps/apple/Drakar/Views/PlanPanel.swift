@@ -45,7 +45,8 @@ struct PlanPanel: View {
             : String(localized: "Yes, and auto-accept edits"),
           id: "plan.approve", prominent: !hasFeedback
         ) { approve(false) }
-        choice(2, String(localized: "Yes, and approve edits manually"), id: "plan.approveManually") {
+        choice(2, String(localized: "Yes, and approve edits manually"), id: "plan.approveManually")
+        {
           approve(true)
         }
         HStack(spacing: 8) {

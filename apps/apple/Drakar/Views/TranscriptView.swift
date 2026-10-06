@@ -10,6 +10,8 @@ struct TranscriptView: View {
   let transcript: Transcript
   /// The entry at the top when this session was last shown; nil while following.
   @Binding var anchor: String?
+  /// Takes back a prompt queued behind the turn.
+  var cancelQueued: (QueuedPrompt) -> Void = { _ in }
 
   @State private var position = ScrollPosition(edge: .bottom)
   /// Whether new output scrolls into view. Scrolling up to read stops it; scrolling back
@@ -53,12 +55,16 @@ struct TranscriptView: View {
             task: transcript.agentTasks[entry.id], isAsked: asked.contains(entry.id)
           )
           .equatable()
-            // Inside the row, so a jump to the prompt stops short of its bubble.
-            .padding(.top, entry.isPrompt ? 12 : 0)
+          // Inside the row, so a jump to the prompt stops short of its bubble.
+          .padding(.top, entry.isPrompt ? 12 : 0)
         }
         // Not while a permission waits on the user: nothing is being worked on then.
         if transcript.isRunning && transcript.pendingPermissions.isEmpty {
           WorkingIndicator(status: workingStatus)
+        }
+        // Below the turn they wait behind, until the CLI takes each into the conversation.
+        ForEach(transcript.queuedPrompts) { prompt in
+          QueuedPromptView(prompt: prompt, cancel: { cancelQueued(prompt) })
         }
       }
       .scrollTargetLayout()
@@ -521,4 +527,43 @@ struct OpenInEditorAction: Equatable {
   func callAsFunction(_ url: URL) { workspace.open(url) }
 
   static func == (a: Self, b: Self) -> Bool { a.workspace === b.workspace }
+}
+
+/// A prompt sent while a turn ran, waiting for the CLI to take it: dimmed, labelled, and
+/// taken back with ×.
+private struct QueuedPromptView: View {
+  let prompt: QueuedPrompt
+  let cancel: () -> Void
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 4) {
+      HStack(spacing: 6) {
+        Label("Queued", systemImage: "clock")
+        if let context = prompt.context {
+          Label(context, systemImage: "doc.text")
+        }
+      }
+      .font(.caption)
+      .foregroundStyle(.secondary)
+      HStack(alignment: .top, spacing: 8) {
+        Text(prompt.text)
+          .textSelection(.enabled)
+          .foregroundStyle(.secondary)
+        Button("Cancel", systemImage: "xmark.circle.fill", action: cancel)
+          .labelStyle(.iconOnly)
+          .buttonStyle(.plain)
+          .foregroundStyle(.tertiary)
+          .help("Don't send this message")
+          .accessibilityIdentifier("queued.cancel")
+      }
+      .padding(.horizontal, 12)
+      .padding(.vertical, 8)
+      .background(.quaternary.opacity(0.3), in: RoundedRectangle(cornerRadius: 8))
+      .overlay(
+        RoundedRectangle(cornerRadius: 8).strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [4]))
+          .foregroundStyle(.separator))
+    }
+    .accessibilityElement(children: .contain)
+    .accessibilityIdentifier("queued.\(prompt.uuid)")
+  }
 }

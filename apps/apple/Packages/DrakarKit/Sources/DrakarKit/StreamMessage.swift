@@ -21,6 +21,9 @@ public enum StreamMessage: Sendable, Equatable {
   /// The CLI withdrew a request it sent, typically a `can_use_tool` it no longer needs.
   case controlCancelRequest(requestID: String)
   case rateLimit(JSONValue)
+  /// Where a prompt sent with a `uuid` has got to: `queued`, `started` once the CLI takes
+  /// it into a turn, `completed`, or `cancelled`, `discarded`, `refused`.
+  case commandLifecycle(commandUUID: String, state: String)
   case unknown(type: String, raw: JSONValue)
 
   public init(line: Data) throws {
@@ -44,6 +47,10 @@ public enum StreamMessage: Sendable, Equatable {
       case "control_cancel_request":
         json["request_id"]?.stringValue.map { .controlCancelRequest(requestID: $0) }
       case "rate_limit_event": .rateLimit(json["rate_limit_info"] ?? .null)
+      case "command_lifecycle":
+        json["command_uuid"]?.stringValue.flatMap { id in
+          json["state"]?.stringValue.map { .commandLifecycle(commandUUID: id, state: $0) }
+        }
       default: nil
       }
     self = decoded ?? .unknown(type: type, raw: json)
@@ -71,6 +78,9 @@ public enum SystemEvent: Sendable, Equatable {
   case notification(text: String, isError: Bool)
   /// A subagent started, worked, changed status or ended.
   case task(TaskEvent)
+  /// The commands and skills changed mid-session (a plugin or skill reloaded): the new
+  /// `commands` list, shaped as `initialize`'s.
+  case commandsChanged(JSONValue)
   case other(subtype: String, raw: JSONValue)
 
   init?(_ json: JSONValue) {
@@ -94,6 +104,9 @@ public enum SystemEvent: Sendable, Equatable {
     case "notification":
       guard let text = json["text"]?.stringValue else { return nil }
       self = .notification(text: text, isError: json["color"]?.stringValue == "error")
+    case "commands_changed":
+      guard let commands = json["commands"] else { return nil }
+      self = .commandsChanged(commands)
     case _ where TaskEvent.Kind(rawValue: subtype) != nil:
       guard let event = TaskEvent(json, subtype: subtype) else { return nil }
       self = .task(event)

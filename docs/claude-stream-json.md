@@ -278,6 +278,29 @@ structured result has `oldTodos` and `newTodos`.
   end also arrives as a `<task-notification>` user text. `background_tasks_changed` lists
   what runs in the background.
 
+## Prompts sent mid-turn, and the command list (verified 2026-10-06, 2.1.288)
+
+Captured live on `haiku` (fixture `queued-prompts`).
+
+- **A prompt can go at any time.** Sent while a turn runs, it is held, and taken at the next
+  tool boundary (it joins the running turn: one `result` for both) or, in a turn with no
+  more tool calls, once that turn's `result` is out (a turn of its own, with a fresh
+  `system/init`).
+- **A `uuid` on the user line** makes the CLI report it: `{"type":"command_lifecycle",
+  "command_uuid":<uuid>,"state":…}` with `queued`, `started` (taken into a turn),
+  `completed`, or `cancelled` / `discarded` / `refused`. Written with or without
+  `--replay-user-messages`, which would also echo each user line back (`isReplay: true`);
+  Drakar does not pass it and places a queued prompt on `started`, as the extension's
+  webview does.
+- **Cancel** one before it is taken with `{"subtype":"cancel_async_message","message_uuid":…}`,
+  answered `{"cancelled": true}` and a `cancelled` lifecycle line.
+- **`interrupt` with `cancel_queued: true`** stops the turn and drops what was queued,
+  answered `{"still_queued": [], "cancelled": [<uuid>…]}`. Drakar's Stop sends it.
+- **The command list** in `initialize`'s `commands` holds the skills and about 58 of the
+  CLI's own (`builtin: true`: `compact`, `context`, `clear`, `model`, `usage`, `code-review`…),
+  plus internal ones named `__…`, which the `/` menu leaves out. `system/commands_changed`
+  carries a new list, same shape, when skills or plugins reload mid-session.
+
 ## Observed details worth knowing
 
 - **Read-only commands never ask.** `echo amiral` ran with no `can_use_tool`; `touch`

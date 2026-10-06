@@ -53,6 +53,11 @@ enum Fixture: String {
   /// (`plan`, `planFilePath`), answered `deny` with `interrupt: true`: the CLI's own
   /// rejection, `[Request interrupted by user]`, and an interrupted result. Trimmed the same way.
   case planRequest = "plan-request"
+  /// A text-only `haiku` turn (2.1.288, 2026-10-06, no `--replay-user-messages`) during which
+  /// "banana" (`bbbbbbbb-…`) and "cherry" (`cccccccc-…`) were sent, cherry then cancelled with
+  /// `cancel_async_message`: the `command_lifecycle` lines, the first turn's result, then
+  /// banana's own turn. Trimmed as the others.
+  case queuedPrompts = "queued-prompts"
 
   var lines: [Data] {
     get throws {

@@ -144,7 +144,8 @@ struct TodoRows: View {
       ForEach(Array(todos.enumerated()), id: \.offset) { _, todo in
         HStack(alignment: .firstTextBaseline, spacing: 8) {
           Image(systemName: Self.symbol(todo.status))
-            .foregroundStyle(todo.status == .inProgress ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
+            .foregroundStyle(
+              todo.status == .inProgress ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
           Text(todo.status == .inProgress ? todo.activeForm ?? todo.content : todo.content)
             .strikethrough(todo.status == .completed)
             .foregroundStyle(todo.status == .completed ? .secondary : .primary)

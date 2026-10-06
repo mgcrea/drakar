@@ -90,6 +90,8 @@ final class ClaudeSession {
   @ObservationIgnored var onPromptSent: (() -> Void)?
   /// The process answered `initialize`: its reply, which lists the skills.
   @ObservationIgnored var onInitialized: ((JSONValue?) -> Void)?
+  /// The commands and skills changed mid-session: the new list, as `initialize` lists them.
+  @ObservationIgnored var onCommandsChanged: ((JSONValue) -> Void)?
 
   @ObservationIgnored private var process: AgentProcess?
   @ObservationIgnored private var events: Task<Void, Never>?
@@ -130,6 +132,12 @@ final class ClaudeSession {
 
   var canSend: Bool {
     !isReadOnly && !isMoving && !historyFailed && !transcript.isRunning && phase != .starting
+  }
+
+  /// A prompt typed while a turn runs goes now, and waits in the CLI until it can be taken:
+  /// at the next tool boundary, or once the turn ends.
+  var canQueue: Bool {
+    !isReadOnly && !isMoving && !historyFailed && transcript.isRunning && process != nil
   }
 
   /// The mode the pill shows: the process's while it runs, else what the next start takes.
@@ -261,12 +269,21 @@ final class ClaudeSession {
   /// extension's chat sends it. Starts the process when there is none.
   func send(_ prompt: String, context: [EditorSelection] = []) {
     let text = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard canSend, !text.isEmpty else { return }
+    guard canSend || canQueue, !text.isEmpty else { return }
     let label = context.isEmpty ? nil : context.map(\.label).joined(separator: ", ")
+    // Named, so that the CLI's lifecycle lines say when it is taken, and it can be cancelled.
+    let uuid = UUID().uuidString.lowercased()
+    let message = ClientMessage.prompt(
+      text, context: context.map(\.promptContext), uuid: uuid)
+    if canQueue {
+      transcript.queue(QueuedPrompt(uuid: uuid, text: text, context: label))
+      onPromptSent?()
+      write(message)
+      return
+    }
     transcript.addPrompt(text, context: label)
     onPromptSent?()
     if isLoadingHistory { promptsDuringLoad.append((text, label)) }
-    let message = ClientMessage.prompt(text, context: context.map(\.promptContext))
     if process == nil {
       pendingPrompt = message
       // Counted now, not when the task runs: a `stop()` before then cancels it too.
@@ -446,9 +463,16 @@ final class ClaudeSession {
       .renameSession(requestID: nextRequestID("rename"), title: title, sessionID: id))
   }
 
+  /// Stops the turn, and drops what was queued behind it: stop means stop.
   func interrupt() {
     guard transcript.isRunning else { return }
-    write(.interrupt(requestID: nextRequestID("interrupt")))
+    write(.interrupt(requestID: nextRequestID("interrupt"), cancelQueued: true))
+  }
+
+  /// Takes back a prompt sent while a turn ran, unless the CLI took it already; it leaves
+  /// the queue on the CLI's `cancelled`.
+  func cancelQueued(_ prompt: QueuedPrompt) {
+    try? process?.send(.cancelQueued(requestID: nextRequestID("cancel"), uuid: prompt.uuid))
   }
 
   /// Ends the process: input closed so it can finish cleanly, then terminated, because a
@@ -560,6 +584,7 @@ final class ClaudeSession {
       adopt(mode: mode)
     }
     if case .system(.status(_, let mode?)) = message { adopt(mode: mode) }
+    if case .system(.commandsChanged(let commands)) = message { onCommandsChanged?(commands) }
     if case .controlResponse(let response) = message, response.requestID.hasPrefix("settings-") {
       if response.isSuccess { appliedEffort = EffortLevel.applied(fromSettings: response.response) }
       return
@@ -587,7 +612,8 @@ final class ClaudeSession {
       if savedTarget == nil { savedTarget = findTarget() }
       // Not `write`: a failed context request must not mark the session failed.
       try? process?.send(.contextUsage(requestID: nextRequestID("context")))
-      onTurnEnded?()
+      // Not while a queued prompt is about to start the next one.
+      if transcript.queuedPrompts.isEmpty { onTurnEnded?() }
     }
   }
 
