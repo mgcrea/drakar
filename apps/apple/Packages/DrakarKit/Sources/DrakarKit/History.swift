@@ -82,6 +82,7 @@ extension Transcript {
   /// subagent sidechains are skipped.
   public mutating func applyHistory(_ json: JSONValue) {
     guard json["isSidechain"]?.boolValue != true else { return }
+    if let version = json["version"]?.stringValue, !version.isEmpty { writerVersion = version }
     switch json["type"]?.stringValue {
     case "ai-title":
       if let title = json["aiTitle"]?.stringValue, !title.isEmpty { self.title = title }

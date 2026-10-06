@@ -104,6 +104,9 @@ public struct Transcript: Sendable, Equatable {
   public private(set) var turnEnd: TurnEnd?
   /// The session's title, from the newest `ai-title` in its history.
   public internal(set) var title: String?
+  /// The Claude Code version that wrote the newest history line: the session's, when another
+  /// process runs it and no `system/init` says so.
+  public internal(set) var writerVersion: String?
   /// The newest main-thread request's tokens: the session's context. Subagents' are theirs.
   public private(set) var contextUsage: TokenUsage?
   /// `message.model` of that request.

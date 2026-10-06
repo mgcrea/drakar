@@ -30,6 +30,19 @@ struct HistoryTests {
     #expect(kinds[2] == .text("done"))
   }
 
+  /// Each line names the Claude Code that wrote it: the newest is the session's, for one
+  /// another process runs.
+  @Test func knowsTheVersionThatWroteIt() {
+    let transcript = history([
+      #"{"type":"user","version":"2.1.288","message":{"role":"user","content":"Hi"}}"#,
+      #"{"type":"ai-title","aiTitle":"Hi"}"#,
+      #"{"type":"user","version":"2.1.289","message":{"role":"user","content":"Again"}}"#,
+      #"{"type":"system","subtype":"turn_duration"}"#,
+    ])
+    #expect(transcript.writerVersion == "2.1.289")
+    #expect(history([#"{"type":"ai-title","aiTitle":"Hi"}"#]).writerVersion == nil)
+  }
+
   /// A resumed session goes on from its history: the next prompt and the live stream
   /// land after it.
   @Test func carriesOnLiveAfterTheHistory() throws {
