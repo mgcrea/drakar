@@ -85,7 +85,9 @@ extension Transcript {
     if let version = json["version"]?.stringValue, !version.isEmpty { writerVersion = version }
     switch json["type"]?.stringValue {
     case "ai-title":
-      if let title = json["aiTitle"]?.stringValue, !title.isEmpty { self.title = title }
+      if let title = json["aiTitle"]?.stringValue, !title.isEmpty { aiTitle = title }
+    case "custom-title":
+      if let title = json["customTitle"]?.stringValue, !title.isEmpty { customTitle = title }
     case "assistant":
       if let message = try? StreamMessage(json: json) { apply(message) }
     case "user":

@@ -18,6 +18,9 @@ public enum ClientMessage: Sendable, Equatable {
   /// Every MCP server the process would connect, with its status and tools. Answered before
   /// any prompt (docs/claude-stream-json.md, "Skills and MCP status").
   case mcpStatus(requestID: String)
+  /// Names the session as `/rename` does: the process appends the `custom-title` line and
+  /// keeps the name for its own later writes (docs/claude-stream-json.md, "Session titles").
+  case renameSession(requestID: String, title: String, sessionID: String)
 
   public var json: JSONValue {
     switch self {
@@ -53,6 +56,14 @@ public enum ClientMessage: Sendable, Equatable {
         id, ["subtype": .string("get_context_usage"), "detail": .string("summary")])
     case .mcpStatus(let id):
       Self.controlRequest(id, ["subtype": .string("mcp_status")])
+    case .renameSession(let id, let title, let sessionID):
+      // `source: host` as the extension sends it.
+      Self.controlRequest(
+        id,
+        [
+          "subtype": .string("rename_session"), "title": .string(title),
+          "source": .string("host"), "session_id": .string(sessionID),
+        ])
     }
   }
 

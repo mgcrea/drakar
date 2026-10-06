@@ -191,7 +191,10 @@ public enum SessionIndex {
       sessionID: file.deletingPathExtension().lastPathComponent, account: account, file: file,
       modified: modified, size: size)
     guard let data = try? Data(contentsOf: file, options: .alwaysMapped) else { return summary }
-    summary.title = lastValue(of: "aiTitle", inLineOfType: "ai-title", in: data)
+    // A name given (`custom-title`) wins over any `ai-title`, even a newer one.
+    summary.title =
+      lastValue(of: "customTitle", inLineOfType: "custom-title", in: data)
+      ?? lastValue(of: "aiTitle", inLineOfType: "ai-title", in: data)
     summary.lastPrompt = lastValue(of: "lastPrompt", inLineOfType: "last-prompt", in: data)
     summary.cwd = lastValue(of: "cwd", inLineOfType: nil, in: data)
     let tail = TranscriptTail(suffixOf: data)

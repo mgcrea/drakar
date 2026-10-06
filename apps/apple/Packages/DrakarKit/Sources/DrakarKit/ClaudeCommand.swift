@@ -17,6 +17,9 @@ public struct ClaudeCommand: Sendable, Equatable {
   /// With `resumeSessionID`: continue a copy under a new id, leaving the original to
   /// whoever has it open.
   public var forksSession = false
+  /// The session's name (`custom-title`), for a new session or a fork: the CLI records it
+  /// as `/rename` would.
+  public var name: String?
   /// Appended as given, after everything else.
   public var extraArguments: [String] = []
 
@@ -48,6 +51,8 @@ public struct ClaudeCommand: Sendable, Equatable {
       arguments.append("--resume=\(resumeSessionID)")
       if forksSession { arguments.append("--fork-session") }
     }
+    // One argument too: a name can start with a dash.
+    if let name { arguments.append("--name=\(name)") }
     return arguments + extraArguments
   }
 }
