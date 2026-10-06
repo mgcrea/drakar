@@ -93,11 +93,13 @@ struct SessionPillsTests {
       ]
     scoped {
       let session = ClaudeSession(folder: folder)
-      #expect(SessionPills.offeredModels(session, models: models)?.count == 3)
-      ClaudeChoice.defaults.set(false, forKey: PreferenceKey.showsLegacyModels)
+      // Off unless turned on.
       #expect(
         SessionPills.offeredModels(session, models: models)?.map(\.value) == ["default", "haiku"])
       session.setModel("claude-opus-4-8")
+      #expect(SessionPills.offeredModels(session, models: models)?.count == 3)
+      session.setModel("haiku")
+      ClaudeChoice.defaults.set(true, forKey: PreferenceKey.showsLegacyModels)
       #expect(SessionPills.offeredModels(session, models: models)?.count == 3)
       #expect(SessionPills.offeredModels(session, models: nil) == nil)
     }
