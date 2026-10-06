@@ -218,4 +218,62 @@ struct TranscriptTests {
     transcript.apply(try message(succeeded))
     #expect(transcript.closingText == ClosingText(messageID: "m1", text: "Built.\n\nPush it?"))
   }
+
+  /// Thinking streamed live is timed as the extension times it: from its block start to the
+  /// whole block landing.
+  @Test func timesThinkingStreamedLive() throws {
+    let start = Date(timeIntervalSinceReferenceDate: 1000)
+    var transcript = Transcript()
+    transcript.addPrompt("Think")
+    transcript.apply(
+      try message(#"{"type":"stream_event","event":{"type":"message_start","message":{"id":"m1"}}}"#),
+      at: start)
+    transcript.apply(
+      try message(
+        #"{"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":""}}}"#
+      ), at: start)
+    transcript.apply(
+      try message(
+        #"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"hm"}}}"#
+      ), at: start + 1)
+    #expect(transcript.entries.last?.thinkingSince == start)
+    #expect(transcript.entries.last?.thinkingDuration == nil)
+    transcript.apply(
+      try message(
+        #"{"type":"assistant","message":{"id":"m1","content":[{"type":"thinking","thinking":"hm"}]}}"#
+      ), at: start + 3)
+    #expect(transcript.entries.last?.thinkingSince == nil)
+    #expect(transcript.entries.last?.thinkingDuration == 3)
+  }
+
+  /// Without its stream events, from a file or without partial messages, nothing says when
+  /// thinking began.
+  @Test func thinkingThatLandedWholeHasNoDuration() throws {
+    var transcript = Transcript()
+    transcript.addPrompt("Think")
+    transcript.apply(
+      try message(
+        #"{"type":"assistant","message":{"id":"m1","content":[{"type":"thinking","thinking":"hm"}]}}"#
+      ))
+    #expect(transcript.entries.last?.kind == .thinking("hm"))
+    #expect(transcript.entries.last?.thinkingSince == nil)
+    #expect(transcript.entries.last?.thinkingDuration == nil)
+  }
+
+  /// A turn cut short mid-thought is no longer thinking, and its thinking never finished.
+  @Test func anEndedTurnStopsItsThinking() throws {
+    for end in [succeeded, nil] {
+      var transcript = Transcript()
+      transcript.addPrompt("Think")
+      transcript.apply(
+        try message(#"{"type":"stream_event","event":{"type":"message_start","message":{"id":"m1"}}}"#))
+      transcript.apply(
+        try message(
+          #"{"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":""}}}"#
+        ))
+      if let end { transcript.apply(try message(end)) } else { transcript.processExited() }
+      #expect(transcript.entries.last?.thinkingSince == nil)
+      #expect(transcript.entries.last?.thinkingDuration == nil)
+    }
+  }
 }

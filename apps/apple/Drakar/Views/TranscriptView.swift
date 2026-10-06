@@ -253,7 +253,8 @@ struct EntryView: View, Equatable {
       case .text(let text):
         MarkdownView(text: text)
       case .thinking(let text):
-        ThinkingView(text: text)
+        ThinkingView(
+          text: text, isThinking: entry.thinkingSince != nil, duration: entry.thinkingDuration)
       case .tool(let call) where call.name == UserQuestion.toolName:
         QuestionCallView(call: call)
       case .tool(let call):
@@ -279,12 +280,22 @@ struct EntryView: View, Equatable {
 
 private struct ThinkingView: View {
   let text: String
+  let isThinking: Bool
+  /// Known only for thinking streamed live.
+  let duration: TimeInterval?
   @Environment(\.thinkingDisclosure) private var disclosure
+
+  /// As the extension words it.
+  private var title: String {
+    if isThinking { return "Thinking…" }
+    if let duration { return "Thought for \(max(1, Int(duration.rounded())))s" }
+    return text.isEmpty ? "Thought" : "Thinking"
+  }
 
   var body: some View {
     @Bindable var disclosure = disclosure
     if text.isEmpty {
-      Label("Thought", systemImage: "brain")
+      Label(title, systemImage: "brain")
         .font(.callout)
         .foregroundStyle(.tertiary)
     } else {
@@ -298,7 +309,7 @@ private struct ThinkingView: View {
           .frame(maxWidth: .infinity, alignment: .leading)
           .copyOnHover(text)
       } label: {
-        Label("Thinking", systemImage: "brain")
+        Label(title, systemImage: "brain")
           .font(.callout)
           .foregroundStyle(.secondary)
           // The whole row toggles, not only the chevron.

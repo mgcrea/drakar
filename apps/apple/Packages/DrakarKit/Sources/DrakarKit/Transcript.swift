@@ -19,6 +19,12 @@ public struct Transcript: Sendable, Equatable {
     public var parentToolUseID: String?
     /// On a prompt, what the editor attached to it: `notes.md:3–5`.
     public var context: String?
+    /// On thinking streaming live, when its block started; nil once it landed or its turn ended.
+    public var thinkingSince: Date?
+    /// On thinking streamed live, how long it took from its block start to the whole block
+    /// landing. Nil for thinking that landed whole, which history always does: nothing says
+    /// when it began.
+    public var thinkingDuration: TimeInterval?
 
     /// On a prompt, its first line with text: what a glance at it needs.
     public var headline: String? {
@@ -163,6 +169,8 @@ public struct Transcript: Sendable, Equatable {
   private var promptCount = 0
   private var lastPromptID: String?
   private var noticeCount = 0
+  /// The entries thinking now, so the end of a turn can stop them without a scan.
+  private var thinkingIDs: Set<String> = []
 
   public init() {}
 
@@ -229,9 +237,11 @@ public struct Transcript: Sendable, Equatable {
     revision += 1
     isRunning = false
     pendingPermissions.removeAll()
+    stopThinking()
   }
 
-  public mutating func apply(_ message: StreamMessage) {
+  /// `time` is when the line arrived, which times thinking streamed live.
+  public mutating func apply(_ message: StreamMessage, at time: Date = .now) {
     revision += 1
     switch message {
     case .system(.initialized(let info)):
@@ -252,11 +262,11 @@ public struct Transcript: Sendable, Equatable {
       for (offset, block) in assistant.content.enumerated() {
         place(
           block, id: "\(assistant.messageID)#\(index + offset)",
-          parent: assistant.parentToolUseID, replacing: true)
+          parent: assistant.parentToolUseID, replacing: true, at: time)
       }
       blockCount[assistant.messageID] = index + assistant.content.count
     case .streamEvent(let event, let parent):
-      apply(event, parent: parent)
+      apply(event, parent: parent, at: time)
     case .user(let user):
       // Live, the CLI never echoes our prompts, so any text it writes as a user turn is a
       // note of its own: an interrupt, a background task finishing.
@@ -290,20 +300,21 @@ public struct Transcript: Sendable, Equatable {
       lastResult = result
       turnEnd = result.wasInterrupted ? .interrupted : result.isError ? .failed : .completed
       isRunning = false
-      // A turn that ended cannot still be asking.
+      // A turn that ended cannot still be asking, nor thinking.
       pendingPermissions.removeAll()
+      stopThinking()
     case .system, .controlResponse, .rateLimit, .unknown:
       break
     }
   }
 
-  private mutating func apply(_ event: StreamEvent, parent: String?) {
+  private mutating func apply(_ event: StreamEvent, parent: String?, at time: Date) {
     switch event {
     case .messageStart(let id):
       streamingMessage[parent] = id
     case .blockStart(let index, let block):
       guard let message = streamingMessage[parent] else { return }
-      place(block, id: "\(message)#\(index)", parent: parent, replacing: false)
+      place(block, id: "\(message)#\(index)", parent: parent, replacing: false, at: time)
     case .blockDelta(let index, let delta):
       guard let message = streamingMessage[parent],
         let position = indexByID["\(message)#\(index)"]
@@ -323,7 +334,9 @@ public struct Transcript: Sendable, Equatable {
 
   /// Puts a block at `id`. A tool call is keyed by its own id rather than its position, so
   /// that its result can find it; the position key is aliased to it for the stream path.
-  private mutating func place(_ block: ContentBlock, id: String, parent: String?, replacing: Bool) {
+  private mutating func place(
+    _ block: ContentBlock, id: String, parent: String?, replacing: Bool, at time: Date
+  ) {
     let kind: Kind
     var key = id
     switch block {
@@ -344,10 +357,28 @@ public struct Transcript: Sendable, Equatable {
       // a block start is empty by definition, and a thinking block can land whole with its
       // text withheld after its deltas showed some.
       if replacing && !Self.isEmptyText(kind) { entries[index].kind = kind }
+      if replacing, let since = entries[index].thinkingSince {
+        entries[index].thinkingSince = nil
+        entries[index].thinkingDuration = time.timeIntervalSince(since)
+        thinkingIDs.remove(key)
+      }
     } else {
-      upsert(Entry(id: key, kind: kind, parentToolUseID: parent))
+      var entry = Entry(id: key, kind: kind, parentToolUseID: parent)
+      if !replacing, case .thinking = kind {
+        entry.thinkingSince = time
+        thinkingIDs.insert(key)
+      }
+      upsert(entry)
     }
     indexByID[id] = indexByID[key]
+  }
+
+  /// Thinking whose block never landed did not finish: it has no duration.
+  private mutating func stopThinking() {
+    for id in thinkingIDs {
+      if let index = indexByID[id] { entries[index].thinkingSince = nil }
+    }
+    thinkingIDs.removeAll()
   }
 
   private static func isEmptyText(_ kind: Kind) -> Bool {
