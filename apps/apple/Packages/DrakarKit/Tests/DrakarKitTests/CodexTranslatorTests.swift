@@ -127,6 +127,34 @@ struct CodexTranslatorTests {
     #expect(call.result?.content == "declined")
   }
 
+  @Test func aCompletedCommandWithNoOutputShowsNone() throws {
+    let t = try fold([
+      exec("item/completed", #""status":"completed","exitCode":0,"aggregatedOutput":null"#)
+    ])
+    guard case .tool(let call) = t.entries[1].kind else {
+      Issue.record("\(t.entries)")
+      return
+    }
+    #expect(call.result?.content == "")
+    #expect(call.result?.isError == false)
+  }
+
+  @Test func aSearchWithNoQuerySearchesItsPath() throws {
+    let t = try fold([
+      """
+      {"method":"item/started","params":{"item":{"type":"commandExecution","id":"exec-1",\
+      "command":"/bin/zsh -lc 'rg --files src'","cwd":"/Users/me/project",\
+      "commandActions":[{"type":"search","command":"rg --files src","query":null,"path":"src"}],\
+      "status":"inProgress"},"threadId":"thread-1","turnId":"turn-1"}}
+      """
+    ])
+    guard case .tool(let call) = t.entries[1].kind else {
+      Issue.record("\(t.entries)")
+      return
+    }
+    #expect(call.kind == .search(pattern: "src"))
+  }
+
   @Test func aLateCompletionLandsOnItsOwnEntry() throws {
     let lines = [
       exec("item/started", #""status":"inProgress""#),
@@ -177,5 +205,26 @@ struct CodexTranslatorTests {
       line("summaryTextDelta", #""delta":"second","summaryIndex":1"#),
     ])
     #expect(t.entries[1].kind == .thinking("first\n\nsecond"))
+  }
+
+  private func reasoning(_ method: String, summary: String = "[]") -> String {
+    #"{"method":"\#(method)","params":{"item":{"type":"reasoning","id":"rs-1","summary":\#(summary),"content":[]},"threadId":"thread-1","turnId":"turn-1"}}"#
+  }
+
+  @Test func anEmptyReasoningItemLeavesNoEntry() throws {
+    let t = try fold([reasoning("item/started"), reasoning("item/completed")])
+    #expect(t.entries.map(\.kind) == [.prompt("go")])
+  }
+
+  @Test func anEmptyCompletionKeepsWhatStreamed() throws {
+    let t = try fold([
+      reasoning("item/started"),
+      #"{"method":"item/reasoning/summaryTextDelta","params":{"threadId":"thread-1","turnId":"turn-1","itemId":"rs-1","delta":"Weighing","summaryIndex":0}}"#,
+      reasoning("item/completed"),
+    ])
+    #expect(t.entries.count == 2)
+    #expect(t.entries[1].kind == .thinking("Weighing"))
+    #expect(t.entries[1].thinkingSince == nil)
+    #expect(t.entries[1].thinkingDuration != nil)
   }
 }

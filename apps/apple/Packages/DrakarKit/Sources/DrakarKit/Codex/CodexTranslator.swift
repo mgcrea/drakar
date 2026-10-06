@@ -9,6 +9,11 @@ import Foundation
 public struct CodexTranslator: Sendable {
   /// File changes by item id, which an approval request names without describing.
   private var fileChanges: [String: ToolKind] = [:]
+  /// Reasoning items that started empty, placed only once their summary streams: at low
+  /// effort they arrive empty and stay so (docs/codex-app-server.md).
+  private var unplacedReasoning: Set<String> = []
+  /// Reasoning items the transcript has, until they complete.
+  private var placedReasoning: Set<String> = []
 
   public init() {}
 
@@ -40,7 +45,14 @@ public struct CodexTranslator: Sendable {
     case "item/reasoning/summaryTextDelta":
       guard let id = params["itemId"]?.stringValue, let delta = params["delta"]?.stringValue
       else { return [] }
-      return [.itemDelta(id: id, .thinking(delta))]
+      guard unplacedReasoning.remove(id) != nil else {
+        return [.itemDelta(id: id, .thinking(delta))]
+      }
+      placedReasoning.insert(id)
+      return [
+        .itemStarted(AgentEvent.Item(id: id, parent: nil, kind: .thinking(""))),
+        .itemDelta(id: id, .thinking(delta)),
+      ]
     case "item/commandExecution/requestApproval", "item/fileChange/requestApproval":
       return approval(method: method, id: message["id"], params: params)
     case "serverRequest/resolved":
@@ -92,7 +104,18 @@ public struct CodexTranslator: Sendable {
       return [placed(.text(item["text"]?.stringValue ?? ""))]
     case "reasoning":
       let summary = (item["summary"]?.arrayValue ?? []).compactMap(\.stringValue)
-      return [placed(.thinking(summary.joined(separator: "\n\n")))]
+      let text = summary.joined(separator: "\n\n")
+      if completed {
+        unplacedReasoning.remove(id)
+        // An empty completion still ends one that streamed: the transcript keeps its text.
+        guard placedReasoning.remove(id) != nil || !text.isEmpty else { return [] }
+      } else if text.isEmpty {
+        unplacedReasoning.insert(id)
+        return []
+      } else {
+        placedReasoning.insert(id)
+      }
+      return [placed(.thinking(text))]
     case "commandExecution":
       let command = item["command"]?.stringValue ?? ""
       let kind = Self.kind(command: command, actions: item["commandActions"]?.arrayValue ?? [])
@@ -108,7 +131,8 @@ public struct CodexTranslator: Sendable {
           .toolResult(
             callID: id,
             .init(
-              content: item["aggregatedOutput"]?.stringValue ?? status ?? "",
+              content: item["aggregatedOutput"]?.stringValue
+                ?? (status == "completed" ? "" : status ?? ""),
               isError: status != "completed" || (item["exitCode"]?.intValue ?? 0) != 0)))
       }
       return events
@@ -168,7 +192,7 @@ public struct CodexTranslator: Sendable {
       case "read":
         if let path = action["path"]?.stringValue { return .read(path: path) }
       case "search", "listFiles":
-        if let query = (action["query"] ?? action["path"])?.stringValue {
+        if let query = action["query"]?.stringValue ?? action["path"]?.stringValue {
           return .search(pattern: query)
         }
       default: break
