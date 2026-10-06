@@ -42,13 +42,29 @@ public enum AgentEvent: Sendable, Equatable {
     public var id: String
     /// The subagent call it runs under; nil on the main thread.
     public var parent: String?
-    /// `.text`, `.thinking` or `.tool`.
-    public var kind: Transcript.Kind
+    public var kind: ItemKind
 
-    public init(id: String, parent: String?, kind: Transcript.Kind) {
+    public init(id: String, parent: String?, kind: ItemKind) {
       self.id = id
       self.parent = parent
       self.kind = kind
+    }
+  }
+
+  /// What an agent's item can be. A prompt or a notice is never one: those keep the
+  /// transcript's own bookkeeping.
+  public enum ItemKind: Sendable, Equatable {
+    case text(String)
+    case thinking(String)
+    case tool(Transcript.ToolCall)
+
+    /// The entry it becomes.
+    public var transcriptKind: Transcript.Kind {
+      switch self {
+      case .text(let text): .text(text)
+      case .thinking(let text): .thinking(text)
+      case .tool(let call): .tool(call)
+      }
     }
   }
 

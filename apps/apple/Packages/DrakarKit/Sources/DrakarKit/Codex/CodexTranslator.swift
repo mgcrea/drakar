@@ -83,7 +83,7 @@ public struct CodexTranslator: Sendable {
     guard let item, let id = item["id"]?.stringValue, let type = item["type"]?.stringValue else {
       return []
     }
-    func placed(_ kind: Transcript.Kind) -> AgentEvent {
+    func placed(_ kind: AgentEvent.ItemKind) -> AgentEvent {
       let item = AgentEvent.Item(id: id, parent: nil, kind: kind)
       return completed ? .itemCompleted(item) : .itemStarted(item)
     }

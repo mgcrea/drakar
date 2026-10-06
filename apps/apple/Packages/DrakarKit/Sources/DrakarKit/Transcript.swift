@@ -401,7 +401,7 @@ public struct Transcript: Sendable, Equatable {
 
   /// Puts an item at its id. A tool call keeps a result that reached it first.
   private mutating func place(_ item: AgentEvent.Item, replacing: Bool, at time: Date) {
-    var kind = item.kind
+    var kind = item.kind.transcriptKind
     if case .tool(var call) = kind, let index = indexByID[item.id],
       case .tool(let existing) = entries[index].kind, call.result == nil
     {
