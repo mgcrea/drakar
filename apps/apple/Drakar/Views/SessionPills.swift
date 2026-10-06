@@ -2,7 +2,7 @@ import DrakarKit
 import SwiftUI
 
 /// The session's permission mode and model, under the composer's field: a pick applies to a
-/// running session at once, else at its start, and the folder remembers it
+/// running session at once, else at its start; new sessions start with Settings' defaults
 /// (docs/superpowers/specs/2026-10-06-mode-and-model-pills-design.md).
 struct SessionPills: View {
   let session: ClaudeSession

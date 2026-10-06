@@ -48,7 +48,7 @@ struct ClaudeSessionPillsTests {
   @Test func picksBeforeTheStartGoOnTheCommandLine() async throws {
     try await scoped {
       let script = try standIn("claude", #"printf '%s\n' "$*" >> "$0.args"; cat > /dev/null"#)
-      ClaudeChoice.pickModel("sonnet", for: folder)
+      ClaudeChoice.defaults.set("sonnet", forKey: PreferenceKey.defaultModel)
       let session = ClaudeSession(folder: folder)
       session.executableOverride = script
       session.setMode(.plan)
@@ -59,7 +59,8 @@ struct ClaudeSessionPillsTests {
       #expect(args.contains("--model sonnet"))
       #expect(args.contains("--permission-mode plan"))
       #expect(args.contains("--allow-dangerously-skip-permissions"))
-      #expect(ClaudeChoice.sessionPicks(for: folder).mode == "plan")
+      // The session's pick is its own: Settings keeps its default.
+      #expect(ClaudeChoice.defaultMode == nil)
     }
   }
 
@@ -136,8 +137,6 @@ struct ClaudeSessionPillsTests {
       #expect(session.pillNote == "Not launched for it")
       #expect(session.modePick == nil)
       #expect(session.shownMode == "default")
-      // Nor does the folder keep what was refused.
-      #expect(ClaudeChoice.sessionPicks(for: folder).mode == nil)
     }
   }
 
@@ -156,16 +155,16 @@ struct ClaudeSessionPillsTests {
     }
   }
 
-  /// Another window picking for the folder does not relabel a session already running.
+  /// A default changed in Settings does not relabel a session already running.
   @Test func aRunningSessionKeepsItsPicks() async throws {
     try await scoped {
       let script = try standIn("claude", #"cat > /dev/null"#)
-      ClaudeChoice.pickModel("sonnet", for: folder)
+      ClaudeChoice.defaults.set("sonnet", forKey: PreferenceKey.defaultModel)
       let session = ClaudeSession(folder: folder)
       session.executableOverride = script
       await session.spawn()
       defer { session.stop() }
-      ClaudeChoice.pickModel("haiku", for: folder)
+      ClaudeChoice.defaults.set("haiku", forKey: PreferenceKey.defaultModel)
       #expect(session.pickedModel == "sonnet")
     }
   }
@@ -224,6 +223,22 @@ struct ClaudeSessionPillsTests {
       defer { session.stop() }
       try await waitUntil { session.permissionMode != nil }
       #expect(session.shownMode == "acceptEdits")
+    }
+  }
+
+  /// Bypass as Settings' default mode: new sessions start in it.
+  @Test func startsInBypassWhenItIsTheDefault() async throws {
+    try await scoped {
+      let script = try standIn("claude", #"printf '%s\n' "$*" >> "$0.args"; cat > /dev/null"#)
+      ClaudeChoice.defaults.set("bypassPermissions", forKey: PreferenceKey.defaultMode)
+      let session = ClaudeSession(folder: folder)
+      session.executableOverride = script
+      #expect(session.shownMode == "bypassPermissions")
+      await session.spawn()
+      defer { session.stop() }
+      let args = try await read(script.appendingPathExtension("args")) { !$0.isEmpty }
+      #expect(args.contains("--permission-mode bypassPermissions"))
+      #expect(args.contains("--allow-dangerously-skip-permissions"))
     }
   }
 }

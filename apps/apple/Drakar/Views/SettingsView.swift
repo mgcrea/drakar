@@ -59,9 +59,12 @@ enum PreferenceKey {
   static let pinsLastPrompt = "drakar.pinsLastPrompt"
   /// Whether sessions start able to switch to Bypass permissions; on unless turned off.
   static let allowsBypass = "drakar.allowsBypass"
-  /// Folder path → `{model, mode}`, as a JSON object: what the folder's next session starts
-  /// with, from its last pills.
-  static let sessionPicksForFolder = "drakar.sessionPicksForFolder"
+  /// The model new sessions start with (a `value` of `initialize`'s `models`); empty for
+  /// Claude Code's default.
+  static let defaultModel = "drakar.defaultModel"
+  /// The permission mode new sessions start with (`PermissionMode`'s raw value); empty for
+  /// Claude Code's default.
+  static let defaultMode = "drakar.defaultMode"
 }
 
 /// What Settings picked for the sessions Drakar starts.
@@ -116,40 +119,18 @@ enum ClaudeChoice {
     return defaults.object(forKey: PreferenceKey.allowsBypass) as? Bool ?? true
   }
 
-  /// What a folder's next session starts with, from the last pills picked there.
-  struct SessionPicks: Codable, Equatable {
-    var model: String?
-    var mode: String?
-  }
-
-  static func sessionPicks(for folder: URL) -> SessionPicks {
+  /// The model new sessions start with, from Settings; nil for Claude Code's default.
+  static var defaultModel: String? {
     _ = AttentionDefaults.shared.revision
-    return allSessionPicks[folderKey(folder)] ?? SessionPicks()
+    return stored(PreferenceKey.defaultModel)
   }
 
-  static func pickModel(_ model: String, for folder: URL) {
-    updateSessionPicks(for: folder) { $0.model = model }
-  }
-
-  /// Bypass is never remembered: no session starts in it.
-  static func pickMode(_ mode: PermissionMode, for folder: URL) {
-    guard mode != .bypass else { return }
-    updateSessionPicks(for: folder) { $0.mode = mode.rawValue }
-  }
-
-  private static var allSessionPicks: [String: SessionPicks] {
-    guard let text = stored(PreferenceKey.sessionPicksForFolder),
-      let picks = try? JSONDecoder().decode([String: SessionPicks].self, from: Data(text.utf8))
-    else { return [:] }
-    return picks
-  }
-
-  private static func updateSessionPicks(for folder: URL, _ change: (inout SessionPicks) -> Void) {
-    var all = allSessionPicks
-    change(&all[folderKey(folder), default: SessionPicks()])
-    let data = (try? JSONEncoder().encode(all)) ?? Data("{}".utf8)
-    defaults.set(
-      String(decoding: data, as: UTF8.self), forKey: PreferenceKey.sessionPicksForFolder)
+  /// The mode new sessions start with, from Settings; nil for Claude Code's. Bypass only
+  /// while Settings allows it.
+  static var defaultMode: PermissionMode? {
+    _ = AttentionDefaults.shared.revision
+    let mode = stored(PreferenceKey.defaultMode).flatMap(PermissionMode.init(rawValue:))
+    return mode == .bypass && !allowsBypass ? nil : mode
   }
 
   private static var picks: [String: String] {
@@ -215,7 +196,7 @@ enum AttentionChoice {
 
 /// Bumped whenever a default changes, and read by every `AttentionChoice` question:
 /// `UserDefaults` is not observable, and a switch flipped in the Attention pane has to
-/// redraw the rows and counts that read it; so do the composer's pills, a folder's picks.
+/// redraw the rows and counts that read it; so do the composer's pills, which read the defaults for new sessions.
 @Observable
 final class AttentionDefaults {
   static let shared = AttentionDefaults()
@@ -404,6 +385,10 @@ private struct ClaudeSection: View {
   @AppStorage(PreferenceKey.claudePath) private var claudePath = ""
   @AppStorage(PreferenceKey.newSessionAccount) private var accountPath = ""
   @AppStorage(PreferenceKey.allowsBypass) private var allowsBypass = true
+  @AppStorage(PreferenceKey.defaultModel) private var defaultModel = ""
+  @AppStorage(PreferenceKey.defaultMode) private var defaultMode = ""
+  /// The login shell's `CLAUDE_CONFIG_DIR`, for the account whose models are listed.
+  @State private var shellDirectory: String?
   @State private var installs: [Install] = []
   @State private var accounts: [ClaudeAccount] = []
   /// The account the login shell selects, for the first choice's label.
@@ -447,10 +432,42 @@ private struct ClaudeSection: View {
         }
       }
       .accessibilityIdentifier("settings.newSessionAccount")
+      Picker("Model for new sessions", selection: $defaultModel) {
+        Text("Claude Code's default").tag("")
+        let models = modelAccount.flatMap { ModelCatalog.shared.models(for: $0) }
+        // "Default (recommended)" is the first choice already.
+        ForEach((models ?? []).filter { $0.value != "default" }) { option in
+          Text(option.displayName).tag(option.value)
+        }
+        if !defaultModel.isEmpty, models?.contains(where: { $0.value == defaultModel }) != true {
+          Text(models == nil ? defaultModel : "\(defaultModel), not offered").tag(defaultModel)
+        }
+      }
+      .accessibilityIdentifier("settings.defaultModel")
+      .task(id: modelAccount?.key) {
+        if let modelAccount {
+          ModelCatalog.shared.load(
+            folder: FileManager.default.homeDirectoryForCurrentUser, account: modelAccount)
+        }
+      }
+      Picker("Mode for new sessions", selection: $defaultMode) {
+        Text("Claude Code's default").tag("")
+        ForEach(PermissionMode.allCases.filter { $0 != .bypass || allowsBypass }, id: \.self) {
+          mode in
+          Text(mode.title).tag(mode.rawValue)
+        }
+        if defaultMode == PermissionMode.bypass.rawValue, !allowsBypass {
+          Text("Bypass permissions, not allowed").tag(defaultMode)
+        }
+      }
+      .accessibilityIdentifier("settings.defaultMode")
+      Text("Auto falls back to Ask before edits on a model without it.")
+        .font(.caption)
+        .foregroundStyle(.secondary)
       Toggle("Allow Bypass permissions", isOn: $allowsBypass)
         .accessibilityIdentifier("settings.allowsBypass")
       Text(
-        "Sessions start with --allow-dangerously-skip-permissions, so Bypass can be picked in the composer. A folder never starts its new sessions in it."
+        "Sessions start with --allow-dangerously-skip-permissions, so Bypass can be picked in the composer."
       )
       .font(.caption)
       .foregroundStyle(.secondary)
@@ -462,6 +479,17 @@ private struct ClaudeSection: View {
       )
     }
     .task { await load() }
+  }
+
+  /// The account new sessions take, whose models the model picker lists: Settings', else the
+  /// shell's once it is read.
+  private var modelAccount: ClaudeAccount? {
+    if !accountPath.isEmpty { return ClaudeChoice.account(at: accountPath) }
+    guard isLoaded else { return nil }
+    return ClaudeChoice.account(
+      at: shellDirectory
+        ?? FileManager.default.homeDirectoryForCurrentUser.appending(path: ".claude")
+        .path(percentEncoded: false))
   }
 
   /// The install sessions will run: the one picked while it is there, else the first.
@@ -517,6 +545,7 @@ private struct ClaudeSection: View {
         extra: shellDirectory.map { [URL(filePath: $0, directoryHint: .isDirectory)] } ?? [])
     }.value
     shellAccount = shellDirectory.map { ClaudeChoice.account(at: $0).name } ?? "default"
+    self.shellDirectory = shellDirectory
     isLoaded = true
   }
 }

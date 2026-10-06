@@ -50,7 +50,7 @@ final class ClaudeSession {
   /// The mode the process last reported: `system/init`, a `status` line, a confirmed
   /// change. Nil without a process.
   private(set) var permissionMode: String?
-  /// What this session's pills picked; nil follows the folder's pick. Frozen at each start.
+  /// What this session's pills picked; nil follows Settings. Frozen at each start.
   private(set) var modePick: PermissionMode?
   private(set) var modelPick: String?
   /// The running process started with `--allow-dangerously-skip-permissions`.
@@ -59,10 +59,8 @@ final class ClaudeSession {
   private(set) var pillNote: String?
   /// Where `initialize`'s model list goes; tests give their own.
   @ObservationIgnored var catalog: ModelCatalog = .shared
-  /// Each switch sent and not yet answered, by request id: what its success keeps (the
-  /// folder's pick) and what its refusal puts back.
-  @ObservationIgnored private var pendingSwitches:
-    [String: (confirm: () -> Void, revert: () -> Void)] = [:]
+  /// What to put back if a switch is refused, by request id.
+  @ObservationIgnored private var revertOnError: [String: () -> Void] = [:]
   /// The name given here, by a rename or to a fork: shown at once, ahead of the history's.
   private(set) var name: String?
   /// The earlier question the person closed without answering, so it is not offered again.
@@ -135,21 +133,17 @@ final class ClaudeSession {
     return (startingMode ?? .ask).rawValue
   }
 
-  /// The mode the next start passes: this session's pick, else the folder's; Bypass only
-  /// while Settings allows it.
+  /// The mode the next start passes: this session's pick, else Settings' default; Bypass
+  /// only while Settings allows it.
   var startingMode: PermissionMode? {
-    let mode =
-      modePick
-      ?? (isProcessRunning
-        ? nil
-        : ClaudeChoice.sessionPicks(for: folder).mode.flatMap(PermissionMode.init(rawValue:)))
+    let mode = modePick ?? (isProcessRunning ? nil : ClaudeChoice.defaultMode)
     return mode == .bypass && !ClaudeChoice.allowsBypass ? nil : mode
   }
 
-  /// The model picked for the session: its own, else (before a start) the folder's; nil for
-  /// Claude Code's default.
+  /// The model picked for the session: its own, else (before a start) Settings' default;
+  /// nil for Claude Code's.
   var pickedModel: String? {
-    modelPick ?? (isProcessRunning ? nil : ClaudeChoice.sessionPicks(for: folder).model)
+    modelPick ?? (isProcessRunning ? nil : ClaudeChoice.defaultModel)
   }
 
   /// Bypass can be picked: Settings allows it, and a running process started able to.
@@ -157,22 +151,19 @@ final class ClaudeSession {
     ClaudeChoice.allowsBypass && (!isProcessRunning || launchedWithBypass)
   }
 
-  /// At once on a running process, mid-turn included; else at the next start. The folder
-  /// remembers it, Bypass aside, once the CLI took it.
+  /// At once on a running process, mid-turn included; else at the next start. The
+  /// session's alone: Settings keeps its default.
   func setMode(_ mode: PermissionMode) {
     pillNote = nil
     let (previousPick, previousMode) = (modePick, permissionMode)
     modePick = mode
-    guard let process else { return ClaudeChoice.pickMode(mode, for: folder) }
+    guard let process else { return }
     permissionMode = mode.rawValue
     let id = nextRequestID("mode")
-    pendingSwitches[id] = (
-      confirm: { [folder] in ClaudeChoice.pickMode(mode, for: folder) },
-      revert: { [weak self] in
-        self?.modePick = previousPick
-        self?.permissionMode = previousMode
-      }
-    )
+    revertOnError[id] = { [weak self] in
+      self?.modePick = previousPick
+      self?.permissionMode = previousMode
+    }
     try? process.send(.setPermissionMode(requestID: id, mode: mode.rawValue))
   }
 
@@ -181,12 +172,9 @@ final class ClaudeSession {
     pillNote = nil
     let previous = modelPick
     modelPick = value
-    guard let process else { return ClaudeChoice.pickModel(value, for: folder) }
+    guard let process else { return }
     let id = nextRequestID("model")
-    pendingSwitches[id] = (
-      confirm: { [folder] in ClaudeChoice.pickModel(value, for: folder) },
-      revert: { [weak self] in self?.modelPick = previous }
-    )
+    revertOnError[id] = { [weak self] in self?.modelPick = previous }
     try? process.send(.setModel(requestID: id, model: value))
   }
 
@@ -284,7 +272,7 @@ final class ClaudeSession {
     guard stillWanted(since: stops) else { return }
     if historyFailed { return fail(nil) }
     var command = command
-    // The pills' picks, frozen for this process: the session's own, else the folder's.
+    // The pills' picks, frozen for this process: the session's own, else Settings'.
     modelPick = pickedModel
     modePick = startingMode
     if let model = modelPick, model != "default" { command.model = model }
@@ -521,12 +509,11 @@ final class ClaudeSession {
     if case .controlResponse(let response) = message,
       response.requestID.hasPrefix("mode-") || response.requestID.hasPrefix("model-")
     {
-      let pending = pendingSwitches.removeValue(forKey: response.requestID)
+      let revert = revertOnError.removeValue(forKey: response.requestID)
       if response.isSuccess {
-        pending?.confirm()
         if let mode = response.response?["mode"]?.stringValue { adopt(mode: mode) }
       } else {
-        pending?.revert()
+        revert?()
         pillNote = response.error ?? String(localized: "Claude Code refused the change.")
       }
       return

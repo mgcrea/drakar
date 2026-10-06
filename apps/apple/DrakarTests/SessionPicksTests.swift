@@ -5,7 +5,7 @@ import Testing
 @testable import Drakar
 
 @MainActor
-@Suite("What a folder's next session starts with")
+@Suite("What new sessions start with")
 struct SessionPicksTests {
 
   private let folder = URL(filePath: "/tmp/drakar-picks-\(UUID().uuidString)/")
@@ -16,24 +16,27 @@ struct SessionPicksTests {
     try ClaudeChoice.$testSuite.withValue(suite, operation: body)
   }
 
-  @Test func remembersTheLastPicks() {
+  @Test func readsTheDefaultsForNewSessions() {
     scoped {
-      #expect(ClaudeChoice.sessionPicks(for: folder) == .init())
-      ClaudeChoice.pickModel("sonnet", for: folder)
-      ClaudeChoice.pickMode(.plan, for: folder)
-      #expect(ClaudeChoice.sessionPicks(for: folder) == .init(model: "sonnet", mode: "plan"))
-      // Normalised like the account picks: a trailing slash is the same folder.
-      let bare = URL(filePath: String(folder.path(percentEncoded: false).dropLast()))
-      #expect(ClaudeChoice.sessionPicks(for: bare).model == "sonnet")
+      #expect(ClaudeChoice.defaultModel == nil)
+      #expect(ClaudeChoice.defaultMode == nil)
+      ClaudeChoice.defaults.set("sonnet", forKey: PreferenceKey.defaultModel)
+      ClaudeChoice.defaults.set("plan", forKey: PreferenceKey.defaultMode)
+      #expect(ClaudeChoice.defaultModel == "sonnet")
+      #expect(ClaudeChoice.defaultMode == .plan)
+      // "Claude Code's default" is stored empty.
+      ClaudeChoice.defaults.set("", forKey: PreferenceKey.defaultModel)
+      #expect(ClaudeChoice.defaultModel == nil)
     }
   }
 
-  /// No session starts in Bypass: picking it leaves the folder's mode as it was.
-  @Test func neverRemembersBypass() {
+  /// A Bypass default stands only while Settings allows Bypass.
+  @Test func defaultsToBypassOnlyWhileAllowed() {
     scoped {
-      ClaudeChoice.pickMode(.acceptEdits, for: folder)
-      ClaudeChoice.pickMode(.bypass, for: folder)
-      #expect(ClaudeChoice.sessionPicks(for: folder).mode == "acceptEdits")
+      ClaudeChoice.defaults.set("bypassPermissions", forKey: PreferenceKey.defaultMode)
+      #expect(ClaudeChoice.defaultMode == .bypass)
+      ClaudeChoice.defaults.set(false, forKey: PreferenceKey.allowsBypass)
+      #expect(ClaudeChoice.defaultMode == nil)
     }
   }
 
@@ -61,17 +64,17 @@ struct SessionPicksTests {
     #expect(catalog.models(for: account)?.map(\.value) == ["haiku"])
   }
 
-  /// Another window's pick, or the Settings switch, redraws the pills that read them.
-  @Test func aPickElsewhereRedrawsWhatReadsIt() {
+  /// A default changed in Settings redraws the pills that read it.
+  @Test func aChangeInSettingsRedrawsWhatReadsIt() {
     scoped {
       let redrawn = PickFlag()
       withObservationTracking {
-        _ = ClaudeChoice.sessionPicks(for: folder)
-        _ = ClaudeChoice.allowsBypass
+        _ = ClaudeChoice.defaultModel
+        _ = ClaudeChoice.defaultMode
       } onChange: {
         redrawn.value = true
       }
-      ClaudeChoice.pickModel("haiku", for: folder)
+      ClaudeChoice.defaults.set("haiku", forKey: PreferenceKey.defaultModel)
       #expect(redrawn.value)
     }
   }
