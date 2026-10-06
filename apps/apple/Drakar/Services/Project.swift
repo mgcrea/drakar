@@ -237,7 +237,7 @@ final class Project {
   /// own in `StoredProject.dismissedQuestions`.
   private(set) var dismissedElsewhere: [String: String] = [:]
   /// Whether the shown session's composer takes the focus when it appears: not when the
-  /// sidebar's arrow keys or a click there chose it, so the keys keep moving in the list.
+  /// sidebar's arrow keys chose it, so the keys keep moving in the list.
   @ObservationIgnored private(set) var focusesComposer = true
   /// Stands in for the located binary in every session this window makes, in tests.
   @ObservationIgnored var executableOverride: URL?
