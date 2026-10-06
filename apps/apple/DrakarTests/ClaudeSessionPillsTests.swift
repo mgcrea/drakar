@@ -241,4 +241,71 @@ struct ClaudeSessionPillsTests {
       #expect(args.contains("--allow-dangerously-skip-permissions"))
     }
   }
+
+  @Test func anEffortPickedBeforeTheStartGoesOnTheCommandLine() async throws {
+    try await scoped {
+      let script = try standIn("claude", #"printf '%s\n' "$*" >> "$0.args"; cat > /dev/null"#)
+      let session = ClaudeSession(folder: folder)
+      session.executableOverride = script
+      #expect(session.shownEffort == nil)
+      session.setEffort("xhigh")
+      #expect(session.shownEffort == "xhigh")
+      await session.spawn()
+      defer { session.stop() }
+      let args = try await read(script.appendingPathExtension("args")) { !$0.isEmpty }
+      #expect(args.contains("--effort xhigh"))
+    }
+  }
+
+  @Test func noEffortPickedAddsNothing() async throws {
+    try await scoped {
+      let script = try standIn("claude", #"printf '%s\n' "$*" >> "$0.args"; cat > /dev/null"#)
+      let session = ClaudeSession(folder: folder)
+      session.executableOverride = script
+      await session.spawn()
+      defer { session.stop() }
+      let args = try await read(script.appendingPathExtension("args")) { !$0.isEmpty }
+      #expect(!args.contains("--effort"))
+    }
+  }
+
+  /// Sent at once as a flag setting, then read back: the pill shows what the CLI applies.
+  @Test func anEffortChangeWhileRunningIsSentAndReadBack() async throws {
+    try await scoped {
+      let script = try standIn("claude", #"cat >> "$0.stdin""#)
+      let session = ClaudeSession(folder: folder)
+      session.executableOverride = script
+      await session.spawn()
+      defer { session.stop() }
+      session.setEffort("low")
+      #expect(session.shownEffort == "low")
+      let sent = try await read(script.appendingPathExtension("stdin")) {
+        $0.components(separatedBy: "get_settings").count > 1
+      }
+      #expect(
+        sent.contains(#""settings":{"effortLevel":"low"},"subtype":"apply_flag_settings""#))
+    }
+  }
+
+  /// No pick: the level the process applies, from `settings.json` or the model's own.
+  @Test func showsTheEffortTheProcessApplies() async throws {
+    try await scoped {
+      let script = try standIn(
+        "claude",
+        """
+        while read -r line; do
+          case "$line" in *get_settings*)
+            id=$(printf '%s' "$line" | sed -E 's/.*"request_id":"([^"]*)".*/\\1/')
+            printf '%s\\n' "{\\"type\\":\\"control_response\\",\\"response\\":{\\"subtype\\":\\"success\\",\\"request_id\\":\\"$id\\",\\"response\\":{\\"applied\\":{\\"effort\\":\\"high\\"}}}}"
+          esac
+        done
+        """)
+      let session = ClaudeSession(folder: folder)
+      session.executableOverride = script
+      await session.spawn()
+      defer { session.stop() }
+      try await waitUntil { session.shownEffort != nil }
+      #expect(session.shownEffort == "high")
+    }
+  }
 }

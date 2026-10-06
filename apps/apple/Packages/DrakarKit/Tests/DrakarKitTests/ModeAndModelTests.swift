@@ -24,6 +24,29 @@ struct ModeAndModelTests {
     #expect(ModelOption.list(fromInitialize: .object([:])) == nil)
   }
 
+  /// Haiku takes no effort: its entry lists none.
+  @Test func readsEachModelsEffortLevels() throws {
+    let models = try #require(ModelOption.list(fromInitialize: try initializeReply()))
+    #expect(models[0].effortLevels == ["low", "medium", "high", "xhigh", "max"])
+    #expect(models.first { $0.value == "haiku" }?.effortLevels == [])
+  }
+
+  @Test func readsTheAppliedEffort() {
+    let reply: JSONValue = .object([
+      "applied": .object(["model": .string("claude-opus-5-5"), "effort": .string("high")])
+    ])
+    #expect(EffortLevel.applied(fromSettings: reply) == "high")
+    #expect(
+      EffortLevel.applied(fromSettings: .object(["applied": .object(["effort": .null])])) == nil)
+  }
+
+  @Test func namesEffortLevels() {
+    #expect(EffortLevel.title(of: "low") == "Low")
+    #expect(EffortLevel.title(of: "xhigh") == "Extra high")
+    #expect(EffortLevel.title(of: "max") == "Max")
+    #expect(EffortLevel.title(of: "turbo") == "turbo")
+  }
+
   @Test func theProbeKeepsTheModels() throws {
     var replies = CapabilityReplies(initializeID: "r1", statusID: "none")
     for message in try Fixture.modeAndModel.messages {

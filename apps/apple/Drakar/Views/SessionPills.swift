@@ -1,10 +1,11 @@
 import DrakarKit
 import SwiftUI
 
-/// The session's permission mode and model, on the composer's toolbar as the extension has
-/// them: the model on the left, the mode on the right beside Send. A pick applies to a running
-/// session at once, else at its start; new sessions start with Settings' defaults
-/// (docs/superpowers/specs/2026-10-06-mode-and-model-pills-design.md).
+/// The session's permission mode, model and effort, on the composer's toolbar as the extension
+/// has them: the model and its effort on the left, the mode on the right beside Send. A pick
+/// applies to a running session at once, else at its start; new sessions start with Settings'
+/// mode and model (docs/superpowers/specs/2026-10-06-mode-and-model-pills-design.md) and
+/// Claude Code's effort.
 struct SessionPills {
   let session: ClaudeSession
   let folder: URL
@@ -13,11 +14,13 @@ struct SessionPills {
 
   private var catalog: ModelCatalog { .shared }
 
-  /// The model, and why the last change was refused if it was.
+  /// The model, its effort when it takes one, and why the last change was refused if it was.
   var model: some View {
     let models = catalog.models(for: account)
     return HStack(spacing: 6) {
       modelMenu(models)
+      let levels = Self.effortLevels(session, models: models)
+      if !levels.isEmpty { effortMenu(levels) }
       if let note = session.pillNote {
         Text(note).font(.caption).foregroundStyle(.red).lineLimit(1).help(note)
       }
@@ -75,6 +78,27 @@ struct SessionPills {
     .accessibilityIdentifier("composer.model")
   }
 
+  private func effortMenu(_ levels: [String]) -> some View {
+    let shown = session.shownEffort
+    return Menu {
+      ForEach(levels, id: \.self) { level in
+        Button {
+          session.setEffort(level)
+        } label: {
+          Label(
+            EffortLevel.title(of: level),
+            systemImage: level == shown ? "checkmark" : EffortLevel.symbol(of: level))
+        }
+      }
+    } label: {
+      Label(Self.effortLabel(for: session), systemImage: EffortLevel.symbol(of: shown))
+        .pill(filled: false)
+    }
+    .pillMenu()
+    .help("Effort: how hard the model thinks before it answers.")
+    .accessibilityIdentifier("composer.effort")
+  }
+
   private var loadingText: String {
     let probe = CapabilityStore.shared.capabilities(for: folder, account: account)
     if probe.isLoading || !probe.hasLoaded { return String(localized: "Loading models…") }
@@ -90,6 +114,17 @@ struct SessionPills {
       default: true
       }
     }
+  }
+
+  /// The levels the session's model takes; none for one without effort, or while the list
+  /// is not known.
+  static func effortLevels(_ session: ClaudeSession, models: [ModelOption]?) -> [String] {
+    option(for: session, in: models)?.effortLevels ?? []
+  }
+
+  /// The level's title; "Default" before the process has said which it applies.
+  static func effortLabel(for session: ClaudeSession) -> String {
+    session.shownEffort.map(EffortLevel.title(of:)) ?? String(localized: "Default")
   }
 
   /// The list's entry for the session's model: its pick, else the running model, else

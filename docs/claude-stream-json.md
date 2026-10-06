@@ -202,6 +202,28 @@ Before any prompt, no API call:
 
 Captured as the `mode-and-model` fixture.
 
+## Effort (verified 2026-10-06, 2.1.288)
+
+Before any prompt, no API call:
+
+- Each of `initialize`'s `models` says `supportsEffort` and `supportedEffortLevels`
+  (`low`, `medium`, `high`, `xhigh`, `max` on every model that takes effort); `haiku` has
+  neither.
+- `{"subtype":"get_settings"}` → `{effective, sources, applied}`; `applied` is
+  `{model, effort, advisor, ultracode, …}`, the resolved model id and the effort it runs
+  with: `settings.json`'s `effortLevel`, else `--effort`'s, else the model's own. `effort`
+  is null on a model without effort.
+- `{"subtype":"apply_flag_settings","settings":{"effortLevel":"low"}}` → empty success,
+  and `applied.effort` follows. The flag layer is the process's alone: `settings.json` is
+  not touched. An unknown level (`bogus`) is a success too, and changes nothing.
+- Switching to `haiku` makes `applied.effort` null; back to `opus`, it is the level last
+  applied, not the model's default.
+- `--effort medium` at launch → `applied.effort` `medium`.
+
+The VS Code extension writes a picked effort into the user's `settings.json`
+(`updateSettings("userSettings", {effortLevel})`). Drakar sends it as a flag setting, so a
+pick lasts for its session as the model's does.
+
 ## Observed details worth knowing
 
 - **Read-only commands never ask.** `echo amiral` ran with no `can_use_tool`; `touch`

@@ -19,7 +19,7 @@ Settled with the person on 2026-10-06.
 | --- | --- |
 | Where | On the composer's toolbar under the field, as the extension has them: the model on the left, the mode on the right beside Send |
 | A new session's mode and model | Settings' default mode and model, else Claude Code's. A pill change lasts for its session (revised the same day: folders no longer remember picks) |
-| Effort | Not now |
+| Effort | Not now. Added the same day as a third pill beside the model: the model's `supportedEffortLevels`, hidden for one without effort; a pick goes as `apply_flag_settings` to a running process, else `--effort` at the start, and lasts for its session; unpicked, it shows `get_settings`' `applied.effort` (docs/claude-stream-json.md, "Effort") |
 | Bypass permissions | A Settings switch, on by default. On, sessions start with `--allow-dangerously-skip-permissions`, which makes Bypass available. Bypass is not tinted. Settings' default mode can be Bypass while the switch is on |
 
 ## What the CLI does (verified 2026-10-06, Claude Code 2.1.288)
@@ -170,6 +170,6 @@ Plan and back, check the CLI's mode follows (a prompt asking it to edit a file).
 
 ## Not in this spec
 
-- Effort, fast mode, thinking.
+- Fast mode, thinking. A Settings default for effort.
 - Changing a read-only session's mode or model.
 - A Drakar default mode or model in Settings.

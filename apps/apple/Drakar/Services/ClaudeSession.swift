@@ -53,6 +53,11 @@ final class ClaudeSession {
   /// What this session's pills picked; nil follows Settings. Frozen at each start.
   private(set) var modePick: PermissionMode?
   private(set) var modelPick: String?
+  /// The effort this session's pill picked; nil leaves Claude Code's. Lasts across starts.
+  private(set) var effortPick: String?
+  /// The effort the process says it applies (`get_settings`): `settings.json`'s, else the
+  /// model's own. Nil without a process, or for a model without effort.
+  private(set) var appliedEffort: String?
   /// The running process started with `--allow-dangerously-skip-permissions`.
   private(set) var launchedWithBypass = false
   /// Why the last change was refused, until the next change.
@@ -146,6 +151,9 @@ final class ClaudeSession {
     modelPick ?? (isProcessRunning ? nil : ClaudeChoice.defaultModel)
   }
 
+  /// The effort the pill shows: the session's pick, else what the process applies.
+  var shownEffort: String? { effortPick ?? appliedEffort }
+
   /// Bypass can be picked: Settings allows it, and a running process started able to.
   var offersBypass: Bool {
     ClaudeChoice.allowsBypass && (!isProcessRunning || launchedWithBypass)
@@ -176,6 +184,24 @@ final class ClaudeSession {
     let id = nextRequestID("model")
     revertOnError[id] = { [weak self] in self?.modelPick = previous }
     try? process.send(.setModel(requestID: id, model: value))
+  }
+
+  /// `level` as the model's `effortLevels` give it. At once on a running process, as a flag
+  /// setting that never reaches `settings.json`; else at the next start.
+  func setEffort(_ level: String) {
+    pillNote = nil
+    let previous = effortPick
+    effortPick = level
+    guard let process else { return }
+    let id = nextRequestID("effort")
+    revertOnError[id] = { [weak self] in self?.effortPick = previous }
+    try? process.send(.setEffort(requestID: id, level: level))
+  }
+
+  /// What the process applies now: asked after its start and after each model or effort
+  /// change, since a model without effort (Haiku) applies none.
+  private func askAppliedSettings() {
+    try? process?.send(.getSettings(requestID: nextRequestID("settings")))
   }
 
   /// The CLI's word on its mode, whoever changed it: the pill shows it, and a restart
@@ -277,6 +303,7 @@ final class ClaudeSession {
     modePick = startingMode
     if let model = modelPick, model != "default" { command.model = model }
     if let mode = modePick, mode != .ask { command.permissionMode = mode.rawValue }
+    command.effort = effortPick
     command.allowsBypass = ClaudeChoice.allowsBypass
     var environment = await Self.environment.value
     guard stillWanted(since: stops) else { return }
@@ -313,6 +340,7 @@ final class ClaudeSession {
       launchedWithBypass = command.allowsBypass
       unsentName = nil
       try process.send(.initialize(requestID: nextRequestID("init")))
+      askAppliedSettings()
       if let pendingPrompt {
         try process.send(pendingPrompt)
         self.pendingPrompt = nil
@@ -485,6 +513,7 @@ final class ClaudeSession {
       notingPermissions { transcript.processExited() }
       process = nil
       permissionMode = nil
+      appliedEffort = nil
       if case .failed = phase { return }
       phase = .exited(status: status)
       onStopped?()
@@ -507,11 +536,12 @@ final class ClaudeSession {
       onInitialized?(response.response)
     }
     if case .controlResponse(let response) = message,
-      response.requestID.hasPrefix("mode-") || response.requestID.hasPrefix("model-")
+      ["mode-", "model-", "effort-"].contains(where: response.requestID.hasPrefix)
     {
       let revert = revertOnError.removeValue(forKey: response.requestID)
       if response.isSuccess {
         if let mode = response.response?["mode"]?.stringValue { adopt(mode: mode) }
+        if !response.requestID.hasPrefix("mode-") { askAppliedSettings() }
       } else {
         revert?()
         pillNote = response.error ?? String(localized: "Claude Code refused the change.")
@@ -522,6 +552,10 @@ final class ClaudeSession {
       adopt(mode: mode)
     }
     if case .system(.status(_, let mode?)) = message { adopt(mode: mode) }
+    if case .controlResponse(let response) = message, response.requestID.hasPrefix("settings-") {
+      if response.isSuccess { appliedEffort = EffortLevel.applied(fromSettings: response.response) }
+      return
+    }
     if case .controlResponse(let response) = message, response.requestID.hasPrefix("context-") {
       if response.isSuccess, let reply = ContextUsageReply(response.response) {
         reportedContext = reply
