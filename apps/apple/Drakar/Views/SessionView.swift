@@ -401,6 +401,9 @@ private struct SessionFooter: View {
         if let modelID {
           Text(ModelName.display(modelID)).help(modelID)
         }
+        if let effort = session.transcript.historyEffort {
+          Text(EffortLevel.title(of: effort)).help("Effort")
+        }
       }
       account
       if let version = session.transcript.session?.claudeCodeVersion {

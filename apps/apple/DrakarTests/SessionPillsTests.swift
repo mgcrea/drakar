@@ -124,4 +124,38 @@ struct SessionPillsTests {
       #expect(SessionPills.effortLabel(for: session) == "Extra high")
     }
   }
+
+  /// After a switch the label is what the process says it runs, `[1m]` kept from its start.
+  @Test func labelsTheModelTheProcessRuns() async throws {
+    try await scoped {
+      try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+      let initLine =
+        #"{"type":"system","subtype":"init","cwd":"/tmp","session_id":"s1","model":"claude-sonnet-5-5[1m]"}"#
+      let script = folder.appending(path: "claude")
+      try Data(
+        """
+        #!/bin/sh
+        printf '%s\\n' '\(initLine)'
+        while read -r line; do
+          case "$line" in *get_settings*)
+            id=$(printf '%s' "$line" | sed -E 's/.*"request_id":"([^"]*)".*/\\1/')
+            printf '%s\\n' "{\\"type\\":\\"control_response\\",\\"response\\":{\\"subtype\\":\\"success\\",\\"request_id\\":\\"$id\\",\\"response\\":{\\"applied\\":{\\"model\\":\\"claude-sonnet-5-5\\",\\"effort\\":\\"high\\"}}}}"
+          esac
+        done
+
+        """.utf8
+      ).write(to: script)
+      try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script.path)
+      let session = ClaudeSession(folder: folder)
+      session.executableOverride = script
+      // Asked for Haiku; the stand-in says it runs Sonnet.
+      session.setModel("haiku")
+      await session.spawn()
+      defer { session.stop() }
+      for _ in 0..<50 where session.appliedModel == nil {
+        try await Task.sleep(for: .milliseconds(100))
+      }
+      #expect(SessionPills.modelLabel(for: session, in: models) == "Sonnet 5.5 · 1M")
+    }
+  }
 }

@@ -89,6 +89,7 @@ extension Transcript {
     case "custom-title":
       if let title = json["customTitle"]?.stringValue, !title.isEmpty { customTitle = title }
     case "assistant":
+      historyEffort = json["effort"]?.stringValue
       if let message = try? StreamMessage(json: json) { apply(message) }
     case "user":
       if json["isMeta"]?.boolValue == true { return }

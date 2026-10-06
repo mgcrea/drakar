@@ -58,6 +58,9 @@ final class ClaudeSession {
   /// The effort the process says it applies (`get_settings`): `settings.json`'s, else the
   /// model's own. Nil without a process, or for a model without effort.
   private(set) var appliedEffort: String?
+  /// The model the process says it runs (`get_settings`' `applied.model`), after its start
+  /// and after each switch; nil without a process.
+  private(set) var appliedModel: String?
   /// The running process started with `--allow-dangerously-skip-permissions`.
   private(set) var launchedWithBypass = false
   /// Why the last change was refused, until the next change.
@@ -163,8 +166,22 @@ final class ClaudeSession {
     modelPick ?? (isProcessRunning ? nil : ClaudeChoice.defaultModel)
   }
 
-  /// The effort the pill shows: the session's pick, else what the process applies.
-  var shownEffort: String? { effortPick ?? appliedEffort }
+  /// The effort the pill shows: the session's pick, else what the process applies, else
+  /// (before a start) Settings' default.
+  var shownEffort: String? {
+    effortPick ?? appliedEffort ?? (isProcessRunning ? nil : ClaudeChoice.defaultEffort)
+  }
+
+  /// The model running now, as the process says it after a switch, with the `[1m]` its
+  /// start reported when it is the same model; else its start's.
+  var runningModel: String? {
+    let started = transcript.session?.model
+    guard let appliedModel else { return started }
+    if let started, started.replacingOccurrences(of: "[1m]", with: "") == appliedModel {
+      return started
+    }
+    return appliedModel
+  }
 
   /// Bypass can be picked: Settings allows it, and a running process started able to.
   var offersBypass: Bool {
@@ -333,7 +350,7 @@ final class ClaudeSession {
     modePick = startingMode
     if let model = modelPick, model != "default" { command.model = model }
     if let mode = modePick, mode != .ask { command.permissionMode = mode.rawValue }
-    command.effort = effortPick
+    command.effort = effortPick ?? ClaudeChoice.defaultEffort
     command.allowsBypass = ClaudeChoice.allowsBypass
     var environment = await Self.environment.value
     guard stillWanted(since: stops) else { return }
@@ -501,6 +518,8 @@ final class ClaudeSession {
     // The cancelled event task will not report the exit, so it is recorded here.
     process = nil
     permissionMode = nil
+    appliedEffort = nil
+    appliedModel = nil
     transcript.processExited()
     if case .failed = phase { return }
     if phase == .ready || phase == .starting { phase = .exited(status: 0) }
@@ -559,6 +578,7 @@ final class ClaudeSession {
       process = nil
       permissionMode = nil
       appliedEffort = nil
+      appliedModel = nil
       if case .failed = phase { return }
       phase = .exited(status: status)
       onStopped?()
@@ -599,7 +619,10 @@ final class ClaudeSession {
     if case .system(.status(_, let mode?)) = message { adopt(mode: mode) }
     if case .system(.commandsChanged(let commands)) = message { onCommandsChanged?(commands) }
     if case .controlResponse(let response) = message, response.requestID.hasPrefix("settings-") {
-      if response.isSuccess { appliedEffort = EffortLevel.applied(fromSettings: response.response) }
+      if response.isSuccess {
+        appliedEffort = EffortLevel.applied(fromSettings: response.response)
+        appliedModel = ModelName.applied(fromSettings: response.response)
+      }
       return
     }
     if case .controlResponse(let response) = message, response.requestID.hasPrefix("context-") {

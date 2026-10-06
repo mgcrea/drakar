@@ -68,6 +68,8 @@ enum PreferenceKey {
   /// The permission mode new sessions start with (`PermissionMode`'s raw value); empty for
   /// Claude Code's default.
   static let defaultMode = "drakar.defaultMode"
+  /// The effort new sessions start with (`low` … `max`); empty for Claude Code's default.
+  static let defaultEffort = "drakar.defaultEffort"
 }
 
 /// What Settings picked for the sessions Drakar starts.
@@ -146,6 +148,13 @@ enum ClaudeChoice {
     _ = AttentionDefaults.shared.revision
     let mode = stored(PreferenceKey.defaultMode).flatMap(PermissionMode.init(rawValue:))
     return mode == .bypass && !allowsBypass ? nil : mode
+  }
+
+  /// The effort new sessions start with, from Settings; nil for Claude Code's
+  /// (`settings.json`'s `effortLevel`, else the model's own).
+  static var defaultEffort: String? {
+    _ = AttentionDefaults.shared.revision
+    return stored(PreferenceKey.defaultEffort)
   }
 
   private static var picks: [String: String] {
@@ -402,6 +411,7 @@ private struct ClaudeSection: View {
   @AppStorage(PreferenceKey.allowsBypass) private var allowsBypass = true
   @AppStorage(PreferenceKey.defaultModel) private var defaultModel = ""
   @AppStorage(PreferenceKey.defaultMode) private var defaultMode = ""
+  @AppStorage(PreferenceKey.defaultEffort) private var defaultEffort = ""
   @AppStorage(PreferenceKey.showsLegacyModels) private var showsLegacyModels = false
   /// The login shell's `CLAUDE_CONFIG_DIR`, for the account whose models are listed.
   @State private var shellDirectory: String?
@@ -474,6 +484,18 @@ private struct ClaudeSection: View {
         .accessibilityIdentifier("settings.showsLegacyModels")
       Text(
         "Pinned versions such as Opus 4.8, below the current Opus, Sonnet, Fable and Haiku. A session already on one keeps it in its menu."
+      )
+      .font(.caption)
+      .foregroundStyle(.secondary)
+      Picker("Effort for new sessions", selection: $defaultEffort) {
+        Text("Claude Code's default").tag("")
+        ForEach(["low", "medium", "high", "xhigh", "max"], id: \.self) { level in
+          Text(EffortLevel.title(of: level)).tag(level)
+        }
+      }
+      .accessibilityIdentifier("settings.defaultEffort")
+      Text(
+        "Claude Code's default is the effortLevel in its settings.json, else the model's own. A model without effort, such as Haiku, ignores it."
       )
       .font(.caption)
       .foregroundStyle(.secondary)

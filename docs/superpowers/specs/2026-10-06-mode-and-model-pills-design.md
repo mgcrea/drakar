@@ -19,7 +19,7 @@ Settled with the person on 2026-10-06.
 | --- | --- |
 | Where | On the composer's toolbar under the field, as the extension has them: the model on the left, the mode on the right beside Send |
 | A new session's mode and model | Settings' default mode and model, else Claude Code's. A pill change lasts for its session (revised the same day: folders no longer remember picks) |
-| Effort | Not now. Added the same day as a third pill beside the model: the model's `supportedEffortLevels`, hidden for one without effort; a pick goes as `apply_flag_settings` to a running process, else `--effort` at the start, and lasts for its session; unpicked, it shows `get_settings`' `applied.effort` (docs/claude-stream-json.md, "Effort") |
+| Effort | Not now. Added the same day as a third pill beside the model: the model's `supportedEffortLevels`, hidden for one without effort; a pick goes as `apply_flag_settings` to a running process, else `--effort` at the start, and lasts for its session; unpicked, it shows `get_settings`' `applied.effort` (docs/claude-stream-json.md, "Effort"). A Settings default for effort and the model pill reading `applied.model` came after |
 | Bypass permissions | A Settings switch, on by default. On, sessions start with `--allow-dangerously-skip-permissions`, which makes Bypass available. Bypass is not tinted. Settings' default mode can be Bypass while the switch is on |
 
 ## What the CLI does (verified 2026-10-06, Claude Code 2.1.288)
@@ -124,10 +124,17 @@ models…"; a probe that fails shows its reason. No list is written into Drakar.
 - Read-only sessions (open in another app) show no composer, so no pills: their footer shows
   the mode of the newest prompt line (`Transcript.historyPermissionMode`) beside the model.
 
+### What runs
+
+After its start and each model or effort switch, the session asks `get_settings`: its
+`applied.model` names the model pill once known (keeping the `[1m]` the start reported for the
+same model), and `applied.effort` the effort pill. Both are dropped when the process ends.
+
 ### The footer
 
 The model leaves the footer while the composer shows (the pill names it); it stays for a
-read-only session. A read-only session's footer also shows its mode's title.
+read-only session. A read-only session's footer also shows its mode's title, and the effort of
+its newest reply (the transcript's `effort` on assistant lines; none on a model without it).
 
 ### Settings
 
@@ -137,6 +144,11 @@ Under Claude Code, each applying to sessions started after the change:
   the models listed for the account new sessions take (Settings' account, else the shell's),
   from `ModelCatalog`; while none is known the probe is asked in the home folder, and a stored
   value not in the list still shows.
+- **"Effort for new sessions"** (`drakar.defaultEffort`): "Claude Code's default" (empty: the
+  `effortLevel` in `settings.json`, else the model's own), then Low to Max. Passed as
+  `--effort` unless the session picked one; before a start the pill shows it. A model without
+  effort ignores it (verified 2026-10-06: `get_settings` reports `effort: null` on Haiku, and a
+  level set meanwhile applies once a model with effort is picked).
 - **"Mode for new sessions"** (`drakar.defaultMode`): "Claude Code's default" (empty), Ask
   before edits, Edit automatically, Plan, Auto, and Bypass permissions while the switch below
   is on. Caption: "Auto falls back to Ask before edits on a model without it."
@@ -170,6 +182,6 @@ Plan and back, check the CLI's mode follows (a prompt asking it to edit a file).
 
 ## Not in this spec
 
-- Fast mode, thinking. A Settings default for effort.
+- Fast mode, thinking.
 - Changing a read-only session's mode or model.
 - A Drakar default mode or model in Settings.
