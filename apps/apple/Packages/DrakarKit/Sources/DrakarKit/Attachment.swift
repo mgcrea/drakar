@@ -21,7 +21,8 @@ public struct Attachment: Sendable, Equatable, Identifiable {
   static let maxImageEdge = 2000
   static let maxImageBytes = 3_500_000
   static let maxTextBytes = 1_000_000
-  static let maxPDFBytes = 30_000_000
+  /// Base64 grows a file by a third, and a request stops at 32 MB.
+  static let maxPDFBytes = 22_000_000
   /// The image formats the API takes; anything else is converted to PNG.
   static let sendableImageTypes: Set<String> = [
     UTType.png.identifier, UTType.jpeg.identifier, UTType.gif.identifier, UTType.webP.identifier,
@@ -42,9 +43,13 @@ public struct Attachment: Sendable, Equatable, Identifiable {
       CGImageSourceGetCount(source) > 0
     else { throw .unsupported(label) }
     let (width, height) = pixelSize(source)
+    // As it is only when its size reads and its colours are RGB or grey: a print-ready
+    // CMYK JPEG is converted.
     let fits =
-      sendableImageTypes.contains(type) && max(width, height) <= maxImageEdge
-      && data.count <= maxImageBytes
+      sendableImageTypes.contains(type) && width > 0 && height > 0
+      && max(width, height) <= maxImageEdge && data.count <= maxImageBytes
+      && [kCGImagePropertyColorModelRGB, kCGImagePropertyColorModelGray].contains(
+        colorModel(source))
     let (bytes, mediaType): (Data, String)
     if fits, let mime = UTType(type)?.preferredMIMEType {
       (bytes, mediaType) = (data, mime)
@@ -101,6 +106,11 @@ public struct Attachment: Sendable, Equatable, Identifiable {
     !data.prefix(8192).contains(0) && String(data: data, encoding: .utf8) != nil
   }
 
+  private static func colorModel(_ source: CGImageSource) -> CFString? {
+    let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any]
+    return properties?[kCGImagePropertyColorModel] as? String as CFString?
+  }
+
   private static func pixelSize(_ source: CGImageSource) -> (Int, Int) {
     let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any]
     return (
@@ -116,11 +126,24 @@ public struct Attachment: Sendable, Equatable, Identifiable {
       kCGImageSourceCreateThumbnailWithTransform: true,
       kCGImageSourceThumbnailMaxPixelSize: maxImageEdge,
     ]
-    guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
+    guard let thumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary),
+      let image = inSRGB(thumbnail)
     else { return nil }
     if let png = encode(image, as: .png), png.count <= maxImageBytes { return (png, "image/png") }
     guard let jpeg = encode(image, as: .jpeg, quality: 0.85) else { return nil }
     return (jpeg, "image/jpeg")
+  }
+
+  /// Redrawn in sRGB unless it is RGB already, which a CMYK image is not.
+  private static func inSRGB(_ image: CGImage) -> CGImage? {
+    guard image.colorSpace?.model != .rgb else { return image }
+    guard let space = CGColorSpace(name: CGColorSpace.sRGB),
+      let context = CGContext(
+        data: nil, width: image.width, height: image.height, bitsPerComponent: 8,
+        bytesPerRow: 0, space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+    else { return nil }
+    context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+    return context.makeImage()
   }
 
   static func thumbnail(_ source: CGImageSource) -> Data? {

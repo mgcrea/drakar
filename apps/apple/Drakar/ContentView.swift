@@ -448,7 +448,7 @@ private struct WindowLevel: NSViewRepresentable {
 }
 
 /// Hands over the window a view is in, once it is in one.
-private struct WindowReader: NSViewRepresentable {
+struct WindowReader: NSViewRepresentable {
   let found: (NSWindow) -> Void
 
   func makeNSView(context: Context) -> NSView { WindowView(found: found) }

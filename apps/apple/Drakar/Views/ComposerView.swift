@@ -134,6 +134,7 @@ struct ComposerView: View {
     .onChange(of: context) { leavesContextOut = false }
     .onChange(of: text) { highlighted = 0 }
     // ⌘V with files or a screenshot on the clipboard attaches them; text pastes as usual.
+    .background(WindowReader { pasteMonitor.window = $0 })
     .onAppear { pasteMonitor.install(attach) }
     .onDisappear { pasteMonitor.remove() }
     .onChange(of: isFocused, initial: true) { _, focused in pasteMonitor.isActive = focused }
@@ -430,14 +431,18 @@ private struct AttachmentChip: View {
 
 /// While the composer has the keys, ⌘V with something to attach on the clipboard attaches
 /// it instead of reaching the text field, which would paste nothing or the files' names.
+/// The monitor hears every window's keys: it acts only in its own, while that window is key
+/// and a text field in it is being edited, which a sheet or another window never is.
 @MainActor final class PasteMonitor {
   var isActive = false
+  weak var window: NSWindow?
   private var monitor: Any?
 
   func install(_ attach: @escaping ([AttachmentSource]) -> Void) {
     remove()
     monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-      guard let self, self.isActive,
+      guard let self, self.isActive, let window = self.window, event.window === window,
+        window.isKeyWindow, (window.firstResponder as? NSTextView)?.isFieldEditor == true,
         event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
         event.charactersIgnoringModifiers == "v",
         let sources = AttachmentIntake.sources(in: .general)

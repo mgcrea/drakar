@@ -86,6 +86,48 @@ struct AttachmentTests {
     #expect(attachment.block["source"]?["media_type"] == .string("image/png"))
   }
 
+  /// A small screenshot from the clipboard is converted, never blown up to the limit.
+  @Test func aSmallImageIsNotScaledUp() throws {
+    let attachment = try Attachment.image(
+      try image(width: 300, height: 200, type: .tiff), name: nil)
+    guard case .string(let data)? = attachment.block["source"]?["data"] else {
+      Issue.record("no data")
+      return
+    }
+    let (width, height) = try pixelSize(data)
+    #expect(width == 300)
+    #expect(height == 200)
+    let thumbnail = try #require(attachment.preview.thumbnail)
+    let source = try #require(CGImageSourceCreateWithData(thumbnail as CFData, nil))
+    let properties = try #require(
+      CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any])
+    #expect(properties[kCGImagePropertyPixelWidth] as? Int == 256)
+    let tiny = try Attachment.image(try image(width: 16, height: 16), name: nil)
+    let tinyThumbnail = try #require(tiny.preview.thumbnail)
+    let tinySource = try #require(CGImageSourceCreateWithData(tinyThumbnail as CFData, nil))
+    let tinyProperties = try #require(
+      CGImageSourceCopyPropertiesAtIndex(tinySource, 0, nil) as? [CFString: Any])
+    #expect(tinyProperties[kCGImagePropertyPixelWidth] as? Int == 16)
+  }
+
+  /// A print-ready CMYK JPEG is made RGB before it goes.
+  @Test func aCMYKImageIsReencoded() throws {
+    let context = try #require(
+      CGContext(
+        data: nil, width: 40, height: 40, bitsPerComponent: 8, bytesPerRow: 0,
+        space: CGColorSpaceCreateDeviceCMYK(), bitmapInfo: CGImageAlphaInfo.none.rawValue))
+    context.setFillColor(CGColor(genericCMYKCyan: 1, magenta: 0, yellow: 0, black: 0, alpha: 1))
+    context.fill(CGRect(x: 0, y: 0, width: 40, height: 40))
+    let data = NSMutableData()
+    let destination = try #require(
+      CGImageDestinationCreateWithData(data, UTType.jpeg.identifier as CFString, 1, nil))
+    let cmyk = try #require(context.makeImage())
+    CGImageDestinationAddImage(destination, cmyk, nil)
+    #expect(CGImageDestinationFinalize(destination))
+    let attachment = try Attachment.image(data as Data, name: "print.jpg")
+    #expect(attachment.block["source"]?["media_type"] == .string("image/png"))
+  }
+
   @Test func aTextFileGoesAsItsText() throws {
     let url = try write(Data("The secret word is ptarmigan.".utf8), "notes.txt")
     let attachment = try Attachment.file(at: url)
