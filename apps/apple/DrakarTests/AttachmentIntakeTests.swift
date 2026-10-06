@@ -67,7 +67,7 @@ struct AttachmentIntakeTests {
     let script = folder.appending(path: "claude")
     try Data("#!/bin/sh\ncat >> \"$0.stdin\"\n".utf8).write(to: script)
     try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script.path)
-    let session = ClaudeSession(folder: folder)
+    let session = AgentSession(folder: folder)
     session.executableOverride = script
     let image = try Attachment.image(png, name: "red.png")
     session.send("", attachments: [image])

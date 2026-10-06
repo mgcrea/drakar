@@ -33,7 +33,7 @@ struct SessionPillsTests {
 
   @Test func autoOnlyForAModelThatTakesIt() {
     scoped {
-      let session = ClaudeSession(folder: folder)
+      let session = AgentSession(folder: folder)
       #expect(SessionPills.offeredModes(session, models: models) == PermissionMode.allCases)
       session.setModel("haiku")
       #expect(!SessionPills.offeredModes(session, models: models).contains(.auto))
@@ -44,7 +44,7 @@ struct SessionPillsTests {
 
   @Test func bypassOnlyWhenAllowed() {
     scoped(allowsBypass: false) {
-      let session = ClaudeSession(folder: folder)
+      let session = AgentSession(folder: folder)
       #expect(!SessionPills.offeredModes(session, models: models).contains(.bypass))
     }
   }
@@ -52,7 +52,7 @@ struct SessionPillsTests {
   /// The model's own name, not the menu's "Default (recommended)".
   @Test func labelsTheModel() {
     scoped {
-      let session = ClaudeSession(folder: folder)
+      let session = AgentSession(folder: folder)
       #expect(SessionPills.modelLabel(for: session, in: models) == "Opus 5.5")
       #expect(SessionPills.modelLabel(for: session, in: nil) == "Default")
       session.setModel("haiku")
@@ -71,7 +71,7 @@ struct SessionPillsTests {
       let script = folder.appending(path: "claude")
       try Data("#!/bin/sh\nprintf '%s\\n' '\(initLine)'\ncat > /dev/null\n".utf8).write(to: script)
       try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script.path)
-      let session = ClaudeSession(folder: folder)
+      let session = AgentSession(folder: folder)
       session.executableOverride = script
       session.setModel("default")
       await session.spawn()
@@ -92,7 +92,7 @@ struct SessionPillsTests {
           value: "claude-opus-4-8", resolvedModel: "claude-opus-4-8", displayName: "Opus 4.8")
       ]
     scoped {
-      let session = ClaudeSession(folder: folder)
+      let session = AgentSession(folder: folder)
       // Off unless turned on.
       #expect(
         SessionPills.offeredModels(session, models: models)?.map(\.value) == ["default", "haiku"])
@@ -108,7 +108,7 @@ struct SessionPillsTests {
   /// The model's own levels; none for a model without effort, or before the list is known.
   @Test func offersTheModelsEffortLevels() {
     scoped {
-      let session = ClaudeSession(folder: folder)
+      let session = AgentSession(folder: folder)
       #expect(SessionPills.effortLevels(session, models: models).count == 5)
       #expect(SessionPills.effortLevels(session, models: nil).isEmpty)
       session.setModel("haiku")
@@ -118,7 +118,7 @@ struct SessionPillsTests {
 
   @Test func labelsTheEffort() {
     scoped {
-      let session = ClaudeSession(folder: folder)
+      let session = AgentSession(folder: folder)
       #expect(SessionPills.effortLabel(for: session) == "Default")
       session.setEffort("xhigh")
       #expect(SessionPills.effortLabel(for: session) == "Extra high")
@@ -146,7 +146,7 @@ struct SessionPillsTests {
         """.utf8
       ).write(to: script)
       try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script.path)
-      let session = ClaudeSession(folder: folder)
+      let session = AgentSession(folder: folder)
       session.executableOverride = script
       // Asked for Haiku; the stand-in says it runs Sonnet.
       session.setModel("haiku")

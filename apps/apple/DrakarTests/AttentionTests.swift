@@ -57,7 +57,7 @@ struct AttentionBadgeTests {
     try Data("#!/bin/sh\necho '\(request)'\ncat > /dev/null\n".utf8).write(to: fake)
     try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: fake.path)
 
-    let session = ClaudeSession(folder: folder)
+    let session = AgentSession(folder: folder)
     session.executableOverride = fake
     var changes = 0
     session.onPermissionsChanged = { changes += 1 }

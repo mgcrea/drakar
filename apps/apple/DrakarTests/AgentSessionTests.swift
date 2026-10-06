@@ -8,7 +8,7 @@ import Testing
 /// file beside itself, so the order of the lines can be read back.
 @MainActor
 @Suite("A session started on demand")
-struct ClaudeSessionTests {
+struct AgentSessionTests {
 
   private let folder: URL
   private let fake: URL
@@ -35,7 +35,7 @@ struct ClaudeSessionTests {
   }
 
   @Test func nothingRunsUntilTheFirstPrompt() {
-    let session = ClaudeSession(folder: folder)
+    let session = AgentSession(folder: folder)
     #expect(session.phase == .idle)
     #expect(session.canSend)
     #expect(!session.isProcessRunning)
@@ -43,7 +43,7 @@ struct ClaudeSessionTests {
 
   /// The prompt typed before the process exists goes out after `initialize`, never before.
   @Test func theFirstPromptFollowsInitialize() async throws {
-    let session = ClaudeSession(folder: folder)
+    let session = AgentSession(folder: folder)
     session.executableOverride = fake
     session.send("hello")
     #expect(session.transcript.isRunning)
@@ -62,7 +62,7 @@ struct ClaudeSessionTests {
     try Data("#!/bin/sh\nread line\necho '\(reply)'\ncat > /dev/null\n".utf8).write(to: replying)
     try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: replying.path)
 
-    let session = ClaudeSession(folder: folder)
+    let session = AgentSession(folder: folder)
     session.executableOverride = replying
     var received: JSONValue?
     session.onInitialized = { received = $0 }
@@ -92,7 +92,7 @@ struct ClaudeSessionTests {
     defaults.set(account.path(percentEncoded: false), forKey: PreferenceKey.newSessionAccount)
     defer { defaults.removePersistentDomain(forName: suite) }
 
-    let session = ClaudeSession(folder: folder)
+    let session = AgentSession(folder: folder)
     await ClaudeChoice.$testSuite.withValue(suite) { await session.spawn() }
     defer { session.stop() }
     #expect(session.executable == picked)
@@ -115,7 +115,7 @@ struct ClaudeSessionTests {
       sessionID: "gone", cwd: folder.path(percentEncoded: false),
       file: folder.appending(path: "gone.jsonl").path(percentEncoded: false),
       accountDirectory: folder.path(percentEncoded: false), accountIsDefault: false)
-    let session = ClaudeSession(folder: folder, resuming: target)
+    let session = AgentSession(folder: folder, resuming: target)
     await session.loadHistory()
     guard case .failed(let reason) = session.phase else {
       Issue.record("phase is \(session.phase)")
@@ -136,7 +136,7 @@ struct ClaudeSessionTests {
       sessionID: "s1", cwd: folder.path(percentEncoded: false),
       file: file.path(percentEncoded: false),
       accountDirectory: folder.path(percentEncoded: false), accountIsDefault: false)
-    let session = ClaudeSession(folder: folder, resuming: target)
+    let session = AgentSession(folder: folder, resuming: target)
     await session.loadHistory()
     #expect(session.title == "Make it so")
     #expect(session.phase == .idle)
@@ -158,7 +158,7 @@ struct ClaudeSessionTests {
       file: file.path(percentEncoded: false),
       accountDirectory: folder.path(percentEncoded: false), accountIsDefault: false)
 
-    let session = ClaudeSession(folder: folder, resuming: target)
+    let session = AgentSession(folder: folder, resuming: target)
     await session.loadHistory()
     guard case .notice(let note)? = session.transcript.entries.last?.kind else {
       Issue.record("last entry is \(String(describing: session.transcript.entries.last))")
@@ -167,14 +167,14 @@ struct ClaudeSessionTests {
     #expect(note.hasPrefix("Idle "))
     #expect(note.hasSuffix("re-cache about 20k tokens."))
 
-    let elsewhere = ClaudeSession(folder: folder, resuming: target)
+    let elsewhere = AgentSession(folder: folder, resuming: target)
     elsewhere.isReadOnly = true
     await elsewhere.loadHistory()
     #expect(elsewhere.transcript.entries.last?.kind == .text("Hello"))
   }
 
   @Test func aReadOnlySessionSendsNothing() {
-    let session = ClaudeSession(folder: folder)
+    let session = AgentSession(folder: folder)
     session.isReadOnly = true
     #expect(!session.canSend)
     session.send("hello")
@@ -191,7 +191,7 @@ struct ClaudeSessionTests {
       sessionID: "s2", cwd: folder.path(percentEncoded: false),
       file: file.path(percentEncoded: false),
       accountDirectory: folder.path(percentEncoded: false), accountIsDefault: false)
-    let session = ClaudeSession(folder: folder, resuming: target)
+    let session = AgentSession(folder: folder, resuming: target)
     session.executableOverride = fake
     async let load: Void = session.loadHistory()
     session.send("hello")
@@ -204,7 +204,7 @@ struct ClaudeSessionTests {
   }
 
   /// A session reopened on a question its process never got the answer to.
-  private func sessionAskingEarlier(_ id: String) throws -> ClaudeSession {
+  private func sessionAskingEarlier(_ id: String) throws -> AgentSession {
     let file = folder.appending(path: "\(id).jsonl")
     try Data(
       #"{"type":"assistant","message":{"id":"m","content":[{"type":"tool_use","id":"t","name":"AskUserQuestion","input":{"questions":[{"question":"Which file?","options":[{"label":"a.txt"},{"label":"b.txt"}],"multiSelect":false}]}}],"stop_reason":"tool_use"}}"#
@@ -214,7 +214,7 @@ struct ClaudeSessionTests {
       sessionID: id, cwd: folder.path(percentEncoded: false),
       file: file.path(percentEncoded: false),
       accountDirectory: folder.path(percentEncoded: false), accountIsDefault: false)
-    return ClaudeSession(folder: folder, resuming: target)
+    return AgentSession(folder: folder, resuming: target)
   }
 
   /// The question is offered again, as the extension offers it, and answered by a prompt the
@@ -251,7 +251,7 @@ struct ClaudeSessionTests {
 
   /// An ended session starts again on the next prompt.
   @Test func anEndedSessionStartsAgain() async throws {
-    let session = ClaudeSession(folder: folder)
+    let session = AgentSession(folder: folder)
     session.executableOverride = fake
     session.send("one")
     _ = try await lines(count: 2)
@@ -265,13 +265,13 @@ struct ClaudeSessionTests {
   }
 
   /// Yields until the spawn the first prompt started is suspended in one of its awaits.
-  private func untilStarting(_ session: ClaudeSession) async {
+  private func untilStarting(_ session: AgentSession) async {
     for _ in 0..<1000 where session.phase != .starting { await Task.yield() }
     #expect(session.phase == .starting)
   }
 
   /// Nothing reached the stand-in: no process was started, or none was written to.
-  private func expectNothingStarted(_ session: ClaudeSession) async throws {
+  private func expectNothingStarted(_ session: AgentSession) async throws {
     try await Task.sleep(for: .seconds(1))
     #expect(!session.isProcessRunning)
     #expect(!FileManager.default.fileExists(atPath: received.path(percentEncoded: false)))
@@ -279,7 +279,7 @@ struct ClaudeSessionTests {
 
   /// A window closed right after its first prompt leaves no `claude` behind.
   @Test func aStopBeforeTheSpawnRunsStartsNothing() async throws {
-    let session = ClaudeSession(folder: folder)
+    let session = AgentSession(folder: folder)
     session.executableOverride = fake
     session.send("hello")
     session.stop()
@@ -288,7 +288,7 @@ struct ClaudeSessionTests {
 
   /// Closed while the spawn waited on the history or the shell's environment.
   @Test func aStopDuringTheStartStartsNothing() async throws {
-    let session = ClaudeSession(folder: folder)
+    let session = AgentSession(folder: folder)
     session.executableOverride = fake
     session.send("hello")
     await untilStarting(session)
@@ -300,7 +300,7 @@ struct ClaudeSessionTests {
   /// Another process opened the session while this one was starting: it is followed, never
   /// written to.
   @Test func aSessionOpenedElsewhereDuringTheStartIsNotWritten() async throws {
-    let session = ClaudeSession(folder: folder)
+    let session = AgentSession(folder: folder)
     session.executableOverride = fake
     session.send("hello")
     await untilStarting(session)
@@ -327,7 +327,7 @@ struct ClaudeSessionTests {
       sessionID: "s-live", cwd: folder.path(percentEncoded: false),
       file: file.path(percentEncoded: false),
       accountDirectory: account.path(percentEncoded: false), accountIsDefault: false)
-    let session = ClaudeSession(folder: folder, resuming: target)
+    let session = AgentSession(folder: folder, resuming: target)
     session.executableOverride = fake
     await session.loadHistory()
     session.send("hello")
@@ -354,7 +354,7 @@ struct ClaudeSessionTests {
       #"{"type":"user","message":{"role":"user","content":"one"}}"#.appending("\n").utf8
     ).write(to: project.appending(path: "s-new.jsonl"))
 
-    let session = ClaudeSession(folder: folder)
+    let session = AgentSession(folder: folder)
     session.executableOverride = script
     session.accounts = { [ClaudeAccount(directory: account, isDefault: false)] }
     session.send("one")
@@ -393,7 +393,7 @@ struct ClaudeSessionTests {
       sessionID: "s1", cwd: folder.path(percentEncoded: false),
       file: file.path(percentEncoded: false),
       accountDirectory: folder.path(percentEncoded: false), accountIsDefault: false)
-    let session = ClaudeSession(folder: folder, resuming: target)
+    let session = AgentSession(folder: folder, resuming: target)
     await session.loadHistory()
 
     #expect(session.rename(to: "  Mine "))
@@ -411,7 +411,7 @@ struct ClaudeSessionTests {
       "#!/bin/sh\nprintf '%s\\n' '\(initLine)'\ncat >> \"$0.stdin\"\n".utf8
     ).write(to: script)
     try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script.path)
-    let session = ClaudeSession(folder: folder)
+    let session = AgentSession(folder: folder)
     session.executableOverride = script
     session.send("hello")
     defer { session.stop() }
@@ -437,7 +437,7 @@ struct ClaudeSessionTests {
     try Data("#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$0.args\"\ncat > /dev/null\n".utf8)
       .write(to: script)
     try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script.path)
-    let session = ClaudeSession(folder: folder)
+    let session = AgentSession(folder: folder)
     session.executableOverride = script
     #expect(session.rename(to: "Mine"))
     #expect(session.title == "Mine")
@@ -460,7 +460,7 @@ struct ClaudeSessionTests {
   }
 
   @Test func aReadOnlySessionKeepsItsName() {
-    let session = ClaudeSession(folder: folder)
+    let session = AgentSession(folder: folder)
     session.isReadOnly = true
     #expect(!session.rename(to: "Mine"))
     #expect(session.title == nil)
@@ -471,7 +471,7 @@ struct ClaudeSessionTests {
       sessionID: "gone", cwd: folder.path(percentEncoded: false),
       file: folder.appending(path: "gone.jsonl").path(percentEncoded: false),
       accountDirectory: folder.path(percentEncoded: false), accountIsDefault: false)
-    let session = ClaudeSession(folder: folder, resuming: target)
+    let session = AgentSession(folder: folder, resuming: target)
     await session.loadHistory()
     #expect(!session.canSend)
   }

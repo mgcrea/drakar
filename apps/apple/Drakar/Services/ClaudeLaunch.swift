@@ -15,7 +15,7 @@ struct ClaudeLaunch {
     String(localized: "Claude Code was not found. Install it, then open the folder again.")
   }
 
-  /// `environment` is the login shell's (`ClaudeSession.environment`). A resume runs under
+  /// `environment` is the login shell's (`AgentSession.environment`). A resume runs under
   /// the account that wrote it; a new session under its folder's pick, else the one in
   /// Settings, else the shell's. An explicit `account` wins over all of them: the probe runs
   /// under the account its lists are kept for.

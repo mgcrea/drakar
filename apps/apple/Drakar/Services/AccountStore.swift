@@ -34,7 +34,7 @@ final class AccountStore {
     shellAccount = ClaudeChoice.account(at: standard)
     self.discover =
       discover ?? {
-        let shellDirectory = (await ClaudeSession.environment.value)["CLAUDE_CONFIG_DIR"]
+        let shellDirectory = (await AgentSession.environment.value)["CLAUDE_CONFIG_DIR"]
         let extra = shellDirectory.map { [URL(filePath: $0, directoryHint: .isDirectory)] } ?? []
         return (
           ClaudeAccount.discover(extra: extra), ClaudeChoice.account(at: shellDirectory ?? standard)

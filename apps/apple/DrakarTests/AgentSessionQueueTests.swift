@@ -8,7 +8,7 @@ import Testing
 /// and records its stdin.
 @MainActor
 @Suite("Queueing behind a turn")
-struct ClaudeSessionQueueTests {
+struct AgentSessionQueueTests {
 
   private let folder: URL
   private let script: URL
@@ -24,8 +24,8 @@ struct ClaudeSessionQueueTests {
   }
 
   /// A session mid-turn, its process up.
-  private func running() async throws -> ClaudeSession {
-    let session = ClaudeSession(folder: folder)
+  private func running() async throws -> AgentSession {
+    let session = AgentSession(folder: folder)
     session.executableOverride = script
     session.send("first")
     for _ in 0..<50 where !session.isProcessRunning {
@@ -102,7 +102,7 @@ struct ClaudeSessionQueueTests {
     ).write(to: answering)
     try FileManager.default.setAttributes(
       [.posixPermissions: 0o755], ofItemAtPath: answering.path)
-    let session = ClaudeSession(folder: folder)
+    let session = AgentSession(folder: folder)
     session.executableOverride = answering
     var ends = 0
     session.onTurnEnded = { ends += 1 }

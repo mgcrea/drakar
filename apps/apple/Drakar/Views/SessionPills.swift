@@ -7,7 +7,7 @@ import SwiftUI
 /// mode and model (docs/superpowers/specs/2026-10-06-mode-and-model-pills-design.md) and
 /// Claude Code's effort.
 struct SessionPills {
-  let session: ClaudeSession
+  let session: AgentSession
   let folder: URL
   /// The account the session runs, or will start, under: whose models the menu lists.
   let account: ClaudeAccount
@@ -107,12 +107,12 @@ struct SessionPills {
 
   /// The list as the menu offers it: the older models only while Settings shows them, the
   /// session's own always.
-  static func offeredModels(_ session: ClaudeSession, models: [ModelOption]?) -> [ModelOption]? {
+  static func offeredModels(_ session: AgentSession, models: [ModelOption]?) -> [ModelOption]? {
     models.map { ClaudeChoice.offered($0, keeping: option(for: session, in: $0)?.value) }
   }
 
   /// Ask, Edit and Plan always; Auto for a model that says it takes it; Bypass while allowed.
-  static func offeredModes(_ session: ClaudeSession, models: [ModelOption]?) -> [PermissionMode] {
+  static func offeredModes(_ session: AgentSession, models: [ModelOption]?) -> [PermissionMode] {
     PermissionMode.allCases.filter { mode in
       switch mode {
       case .auto: option(for: session, in: models)?.supportsAutoMode == true
@@ -124,18 +124,18 @@ struct SessionPills {
 
   /// The levels the session's model takes; none for one without effort, or while the list
   /// is not known.
-  static func effortLevels(_ session: ClaudeSession, models: [ModelOption]?) -> [String] {
+  static func effortLevels(_ session: AgentSession, models: [ModelOption]?) -> [String] {
     option(for: session, in: models)?.effortLevels ?? []
   }
 
   /// The level's title; "Default" before the process has said which it applies.
-  static func effortLabel(for session: ClaudeSession) -> String {
+  static func effortLabel(for session: AgentSession) -> String {
     session.shownEffort.map(EffortLevel.title(of:)) ?? String(localized: "Default")
   }
 
   /// The list's entry for the session's model: its pick, else the running model, else
   /// `default`.
-  static func option(for session: ClaudeSession, in models: [ModelOption]?) -> ModelOption? {
+  static func option(for session: AgentSession, in models: [ModelOption]?) -> ModelOption? {
     guard let models else { return nil }
     if let pick = session.pickedModel { return models.first { $0.value == pick } }
     if let running = session.transcript.session?.model {
@@ -148,7 +148,7 @@ struct SessionPills {
   }
 
   /// The model's own name ("Opus 5.5"), never "Default (recommended)".
-  static func modelLabel(for session: ClaudeSession, in models: [ModelOption]?) -> String {
+  static func modelLabel(for session: AgentSession, in models: [ModelOption]?) -> String {
     // What the process says it runs, once it said so after its start or a switch; and
     // Claude Code's default is whatever `settings.json` makes it: name what runs.
     let pick = session.pickedModel
@@ -166,7 +166,7 @@ struct SessionPills {
   }
 
   /// ⇧Tab: the next offered mode.
-  static func cycle(_ session: ClaudeSession, account: ClaudeAccount) {
+  static func cycle(_ session: AgentSession, account: ClaudeAccount) {
     let offered = offeredModes(session, models: ModelCatalog.shared.models(for: account))
     let current = PermissionMode(rawValue: session.shownMode) ?? .ask
     session.setMode(PermissionMode.next(after: current, among: offered))

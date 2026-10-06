@@ -20,7 +20,7 @@ enum SkillTarget {
 @Observable
 final class ProjectSession: Identifiable {
   let id = UUID()
-  let session: ClaudeSession
+  let session: AgentSession
   /// The composer's text, kept across switches.
   var draft = ""
   /// The images and files going with the next prompt, kept as the draft is.
@@ -67,7 +67,7 @@ final class ProjectSession: Identifiable {
   /// asks on every draw, and a reply can be long.
   @ObservationIgnored private var detected: (key: String, ask: ClosingAsk?)?
 
-  init(session: ClaudeSession) {
+  init(session: AgentSession) {
     self.session = session
   }
 
@@ -282,7 +282,7 @@ final class Project {
     for target in stored?.sessions ?? [] {
       guard !sessions.contains(where: { $0.sessionID == target.sessionID }) else { continue }
       let folder = URL(filePath: target.cwd, directoryHint: .isDirectory)
-      let item = make(ClaudeSession(folder: folder, resuming: target))
+      let item = make(AgentSession(folder: folder, resuming: target))
       item.dismissedAsk = stored?.dismissedQuestions?[target.sessionID]
       sessions.append(item)
     }
@@ -411,7 +411,7 @@ final class Project {
   /// A new session in the project's folder, on top and shown. No process until it is
   /// prompted.
   @discardableResult func newSession() -> ProjectSession {
-    let item = make(ClaudeSession(folder: folder))
+    let item = make(AgentSession(folder: folder))
     sessions.insert(item, at: 0)
     select(item)
     return item
@@ -483,7 +483,7 @@ final class Project {
 
   /// A session's `initialize` lists the project's skills only from the project's own
   /// folder, under the account the lists are for: a worktree is another checkout.
-  func speaksForProject(_ session: ClaudeSession) -> Bool {
+  func speaksForProject(_ session: AgentSession) -> Bool {
     ProjectPath.normalize(session.folder.path(percentEncoded: false))
       == ProjectPath.normalize(folder.path(percentEncoded: false))
       && session.account?.key == capabilities.accountKey
@@ -531,7 +531,7 @@ final class Project {
       select(existing)
       return existing
     }
-    let session = ClaudeSession(
+    let session = AgentSession(
       folder: URL(filePath: target.cwd, directoryHint: .isDirectory), resuming: target)
     session.isReadOnly = readOnly
     if target.forks == true, let name = forkName(for: target) { session.rename(to: name) }
@@ -710,7 +710,7 @@ final class Project {
       focusedPane: workspace.focusedPane)
   }
 
-  private func make(_ session: ClaudeSession) -> ProjectSession {
+  private func make(_ session: AgentSession) -> ProjectSession {
     if let executableOverride { session.executableOverride = executableOverride }
     let item = ProjectSession(session: session)
     session.onTurnEnded = { [weak self, weak item] in

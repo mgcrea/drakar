@@ -6,7 +6,7 @@ import Testing
 
 @MainActor
 @Suite("A session's mode and model")
-struct ClaudeSessionPillsTests {
+struct AgentSessionPillsTests {
 
   private let folder: URL
 
@@ -49,7 +49,7 @@ struct ClaudeSessionPillsTests {
     try await scoped {
       let script = try standIn("claude", #"printf '%s\n' "$*" >> "$0.args"; cat > /dev/null"#)
       ClaudeChoice.defaults.set("sonnet", forKey: PreferenceKey.defaultModel)
-      let session = ClaudeSession(folder: folder)
+      let session = AgentSession(folder: folder)
       session.executableOverride = script
       session.setMode(.plan)
       #expect(session.shownMode == "plan")
@@ -67,7 +67,7 @@ struct ClaudeSessionPillsTests {
   @Test func defaultsAddNothing() async throws {
     try await scoped {
       let script = try standIn("claude", #"printf '%s\n' "$*" >> "$0.args"; cat > /dev/null"#)
-      let session = ClaudeSession(folder: folder)
+      let session = AgentSession(folder: folder)
       session.executableOverride = script
       session.setModel("default")
       session.setMode(.ask)
@@ -83,7 +83,7 @@ struct ClaudeSessionPillsTests {
   @Test func bypassNeedsTheSetting() async throws {
     try await scoped(allowsBypass: false) {
       let script = try standIn("claude", #"printf '%s\n' "$*" >> "$0.args"; cat > /dev/null"#)
-      let session = ClaudeSession(folder: folder)
+      let session = AgentSession(folder: folder)
       session.executableOverride = script
       #expect(!session.offersBypass)
       session.setMode(.bypass)
@@ -98,7 +98,7 @@ struct ClaudeSessionPillsTests {
   @Test func aChangeWhileRunningIsSent() async throws {
     try await scoped {
       let script = try standIn("claude", #"cat >> "$0.stdin""#)
-      let session = ClaudeSession(folder: folder)
+      let session = AgentSession(folder: folder)
       session.executableOverride = script
       await session.spawn()
       defer { session.stop() }
@@ -127,7 +127,7 @@ struct ClaudeSessionPillsTests {
           esac
         done
         """)
-      let session = ClaudeSession(folder: folder)
+      let session = AgentSession(folder: folder)
       session.executableOverride = script
       await session.spawn()
       defer { session.stop() }
@@ -146,7 +146,7 @@ struct ClaudeSessionPillsTests {
       let status =
         #"{"type":"system","subtype":"status","status":null,"permissionMode":"acceptEdits"}"#
       let script = try standIn("claude", "read line\nprintf '%s\\n' '\(status)'\ncat > /dev/null")
-      let session = ClaudeSession(folder: folder)
+      let session = AgentSession(folder: folder)
       session.executableOverride = script
       await session.spawn()
       defer { session.stop() }
@@ -160,7 +160,7 @@ struct ClaudeSessionPillsTests {
     try await scoped {
       let script = try standIn("claude", #"cat > /dev/null"#)
       ClaudeChoice.defaults.set("sonnet", forKey: PreferenceKey.defaultModel)
-      let session = ClaudeSession(folder: folder)
+      let session = AgentSession(folder: folder)
       session.executableOverride = script
       await session.spawn()
       defer { session.stop() }
@@ -175,7 +175,7 @@ struct ClaudeSessionPillsTests {
         #"{"type":"control_response","response":{"subtype":"success","request_id":"init-1","response":{"commands":[],"models":[{"value":"default","displayName":"Default (recommended)"},{"value":"haiku","displayName":"Haiku 4.5"}]}}}"#
       let script = try standIn("claude", "read line\necho '\(reply)'\ncat > /dev/null")
       let catalog = ModelCatalog()
-      let session = ClaudeSession(folder: folder)
+      let session = AgentSession(folder: folder)
       session.executableOverride = script
       session.catalog = catalog
       await session.spawn()
@@ -195,7 +195,7 @@ struct ClaudeSessionPillsTests {
         "claude",
         "printf '%s\\n' \"$*\" >> \"$0.args\"\nread line\nprintf '%s\\n' '\(status)'\ncat > /dev/null"
       )
-      let session = ClaudeSession(folder: folder)
+      let session = AgentSession(folder: folder)
       session.executableOverride = script
       session.setMode(.plan)
       await session.spawn()
@@ -217,7 +217,7 @@ struct ClaudeSessionPillsTests {
       let reply =
         #"{"type":"control_response","response":{"subtype":"success","request_id":"init-1","response":{"commands":[],"current_permission_mode":"acceptEdits"}}}"#
       let script = try standIn("claude", "read line\necho '\(reply)'\ncat > /dev/null")
-      let session = ClaudeSession(folder: folder)
+      let session = AgentSession(folder: folder)
       session.executableOverride = script
       await session.spawn()
       defer { session.stop() }
@@ -231,7 +231,7 @@ struct ClaudeSessionPillsTests {
     try await scoped {
       let script = try standIn("claude", #"printf '%s\n' "$*" >> "$0.args"; cat > /dev/null"#)
       ClaudeChoice.defaults.set("bypassPermissions", forKey: PreferenceKey.defaultMode)
-      let session = ClaudeSession(folder: folder)
+      let session = AgentSession(folder: folder)
       session.executableOverride = script
       #expect(session.shownMode == "bypassPermissions")
       await session.spawn()
@@ -245,7 +245,7 @@ struct ClaudeSessionPillsTests {
   @Test func anEffortPickedBeforeTheStartGoesOnTheCommandLine() async throws {
     try await scoped {
       let script = try standIn("claude", #"printf '%s\n' "$*" >> "$0.args"; cat > /dev/null"#)
-      let session = ClaudeSession(folder: folder)
+      let session = AgentSession(folder: folder)
       session.executableOverride = script
       #expect(session.shownEffort == nil)
       session.setEffort("xhigh")
@@ -260,7 +260,7 @@ struct ClaudeSessionPillsTests {
   @Test func noEffortPickedAddsNothing() async throws {
     try await scoped {
       let script = try standIn("claude", #"printf '%s\n' "$*" >> "$0.args"; cat > /dev/null"#)
-      let session = ClaudeSession(folder: folder)
+      let session = AgentSession(folder: folder)
       session.executableOverride = script
       await session.spawn()
       defer { session.stop() }
@@ -273,7 +273,7 @@ struct ClaudeSessionPillsTests {
   @Test func anEffortChangeWhileRunningIsSentAndReadBack() async throws {
     try await scoped {
       let script = try standIn("claude", #"cat >> "$0.stdin""#)
-      let session = ClaudeSession(folder: folder)
+      let session = AgentSession(folder: folder)
       session.executableOverride = script
       await session.spawn()
       defer { session.stop() }
@@ -300,7 +300,7 @@ struct ClaudeSessionPillsTests {
           esac
         done
         """)
-      let session = ClaudeSession(folder: folder)
+      let session = AgentSession(folder: folder)
       session.executableOverride = script
       await session.spawn()
       try await waitUntil { session.shownEffort != nil }
@@ -317,7 +317,7 @@ struct ClaudeSessionPillsTests {
     try await scoped {
       let script = try standIn("claude", #"printf '%s\n' "$*" >> "$0.args"; cat > /dev/null"#)
       ClaudeChoice.defaults.set("max", forKey: PreferenceKey.defaultEffort)
-      let session = ClaudeSession(folder: folder)
+      let session = AgentSession(folder: folder)
       session.executableOverride = script
       #expect(session.shownEffort == "max")
       await session.spawn()

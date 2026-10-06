@@ -8,7 +8,7 @@ import Observation
 /// Main-actor state over an `AgentProcess`: events are decoded off the main thread and
 /// applied here in batches, which is all the view observes.
 @Observable
-final class ClaudeSession {
+final class AgentSession {
   enum Phase: Equatable {
     /// No process: never started, or a history shown until the first prompt.
     case idle

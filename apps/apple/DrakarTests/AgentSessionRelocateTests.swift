@@ -6,7 +6,7 @@ import Testing
 
 @MainActor
 @Suite("A session whose files moved")
-struct ClaudeSessionRelocateTests {
+struct AgentSessionRelocateTests {
 
   private let root: URL
 
@@ -51,7 +51,7 @@ struct ClaudeSessionRelocateTests {
     ).write(to: fake)
     try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: fake.path)
 
-    let session = ClaudeSession(folder: root, resuming: target(oldFile, account: old))
+    let session = AgentSession(folder: root, resuming: target(oldFile, account: old))
     session.executableOverride = fake
     let moved = target(newFile, account: new)
     session.relocate(to: moved)

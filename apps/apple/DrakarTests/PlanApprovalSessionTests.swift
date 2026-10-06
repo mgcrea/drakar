@@ -26,8 +26,8 @@ struct PlanApprovalSessionTests {
   }
 
   /// A session waiting on the plan.
-  private func asked() async throws -> (ClaudeSession, Transcript.PendingPermission) {
-    let session = ClaudeSession(folder: folder)
+  private func asked() async throws -> (AgentSession, Transcript.PendingPermission) {
+    let session = AgentSession(folder: folder)
     session.executableOverride = script
     session.send("Plan it")
     for _ in 0..<50 where session.transcript.pendingPermissions.isEmpty {

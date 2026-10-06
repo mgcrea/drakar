@@ -603,7 +603,7 @@ private struct ClaudeSection: View {
   }
 
   private func load() async {
-    let environment = await ClaudeSession.environment.value
+    let environment = await AgentSession.environment.value
     let urls = await Task.detached { ClaudeLocator.installed(path: environment["PATH"]) }.value
     // Each asked at once: an npm install takes a while to answer.
     installs = await withTaskGroup(of: (Int, Install).self) { group in

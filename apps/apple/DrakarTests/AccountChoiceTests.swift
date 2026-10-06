@@ -93,7 +93,7 @@ struct AccountChoiceTests {
     ).write(to: fake)
     try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: fake.path)
 
-    let session = ClaudeSession(folder: project)
+    let session = AgentSession(folder: project)
     session.executableOverride = fake
     choosing { pickPicked(for: project) }
     await ClaudeChoice.$testSuite.withValue(suite) { await session.spawn() }
@@ -119,7 +119,7 @@ struct AccountChoiceTests {
       file: project.appending(path: "s.jsonl").path(percentEncoded: false),
       accountDirectory: String(picked.path(percentEncoded: false).dropLast()),
       accountIsDefault: false)
-    #expect(ClaudeSession(folder: project, resuming: target).effectiveAccount?.name == "picked")
-    #expect(ClaudeSession(folder: project).effectiveAccount == nil)
+    #expect(AgentSession(folder: project, resuming: target).effectiveAccount?.name == "picked")
+    #expect(AgentSession(folder: project).effectiveAccount == nil)
   }
 }

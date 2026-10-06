@@ -32,7 +32,7 @@ enum SessionMoves {
     var outcome: MoveOutcome
   }
 
-  static func held(_ session: ClaudeSession) -> Held {
+  static func held(_ session: AgentSession) -> Held {
     Held(
       hasProcess: session.isProcessRunning,
       isBusy: session.transcript.isRunning || !session.transcript.pendingPermissions.isEmpty)
@@ -74,9 +74,9 @@ enum SessionMoves {
   /// person prompt one, while the others move. `watchers` are the rows only watching the
   /// session, which follow the files too; `mover` stands in for `SessionMover` in tests.
   static func run(
-    _ candidates: [Candidate], to target: ClaudeAccount, locate: (String) -> ClaudeSession?,
+    _ candidates: [Candidate], to target: ClaudeAccount, locate: (String) -> AgentSession?,
     liveIDs: () -> Set<String>, host: (Candidate) -> String,
-    watchers: (String) -> [ClaudeSession] = { _ in [] },
+    watchers: (String) -> [AgentSession] = { _ in [] },
     mover: @escaping @Sendable (URL, ClaudeAccount, ClaudeAccount) -> MoveOutcome = {
       SessionMover.move(transcript: $0, from: $1, to: $2)
     }

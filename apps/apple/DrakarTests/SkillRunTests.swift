@@ -147,7 +147,7 @@ struct SkillRunTests {
   /// A worktree is another checkout: its session does not speak for the project's list.
   @Test func onlyTheProjectsOwnFolderSpeaksForIt() {
     let project = Project(folder: folder)
-    let worktree = ClaudeSession(
+    let worktree = AgentSession(
       folder: folder.appending(path: ".claude/worktrees/x", directoryHint: .isDirectory))
     #expect(!project.speaksForProject(worktree))
   }

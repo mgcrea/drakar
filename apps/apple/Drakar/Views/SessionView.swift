@@ -14,7 +14,7 @@ struct SessionView: View {
   /// How far above the bottom bar the transcript starts fading out.
   private static let fade: CGFloat = 24
 
-  private var session: ClaudeSession { item.session }
+  private var session: AgentSession { item.session }
   private var workspace: Workspace { project.workspace }
 
   /// The account the session runs, or will start, under.
@@ -410,7 +410,7 @@ private struct SessionFooter: View {
   /// Set for a session another process runs: its state comes from there.
   let elsewhere: (status: ElsewhereStatus, host: String)?
 
-  private var session: ClaudeSession { item.session }
+  private var session: AgentSession { item.session }
 
   /// Known before the process starts: the newest message's model, or the one the sidebar row
   /// read from the file.

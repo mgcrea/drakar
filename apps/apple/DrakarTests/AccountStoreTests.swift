@@ -117,7 +117,7 @@ struct AccountStoreTests {
     defer { defaults.removePersistentDomain(forName: suite) }
 
     let store = await store()
-    let session = ClaudeSession(folder: root)
+    let session = AgentSession(folder: root)
     session.executableOverride = fake
     session.accountStore = store
     await ClaudeChoice.$testSuite.withValue(suite) { await session.spawn() }

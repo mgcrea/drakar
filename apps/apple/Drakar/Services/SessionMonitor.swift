@@ -106,7 +106,7 @@ final class SessionMonitor {
         self.accounts = await discover()
       } else {
         let extra =
-          (await ClaudeSession.environment.value)["CLAUDE_CONFIG_DIR"].map {
+          (await AgentSession.environment.value)["CLAUDE_CONFIG_DIR"].map {
             [URL(filePath: $0, directoryHint: .isDirectory)]
           } ?? []
         self.accounts = ClaudeAccount.discover(extra: extra)

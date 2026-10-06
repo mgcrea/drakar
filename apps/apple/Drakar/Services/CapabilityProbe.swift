@@ -42,7 +42,7 @@ enum CapabilityProbe {
       return .failed(
         String(localized: "The folder \(folder.lastPathComponent) no longer exists."))
     }
-    let environment = await ClaudeSession.environment.value
+    let environment = await AgentSession.environment.value
     // Cancelled while the environment loaded: nothing has started, so nothing is launched.
     // (Launching now would meet an already-closed input and need a hard kill.)
     guard !Task.isCancelled else { return .failed(String(localized: "Cancelled.")) }

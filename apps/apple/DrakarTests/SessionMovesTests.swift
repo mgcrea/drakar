@@ -123,7 +123,7 @@ struct SessionMovesRunTests {
     try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: fake.path)
   }
 
-  private func heldSession(_ id: String) throws -> (ClaudeSession, SessionMoves.Candidate) {
+  private func heldSession(_ id: String) throws -> (AgentSession, SessionMoves.Candidate) {
     let folder = a.directory.appending(path: "projects/-p", directoryHint: .isDirectory)
     try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
     let file = folder.appending(path: "\(id).jsonl")
@@ -132,7 +132,7 @@ struct SessionMovesRunTests {
     let target = ResumeTarget(
       sessionID: id, cwd: root.path(percentEncoded: false), file: file.path(percentEncoded: false),
       accountDirectory: a.key, accountIsDefault: false)
-    let session = ClaudeSession(folder: root, resuming: target)
+    let session = AgentSession(folder: root, resuming: target)
     session.executableOverride = fake
     let candidate = SessionMoves.Candidate(
       sessionID: id, title: id, transcript: file, account: a, cwd: target.cwd)
@@ -231,7 +231,7 @@ struct SessionMovesRunTests {
   @Test func aWatchingRowFollowsTheMove() async throws {
     defer { try? FileManager.default.removeItem(at: root) }
     let (held, candidate) = try heldSession("s5")
-    let watcher = ClaudeSession(folder: root, resuming: held.savedTarget)
+    let watcher = AgentSession(folder: root, resuming: held.savedTarget)
     let reports = await SessionMoves.run(
       [candidate], to: b, locate: { _ in nil }, liveIDs: { [] }, host: { _ in "x" },
       watchers: { $0 == "s5" ? [watcher] : [] })

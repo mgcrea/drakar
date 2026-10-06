@@ -8,7 +8,7 @@ import Testing
 /// never waits on it: against a stand-in `claude` that writes one, then records its stdin.
 @MainActor
 @Suite("A session answers the CLI's own requests")
-struct ClaudeSessionRepliesTests {
+struct AgentSessionRepliesTests {
 
   private let folder: URL
 
@@ -45,7 +45,7 @@ struct ClaudeSessionRepliesTests {
       writing:
         #"{"type":"control_request","request_id":"e1","request":{"subtype":"elicitation","mcp_server_name":"linear","message":"Which team?"}}"#
     )
-    let session = ClaudeSession(folder: folder)
+    let session = AgentSession(folder: folder)
     session.executableOverride = script
     session.send("hello")
     defer { session.stop() }
@@ -59,7 +59,7 @@ struct ClaudeSessionRepliesTests {
       writing:
         #"{"type":"control_request","request_id":"h1","request":{"subtype":"hook_callback","callback_id":"c"}}"#
     )
-    let session = ClaudeSession(folder: folder)
+    let session = AgentSession(folder: folder)
     session.executableOverride = script
     session.send("hello")
     defer { session.stop() }
