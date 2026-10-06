@@ -237,7 +237,7 @@ final class Project {
   /// own in `StoredProject.dismissedQuestions`.
   private(set) var dismissedElsewhere: [String: String] = [:]
   /// Whether the shown session's composer takes the focus when it appears: not when the
-  /// sidebar's arrow keys or a click there chose it, so the keys keep moving in the list.
+  /// sidebar's arrow keys chose it, so the keys keep moving in the list.
   @ObservationIgnored private(set) var focusesComposer = true
   /// Stands in for the located binary in every session this window makes, in tests.
   @ObservationIgnored var executableOverride: URL?
@@ -498,6 +498,19 @@ final class Project {
     guard var target = item.session.resuming ?? item.session.savedTarget else { return item }
     target.forks = true
     return attach(target)
+  }
+
+  /// Whether `item` has a transcript to copy and no turn writing it: a fork taken mid-turn
+  /// would copy a history that can end on a tool call with no result.
+  func canFork(_ item: ProjectSession) -> Bool {
+    (item.session.resuming ?? item.session.savedTarget) != nil
+      && !item.session.transcript.isRunning
+  }
+
+  var canForkSelected: Bool { selected.map(canFork) ?? false }
+
+  func forkSelected() {
+    if let selected, canFork(selected) { fork(selected) }
   }
 
   func select(_ item: ProjectSession, focusingComposer: Bool = true) {

@@ -33,8 +33,8 @@ struct SessionListView: View {
   /// Read only to redraw the account badges when a pick or the Settings default changes.
   @AppStorage(PreferenceKey.accountForFolder) private var picks = ""
   @AppStorage(PreferenceKey.newSessionAccount) private var settingsAccount = ""
-  /// The list takes the arrow keys once one of the window's rows is clicked, as the native
-  /// selection did.
+  /// The list keeps the arrow keys while they move through it; a click hands them to the
+  /// composer.
   @FocusState private var isFocused: Bool
   private var monitor: SessionMonitor { .shared }
 
@@ -83,8 +83,9 @@ struct SessionListView: View {
             windowAccount: AccountStore.shared.windowAccount(for: project.folder)
           )
           .pressableRow(isSelected: item.id == project.selectedID) {
-            project.select(item, focusingComposer: false)
-            isFocused = true
+            project.select(item)
+            // The row shown already keeps its composer, which only focuses itself on appearing.
+            item.focusRequest += 1
           }
           .contextMenu { menu(for: item) }
           .accessibilityIdentifier("sessions.attached.\(item.sessionID ?? item.id.uuidString)")
@@ -182,6 +183,7 @@ struct SessionListView: View {
     }
     if (item.session.resuming ?? item.session.savedTarget) != nil {
       Button("Fork a Copy") { project.fork(item) }
+        .disabled(!project.canFork(item))
       Divider()
     }
     if item.session.isProcessRunning {
