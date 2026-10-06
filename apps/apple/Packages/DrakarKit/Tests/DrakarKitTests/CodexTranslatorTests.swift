@@ -71,4 +71,111 @@ struct CodexTranslatorTests {
     #expect(change.isNewFile)
     #expect(change.addedCount == 1)
   }
+
+  /// Folds inline lines after a prompt, sending a second prompt before line `promptBefore`.
+  private func fold(_ lines: [String], promptBefore: Int? = nil) throws -> Transcript {
+    var translator = CodexTranslator()
+    var transcript = Transcript()
+    transcript.addPrompt("go")
+    for (index, line) in lines.enumerated() {
+      if index == promptBefore { transcript.addPrompt("next") }
+      for event in translator.translate(
+        try JSONValue.parse(Data(line.utf8)), at: nil)
+      {
+        transcript.apply(event)
+      }
+    }
+    return transcript
+  }
+
+  private func exec(_ method: String, _ fields: String, turn: String = "turn-1") -> String {
+    """
+    {"method":"\(method)","params":{"item":{"type":"commandExecution","id":"exec-1",\
+    "command":"/bin/zsh -lc 'cat note.txt'","cwd":"/Users/me/project",\
+    "commandActions":[{"type":"read","command":"cat note.txt","name":"note.txt",\
+    "path":"/Users/me/project/note.txt"}],\(fields)},"threadId":"thread-1","turnId":"\(turn)"}}
+    """
+  }
+
+  @Test func aCommandRunsAndCompletes() throws {
+    let t = try fold([
+      exec("item/started", #""status":"inProgress""#),
+      exec(
+        "item/completed",
+        #""status":"completed","exitCode":0,"aggregatedOutput":"hello\n""#),
+    ])
+    #expect(t.entries.count == 2)
+    guard case .tool(let call) = t.entries[1].kind else {
+      Issue.record("\(t.entries)")
+      return
+    }
+    #expect(call.kind == .read(path: "/Users/me/project/note.txt"))
+    #expect(call.result?.content == "hello\n")
+    #expect(call.result?.isError == false)
+  }
+
+  @Test func aDeclinedCommandWithoutAStartIsAnError() throws {
+    let t = try fold([
+      exec("item/completed", #""status":"declined","exitCode":null,"aggregatedOutput":null"#)
+    ])
+    #expect(t.entries.count == 2)
+    guard case .tool(let call) = t.entries[1].kind else {
+      Issue.record("\(t.entries)")
+      return
+    }
+    #expect(call.result?.isError == true)
+    #expect(call.result?.content == "declined")
+  }
+
+  @Test func aLateCompletionLandsOnItsOwnEntry() throws {
+    let lines = [
+      exec("item/started", #""status":"inProgress""#),
+      """
+      {"method":"turn/completed","params":{"threadId":"thread-1","turn":{"id":"turn-1","items":[],\
+      "status":"interrupted","error":null,"durationMs":5}}}
+      """,
+      exec("item/completed", #""status":"completed","exitCode":0,"aggregatedOutput":"late""#),
+    ]
+    let before = try fold(Array(lines.prefix(2)))
+    #expect(before.turnEnd == .interrupted)
+    let t = try fold(lines, promptBefore: 2)
+    #expect(t.isRunning)
+    #expect(t.entries.filter { if case .tool = $0.kind { true } else { false } }.count == 1)
+    guard case .tool(let call) = t.entries[1].kind else {
+      Issue.record("\(t.entries)")
+      return
+    }
+    #expect(call.result?.content == "late")
+    #expect(call.result?.isError == false)
+  }
+
+  @Test func aFailedTurnEndsWithItsError() throws {
+    let t = try fold([
+      """
+      {"method":"turn/completed","params":{"threadId":"thread-1","turn":{"id":"turn-1","items":[],\
+      "status":"failed","error":{"message":"Overloaded"},"durationMs":5}}}
+      """
+    ])
+    #expect(t.turnEnd == .failed)
+    #expect(t.entries.last?.kind == .failure("Overloaded"))
+  }
+
+  @Test func reasoningIsThereWhileItStreams() throws {
+    let t = try fold(until: 6)
+    #expect(t.entries[1].kind == .thinking("**Planning the file**"))
+    #expect(t.entries[1].thinkingSince != nil)
+  }
+
+  @Test func aSecondSummaryPartIsAParagraphApart() throws {
+    func line(_ method: String, _ extra: String) -> String {
+      #"{"method":"item/reasoning/\#(method)","params":{"threadId":"thread-1","turnId":"turn-1","itemId":"rs-1",\#(extra)}}"#
+    }
+    let t = try fold([
+      #"{"method":"item/started","params":{"item":{"type":"reasoning","id":"rs-1","summary":[],"content":[]},"threadId":"thread-1","turnId":"turn-1"}}"#,
+      line("summaryTextDelta", #""delta":"first","summaryIndex":0"#),
+      line("summaryPartAdded", #""summaryIndex":1"#),
+      line("summaryTextDelta", #""delta":"second","summaryIndex":1"#),
+    ])
+    #expect(t.entries[1].kind == .thinking("first\n\nsecond"))
+  }
 }
