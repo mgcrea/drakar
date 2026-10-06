@@ -394,6 +394,8 @@ public struct PermissionRequest: Sendable, Equatable {
   public var blockedPath: String?
   /// Set on a request only the person can answer, such as `AskUserQuestion`'s.
   public var requiresUserInteraction: Bool
+  /// The call it asks about, which is also its transcript entry's id.
+  public var toolUseID: String?
   /// An `AskUserQuestion` waiting on a choice, not a tool waiting on permission.
   public var isChoice: Bool { toolName == UserQuestion.toolName }
 
@@ -406,6 +408,7 @@ public struct PermissionRequest: Sendable, Equatable {
     suggestions = request["permission_suggestions"]?.arrayValue ?? []
     blockedPath = request["blocked_path"]?.stringValue
     requiresUserInteraction = request["requires_user_interaction"]?.boolValue ?? false
+    toolUseID = request["tool_use_id"]?.stringValue
   }
 }
 

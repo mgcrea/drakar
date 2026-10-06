@@ -46,10 +46,11 @@ struct TranscriptView: View {
     ScrollView {
       LazyVStack(alignment: .leading, spacing: 14) {
         let groups = transcript.grouped()
+        let asked = Set(transcript.pendingPermissions.compactMap(\.request.toolUseID))
         ForEach(groups.top) { entry in
           EntryView(
             entry: entry, children: groups.children[entry.id] ?? [],
-            task: transcript.agentTasks[entry.id]
+            task: transcript.agentTasks[entry.id], isAsked: asked.contains(entry.id)
           )
           .equatable()
             // Inside the row, so a jump to the prompt stops short of its bubble.
@@ -253,6 +254,8 @@ struct EntryView: View, Equatable {
   var children: [Transcript.Entry] = []
   /// On a subagent's call, what the CLI reported of it.
   var task: AgentTask?
+  /// On a call, that a request about it waits on the person now.
+  var isAsked = false
 
   var body: some View {
     Group {
@@ -278,7 +281,7 @@ struct EntryView: View, Equatable {
       case .tool(let call) where call.name == UserQuestion.toolName:
         QuestionCallView(call: call)
       case .tool(let call) where call.name == PlanApproval.toolName:
-        PlanCallView(call: call)
+        PlanCallView(call: call, isAsked: isAsked)
       case .tool(let call) where call.name == TodoList.toolName:
         TodoCallView(call: call)
       case .tool(let call) where call.name == "Agent" || call.name == "Task":

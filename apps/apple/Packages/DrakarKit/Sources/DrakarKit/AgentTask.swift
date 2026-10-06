@@ -44,13 +44,14 @@ public struct TaskEvent: Sendable, Equatable {
 
 extension Transcript {
   /// The entries the view lists, and those it draws inside the card of the call they ran
-  /// under, by its id. A line whose call is not in the transcript is listed.
+  /// under, by its id. Only a listed call's card holds lines: a line whose call is not in the
+  /// transcript, or is itself inside a card (a subagent's subagent), is listed.
   public func grouped() -> (top: [Entry], children: [String: [Entry]]) {
     var top: [Entry] = []
     var children: [String: [Entry]] = [:]
     let calls = Set(
       entries.compactMap { entry -> String? in
-        if case .tool(let call) = entry.kind { return call.id }
+        if case .tool(let call) = entry.kind, entry.parentToolUseID == nil { return call.id }
         return nil
       })
     for entry in entries {

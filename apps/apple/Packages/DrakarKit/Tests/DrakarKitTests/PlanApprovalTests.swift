@@ -25,6 +25,7 @@ struct PlanApprovalTests {
   @Test func readsThePlanOffTheRequest() throws {
     let pending = try request()
     #expect(pending.request.isPlan)
+    #expect(pending.request.toolUseID == "toolu_01CCZh57dthfdqy6ere3n884")
     #expect(!pending.request.isChoice)
     #expect(PlanApproval.plan(pending.request.input)?.hasPrefix("# Add hello.txt") == true)
   }

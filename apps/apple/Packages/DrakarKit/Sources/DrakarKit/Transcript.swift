@@ -260,6 +260,10 @@ public struct Transcript: Sendable, Equatable {
     isRunning = false
     pendingPermissions.removeAll()
     stopThinking()
+    // Its subagents went with it; no notification will say so.
+    for (call, task) in agentTasks where task.status == .running {
+      agentTasks[call]?.status = .ended("session ended")
+    }
   }
 
   /// `time` is when the line arrived, which times thinking streamed live.

@@ -60,7 +60,8 @@ struct PlanPanel: View {
             .lineLimit(1...4)
             .textFieldStyle(.roundedBorder)
             .focused($focus, equals: .feedback)
-            .onSubmit { keepPlanning(feedback) }
+            // Empty, Return would end the turn by accident; that takes 3 or the button.
+            .onSubmit { if hasFeedback { keepPlanning(feedback) } }
             .accessibilityIdentifier("plan.feedback")
         }
       }
@@ -84,7 +85,13 @@ struct PlanPanel: View {
       return .handled
     }
     .onKeyPress(.escape) {
-      keepPlanning(focus == .feedback ? feedback : "")
+      // In the field, Esc backs out of the note, never sends it.
+      if focus == .feedback {
+        feedback = ""
+        focus = .panel
+      } else {
+        keepPlanning("")
+      }
       return .handled
     }
     .accessibilityElement(children: .contain)

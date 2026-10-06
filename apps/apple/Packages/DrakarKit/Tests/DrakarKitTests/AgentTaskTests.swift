@@ -91,6 +91,28 @@ struct AgentTaskTests {
     #expect(groups.top.count + 1 == transcript.entries.count)
   }
 
+  /// A subagent's own subagent is drawn where its line falls, indented, rather than inside a
+  /// card nobody draws.
+  @Test func aNestedSubagentsLinesStayListed() throws {
+    var transcript = try transcript()
+    for line in [
+      #"{"type":"assistant","message":{"id":"m7","role":"assistant","content":[{"type":"tool_use","id":"inner","name":"Agent","input":{"description":"Deeper"}}]},"parent_tool_use_id":"toolu_014p1beTxR9BEAEKj43FmLUA","session_id":"s"}"#,
+      #"{"type":"assistant","message":{"id":"m8","role":"assistant","content":[{"type":"tool_use","id":"deep","name":"Read","input":{"file_path":"/a"}}]},"parent_tool_use_id":"inner","session_id":"s"}"#,
+    ] {
+      transcript.apply(try StreamMessage(line: Data(line.utf8)))
+    }
+    let groups = transcript.grouped()
+    #expect(groups.children[agentID]?.contains { $0.id == "inner" } == true)
+    #expect(groups.top.contains { $0.id == "deep" })
+  }
+
+  /// A process that ends takes its subagents with it: none is left running.
+  @Test func anEndedProcessEndsItsSubagents() throws {
+    var transcript = try transcript(upTo: 5)
+    transcript.processExited()
+    #expect(transcript.agentTasks[agentID]?.status == .ended("session ended"))
+  }
+
   /// One sent to the background answers at once, and finishes in a notification that may come
   /// a turn later.
   @Test func followsABackgroundSubagentToItsEnd() throws {

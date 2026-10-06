@@ -167,6 +167,8 @@ struct TodoRows: View {
 /// An `ExitPlanMode`: the plan by its title, what became of it, and the plan itself inside.
 struct PlanCallView: View {
   let call: Transcript.ToolCall
+  /// Its panel is up; otherwise a plan without a result was never answered, its process gone.
+  let isAsked: Bool
   @State private var isExpanded = false
 
   var body: some View {
@@ -208,7 +210,7 @@ struct PlanCallView: View {
         .foregroundStyle(.secondary)
         .font(.callout)
     case .waiting?, nil:
-      Text("Waiting for you").font(.callout).foregroundStyle(.secondary)
+      Text(isAsked ? "Waiting for you" : "No answer").font(.callout).foregroundStyle(.secondary)
     }
   }
 }
