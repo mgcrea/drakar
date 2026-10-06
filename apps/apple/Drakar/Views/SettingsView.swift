@@ -62,6 +62,9 @@ enum PreferenceKey {
   /// The model new sessions start with (a `value` of `initialize`'s `models`); empty for
   /// Claude Code's default.
   static let defaultModel = "drakar.defaultModel"
+  /// Whether the model menus list older pinned models (Opus 4.8) beside the current ones; on
+  /// unless turned off.
+  static let showsLegacyModels = "drakar.showsLegacyModels"
   /// The permission mode new sessions start with (`PermissionMode`'s raw value); empty for
   /// Claude Code's default.
   static let defaultMode = "drakar.defaultMode"
@@ -123,6 +126,18 @@ enum ClaudeChoice {
   static var defaultModel: String? {
     _ = AttentionDefaults.shared.revision
     return stored(PreferenceKey.defaultModel)
+  }
+
+  /// The model menus list older pinned models. On by default.
+  static var showsLegacyModels: Bool {
+    _ = AttentionDefaults.shared.revision
+    return defaults.object(forKey: PreferenceKey.showsLegacyModels) as? Bool ?? true
+  }
+
+  /// `models` as the menus offer them: without the older ones unless Settings shows them,
+  /// `kept` always.
+  static func offered(_ models: [ModelOption], keeping kept: String?) -> [ModelOption] {
+    showsLegacyModels ? models : ModelOption.withoutLegacy(models, keeping: kept)
   }
 
   /// The mode new sessions start with, from Settings; nil for Claude Code's. Bypass only
@@ -387,6 +402,7 @@ private struct ClaudeSection: View {
   @AppStorage(PreferenceKey.allowsBypass) private var allowsBypass = true
   @AppStorage(PreferenceKey.defaultModel) private var defaultModel = ""
   @AppStorage(PreferenceKey.defaultMode) private var defaultMode = ""
+  @AppStorage(PreferenceKey.showsLegacyModels) private var showsLegacyModels = true
   /// The login shell's `CLAUDE_CONFIG_DIR`, for the account whose models are listed.
   @State private var shellDirectory: String?
   @State private var installs: [Install] = []
@@ -436,7 +452,11 @@ private struct ClaudeSection: View {
         Text("Claude Code's default").tag("")
         let models = modelAccount.flatMap { ModelCatalog.shared.models(for: $0) }
         // "Default (recommended)" is the first choice already.
-        ForEach((models ?? []).filter { $0.value != "default" }) { option in
+        ForEach(
+          ClaudeChoice.offered(models ?? [], keeping: defaultModel).filter {
+            $0.value != "default"
+          }
+        ) { option in
           Text(option.displayName).tag(option.value)
         }
         if !defaultModel.isEmpty, models?.contains(where: { $0.value == defaultModel }) != true {
@@ -450,6 +470,13 @@ private struct ClaudeSection: View {
             folder: FileManager.default.homeDirectoryForCurrentUser, account: modelAccount)
         }
       }
+      Toggle("Offer older models", isOn: $showsLegacyModels)
+        .accessibilityIdentifier("settings.showsLegacyModels")
+      Text(
+        "Pinned versions such as Opus 4.8, below the current Opus, Sonnet, Fable and Haiku. A session already on one keeps it in its menu."
+      )
+      .font(.caption)
+      .foregroundStyle(.secondary)
       Picker("Mode for new sessions", selection: $defaultMode) {
         Text("Claude Code's default").tag("")
         ForEach(PermissionMode.allCases.filter { $0 != .bypass || allowsBypass }, id: \.self) {

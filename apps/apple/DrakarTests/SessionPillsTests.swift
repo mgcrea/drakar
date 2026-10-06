@@ -84,6 +84,25 @@ struct SessionPillsTests {
     }
   }
 
+  /// Older models only while Settings offers them; the session's own pick always.
+  @Test func offersLegacyModelsOnlyWhenSettingsDoes() {
+    let models =
+      models + [
+        ModelOption(
+          value: "claude-opus-4-8", resolvedModel: "claude-opus-4-8", displayName: "Opus 4.8")
+      ]
+    scoped {
+      let session = ClaudeSession(folder: folder)
+      #expect(SessionPills.offeredModels(session, models: models)?.count == 3)
+      ClaudeChoice.defaults.set(false, forKey: PreferenceKey.showsLegacyModels)
+      #expect(
+        SessionPills.offeredModels(session, models: models)?.map(\.value) == ["default", "haiku"])
+      session.setModel("claude-opus-4-8")
+      #expect(SessionPills.offeredModels(session, models: models)?.count == 3)
+      #expect(SessionPills.offeredModels(session, models: nil) == nil)
+    }
+  }
+
   /// The model's own levels; none for a model without effort, or before the list is known.
   @Test func offersTheModelsEffortLevels() {
     scoped {
