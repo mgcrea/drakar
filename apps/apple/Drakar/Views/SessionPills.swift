@@ -53,7 +53,7 @@ struct SessionPills {
   private func modelMenu(_ models: [ModelOption]?) -> some View {
     let current = Self.option(for: session, in: models)
     return Menu {
-      if let models {
+      if let models = Self.offeredModels(session, models: models) {
         ForEach(models) { option in
           Button {
             session.setModel(option.value)
@@ -103,6 +103,12 @@ struct SessionPills {
     let probe = CapabilityStore.shared.capabilities(for: folder, account: account)
     if probe.isLoading || !probe.hasLoaded { return String(localized: "Loading models…") }
     return probe.skillsProblem ?? String(localized: "This Claude Code version didn't list models.")
+  }
+
+  /// The list as the menu offers it: the older models only while Settings shows them, the
+  /// session's own always.
+  static func offeredModels(_ session: ClaudeSession, models: [ModelOption]?) -> [ModelOption]? {
+    models.map { ClaudeChoice.offered($0, keeping: option(for: session, in: $0)?.value) }
   }
 
   /// Ask, Edit and Plan always; Auto for a model that says it takes it; Bypass while allowed.

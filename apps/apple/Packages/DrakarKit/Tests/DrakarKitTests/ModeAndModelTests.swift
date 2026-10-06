@@ -31,6 +31,30 @@ struct ModeAndModelTests {
     #expect(models.first { $0.value == "haiku" }?.effortLevels == [])
   }
 
+  /// The aliases and the models they stand for stay; pinned older ids go, but for one kept.
+  @Test func leavesOutLegacyModels() throws {
+    let models = try #require(ModelOption.list(fromInitialize: try initializeReply()))
+    let current = ["default", "opus", "fable", "sonnet", "haiku"]
+    #expect(ModelOption.withoutLegacy(models).map(\.value) == current)
+    #expect(
+      ModelOption.withoutLegacy(models, keeping: "claude-opus-4-8").map(\.value)
+        == current + ["claude-opus-4-8"])
+    // A pinned id an alias stands for today is not legacy.
+    let pinned = ModelOption(
+      value: "claude-opus-5-5", resolvedModel: "claude-opus-5-5", displayName: "Opus 5.5")
+    #expect(ModelOption.withoutLegacy(models + [pinned]).map(\.value) == current + [pinned.value])
+  }
+
+  /// A list of pinned ids only, as a cloud provider's may be, has nothing to tell apart.
+  @Test func keepsAListWithoutAliases() {
+    let models = [
+      ModelOption(value: "default", displayName: "Default"),
+      ModelOption(value: "claude-opus-4-8", displayName: "Opus 4.8"),
+      ModelOption(value: "claude-sonnet-4-6", displayName: "Sonnet 4.6"),
+    ]
+    #expect(ModelOption.withoutLegacy(models) == models)
+  }
+
   @Test func readsTheAppliedEffort() {
     let reply: JSONValue = .object([
       "applied": .object(["model": .string("claude-opus-5-5"), "effort": .string("high")])

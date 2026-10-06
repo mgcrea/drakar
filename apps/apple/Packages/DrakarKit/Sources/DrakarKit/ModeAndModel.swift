@@ -86,6 +86,25 @@ public struct ModelOption: Sendable, Hashable, Identifiable {
   public static func list(fromInitialize reply: JSONValue?) -> [ModelOption]? {
     reply?["models"]?.arrayValue?.compactMap(ModelOption.init)
   }
+
+  /// `models` without the older ones: a pinned id (`claude-opus-4-8`) that none of the list's
+  /// aliases stands for today. `kept` stays whatever it is. A list with no alias but
+  /// `default`, as a cloud provider's may be, is kept whole: nothing in it says which is
+  /// current.
+  public static func withoutLegacy(_ models: [ModelOption], keeping kept: String? = nil)
+    -> [ModelOption]
+  {
+    let aliases = models.filter { !$0.isPinned && $0.value != "default" }
+    guard !aliases.isEmpty else { return models }
+    let current = Set(aliases.compactMap(\.resolvedModel))
+    return models.filter { option in
+      !option.isPinned || option.value == kept
+        || option.resolvedModel.map(current.contains) == true
+    }
+  }
+
+  /// A full model id rather than an alias.
+  private var isPinned: Bool { value.hasPrefix("claude-") }
 }
 
 /// An effort level, as the CLI names it: `low`, `medium`, `high`, `xhigh`, `max`. The model
