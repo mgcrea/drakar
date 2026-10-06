@@ -85,6 +85,8 @@ struct TranscriptGoldenTests {
       try FileManager.default.createDirectory(
         at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
       try encoder.encode(golden).write(to: url)
+      // A recording run compares nothing, so it must never pass.
+      Issue.record("recorded \(scenario.rawValue), not compared")
       return
     }
     let recorded = try JSONDecoder().decode(Golden.self, from: Data(contentsOf: url))
