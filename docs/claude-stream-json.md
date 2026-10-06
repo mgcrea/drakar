@@ -301,6 +301,27 @@ Captured live on `haiku` (fixture `queued-prompts`).
   plus internal ones named `__…`, which the `/` menu leaves out. `system/commands_changed`
   carries a new list, same shape, when skills or plugins reload mid-session.
 
+## Attachments (verified 2026-10-06, 2.1.288; extension 2.1.289)
+
+A user line's `content` may carry images and documents ahead of the text, as the
+extension's composer sends them (its `+` menu, paste and drop). Checked live on `haiku`: it
+read a red PNG's colour and a text document's contents.
+
+```jsonc
+{"type":"image","source":{"type":"base64","media_type":"image/png","data":"iVBOR…"}}
+{"type":"document","source":{"type":"base64","media_type":"application/pdf","data":"JVBER…"},"title":"spec.pdf"}
+{"type":"document","source":{"type":"text","media_type":"text/plain","data":"…the file's text…"},"title":"notes.txt"}
+{"type":"text","text":"the prompt"}
+```
+
+Order: the editor's context blocks, then the attachments, then the text, which is left out
+when it is empty and nothing else is text. The transcript file keeps the blocks as sent,
+base64 and all, which is how history shows a prompt's images. Drakar scales an image to
+2000 px on its long edge (JPEG when the PNG passes 3.5 MB) and converts a format the API
+does not take (a clipboard screenshot is TIFF) to PNG before sending; text files over 1 MB
+and PDFs over 30 MB are refused. The CLI has image compression of its own ("Unable to
+resize image…"), not relied on.
+
 ## Observed details worth knowing
 
 - **Read-only commands never ask.** `echo amiral` ran with no `can_use_tool`; `touch`

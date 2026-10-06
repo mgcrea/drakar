@@ -185,10 +185,13 @@ public struct UserMessage: Sendable, Equatable {
   public var questionAnswers: [String: String]?
   /// An `Agent` call's report, from the same structured result.
   public var agentReport: AgentReport?
+  /// The images and documents sent with a prompt, as a transcript file keeps them.
+  public var attachments: [AttachmentPreview]
 
   init?(_ json: JSONValue) {
     guard let message = json["message"] else { return nil }
     content = ContentBlock.list(message["content"])
+    attachments = (message["content"]?.arrayValue ?? []).compactMap(AttachmentPreview.init)
     parentToolUseID = json["parent_tool_use_id"]?.stringValue
     let structured = json["tool_use_result"] ?? json["toolUseResult"]
     agentReport = AgentReport(structured)

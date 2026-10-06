@@ -38,12 +38,20 @@ struct ComposerView: View {
   var commands: [SkillEntry] = []
   /// A command picked in the menu, for the caller to write into the draft.
   var pickCommand: (SkillEntry) -> Void = { _ in }
+  /// The images and files going with the next prompt, shown as chips above the field.
+  var attachments: [Attachment] = []
+  /// Why the last things offered were not all attached.
+  var attachmentNote: String? = nil
+  var removeAttachment: (Attachment) -> Void = { _ in }
+  /// Files or an image to attach: pasted, or picked with the paperclip.
+  var attach: ([AttachmentSource]) -> Void = { _ in }
 
   @State private var leavesContextOut = false
   /// The menu's row under the keyboard.
   @State private var highlighted = 0
   /// The draft the menu was closed on with Esc; it opens again once the draft changes.
   @State private var menuClosedOn: String?
+  @State private var pasteMonitor = PasteMonitor()
   @FocusState private var isFocused: Bool
 
   var body: some View {
@@ -77,6 +85,22 @@ struct ComposerView: View {
             }
           }
         }
+        if !attachments.isEmpty {
+          ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+              ForEach(attachments) { attachment in
+                AttachmentChip(preview: attachment.preview) { removeAttachment(attachment) }
+              }
+            }
+          }
+          .accessibilityIdentifier("composer.attachments")
+        }
+        if let attachmentNote {
+          Label(attachmentNote, systemImage: "exclamationmark.triangle")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .accessibilityIdentifier("composer.attachmentNote")
+        }
         if !menu.isEmpty {
           CommandMenu(commands: menu, highlighted: highlighted, pick: choose)
         }
@@ -109,6 +133,10 @@ struct ComposerView: View {
     // A new selection is attached again, whatever happened to the last one.
     .onChange(of: context) { leavesContextOut = false }
     .onChange(of: text) { highlighted = 0 }
+    // ⌘V with files or a screenshot on the clipboard attaches them; text pastes as usual.
+    .onAppear { pasteMonitor.install(attach) }
+    .onDisappear { pasteMonitor.remove() }
+    .onChange(of: isFocused, initial: true) { _, focused in pasteMonitor.isActive = focused }
   }
 
   /// The commands the draft's `/name` matches, while the field has the keys.
@@ -134,6 +162,9 @@ struct ComposerView: View {
   private var hasText: Bool {
     !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
   }
+
+  /// Something to send: text, or attachments alone.
+  private var hasContent: Bool { hasText || !attachments.isEmpty }
 
   private static let radius: CGFloat = 12
 
@@ -179,6 +210,12 @@ struct ComposerView: View {
   private var toolbar: some View {
     HStack(spacing: 4) {
       if let pills { pills.model }
+      Button("Attach", systemImage: "paperclip") { attach(AttachmentIntake.choose()) }
+        .labelStyle(.iconOnly)
+        .buttonStyle(.borderless)
+        .foregroundStyle(.secondary)
+        .help("Attach images or files (or paste, or drop them on the session)")
+        .accessibilityIdentifier("composer.attach")
       Spacer(minLength: 8)
       if let pills { pills.mode }
       button
@@ -197,9 +234,9 @@ struct ComposerView: View {
           .accessibilityIdentifier("composer.stop")
       }
       // While a turn runs, only once something is typed: it is queued behind the turn.
-      if !isRunning || hasText {
+      if !isRunning || hasContent {
         Button("Send", systemImage: "arrow.up", action: submit)
-          .disabled(!canSend || !hasText)
+          .disabled(!canSend || !hasContent)
           .help(isRunning ? "Queue (Return)" : "Send (Return)")
           .accessibilityIdentifier("composer.send")
       }
@@ -212,7 +249,7 @@ struct ComposerView: View {
     // Return on the menu writes the command in rather than sending the half-typed name.
     let menu = menu
     if menu.indices.contains(highlighted) { return choose(menu[highlighted]) }
-    guard canSend, hasText else { return }
+    guard canSend, hasContent else { return }
     send(text, pinned + (leavesContextOut ? [] : live.map { [$0] } ?? []))
     text = ""
   }
@@ -369,5 +406,49 @@ private struct CommandMenu: View {
     .onTapGesture { pick(command) }
     .accessibilityAddTraits(isHighlighted ? .isSelected : [])
     .accessibilityIdentifier("composer.command.\(command.name)")
+  }
+}
+
+/// An image's thumbnail, or a document's name, with × to take it off.
+private struct AttachmentChip: View {
+  let preview: AttachmentPreview
+  let remove: () -> Void
+
+  var body: some View {
+    HStack(spacing: 4) {
+      AttachmentBadge(preview: preview, size: 28)
+      Button("Remove", systemImage: "xmark.circle.fill", action: remove)
+        .labelStyle(.iconOnly)
+        .buttonStyle(.plain)
+        .foregroundStyle(.tertiary)
+        .help("Don't send this")
+    }
+    .padding(3)
+    .background(.quaternary.opacity(0.6), in: RoundedRectangle(cornerRadius: 6))
+  }
+}
+
+/// While the composer has the keys, ⌘V with something to attach on the clipboard attaches
+/// it instead of reaching the text field, which would paste nothing or the files' names.
+@MainActor final class PasteMonitor {
+  var isActive = false
+  private var monitor: Any?
+
+  func install(_ attach: @escaping ([AttachmentSource]) -> Void) {
+    remove()
+    monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+      guard let self, self.isActive,
+        event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
+        event.charactersIgnoringModifiers == "v",
+        let sources = AttachmentIntake.sources(in: .general)
+      else { return event }
+      attach(sources)
+      return nil
+    }
+  }
+
+  func remove() {
+    if let monitor { NSEvent.removeMonitor(monitor) }
+    monitor = nil
   }
 }

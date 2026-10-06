@@ -8,7 +8,9 @@ public enum ClientMessage: Sendable, Equatable {
   /// A user turn. `context` blocks go ahead of the text, as the extension's chat sends
   /// the open file or the selection (`EditorSelection.promptContext`). A `uuid` makes the
   /// CLI report where the prompt has got to (`command_lifecycle`), and names it to cancel.
-  case prompt(String, context: [String] = [], uuid: String? = nil)
+  /// `attachments` (`Attachment.block`) go between the context and the text.
+  case prompt(
+    String, context: [String] = [], uuid: String? = nil, attachments: [JSONValue] = [])
   /// The answer to a `can_use_tool` request.
   case permission(requestID: String, PermissionDecision)
   /// Stop the turn in progress; with `cancelQueued`, drop the prompts waiting behind it too.
@@ -45,7 +47,7 @@ public enum ClientMessage: Sendable, Equatable {
     switch self {
     case .initialize(let id):
       Self.controlRequest(id, ["subtype": .string("initialize"), "hooks": .null])
-    case .prompt(let text, let context, let uuid):
+    case .prompt(let text, let context, let uuid, let attachments):
       .object(
         [
           "type": .string("user"),
@@ -53,11 +55,7 @@ public enum ClientMessage: Sendable, Equatable {
           "parent_tool_use_id": .null,
           "message": .object([
             "role": .string("user"),
-            "content": context.isEmpty
-              ? .string(text)
-              : .array(
-                (context + [text]).map { .object(["type": .string("text"), "text": .string($0)]) }
-              ),
+            "content": Self.content(text, context: context, attachments: attachments),
           ]),
         ].merging(uuid.map { ["uuid": .string($0)] } ?? [:]) { first, _ in first })
     case .permission(let id, let decision):
@@ -127,6 +125,20 @@ public enum ClientMessage: Sendable, Equatable {
 
   public func line() throws -> Data {
     try json.line()
+  }
+
+  /// A bare string for text alone; else blocks, the text last. A prompt of attachments alone
+  /// has no text block, as the extension sends it.
+  private static func content(_ text: String, context: [String], attachments: [JSONValue])
+    -> JSONValue
+  {
+    guard !context.isEmpty || !attachments.isEmpty else { return .string(text) }
+    let textBlocks = { (text: String) -> JSONValue in
+      .object(["type": .string("text"), "text": .string(text)])
+    }
+    var blocks = context.map(textBlocks) + attachments
+    if !text.isEmpty || !context.isEmpty { blocks.append(textBlocks(text)) }
+    return .array(blocks)
   }
 
   private static func controlRequest(_ id: String, _ request: [String: JSONValue]) -> JSONValue {

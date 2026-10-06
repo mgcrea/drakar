@@ -7,6 +7,8 @@ struct SessionView: View {
   let project: Project
   /// Read only to redraw the footer's account when a pick or the Settings default changes.
   @AppStorage(PreferenceKey.accountForFolder) private var picks = ""
+  /// A drag of files or images is over the pane.
+  @State private var isDropTargeted = false
   @AppStorage(PreferenceKey.newSessionAccount) private var settingsAccount = ""
 
   /// How far above the bottom bar the transcript starts fading out.
@@ -103,8 +105,10 @@ struct SessionView: View {
             unpin: { selection in workspace.pinned.removeAll { $0 == selection } },
             send: { text, context in
               project.takeOver(item)
-              session.send(text, context: context)
+              session.send(text, context: context, attachments: item.attachments)
               workspace.pinned = []
+              item.attachments = []
+              item.attachmentNote = nil
             },
             stop: session.interrupt,
             sessionFolder: session.folder, projectFolder: project.folder,
@@ -120,7 +124,11 @@ struct SessionView: View {
               item.draft = text
               item.prefill =
                 command.takesArguments ? SkillPrefill(text: text, hint: command.argumentHint) : nil
-            }
+            },
+            attachments: item.attachments, attachmentNote: item.attachmentNote,
+            removeAttachment: { attachment in item.attachments.removeAll { $0.id == attachment.id }
+            },
+            attach: item.attach
           )
           // The menu's list comes from a short probe, read once the first `/` is typed.
           .onChange(of: item.draft.hasPrefix("/")) { _, typed in
@@ -150,6 +158,31 @@ struct SessionView: View {
     }
     .environment(\.sessionFolder, session.folder)
     .environment(\.openInEditor, OpenInEditorAction(workspace: workspace))
+    // Files and images dropped anywhere on the session go with the next prompt: from the
+    // Finder, the screenshot thumbnail, Photos.
+    .onDrop(of: AttachmentIntake.dropTypes, isTargeted: $isDropTargeted) { providers in
+      guard !session.isReadOnly else { return false }
+      Task { item.attach(await AttachmentIntake.sources(from: providers)) }
+      return true
+    }
+    .overlay {
+      if isDropTargeted && !session.isReadOnly {
+        Label("Drop to attach", systemImage: "paperclip")
+          .font(.title3.weight(.medium))
+          .padding(.horizontal, 18)
+          .padding(.vertical, 12)
+          .glassEffect(.regular, in: .capsule)
+          .frame(maxWidth: .infinity, maxHeight: .infinity)
+          .background(.tint.opacity(0.06))
+          .overlay(
+            RoundedRectangle(cornerRadius: 10)
+              .strokeBorder(.tint, style: StrokeStyle(lineWidth: 2, dash: [6]))
+              .padding(6)
+          )
+          .allowsHitTesting(false)
+          .accessibilityIdentifier("session.dropTarget")
+      }
+    }
   }
 
   private var elsewhereSummary: SessionSummary? {

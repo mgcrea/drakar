@@ -102,7 +102,8 @@ final class ClaudeSession {
   @ObservationIgnored private var historyLoad: Task<Void, Never>?
   /// True from the start for a session with a transcript, until its history is read.
   @ObservationIgnored private var isLoadingHistory = false
-  @ObservationIgnored private var promptsDuringLoad: [(String, String?)] = []
+  @ObservationIgnored private var promptsDuringLoad:
+    [(text: String, context: String?, attachments: [AttachmentPreview])] = []
   /// The history could not be read: the reason stays in `phase` and nothing is sent.
   @ObservationIgnored private var historyFailed = false
   @ObservationIgnored private var follower: TranscriptFollower?
@@ -257,7 +258,10 @@ final class ClaudeSession {
     self.follower = follower
     hasLoadedHistory = true
     // Prompts typed while the history was being read go after it.
-    for (text, context) in promptsDuringLoad { self.transcript.addPrompt(text, context: context) }
+    for prompt in promptsDuringLoad {
+      self.transcript.addPrompt(
+        prompt.text, context: prompt.context, attachments: prompt.attachments)
+    }
     promptsDuringLoad = []
   }
 
@@ -269,24 +273,30 @@ final class ClaudeSession {
   }
 
   /// `context` is the editor's open file or selections, sent ahead of the text as the
-  /// extension's chat sends it. Starts the process when there is none.
-  func send(_ prompt: String, context: [EditorSelection] = []) {
+  /// extension's chat sends it, and `attachments` after it. Starts the process when there is
+  /// none. A prompt of attachments alone needs no text.
+  func send(
+    _ prompt: String, context: [EditorSelection] = [], attachments: [Attachment] = []
+  ) {
     let text = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard canSend || canQueue, !text.isEmpty else { return }
+    guard canSend || canQueue, !text.isEmpty || !attachments.isEmpty else { return }
     let label = context.isEmpty ? nil : context.map(\.label).joined(separator: ", ")
+    let previews = attachments.map(\.preview)
     // Named, so that the CLI's lifecycle lines say when it is taken, and it can be cancelled.
     let uuid = UUID().uuidString.lowercased()
     let message = ClientMessage.prompt(
-      text, context: context.map(\.promptContext), uuid: uuid)
+      text, context: context.map(\.promptContext), uuid: uuid,
+      attachments: attachments.map(\.block))
     if canQueue {
-      transcript.queue(QueuedPrompt(uuid: uuid, text: text, context: label))
+      transcript.queue(
+        QueuedPrompt(uuid: uuid, text: text, context: label, attachments: previews))
       onPromptSent?()
       write(message)
       return
     }
-    transcript.addPrompt(text, context: label)
+    transcript.addPrompt(text, context: label, attachments: previews)
     onPromptSent?()
-    if isLoadingHistory { promptsDuringLoad.append((text, label)) }
+    if isLoadingHistory { promptsDuringLoad.append((text, label, previews)) }
     if process == nil {
       pendingPrompt = message
       // Counted now, not when the task runs: a `stop()` before then cancels it too.

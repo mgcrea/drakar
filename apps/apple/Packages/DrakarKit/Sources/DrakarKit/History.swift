@@ -112,10 +112,11 @@ extension Transcript {
         case .hidden: break
         }
       }
-      if !prompt.isEmpty {
+      if !prompt.isEmpty || !user.attachments.isEmpty {
         addPrompt(
           prompt.joined(separator: "\n\n"),
-          context: context.isEmpty ? nil : context.joined(separator: ", "), running: false)
+          context: context.isEmpty ? nil : context.joined(separator: ", "),
+          attachments: user.attachments, running: false)
       }
       // Tool results go through the live path, which pairs them with their calls.
       let results = user.content.filter {

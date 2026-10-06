@@ -23,10 +23,25 @@ final class ProjectSession: Identifiable {
   let session: ClaudeSession
   /// The composer's text, kept across switches.
   var draft = ""
+  /// The images and files going with the next prompt, kept as the draft is.
+  var attachments: [Attachment] = []
+  /// Why the last things offered were not all attached, until the next are.
+  var attachmentNote: String?
   /// The skill the inspector put in the draft, while it waits for its arguments.
   var prefill: SkillPrefill?
   /// Bumped to ask the composer for the focus.
   var focusRequest = 0
+
+  /// Reads `sources` into attachments, off the main thread, and says what could not be.
+  func attach(_ sources: [AttachmentSource]) {
+    guard !sources.isEmpty else { return }
+    Task {
+      let (attachments, notes) = await AttachmentIntake.load(sources)
+      self.attachments += attachments
+      attachmentNote = notes.isEmpty ? nil : notes.joined(separator: "\n")
+      focusRequest += 1
+    }
+  }
 
   /// What the prefilled skill takes, while the draft still starts with its name.
   var composerHint: String? {

@@ -273,11 +273,14 @@ struct EntryView: View, Equatable {
               .font(.caption)
               .foregroundStyle(.secondary)
           }
-          Text(text)
-            .textSelection(.enabled)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(.quaternary.opacity(0.6), in: RoundedRectangle(cornerRadius: 8))
+          if !entry.attachments.isEmpty { AttachmentRow(previews: entry.attachments) }
+          if !text.isEmpty {
+            Text(text)
+              .textSelection(.enabled)
+              .padding(.horizontal, 12)
+              .padding(.vertical, 8)
+              .background(.quaternary.opacity(0.6), in: RoundedRectangle(cornerRadius: 8))
+          }
         }
       case .text(let text):
         MarkdownView(text: text)
@@ -545,6 +548,7 @@ private struct QueuedPromptView: View {
       }
       .font(.caption)
       .foregroundStyle(.secondary)
+      if !prompt.attachments.isEmpty { AttachmentRow(previews: prompt.attachments, size: 40) }
       HStack(alignment: .top, spacing: 8) {
         Text(prompt.text)
           .textSelection(.enabled)

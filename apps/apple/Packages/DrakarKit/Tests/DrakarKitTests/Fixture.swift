@@ -58,6 +58,9 @@ enum Fixture: String {
   /// `cancel_async_message`: the `command_lifecycle` lines, the first turn's result, then
   /// banana's own turn. Trimmed as the others.
   case queuedPrompts = "queued-prompts"
+  /// The transcript line Claude Code 2.1.288 wrote for a prompt sent with a 64×64 red PNG
+  /// and a text document `notes.txt` (2026-10-06): blocks kept as sent, keys trimmed.
+  case historyWithAttachments = "history-with-attachments"
 
   var lines: [Data] {
     get throws {

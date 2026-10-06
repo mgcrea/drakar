@@ -19,6 +19,8 @@ public struct Transcript: Sendable, Equatable {
     public var parentToolUseID: String?
     /// On a prompt, what the editor attached to it: `notes.md:3–5`.
     public var context: String?
+    /// On a prompt, the images and files sent with it.
+    public var attachments: [AttachmentPreview] = []
     /// On thinking streaming live, when its block started; nil once it landed or its turn ended.
     public var thinkingSince: Date?
     /// On thinking streamed live, how long it took from its block start to the whole block
@@ -223,7 +225,10 @@ public struct Transcript: Sendable, Equatable {
   /// `running: false` for a prompt replayed from history, whose turn ended long ago.
   /// `context` labels what the editor attached (`EditorSelection.label`, several
   /// separated by commas).
-  public mutating func addPrompt(_ text: String, context: String? = nil, running: Bool = true) {
+  public mutating func addPrompt(
+    _ text: String, context: String? = nil, attachments: [AttachmentPreview] = [],
+    running: Bool = true
+  ) {
     revision += 1
     if let index = unansweredQuestionIndex, case .tool(var call) = entries[index].kind,
       let answers = UserQuestion.earlierAnswers(
@@ -234,7 +239,9 @@ public struct Transcript: Sendable, Equatable {
     }
     promptCount += 1
     let id = "prompt#\(promptCount)"
-    upsert(Entry(id: id, kind: .prompt(text), context: context))
+    var entry = Entry(id: id, kind: .prompt(text), context: context)
+    entry.attachments = attachments
+    upsert(entry)
     lastPromptID = id
     isRunning = running
     turnEnd = nil
@@ -371,7 +378,7 @@ public struct Transcript: Sendable, Equatable {
       switch state {
       case "started":
         let prompt = queuedPrompts.remove(at: index)
-        addPrompt(prompt.text, context: prompt.context)
+        addPrompt(prompt.text, context: prompt.context, attachments: prompt.attachments)
       case "cancelled":
         queuedPrompts.remove(at: index)
       case "discarded", "refused":
@@ -559,12 +566,16 @@ public struct QueuedPrompt: Sendable, Equatable, Identifiable {
   public var text: String
   /// What the editor attached, labelled as on a prompt.
   public var context: String?
+  public var attachments: [AttachmentPreview]
 
   public var id: String { uuid }
 
-  public init(uuid: String, text: String, context: String? = nil) {
+  public init(
+    uuid: String, text: String, context: String? = nil, attachments: [AttachmentPreview] = []
+  ) {
     self.uuid = uuid
     self.text = text
     self.context = context
+    self.attachments = attachments
   }
 }
