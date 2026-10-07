@@ -4,6 +4,7 @@ A native macOS app to drive Claude Code: the conversation, the tool calls, the p
 prompts and the diffs, in a window as light as Zed. It runs the `claude` you installed over
 its stream-json protocol, the same way the VS Code extension does. The product and technical
 plan is [PLAN.md](PLAN.md); the protocol is [docs/claude-stream-json.md](docs/claude-stream-json.md).
+Codex's `app-server`, the second agent being added, is mapped in [docs/codex-app-server.md](docs/codex-app-server.md).
 
 Distributed directly (Developer ID, Sparkle), never through the Mac App Store: it spawns
 processes that work on your files, which App Sandbox forbids.

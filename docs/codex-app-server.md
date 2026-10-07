@@ -670,24 +670,16 @@ usage and limits are side channels, not part of a turn's result.
 
 ## Raw captures
 
-Written by small Python drivers (`codexrpc.py` and one script per probe), each line logged
-as sent or received. Kept for now in the session scratchpad, not in the repo; trim into
-`DrakarKit` fixtures when the Codex backend gets tests, replacing account ids, emails, the
-installation id and local paths.
-
-| Capture | What it holds |
-| --- | --- |
-| `probe.log` | one read-only turn: `cat`, commentary and final answer, usage, limits, the 222 MCP lines |
-| `a-handshake.log` | errors before and after `initialize`, string ids, `jsonrpc` accepted, malformed line, opt-out, `model/list`, `account/*`, `skills/list`, `thread/list` |
-| `b-approvals.log`, `b-approvals2.log`, `b-approvals3.log`, `b-approvals4.log` | file and command approvals: accept/decline, decline/accept, accept/cancel (`untrusted`); nothing asked (`on-request`) |
-| `c-interrupt.log` | interrupt during `sleep 20` and the late completion; steer; `turn/start` while busy |
-| `d-resume.log`, `d2-fork.log`, `d3-proc-a.log`, `d3-proc-b.log` | resume and history, name, unsubscribe, fork, the second writer refused |
-| `e-reasoning.log` | a reasoning summary streamed |
-| `f-plan.log`, `f-plan2.log`, `f-plan3.log` | the plan tool missing |
-| `g-planmode.log` | experimental plan mode: a question, then a `plan` item |
-| `h-images.log` | `localImage` and data-URL `image` |
-| `i-edit.log` | an update diff, then `thread/compact/start` |
-| `j-home.log` | an empty `CODEX_HOME` |
-
-Two probe threads were left in the user's history: `01a111c7-2fdc-…` (approvals, named
-"drakar probe b") and `01a111cd-713e-…` (the persistent plan try).
+The claims marked verified come from eleven probes run on 2026-10-06 against codex-cli
+0.160.1, each a small Python driver speaking JSON-RPC to `codex app-server` over stdio: one
+read-only turn; the handshake (errors before and after `initialize`, string ids, opt-out);
+file and command approvals (accept, decline, cancel, under `untrusted` and `on-request`);
+interrupt during `sleep 20` and the late completion, steer; resume, fork and a second writer;
+reasoning; the plan tool (missing); experimental plan mode; images; an update diff and
+`thread/compact/start`; an empty `CODEX_HOME`. The logs were not kept: they hold the account's
+ids and email. One scrubbed excerpt is in the repo,
+`apps/apple/Packages/DrakarKit/Tests/DrakarKitTests/Fixtures/codex-turn.jsonl` (reasoning, a
+file change after an approval, a declined command, usage, the end), which `CodexTranslator`'s
+tests fold. To capture more, drive `codex app-server` the same way in a scratch folder, with
+`ephemeral: true` threads so nothing lands in the account's history, and scrub ids, emails,
+the installation id and paths before anything reaches a fixture.
