@@ -2,10 +2,11 @@ import DrakarKit
 import Foundation
 import Testing
 
-/// Every capture, folded by the transcript as it is on 2026-10-06, before the agent went
-/// behind a protocol: what each refactoring commit must reproduce exactly. Record once with
-/// `DRAKAR_RECORD_GOLDENS=1 swift test --filter TranscriptGoldenTests`; never again in this
-/// branch (the plan's Global Constraints).
+/// Every capture, folded by the transcript as it was recorded on 2026-10-06, before the agent
+/// went behind a protocol: a change that only moves code must reproduce them exactly, so a
+/// failure here is a regression, not a golden to refresh. Re-record (`DRAKAR_RECORD_GOLDENS=1
+/// swift test --filter TranscriptGoldenTests`) only for a transcript change meant to be seen,
+/// and only the scenarios it explains, reading the JSON diff before committing it.
 @Suite("The transcript folds every capture as it did")
 struct TranscriptGoldenTests {
   static let start = Date(timeIntervalSince1970: 1_800_000_000)
