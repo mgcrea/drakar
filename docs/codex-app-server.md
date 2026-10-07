@@ -1,6 +1,6 @@
 # Driving Codex over app-server
 
-Findings from probes run on 2026-10-06 against `codex-cli 0.160.1` (Homebrew cask,
+Findings from probes run on 2026-10-06 and 2026-10-07 against `codex-cli 0.160.1` (Homebrew cask,
 `/opt/homebrew/bin/codex`), signed in with a ChatGPT Plus account, the user's
 `config.toml` choosing `gpt-6-astra` at `low` effort. The Codex counterpart of
 [claude-stream-json.md](claude-stream-json.md): written so another agent can pick the
@@ -8,7 +8,7 @@ protocol up cold, and so future fixtures have a record of where they came from.
 
 Every claim carries one of two marks:
 
-- **verified**: seen on the wire on 2026-10-06 with 0.160.1, by the probes listed under
+- **verified**: seen on the wire on 2026-10-06 (or the date given) with 0.160.1, by the probes listed under
   "Raw captures";
 - **types**: read from the bindings the same binary generates
   (`codex app-server generate-ts --out <dir>`; `--experimental` adds the experimental
@@ -47,6 +47,10 @@ codex app-server [-c key=value]… [--enable <feature>] [--disable <feature>]
 
 - stdio is the default transport (`--listen stdio://`); `unix://` and `ws://IP:PORT` exist
   too. Drakar wants stdio.
+- `sandboxPolicy` on `turn/start` takes the full object: `{type: "workspaceWrite",
+  writableRoots: [], networkAccess: false, excludeTmpdirEnvVar: false, excludeSlashTmp:
+  false}` was accepted (verified 2026-10-07); `{type: "dangerFullAccess"}` and `{type:
+  "readOnly", networkAccess}` are the other forms (types).
 - `-c` overrides `config.toml` for the process, the value parsed as TOML
   (`-c model="gpt-6-sol"`). `thread/start` also takes a `config` map per thread (types).
 - **`CODEX_HOME`** selects the account. With it pointing at an empty directory,
@@ -194,6 +198,11 @@ The response, then a `thread/started` notification with the same `thread`:
 - Cursors are opaque strings (JSON inside; do not parse).
 - `thread/read {threadId}` gives the metadata; `includeTurns: true` is deprecated like the
   resume hydration.
+- **Each entry is `{turnId, item, startedAtMs, completedAtMs}`**, both times numbers; a
+  short thread fits one page (`nextCursor: null`). A `userMessage` keeps its `clientId`
+  (verified 2026-10-07; `Fixtures/codex-items-page.json`).
+- `thread/delete {threadId}` → `{}` removes a thread (verified 2026-10-07: probes clean up
+  after themselves with it).
 - **Declined commands are not in history.** The live stream showed the declined `touch` as
   a `commandExecution` with `status: "declined"`; neither the resume response nor
   `thread/items/list` has it, though the rollout keeps the tool call and its output.
@@ -268,6 +277,13 @@ data URL included.
   taken at the next boundary (here, once the running `sleep 6` finished), appears as a
   second `userMessage` item **inside the same turn**, and the answer covered both prompts
   ("ALPHA BETA"). Idle, it fails `no active turn to steer`.
+- **`clientUserMessageId` comes back** as the `userMessage` item's `clientId`, for
+  `turn/start` and `turn/steer` alike (verified 2026-10-07): it is how a client knows which
+  of its prompts a turn took.
+- **A steer is never lost to a turn ending**, only to an interrupt (verified 2026-10-07): sent
+  after the final answer had already streamed, it still joined the turn, which made another
+  model request and answered both ("ONE TWO"). Sent before a `turn/interrupt`, it was dropped
+  with no `userMessage`, no new turn and no notice.
 - **`turn/start` while a turn runs is a steer.** Its response carried the *running* turn's
   id, its prompt joined that turn, and the model answered only the newer prompt (asked for
   GAMMA, then DELTA: it said "DELTA"). Compare the returned turn id with the one running
@@ -334,8 +350,10 @@ whole command, the whole patch), `item/completed` the final state. Every delta i
   `unifiedExecInteraction`.
 - **`fileChange` diffs are not uniform.** `path` is absolute. For `kind: {type: "add"}` the
   `diff` is the new file's content (`"hi\n"`); for `{type: "update", move_path: null}` it is
-  hunks without file headers (`"@@ -1,3 +1,3 @@\n one\n-two\n+TWO\n three\n"`). `delete` was
-  not seen. Separately, **`turn/diff/updated {diff}`** carries the turn's whole change as a
+  hunks without file headers (`"@@ -1,3 +1,3 @@\n one\n-two\n+TWO\n three\n"`). For
+  `{type: "delete"}` it is the removed file's content (`"bye\n"`); for a pure rename,
+  `{type: "update", move_path: "<new absolute path>"}`, it is `"\n\nMoved to: <new path>"`
+  and no hunks (verified 2026-10-07, one `apply_patch` doing all three). Separately, **`turn/diff/updated {diff}`** carries the turn's whole change as a
   real `git diff` (headers, index lines), re-sent after each model request.
 - `item/fileChange/outputDelta` is declared but "no longer emitted" (types).
 
@@ -390,6 +408,9 @@ Decisions: commands take `accept`, `acceptForSession`,
 | `decline` (command) | item `declined`; the model was told `exec_command failed: CreateProcess { message: "Rejected(\"rejected by user\")" }` (from the rollout) and the turn went on: "the shell command was rejected" |
 | `cancel` (command) | item `declined`, then at once `turn/completed` with `status: "interrupted"`, `error: null` |
 
+- **A file-change request carries no `availableDecisions`**; a command request's listed
+  `accept`, `acceptWithExecpolicyAmendment` and `cancel` in every probe, never
+  `acceptForSession` (rechecked 2026-10-07).
 - **`availableDecisions` arrived without `experimentalApi`**, though the types put it in the
   experimental half. It listed neither `decline` nor `acceptForSession`, and `decline` was
   honoured anyway. Offer the listed ones plus `decline`.
@@ -526,7 +547,8 @@ a model call**, adding `ordinaryUsageAllowed`, `rateLimitsByLimitId`,
 `rateLimitResetCredits {availableCount, credits: [{title, expiresAt, …}]}` and `accountId`.
 That closes the gap Armada's notes describe ("Codex states its limits only as a side effect
 of a turn"): a process can ask. `account/read` gives `{account: {type, email, planType},
-requiresOpenaiAuth}`.
+requiresOpenaiAuth, workspaceRouting}`. **`requiresOpenaiAuth` is `true` when signed in
+too**: not signed in is `account: null` (verified 2026-10-07 with an empty `CODEX_HOME`).
 
 ## Compaction (verified)
 
@@ -676,10 +698,15 @@ read-only turn; the handshake (errors before and after `initialize`, string ids,
 file and command approvals (accept, decline, cancel, under `untrusted` and `on-request`);
 interrupt during `sleep 20` and the late completion, steer; resume, fork and a second writer;
 reasoning; the plan tool (missing); experimental plan mode; images; an update diff and
-`thread/compact/start`; an empty `CODEX_HOME`. The logs were not kept: they hold the account's
-ids and email. One scrubbed excerpt is in the repo,
-`apps/apple/Packages/DrakarKit/Tests/DrakarKitTests/Fixtures/codex-turn.jsonl` (reasoning, a
-file change after an approval, a declined command, usage, the end), which `CodexTranslator`'s
-tests fold. To capture more, drive `codex app-server` the same way in a scratch folder, with
+`thread/compact/start`; an empty `CODEX_HOME`. Three more on 2026-10-07: an update, a delete and a
+rename in one patch; steers (mid-turn, after the answer, before an interrupt); a persistent
+thread's `thread/items/list` from a fresh process, then `thread/delete`; `account/read` with
+an empty `CODEX_HOME`. The logs were not kept: they hold the account's
+ids and email. Scrubbed, hand-trimmed excerpts are in
+`apps/apple/Packages/DrakarKit/Tests/DrakarKitTests/Fixtures/`: `codex-turn.jsonl`
+(reasoning, a file change after an approval, a declined command, usage, the end),
+`codex-file-changes.jsonl` (update, delete, rename), `codex-steer.jsonl` (a steered prompt's
+`clientId`) and `codex-items-page.json` (one history page), which `CodexTranslator`'s tests
+fold. To capture more, drive `codex app-server` the same way in a scratch folder, with
 `ephemeral: true` threads so nothing lands in the account's history, and scrub ids, emails,
 the installation id and paths before anything reaches a fixture.
