@@ -1,0 +1,6 @@
+{"data":[
+{"turnId":"turn-1","startedAtMs":1791400000000,"completedAtMs":1791400000000,"item":{"type":"userMessage","id":"user-1","clientId":"prompt-1","content":[{"type":"text","text":"Run `cat a.txt`, then create e.txt containing hi with apply_patch, then reply OK.","text_elements":[]}]}},
+{"turnId":"turn-1","startedAtMs":1791400001000,"completedAtMs":1791400002000,"item":{"type":"agentMessage","id":"msg-1","text":"I’ll read `a.txt`, then create `e.txt` containing `hi`.\n","phase":"commentary","memoryCitation":null,"delivery":null,"questions":null}},
+{"turnId":"turn-1","startedAtMs":1791400003000,"completedAtMs":1791400004000,"item":{"type":"fileChange","id":"patch-1","changes":[{"path":"/Users/me/project/e.txt","kind":{"type":"add"},"diff":"hi\n"}],"status":"declined"}},
+{"turnId":"turn-1","startedAtMs":1791400005000,"completedAtMs":1791400006000,"item":{"type":"agentMessage","id":"msg-2","text":"Both actions were rejected; I couldn’t read `a.txt` or create `e.txt`.","phase":"final_answer","memoryCitation":null,"delivery":null,"questions":null}}
+],"nextCursor":null,"backwardsCursor":null}
