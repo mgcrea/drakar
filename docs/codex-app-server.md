@@ -264,13 +264,44 @@ is experimental (types).
 | `text` | `text`, `text_elements: [{byteRange, placeholder}]` | verified, sent with `[]` |
 | `localImage` | `path`, `detail?` | verified: a red 32 px PNG was read as red |
 | `image` | `url` (or `fileId`), `detail?` | verified with a `data:image/png;base64,…` URL |
-| `skill` | `name`, `path` | from `skills/list` |
+| `skill` | `name`, `path` | verified: runs the skill (see Skills) |
 | `mention` | `name`, `path` | a file reference |
 | `audio`, `localAudio` | `url` / `path` | |
 
 There is **no document type**: a PDF or text file goes as a path (`mention`, or named in the
 text) for the agent to read, or inlined as text. The `userMessage` item echoes the input,
 data URL included.
+
+### Skills (verified 2026-10-08, 0.160.1)
+
+```jsonc
+>> {"id":5,"method":"skills/list","params":{"cwds":["/Users/me/project"],"forceReload":true}}
+<< {"id":5,"result":{"data":[{"cwd":"/Users/me/project","errors":[],"skills":[
+     {"name":"deploy","description":"…","shortDescription":null,
+      "interface":{"displayName":"Deploy","shortDescription":"Deploy to staging","defaultPrompt":"…"},
+      "path":"/Users/me/project/.agents/skills/deploy/SKILL.md",
+      "scope":"repo","enabled":true,"pluginId":null}, …]}]}}
+```
+
+- No model request. `forceReload` (optional) has Codex read the files again. The answer is
+  large: about 140 KB for 197 skills on one Mac, every description in full.
+- A skill: `name`, `description`, `shortDescription?` (legacy), `interface?`
+  (`displayName?`, `shortDescription?`, `defaultPrompt?`, …), `path` (its SKILL.md),
+  `scope` (`repo`, `user`, `system`, `admin`), `enabled`, `pluginId` (null outside a
+  plugin). A plugin's skills are named `plugin:name` (`data:analyze`).
+- A repo's skills come from both `<folder>/.agents/skills/` and `<folder>/.codex/skills/`.
+  One name can be listed twice, from two scopes (a user `skill-creator` and the system's).
+- A prompt runs a skill with a `skill` input item beside its text:
+  `[{"type":"text","text":"/probe-secret beta","text_elements":[]}, {"type":"skill",
+  "name":"probe-secret","path":"…/SKILL.md"}]` ran the skill's body, not only its
+  description, and `thread/items/list` returns the `userMessage` content exactly as sent.
+  The text alone (`/name args` or `$name args`) also worked; the item is the explicit form.
+- `skills/changed` (no params; types) is a notification: re-run `skills/list` when fresh metadata
+  is wanted.
+
+Drakar lists the enabled skills, one per name (repo over user over admin over system), in a
+Codex session's `/` menu and the inspector, and sends a prompt starting `/name` with its
+`skill` item (`CodexSkillList`, `CodexInput`).
 
 ### Prompts sent mid-turn
 
@@ -685,7 +716,7 @@ What each stream-json concept Drakar uses becomes. **V**: verified 2026-10-06 wi
 | Editor context text blocks | `text` input, or `mention {name, path}` | T | |
 | Prompt sent mid-turn (held to the next tool boundary) | `turn/steer {expectedTurnId}`; `turn/start` while busy does the same | V | Joins the running turn, a second `userMessage` item. |
 | `command_lifecycle`, `cancel_async_message` | none; `thread/queue/*`, `thread/queue/changed` | E | |
-| Slash commands (`commands`, `commands_changed`) | none server-side; `skills/list` and `skill` input; `skills/changed` | V (`skills/list`) / T | Built-ins become methods: `/compact` `thread/compact/start`, `/review` `review/start`, `/model` `model/list`, `/new` `thread/start`. |
+| Slash commands (`commands`, `commands_changed`) | none server-side; `skills/list` and `skill` input; `skills/changed` | V (`skills/list`, `skill`, 2026-10-08) / T | A `skill` item beside the text runs the skill (Skills). Built-ins become methods: `/compact` `thread/compact/start`, `/review` `review/start`, `/model` `model/list`, `/new` `thread/start`. |
 | `mcp_status` | `mcpServerStatus/list`, `mcpServer/startupStatus/updated` | T / V | |
 | `hook_callback` | `hook/started`, `hook/completed` (observe only) | T | |
 | `--permission-prompt-tool stdio` | always on | V | Approvals reach the client whenever the policy asks and `approvalsReviewer` is `user`. |
