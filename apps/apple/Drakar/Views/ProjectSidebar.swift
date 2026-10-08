@@ -197,7 +197,8 @@ struct SessionListView: View {
     }
     Button("Rename…") { RenameSessionPrompt.run(for: item) }
       .disabled(!project.canRename(item))
-    if (item.session.resuming ?? item.session.savedTarget) != nil {
+    // Hidden for an agent that cannot fork (Codex), disabled while a turn runs.
+    if item.session.features.forks, (item.session.resuming ?? item.session.savedTarget) != nil {
       Button("Fork a Copy") { project.fork(item) }
         .disabled(!project.canFork(item))
     }
