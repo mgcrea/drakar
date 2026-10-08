@@ -111,22 +111,26 @@ struct CodexSessionsTests {
       })
   }
 
-  /// A restored Codex session is titled with its thread's name, as Codex stores it.
-  @Test func aRestoredSessionTakesItsThreadsName() async throws {
+  /// A stand-in `codex app-server` that answers `thread/read` with `threadRead` (a result, or
+  /// an error when it has one) and `thread/items/list` with `items`, then reads a restored
+  /// session's history from it.
+  private func restored(threadRead: String, items: String) async throws -> AgentSession {
     let script = folder.appending(path: "drakar-codex-\(UUID().uuidString)")
     defer { try? FileManager.default.removeItem(at: script) }
+    func reply(_ body: String) -> String { #"echo '{"id":'"$id"',\#(body)}'"# }
+    let read = threadRead.hasPrefix(#""error""#) ? threadRead : #""result":\#(threadRead)"#
     try Data(
-      #"""
+      """
       #!/bin/sh
       while read -r line; do
-        id=$(printf '%s' "$line" | /usr/bin/sed -n 's/.*"id":\([0-9.]*\).*/\1/p')
+        id=$(printf '%s' "$line" | /usr/bin/sed -n 's/.*"id":\\([0-9.]*\\).*/\\1/p')
         case "$line" in
-          *'"initialize"'*) echo "{\"id\":$id,\"result\":{}}" ;;
-          *'"thread/read"'*) echo "{\"id\":$id,\"result\":{\"thread\":{\"id\":\"t-1\",\"name\":\"Pineapple\"}}}" ;;
-          *'"thread/items/list"'*) echo "{\"id\":$id,\"result\":{\"data\":[],\"nextCursor\":null}}" ;;
+          *'"initialize"'*) \(reply(#""result":{}"#)) ;;
+          *'"thread/read"'*) \(reply(read)) ;;
+          *'"thread/items/list"'*) \(reply(#""result":\#(items)"#)) ;;
         esac
       done
-      """#.utf8
+      """.utf8
     ).write(to: script)
     try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script.path)
     let target = ResumeTarget(
@@ -135,7 +139,30 @@ struct CodexSessionsTests {
     let session = AgentSession(folder: folder, resuming: target)
     session.executableOverride = script
     await session.loadHistory()
+    return session
+  }
+
+  private let oneTurn =
+    #"{"data":[{"turnId":"turn-1","item":{"type":"userMessage","id":"u1","content":[{"type":"text","text":"hello"}]}}],"nextCursor":null}"#
+
+  /// A restored Codex session is titled with its thread's name, as Codex stores it.
+  @Test func aRestoredSessionTakesItsThreadsName() async throws {
+    let session = try await restored(
+      threadRead: #"{"thread":{"id":"t-1","name":"Pineapple"}}"#, items: oneTurn)
     #expect(session.transcript.customTitle == "Pineapple")
+    #expect(session.transcript.entries.contains { $0.kind == .prompt("hello") })
+  }
+
+  /// The name is extra: a `thread/read` that fails still leaves the history, untitled.
+  @Test func aHistoryLoadsWhenItsNameCannotBeRead() async throws {
+    let session = try await restored(
+      threadRead: #""error":{"code":-32600,"message":"no such thread"}"#, items: oneTurn)
+    #expect(session.transcript.customTitle == nil)
+    #expect(session.transcript.entries.contains { $0.kind == .prompt("hello") })
+    #expect(
+      !session.transcript.entries.contains {
+        if case .notice(let text) = $0.kind { text.contains("could not be read") } else { false }
+      })
   }
 
   /// An `.unusable` signal ends the session as an exit does: the process gone, the queue
