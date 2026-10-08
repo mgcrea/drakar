@@ -137,6 +137,50 @@ struct SkillRunTests {
     #expect(project.sessions.count == 5)
   }
 
+  /// A Codex session in a worktree shows that worktree's skills: a new session runs one
+  /// there, where its prompt can name it. A Claude session's new session stays in the
+  /// project's folder.
+  @Test func aNewCodexSessionStartsInTheShownSessionsFolder() throws {
+    let worktree = folder.appending(path: ".claude/worktrees/x", directoryHint: .isDirectory)
+    let project = Project(folder: folder)
+    let shown = project.newSession(agent: .codex, folder: worktree)
+    #expect(shown.session.folder == worktree)
+    #expect(
+      project.codexSkills(for: shown.session) === CodexSkillStore.shared.skills(for: worktree))
+    project.run(audit, in: .newSession)
+    #expect(project.selected?.session.agent == .codex)
+    #expect(project.selected?.session.folder == worktree)
+    project.newSession(agent: .claude, folder: worktree)
+    project.run(audit, in: .newSession)
+    #expect(project.selected?.session.agent == .claude)
+    #expect(project.selected?.session.folder == folder)
+  }
+
+  /// A Codex skill clears no dot: the dots are Claude Code's, even under the same name.
+  @Test func aCodexSkillLeavesClaudesMarks() async throws {
+    let project = Project(folder: folder)
+    project.executableOverride = try standIn()
+    defer { project.stopAll() }
+    let entry = project.capabilities
+    entry.probe = { _, _ in
+      ProbeOutcome(capabilities: ProjectCapabilities(skills: [], mcpServers: []))
+    }
+    entry.refresh()
+    try await settle(entry)
+    entry.probe = { _, _ in
+      ProbeOutcome(
+        capabilities: ProjectCapabilities(
+          skills: [SkillEntry(name: "deploy")], mcpServers: []))
+    }
+    entry.refresh()
+    try await settle(entry)
+    #expect(project.capabilityMarks.skills == ["deploy"])
+    project.newSession(agent: .codex)
+    project.run(deploy, in: .current)
+    project.run(deploy, in: .newSession)
+    #expect(project.capabilityMarks.skills == ["deploy"])
+  }
+
   /// A Codex session's `/` menu lists Codex's skills for its folder; a Claude session's
   /// lists Claude Code's commands, as before.
   @Test func theMenuListsTheSessionsAgentsSkills() async throws {

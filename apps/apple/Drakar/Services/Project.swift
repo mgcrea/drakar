@@ -418,10 +418,13 @@ final class Project {
     selected.focusRequest += 1
   }
 
-  /// A new session in the project's folder, on top and shown, running `agent` (Settings'
-  /// default when nil). No process until it is prompted.
-  @discardableResult func newSession(agent: AgentKind? = nil) -> ProjectSession {
-    let item = make(AgentSession(folder: folder, agent: agent ?? ClaudeChoice.defaultAgent))
+  /// A new session in `folder` (the project's when nil), on top and shown, running `agent`
+  /// (Settings' default when nil). No process until it is prompted.
+  @discardableResult func newSession(agent: AgentKind? = nil, folder: URL? = nil)
+    -> ProjectSession
+  {
+    let item = make(
+      AgentSession(folder: folder ?? self.folder, agent: agent ?? ClaudeChoice.defaultAgent))
     sessions.insert(item, at: 0)
     select(item)
     return item
@@ -470,10 +473,15 @@ final class Project {
   /// start of the composer with what it takes shown, the focus there.
   func run(_ skill: SkillEntry, in target: SkillTarget) {
     guard canRun(in: target) else { return }
-    capabilityMarks.skills.remove(skill.name)
+    let agent = skillsAgent
+    // The dots are Claude Code's: a Codex skill of the same name leaves its dot.
+    if agent == .claude { capabilityMarks.skills.remove(skill.name) }
     let item: ProjectSession
     switch target {
-    case .newSession: item = newSession(agent: skillsAgent)
+    case .newSession:
+      // Codex's list is the shown session's folder's: the new session runs there, where its
+      // prompt can name the skill.
+      item = newSession(agent: agent, folder: agent == .codex ? selected?.session.folder : nil)
     case .current:
       guard let selected else { return }
       item = selected
