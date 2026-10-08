@@ -50,6 +50,21 @@ struct SessionMovesTests {
     #expect(candidates.first { $0.sessionID == "s1" }?.title == "Held")
   }
 
+  /// A Codex session's account is its Codex home, never a Claude account: it is not moved.
+  @Test func aCodexSessionIsNeverACandidate() {
+    let codex = ResumeTarget(
+      sessionID: "c1", cwd: "/p", file: "/u/.codex/sessions/2026/10/07/rollout-c1.jsonl",
+      accountDirectory: "/u/.codex/", accountIsDefault: true, agent: .codex)
+    let claude = ResumeTarget(
+      sessionID: "s1", cwd: "/p", file: "/u/.claude-a/projects/-p/s1.jsonl",
+      accountDirectory: a.key, accountIsDefault: false, agent: .claude)
+    let candidates = SessionMoves.candidates(
+      summaries: [], held: [(target: codex, title: "Codex"), (target: claude, title: "Claude")],
+      notOn: b)
+    #expect(candidates.map(\.sessionID) == ["s1"])
+    #expect(candidates.first?.agent == .claude)
+  }
+
   @Test func classifies() {
     let idle = SessionMoves.Held(hasProcess: true, isBusy: false)
     let busy = SessionMoves.Held(hasProcess: true, isBusy: true)
@@ -225,6 +240,19 @@ struct SessionMovesRunTests {
     #expect(await running.value == [SessionMoves.Report(title: "s4", outcome: .moved)])
     #expect(!session.isMoving)
     #expect(session.savedTarget?.accountDirectory == b.key)
+  }
+
+  /// The relocated target names the agent the candidate had.
+  @Test func theRelocatedTargetKeepsItsAgent() async throws {
+    defer { try? FileManager.default.removeItem(at: root) }
+    let (held, candidate) = try heldSession("s6")
+    var claude = candidate
+    claude.agent = .claude
+    let reports = await SessionMoves.run(
+      [claude], to: b, locate: { _ in held }, liveIDs: { [] }, host: { _ in "x" },
+      mover: { _, _, _ in .moved })
+    #expect(reports == [SessionMoves.Report(title: "s6", outcome: .moved)])
+    #expect(held.savedTarget?.agent == .claude)
   }
 
   /// A row only watching the session, in this window or another, follows the files too.

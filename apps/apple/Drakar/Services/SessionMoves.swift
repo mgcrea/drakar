@@ -13,6 +13,8 @@ enum SessionMoves {
     var transcript: URL
     var account: ClaudeAccount
     var cwd: String?
+    /// The agent that writes it, which its relocated target keeps.
+    var agent: AgentKind? = nil
   }
 
   /// A Drakar window holding the session, as the move sees it.
@@ -39,7 +41,8 @@ enum SessionMoves {
   }
 
   /// The sessions not on `target`: those listed, and the windows' own, whose transcript can
-  /// be newer than the list. One per id, the window's when both have it.
+  /// be newer than the list. One per id, the window's when both have it. Only Claude Code's:
+  /// a Codex session's files are under its Codex home, never a Claude account.
   static func candidates(
     summaries: [SessionSummary], held: [(target: ResumeTarget, title: String)],
     notOn target: ClaudeAccount
@@ -52,11 +55,12 @@ enum SessionMoves {
         sessionID: summary.sessionID, title: summary.displayTitle, transcript: summary.file,
         account: summary.account, cwd: summary.cwd)
     }
-    for (resume, title) in held where resume.account.key != target.key {
+    for (resume, title) in held
+    where resume.agentKind == .claude && resume.account.key != target.key {
       if byID[resume.sessionID] == nil { order.append(resume.sessionID) }
       byID[resume.sessionID] = Candidate(
         sessionID: resume.sessionID, title: title, transcript: resume.transcriptFile,
-        account: resume.account, cwd: resume.cwd)
+        account: resume.account, cwd: resume.cwd, agent: resume.agent)
     }
     return order.compactMap { byID[$0] }
   }
@@ -117,7 +121,8 @@ enum SessionMoves {
             to: ResumeTarget(
               sessionID: candidate.sessionID,
               cwd: candidate.cwd ?? row.folder.path(percentEncoded: false), file: file,
-              accountDirectory: target.key, accountIsDefault: target.isDefault))
+              accountDirectory: target.key, accountIsDefault: target.isDefault,
+              agent: candidate.agent))
         }
       }
       reports.append(Report(title: candidate.title, outcome: outcome))
@@ -249,7 +254,7 @@ extension SessionMoves {
     return item.session.savedTarget.map {
       Candidate(
         sessionID: $0.sessionID, title: item.displayTitle, transcript: $0.transcriptFile,
-        account: $0.account, cwd: $0.cwd)
+        account: $0.account, cwd: $0.cwd, agent: $0.agent)
     }
   }
 
