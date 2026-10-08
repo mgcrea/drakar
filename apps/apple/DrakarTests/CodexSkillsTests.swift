@@ -231,33 +231,74 @@ struct CodexSkillsTests {
     #expect(calls.count == 2)
   }
 
-  /// A change to the project's `.agents/skills` reads Codex's list again once settled, when
-  /// it was read before.
-  @Test func aSkillFileChangeRefreshesCodexsList() async throws {
+  /// A project whose Claude Code and Codex lists were both read, each read counted.
+  private func bothLoaded() async throws -> (Project, codex: Calls, claude: Calls) {
     let project = Project(folder: folder)
-    defer { project.stopAll() }
     project.capabilityDebounce = .milliseconds(100)
     let entry = CodexSkillStore.shared.skills(for: folder)
-    let calls = counted(entry)
+    let codex = counted(entry)
     entry.refresh()
     try await settle(entry)
-    let skill = folder.appending(path: ".agents/skills/x", directoryHint: .isDirectory)
-    try FileManager.default.createDirectory(at: skill, withIntermediateDirectories: true)
-    try Data("---\nname: x\n---\n".utf8).write(to: skill.appending(path: "SKILL.md"))
-    for _ in 0..<50 where calls.count < 2 {
-      try await Task.sleep(for: .milliseconds(100))
+    let claude = Calls()
+    project.capabilities.probe = { _, _ in
+      claude.count += 1
+      return ProbeOutcome(capabilities: ProjectCapabilities(skills: [], mcpServers: []))
     }
-    try await settle(entry)
-    #expect(calls.count == 2)
+    project.capabilities.refresh()
+    for _ in 0..<100 where project.capabilities.isLoading {
+      try await Task.sleep(for: .milliseconds(20))
+    }
+    return (project, codex, claude)
   }
 
-  /// Where Codex finds a project's own skills.
-  @Test func codexsSkillFoldersChangeTheLists() {
-    #expect(Workspace.touchesCapabilities(["/p/.agents/skills/x/SKILL.md"], root: "/p"))
-    #expect(Workspace.touchesCapabilities(["/p/.agents/skills"], root: "/p"))
-    #expect(Workspace.touchesCapabilities(["/p/.codex/skills/x/SKILL.md"], root: "/p"))
-    #expect(!Workspace.touchesCapabilities(["/p/.agents/notes.md"], root: "/p"))
-    #expect(!Workspace.touchesCapabilities(["/p/.codex/config.toml"], root: "/p"))
+  /// Writes a skill under `relative` until `done`: under load FSEvents may fold one write
+  /// into a rescan of the whole folder, which names no file.
+  private func write(_ relative: String, until done: () -> Bool) async throws {
+    for attempt in 0..<5 where !done() {
+      let file = folder.appending(path: relative).appending(path: "s\(attempt)/SKILL.md")
+      try FileManager.default.createDirectory(
+        at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+      try Data("---\nname: s\(attempt)\n---\n".utf8).write(to: file)
+      for _ in 0..<10 where !done() {
+        try await Task.sleep(for: .milliseconds(100))
+      }
+    }
+    // Long enough for a refresh that should not happen to show.
+    try await Task.sleep(for: .milliseconds(300))
+  }
+
+  /// A change to the project's `.agents/skills` reads Codex's list again once settled, when
+  /// it was read before; Claude Code's stays as it is.
+  @Test func aSkillFileChangeRefreshesCodexsList() async throws {
+    let (project, codex, claude) = try await bothLoaded()
+    defer { project.stopAll() }
+    try await write(".agents/skills") { codex.count >= 2 }
+    #expect(codex.count >= 2)
+    #expect(claude.count == 1)
+  }
+
+  /// A change to the files Claude Code reads leaves Codex's list as it is.
+  @Test func aClaudeSkillFileChangeLeavesCodexsList() async throws {
+    let (project, codex, claude) = try await bothLoaded()
+    defer { project.stopAll() }
+    try await write(".claude/skills") { claude.count >= 2 }
+    #expect(claude.count >= 2)
+    #expect(codex.count == 1)
+  }
+
+  /// Where Codex finds a project's own skills, and only there: Claude Code's files are not
+  /// Codex's, nor Codex's Claude Code's.
+  @Test func codexsSkillFoldersAreItsOwn() {
+    #expect(Workspace.touchesCodexSkills(["/p/.agents/skills/x/SKILL.md"], root: "/p"))
+    #expect(Workspace.touchesCodexSkills(["/p/.agents/skills"], root: "/p"))
+    #expect(Workspace.touchesCodexSkills(["/p/.codex/skills/x/SKILL.md"], root: "/p"))
+    #expect(!Workspace.touchesCodexSkills(["/p/.agents/notes.md"], root: "/p"))
+    #expect(!Workspace.touchesCodexSkills(["/p/.codex/config.toml"], root: "/p"))
+    #expect(!Workspace.touchesCodexSkills(["/p/.claude/skills/x/SKILL.md"], root: "/p"))
+    #expect(!Workspace.touchesCodexSkills(["/p/.mcp.json"], root: "/p"))
+    #expect(!Workspace.touchesCodexSkills(["/other/.agents/skills/x/SKILL.md"], root: "/p"))
+    #expect(!Workspace.touchesCapabilities(["/p/.agents/skills/x/SKILL.md"], root: "/p"))
+    #expect(!Workspace.touchesCapabilities(["/p/.codex/skills/x/SKILL.md"], root: "/p"))
   }
 
   /// A prompt naming a skill of the session's folder goes to Codex with its skill item.

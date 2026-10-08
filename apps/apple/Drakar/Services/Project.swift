@@ -279,6 +279,7 @@ final class Project {
   @ObservationIgnored var capabilityDebounce: Duration = .seconds(2)
   @ObservationIgnored private var capabilityObserver: UUID?
   @ObservationIgnored private var capabilityRefresh: Task<Void, Never>?
+  @ObservationIgnored private var codexSkillRefresh: Task<Void, Never>?
   /// The pane that had the keys at the last quit, until it takes them back.
   @ObservationIgnored private var restoredFocus: FocusedPane?
 
@@ -309,6 +310,7 @@ final class Project {
     restoredFocus = focus
     observeCapabilities()
     workspace.onCapabilityFilesChanged = { [weak self] in self?.capabilityFilesChanged() }
+    workspace.onCodexSkillFilesChanged = { [weak self] in self?.codexSkillFilesChanged() }
   }
 
   /// Whether `pane` is the one to take the keys back after a relaunch; true once.
@@ -535,19 +537,34 @@ final class Project {
   }
 
   private func capabilityFilesChanged() {
-    capabilityRefresh?.cancel()
+    capabilityRefresh = settled(replacing: capabilityRefresh) {
+      $0.capabilities.refreshIfLoaded()
+    }
+  }
+
+  private func codexSkillFilesChanged() {
+    codexSkillRefresh = settled(replacing: codexSkillRefresh) {
+      CodexSkillStore.shared.skills(for: $0.folder).refreshIfLoaded()
+    }
+  }
+
+  /// `refresh` once file changes have settled for `capabilityDebounce`, in place of `waiting`.
+  private func settled(
+    replacing waiting: Task<Void, Never>?, _ refresh: @escaping (Project) -> Void
+  ) -> Task<Void, Never> {
+    waiting?.cancel()
     let delay = capabilityDebounce
-    capabilityRefresh = Task { [weak self] in
+    return Task { [weak self] in
       try? await Task.sleep(for: delay)
       guard !Task.isCancelled, let self else { return }
-      self.capabilities.refreshIfLoaded()
-      CodexSkillStore.shared.skills(for: self.folder).refreshIfLoaded()
+      refresh(self)
     }
   }
 
   /// The window is going: its probe too, unless another window shows the same lists.
   private func releaseCapabilities() {
     capabilityRefresh?.cancel()
+    codexSkillRefresh?.cancel()
     if let capabilityObserver { capabilities.stopObserving(capabilityObserver) }
     capabilityObserver = nil
     cancelProbeUnlessShared(capabilities)
