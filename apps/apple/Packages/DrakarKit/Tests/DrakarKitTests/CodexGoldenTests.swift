@@ -17,18 +17,17 @@ struct CodexGoldenTests {
   static func fold(_ scenario: Scenario) throws -> (running: Transcript, exited: Transcript) {
     let start = TranscriptGoldenTests.start
     var transcript = Transcript()
-    if scenario == .codexHistory {
+    let fixture: Fixture
+    switch scenario {
+    case .codexTurn: fixture = .codexTurn
+    case .codexFileChanges: fixture = .codexFileChanges
+    case .codexSteer: fixture = .codexSteer
+    case .codexHistory:
       for event in CodexTranslator.history(try Fixture.codexItemsPage["data"]?.arrayValue ?? []) {
         transcript.apply(event, at: start)
       }
       return (transcript, transcript)
     }
-    let fixture: Fixture =
-      switch scenario {
-      case .codexTurn: .codexTurn
-      case .codexFileChanges: .codexFileChanges
-      case .codexSteer, .codexHistory: .codexSteer
-      }
     transcript.addPrompt("Run it", at: start)
     if scenario == .codexSteer {
       transcript.queue(
@@ -58,18 +57,6 @@ struct CodexGoldenTests {
     let golden = TranscriptGoldenTests.Golden(
       running: TranscriptSnapshot(running, now: now),
       exited: TranscriptSnapshot(exited, now: now))
-    let url = Self.goldenURL(scenario)
-    if ProcessInfo.processInfo.environment["DRAKAR_RECORD_GOLDENS"] == "1" {
-      let encoder = JSONEncoder()
-      encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-      try encoder.encode(golden).write(to: url)
-      // A recording run compares nothing, so it must never pass.
-      Issue.record("recorded \(scenario.rawValue), not compared")
-      return
-    }
-    let recorded = try JSONDecoder().decode(
-      TranscriptGoldenTests.Golden.self, from: Data(contentsOf: url))
-    #expect(golden.running == recorded.running)
-    #expect(golden.exited == recorded.exited)
+    try GoldenFile.check(golden, at: Self.goldenURL(scenario), named: scenario.rawValue)
   }
 }

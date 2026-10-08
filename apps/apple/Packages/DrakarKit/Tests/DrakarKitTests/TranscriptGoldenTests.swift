@@ -79,19 +79,6 @@ struct TranscriptGoldenTests {
     let golden = Golden(
       running: TranscriptSnapshot(running, now: Self.now),
       exited: TranscriptSnapshot(exited, now: Self.now))
-    let url = Self.goldenURL(scenario)
-    if ProcessInfo.processInfo.environment["DRAKAR_RECORD_GOLDENS"] == "1" {
-      let encoder = JSONEncoder()
-      encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-      try FileManager.default.createDirectory(
-        at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-      try encoder.encode(golden).write(to: url)
-      // A recording run compares nothing, so it must never pass.
-      Issue.record("recorded \(scenario.rawValue), not compared")
-      return
-    }
-    let recorded = try JSONDecoder().decode(Golden.self, from: Data(contentsOf: url))
-    #expect(golden.running == recorded.running)
-    #expect(golden.exited == recorded.exited)
+    try GoldenFile.check(golden, at: Self.goldenURL(scenario), named: scenario.rawValue)
   }
 }
