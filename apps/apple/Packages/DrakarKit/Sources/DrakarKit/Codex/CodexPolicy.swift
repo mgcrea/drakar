@@ -34,6 +34,17 @@ public enum CodexPolicy {
     }
   }
 
+  /// Whether `mode` runs what an approval request (`method`) asks for unasked. A turn keeps
+  /// the policy it started with, and Codex takes no other mid-turn: what a switch lets
+  /// through, Drakar accepts itself until the next turn.
+  public static func letsThrough(_ method: String, in mode: PermissionMode) -> Bool {
+    switch mode {
+    case .bypass: true
+    case .acceptEdits: method == "item/fileChange/requestApproval"
+    case .ask, .plan, .auto: false
+    }
+  }
+
   private static func sandboxPolicy(_ sandbox: String) -> JSONValue {
     switch sandbox {
     case "danger-full-access":

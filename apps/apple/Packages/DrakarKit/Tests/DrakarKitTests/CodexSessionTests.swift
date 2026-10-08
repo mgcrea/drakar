@@ -322,6 +322,50 @@ struct CodexSessionTests {
     #expect(turn["params"]?["effort"] == .string("high"))
   }
 
+  private let commandApproval =
+    #"{"method":"item/commandExecution/requestApproval","id":0,"params":{"threadId":"t-1","turnId":"turn-1","itemId":"exec-1","command":"/bin/zsh -lc 'touch x'","commandActions":[]}}"#
+  private let fileApproval =
+    #"{"method":"item/fileChange/requestApproval","id":1,"params":{"threadId":"t-1","turnId":"turn-1","itemId":"p"}}"#
+  private func accepted(_ id: Int) -> JSONValue {
+    CodexRPC.answer(.number(id), result: .object(["decision": .string("accept")]))
+  }
+
+  /// The running turn keeps the policy it started with, so what the new mode lets through
+  /// unasked Drakar accepts itself.
+  @Test func aTurnSwitchedToBypassIsAnsweredWithoutAsking() throws {
+    var session = try running()
+    _ = session.send(.setMode(.bypass))
+    let command = session.receive(json(commandApproval), at: nil)
+    #expect(command.writes == [accepted(0)])
+    #expect(command.events.isEmpty)
+    let file = session.receive(json(fileApproval), at: nil)
+    #expect(file.writes == [accepted(1)])
+    #expect(file.events.isEmpty)
+  }
+
+  @Test func switchingToBypassAcceptsWhatWaits() throws {
+    var session = try running()
+    _ = session.receive(json(commandApproval), at: nil)
+    let step = session.send(.setMode(.bypass))
+    #expect(step.writes == [accepted(0)])
+    #expect(step.events == [.permissionWithdrawn(requestID: "0")])
+    #expect(
+      session.send(.answer(requestID: "0", decision: .allow(updatedInput: .null))).writes.isEmpty)
+  }
+
+  @Test func aTurnSwitchedToEditAutomaticallyStillAsksForCommands() throws {
+    var session = try running()
+    _ = session.receive(json(commandApproval), at: nil)
+    let switched = session.send(.setMode(.acceptEdits))
+    #expect(switched.writes.isEmpty)
+    let file = session.receive(json(fileApproval), at: nil)
+    #expect(file.writes == [accepted(1)])
+    let command = session.receive(
+      json(commandApproval.replacingOccurrences(of: #""id":0"#, with: #""id":2"#)), at: nil)
+    #expect(command.writes.isEmpty)
+    #expect(command.events.count == 1)
+  }
+
   @Test func aThreadAnotherProcessHoldsMakesTheSessionUnusable() throws {
     var (session, _) = initialized(resuming: "t-1")
     let resume = try write("thread/resume", in: session.send(.prompt(input: input("x"), uuid: "p")))

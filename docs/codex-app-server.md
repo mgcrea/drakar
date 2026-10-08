@@ -237,6 +237,11 @@ settings passed honoured. `lastTurnId` forks through a given turn (types).
 `outputSchema`; `serviceTierForTurn` is the one-turn exception; `collaborationMode`
 is experimental (types).
 
+A running turn keeps the approval policy and sandbox it started with: no request changes
+them mid-turn (0.160.1 schema; `thread/settings/updated` is a notification only). A switch
+to a mode that lets more through is honoured by Drakar answering the approvals it covers
+(`CodexPolicy.letsThrough`); the sandbox follows on the next `turn/start`.
+
 ```jsonc
 >> {"id":3,"method":"turn/start","params":{"threadId":"…","effort":"low",
      "input":[{"type":"text","text":"Run `cat note.txt` …","text_elements":[]}]}}
