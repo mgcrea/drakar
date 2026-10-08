@@ -81,4 +81,35 @@ struct DiffTests {
 
     #expect(FileChange(toolName: "Bash", input: .object(["command": .string("ls")])) == nil)
   }
+
+  @Test func aDeleteIsEveryLineRemoved() throws {
+    let change = try #require(
+      FileChange(
+        path: "/p/b.txt",
+        edits: [FileEdit(path: "/p/b.txt", change: .delete(content: "bye\nnow\n"))]))
+    #expect(change.isDeleted)
+    #expect(!change.isNewFile)
+    #expect(change.diffs == [[DiffLine(.removed, "bye"), DiffLine(.removed, "now")]])
+  }
+
+  @Test func aPureRenameHasNoDiff() throws {
+    let change = try #require(
+      FileChange(
+        path: "/p/c.txt",
+        edits: [FileEdit(path: "/p/c.txt", change: .move(to: "/p/d.txt", patch: ""))]))
+    #expect(change.movedTo == "/p/d.txt")
+    #expect(change.diffs.isEmpty)
+    #expect(!change.isNewFile)
+  }
+
+  @Test func aPatchOfSeveralFilesIsOneChangeEach() {
+    let changes = FileChange.each(edits: [
+      FileEdit(path: "/p/a.txt", change: .patch("@@ -1,1 +1,1 @@\n-two\n+TWO\n")),
+      FileEdit(path: "/p/b.txt", change: .delete(content: "bye\n")),
+      FileEdit(path: "/p/a.txt", change: .patch("@@ -5,1 +5,1 @@\n-x\n+y\n")),
+    ])
+    #expect(changes.map(\.path) == ["/p/a.txt", "/p/b.txt"])
+    #expect(changes[0].diffs.count == 2)
+    #expect(changes[1].isDeleted)
+  }
 }

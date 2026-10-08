@@ -127,6 +127,10 @@ public struct FileChange: Sendable, Equatable {
   /// One diff per edit; a Write is one.
   public var diffs: [[DiffLine]]
   public var isNewFile: Bool
+  /// A Codex delete: every line went.
+  public var isDeleted = false
+  /// Where a Codex rename took the file.
+  public var movedTo: String?
 
   /// Nil when no edit could be read. `existing` is the file's current content, which only a
   /// write needs (to diff a rewrite against what it replaces); nil means it does not exist.
@@ -135,6 +139,8 @@ public struct FileChange: Sendable, Equatable {
     self.path = path
     var diffs: [[DiffLine]] = []
     var isNewFile = false
+    var isDeleted = false
+    var movedTo: String?
     for edit in edits {
       switch edit.change {
       case .replace(let old, let new):
@@ -146,14 +152,36 @@ public struct FileChange: Sendable, Equatable {
         let patch = PatchText.lines(text)
         diffs.append(patch.lines)
         isNewFile = patch.isNewFile
+      case .delete(let content):
+        var removed = content.split(separator: "\n", omittingEmptySubsequences: false)
+        if removed.last == "" { removed.removeLast() }
+        diffs.append(removed.map { DiffLine(.removed, String($0)) })
+        isDeleted = true
+      case .move(let target, let patch):
+        movedTo = target
+        if !patch.isEmpty { diffs.append(PatchText.lines(patch).lines) }
       }
     }
     self.diffs = diffs
     self.isNewFile = isNewFile
+    self.isDeleted = isDeleted
+    self.movedTo = movedTo
   }
 
   public var addedCount: Int { count(.added) }
   public var removedCount: Int { count(.removed) }
+
+  /// One change per file the edits touch, in the order first touched: a Codex patch can
+  /// change several files in one call. Claude's calls touch one file each.
+  public static func each(edits: [FileEdit]) -> [FileChange] {
+    var order: [String] = []
+    var byPath: [String: [FileEdit]] = [:]
+    for edit in edits {
+      if byPath[edit.path] == nil { order.append(edit.path) }
+      byPath[edit.path, default: []].append(edit)
+    }
+    return order.compactMap { path in byPath[path].flatMap { FileChange(path: path, edits: $0) } }
+  }
 
   private func count(_ kind: DiffLine.Kind) -> Int {
     diffs.joined().filter { $0.kind == kind }.count

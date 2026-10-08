@@ -50,6 +50,11 @@ public struct FileEdit: Sendable, Equatable {
     case write(content: String)
     /// Codex's `fileChange` diff: a new file's content, or header-less hunks.
     case patch(String)
+    /// Codex's delete: the content the file had.
+    case delete(content: String)
+    /// Codex's rename: where the file went, and its hunks when it changed too (a pure
+    /// rename has none).
+    case move(to: String, patch: String)
   }
 
   public var path: String
