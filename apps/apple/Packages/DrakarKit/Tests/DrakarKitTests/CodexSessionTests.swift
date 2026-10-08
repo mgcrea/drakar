@@ -327,4 +327,42 @@ struct CodexSessionTests {
       at: nil)
     #expect(step.events == [.itemDelta(id: "m", .text("hi"))])
   }
+
+  @Test func aSteerTooLateAfterTheTurnCompletedIsNotDropped() throws {
+    var session = try running()
+    let steer = try write("turn/steer", in: session.send(.prompt(input: input("two"), uuid: "p-2")))
+    let end = session.receive(
+      json(
+        #"{"method":"turn/completed","params":{"threadId":"t-1","turn":{"id":"turn-1","status":"completed"}}}"#
+      ),
+      at: nil)
+    #expect(!end.events.contains(.queue(id: "p-2", .dropped(agent: "Codex"))))
+    let retried = fail(&session, steer, "no active turn to steer")
+    #expect(!retried.events.contains(.queue(id: "p-2", .dropped(agent: "Codex"))))
+    #expect(
+      try write("turn/start", in: retried)["params"]?["clientUserMessageId"] == .string("p-2"))
+  }
+
+  @Test func aDroppedSteersLateFailureWritesNothing() throws {
+    var session = try running()
+    let steer = try write("turn/steer", in: session.send(.prompt(input: input("two"), uuid: "p-2")))
+    _ = session.receive(
+      json(
+        #"{"method":"turn/completed","params":{"threadId":"t-1","turn":{"id":"turn-1","status":"interrupted"}}}"#
+      ),
+      at: nil)
+    let late = fail(&session, steer, "no active turn to steer")
+    #expect(late.writes.isEmpty)
+    #expect(late.events.isEmpty)
+  }
+
+  @Test func stopWhileTheThreadOpensInterruptsOnceTheTurnHasAnId() throws {
+    var (session, _) = initialized()
+    let opening = session.send(.prompt(input: input("one"), uuid: "p-1"))
+    #expect(session.send(.interrupt).writes.isEmpty)
+    let started = answer(&session, try write("thread/start", in: opening), thread)
+    let running = answer(
+      &session, try write("turn/start", in: started), #"{"turn":{"id":"turn-1"}}"#)
+    #expect(try write("turn/interrupt", in: running)["params"]?["turnId"] == .string("turn-1"))
+  }
 }

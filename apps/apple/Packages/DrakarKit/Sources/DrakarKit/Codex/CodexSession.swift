@@ -59,7 +59,7 @@ public struct CodexSession: Sendable {
 
   private enum Call: Sendable {
     case initialize, account, models, thread, turnStart
-    case steer(uuid: String, input: JSONValue)
+    case steer(uuid: String, input: JSONValue, turn: String)
     case other
   }
 
@@ -93,6 +93,8 @@ public struct CodexSession: Sendable {
   private var interruptsWhenStarted = false
   /// Steered prompts Codex has not echoed yet, by uuid.
   private var steered: [String] = []
+  /// Steers already reported dropped: a late answer to them changes nothing.
+  private var reportedDropped: Set<String> = []
   /// Approval requests waiting, by the id the transcript knows them by.
   private var approvals: [String: CodexRPC.ID] = [:]
   private var mode: PermissionMode
@@ -130,11 +132,7 @@ public struct CodexSession: Sendable {
         if isInitialized, !isOpeningThread { step.writes.append(openThread()) }
         break
       }
-      switch turn {
-      case .idle: step.writes.append(startTurn(prompt))
-      case .starting: beforeTurnID.append(prompt)
-      case .running(let id): step.writes.append(steer(prompt, into: id))
-      }
+      if let write = place(prompt) { step.writes.append(write) }
     case .answer(let requestID, let decision):
       guard let id = approvals.removeValue(forKey: requestID) else { break }
       step.writes.append(
@@ -150,7 +148,7 @@ public struct CodexSession: Sendable {
       switch turn {
       case .running(let id): step.writes.append(interrupt(id))
       case .starting: interruptsWhenStarted = true
-      case .idle: break
+      case .idle: if !beforeThread.isEmpty { interruptsWhenStarted = true }
       }
     case .setMode(let mode):
       self.mode = mode
@@ -196,8 +194,14 @@ public struct CodexSession: Sendable {
       let endsTurn = notified(method, params: params, into: &step)
       step.events += translator.translate(message, at: time)
       if endsTurn {
-        step.events += steered.map { AgentEvent.queue(id: $0, .dropped(agent: "Codex")) }
-        steered = []
+        // A completed turn leaves in-flight steers to their own answers; one that was cut
+        // short took them down with it.
+        let status = params["turn"]?["status"]?.stringValue
+        if status == "interrupted" || status == "failed" {
+          step.events += steered.map { AgentEvent.queue(id: $0, .dropped(agent: "Codex")) }
+          reportedDropped.formUnion(steered)
+          steered = []
+        }
       }
     }
     return step
@@ -256,6 +260,7 @@ public struct CodexSession: Sendable {
       step.signals.append(.unusable(message))
     case .thread:
       isOpeningThread = false
+      interruptsWhenStarted = false
       let waiting = beforeThread
       beforeThread = []
       if message.contains("active writer") {
@@ -273,12 +278,13 @@ public struct CodexSession: Sendable {
       step.events.append(.turnEnded(TurnSummary(outcome: .failed, failureText: message)))
       step.events += beforeTurnID.map { AgentEvent.queue(id: $0.uuid, .dropped(agent: "Codex")) }
       beforeTurnID = []
-    case .steer(let uuid, let input):
+    case .steer(let uuid, let input, let steeredTurn):
       steered.removeAll { $0 == uuid }
+      if reportedDropped.remove(uuid) != nil { break }
       if message.contains("no active turn") {
         // The turn ended between the prompt and the steer: it starts the next one.
-        turn = .idle
-        step.writes.append(startTurn(Waiting(input: input, uuid: uuid)))
+        if turn == .running(steeredTurn) { turn = .idle }
+        if let write = place(Waiting(input: input, uuid: uuid)) { step.writes.append(write) }
       } else {
         step.events.append(.queue(id: uuid, .dropped(agent: "Codex")))
       }
@@ -329,6 +335,18 @@ public struct CodexSession: Sendable {
     }
   }
 
+  /// What to write to run `prompt` now: a turn of its own, a steer into the running turn, or
+  /// nothing yet when the turn has no id.
+  private mutating func place(_ prompt: Waiting) -> JSONValue? {
+    switch turn {
+    case .idle: return startTurn(prompt)
+    case .starting:
+      beforeTurnID.append(prompt)
+      return nil
+    case .running(let id): return steer(prompt, into: id)
+    }
+  }
+
   private mutating func openThread() -> JSONValue {
     isOpeningThread = true
     var params = CodexPolicy.threadSettings(mode)
@@ -358,7 +376,7 @@ public struct CodexSession: Sendable {
       .object([
         "threadId": .string(threadID ?? ""), "expectedTurnId": .string(turn),
         "input": prompt.input, "clientUserMessageId": .string(prompt.uuid),
-      ]), for: .steer(uuid: prompt.uuid, input: prompt.input))
+      ]), for: .steer(uuid: prompt.uuid, input: prompt.input, turn: turn))
   }
 
   private mutating func interrupt(_ turn: String) -> JSONValue {
