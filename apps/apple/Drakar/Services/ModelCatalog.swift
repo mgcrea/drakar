@@ -10,6 +10,31 @@ final class ModelCatalog {
 
   private var lists: [String: [ModelOption]] = [:]
 
+  /// Codex's models, from the newest `model/list`: one list until Codex accounts (slice 4).
+  private(set) var codexModels: [ModelOption]?
+  @ObservationIgnored private var isLoadingCodex = false
+
+  func recordCodex(_ models: [ModelOption]) { codexModels = models }
+
+  /// Asks a short-lived `codex app-server` for its models, once, when no list is known yet:
+  /// the pill lists them before a Codex session's first prompt.
+  func loadCodex() {
+    guard codexModels == nil, !isLoadingCodex else { return }
+    isLoadingCodex = true
+    Task {
+      defer { isLoadingCodex = false }
+      let environment = await AgentSession.environment.value
+      guard let executable = CodexLaunch.locate(path: environment["PATH"]) else { return }
+      let configuration = CodexLaunch.configuration(
+        executable: executable, environment: environment,
+        folder: FileManager.default.homeDirectoryForCurrentUser)
+      let results = try? await CodexOneShot(configuration: configuration).run { previous in
+        previous == nil ? ("model/list", .object([:])) : nil
+      }
+      if let list = results?.first { recordCodex(CodexModels.list(list)) }
+    }
+  }
+
   func models(for account: ClaudeAccount) -> [ModelOption]? { lists[account.key] }
 
   func record(_ models: [ModelOption], for account: ClaudeAccount) {

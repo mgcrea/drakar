@@ -45,6 +45,8 @@ enum SettingsPane: String, SupportKitSettings.SettingsPane {
 /// The defaults keys, named the way every other key in the fleet is: the slug, then
 /// the setting.
 enum PreferenceKey {
+  /// The agent New Session starts (`AgentKind`'s raw value); empty for Claude Code.
+  static let defaultAgent = "drakar.defaultAgent"
   /// Which folders Drakar offers itself as the editor for, to `claude` run in a terminal.
   static let editorScope = "drakar.editorScope"
   /// The `claude` sessions run, by path; empty for the one the login shell would run.
@@ -127,6 +129,12 @@ enum ClaudeChoice {
   static var allowsBypass: Bool {
     _ = AttentionDefaults.shared.revision
     return defaults.object(forKey: PreferenceKey.allowsBypass) as? Bool ?? true
+  }
+
+  /// The agent New Session starts; ⌥-click starts the other.
+  static var defaultAgent: AgentKind {
+    _ = AttentionDefaults.shared.revision
+    return stored(PreferenceKey.defaultAgent).flatMap(AgentKind.init(rawValue:)) ?? .claude
   }
 
   /// The model new sessions start with, from Settings; nil for Claude Code's default.

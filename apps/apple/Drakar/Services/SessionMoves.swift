@@ -245,7 +245,8 @@ extension SessionMoves {
 
   /// Nil for a session never prompted: it has no files, and starts on the window's account.
   static func candidate(for item: ProjectSession) -> Candidate? {
-    item.session.savedTarget.map {
+    guard item.session.features.moves else { return nil }
+    return item.session.savedTarget.map {
       Candidate(
         sessionID: $0.sessionID, title: item.displayTitle, transcript: $0.transcriptFile,
         account: $0.account, cwd: $0.cwd)

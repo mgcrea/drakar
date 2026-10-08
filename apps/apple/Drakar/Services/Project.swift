@@ -36,7 +36,15 @@ final class ProjectSession: Identifiable {
   func attach(_ sources: [AttachmentSource]) {
     guard !sources.isEmpty else { return }
     Task {
-      let (attachments, notes) = await AttachmentIntake.load(sources)
+      var (attachments, notes) = await AttachmentIntake.load(sources)
+      if !session.features.acceptsPDF {
+        let refused = attachments.filter { $0.kind == .pdf }
+        attachments.removeAll { $0.kind == .pdf }
+        notes += refused.map {
+          String(
+            localized: "\(session.features.name) can't read PDFs here: \($0.preview.name ?? "PDF")")
+        }
+      }
       self.attachments += attachments
       attachmentNote = notes.isEmpty ? nil : notes.joined(separator: "\n")
       focusRequest += 1
@@ -408,10 +416,10 @@ final class Project {
     selected.focusRequest += 1
   }
 
-  /// A new session in the project's folder, on top and shown. No process until it is
-  /// prompted.
-  @discardableResult func newSession() -> ProjectSession {
-    let item = make(AgentSession(folder: folder))
+  /// A new session in the project's folder, on top and shown, running `agent` (Settings'
+  /// default when nil). No process until it is prompted.
+  @discardableResult func newSession(agent: AgentKind? = nil) -> ProjectSession {
+    let item = make(AgentSession(folder: folder, agent: agent ?? ClaudeChoice.defaultAgent))
     sessions.insert(item, at: 0)
     select(item)
     return item
@@ -433,7 +441,7 @@ final class Project {
     capabilityMarks.skills.remove(skill.name)
     let item: ProjectSession
     switch target {
-    case .newSession: item = newSession()
+    case .newSession: item = newSession(agent: .claude)
     case .current:
       guard let selected else { return }
       item = selected
@@ -486,7 +494,7 @@ final class Project {
   func speaksForProject(_ session: AgentSession) -> Bool {
     ProjectPath.normalize(session.folder.path(percentEncoded: false))
       == ProjectPath.normalize(folder.path(percentEncoded: false))
-      && session.account?.key == capabilities.accountKey
+      && session.features.slashCommands && session.account?.key == capabilities.accountKey
   }
 
   private func observeCapabilities() {
@@ -575,7 +583,8 @@ final class Project {
   /// Whether `item` has a transcript to copy and no turn writing it: a fork taken mid-turn
   /// would copy a history that can end on a tool call with no result.
   func canFork(_ item: ProjectSession) -> Bool {
-    (item.session.resuming ?? item.session.savedTarget) != nil
+    item.session.features.forks
+      && (item.session.resuming ?? item.session.savedTarget) != nil
       && !item.session.transcript.isRunning
   }
 
@@ -753,7 +762,7 @@ final class Project {
   /// The title and context from the transcript's end, off the main thread: every restored
   /// row shows them, while only the selected one reads its history.
   private func readPreview(_ item: ProjectSession) {
-    guard let target = item.session.resuming else { return }
+    guard let target = item.session.resuming, target.agentKind == .claude else { return }
     let (file, account) = (target.transcriptFile, target.account)
     Task { [weak item] in
       let summary = await Task.detached { SessionIndex.summary(of: file, account: account) }.value

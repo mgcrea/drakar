@@ -30,7 +30,10 @@ final class AgentSession {
   private(set) var account: ClaudeAccount?
   /// The account the session runs, or will resume, under; nil for a new session not yet
   /// started, which takes the window's.
-  var effectiveAccount: ClaudeAccount? { account ?? resuming?.account }
+  /// Claude Code's only: a Codex target's account fields are placeholders.
+  var effectiveAccount: ClaudeAccount? {
+    features.showsAccount ? account ?? resuming?.account : nil
+  }
   /// The end of the CLI's stderr, shown when the process fails.
   private(set) var diagnostics = ""
   /// The process's answer to `get_context_usage` after its last turn: the exact window.
@@ -119,13 +122,21 @@ final class AgentSession {
   /// after it, for a window that closed or a row that was removed meanwhile.
   @ObservationIgnored private var stopCount = 0
 
-  init(folder: URL, resuming: ResumeTarget? = nil, backend: AgentBackend = ClaudeBackend()) {
+  /// `agent` nil takes the target's, else Claude Code. `backend` stands in for tests.
+  init(
+    folder: URL, resuming: ResumeTarget? = nil, agent: AgentKind? = nil,
+    backend: AgentBackend? = nil
+  ) {
     self.folder = folder
     self.resuming = resuming
-    self.backend = backend
+    self.backend = backend ?? (agent ?? resuming?.agentKind ?? .claude).makeBackend()
     savedTarget = resuming?.forks == true ? nil : resuming
     isLoadingHistory = resuming != nil
   }
+
+  /// What its sessions can do beyond a conversation, which the views ask.
+  var features: AgentFeatures { backend.features }
+  var agent: AgentKind { features.agent }
 
   /// The session's id once known: the resumed one at once, a new one or a fork's from
   /// `system/init`. A fork never answers with the original's id, which another process owns.
@@ -157,20 +168,24 @@ final class AgentSession {
   /// The mode the next start passes: this session's pick, else Settings' default; Bypass
   /// only while Settings allows it.
   var startingMode: PermissionMode? {
-    let mode = modePick ?? (isProcessRunning ? nil : ClaudeChoice.defaultMode)
+    let mode =
+      modePick
+      ?? (isProcessRunning || !features.usesSettingsDefaults ? nil : ClaudeChoice.defaultMode)
     return mode == .bypass && !ClaudeChoice.allowsBypass ? nil : mode
   }
 
   /// The model picked for the session: its own, else (before a start) Settings' default;
   /// nil for Claude Code's.
   var pickedModel: String? {
-    modelPick ?? (isProcessRunning ? nil : ClaudeChoice.defaultModel)
+    modelPick
+      ?? (isProcessRunning || !features.usesSettingsDefaults ? nil : ClaudeChoice.defaultModel)
   }
 
   /// The effort the pill shows: the session's pick, else what the process applies, else
   /// (before a start) Settings' default.
   var shownEffort: String? {
-    effortPick ?? appliedEffort ?? (isProcessRunning ? nil : ClaudeChoice.defaultEffort)
+    effortPick ?? appliedEffort
+      ?? (isProcessRunning || !features.usesSettingsDefaults ? nil : ClaudeChoice.defaultEffort)
   }
 
   /// The model running now, as the process says it after a switch, with the `[1m]` its
@@ -195,6 +210,9 @@ final class AgentSession {
     pillNote = nil
     let (previousPick, previousMode) = (modePick, permissionMode)
     modePick = mode
+    if !features.picksApplyAtOnce, transcript.isRunning {
+      pillNote = String(localized: "From the next turn")
+    }
     guard let process else { return }
     permissionMode = mode.rawValue
     guard let id = try? backend.send(.setMode(mode.rawValue), to: process) else { return }
@@ -210,6 +228,9 @@ final class AgentSession {
     pillNote = nil
     let previous = modelPick
     modelPick = value
+    if !features.picksApplyAtOnce, transcript.isRunning {
+      pillNote = String(localized: "From the next turn")
+    }
     guard let process else { return }
     guard let id = try? backend.send(.setModel(value), to: process) else { return }
     unansweredChanges.append(
@@ -222,6 +243,9 @@ final class AgentSession {
     pillNote = nil
     let previous = effortPick
     effortPick = level
+    if !features.picksApplyAtOnce, transcript.isRunning {
+      pillNote = String(localized: "From the next turn")
+    }
     guard let process else { return }
     guard let id = try? backend.send(.setEffort(level), to: process) else { return }
     unansweredChanges.append(
@@ -263,6 +287,7 @@ final class AgentSession {
   }
 
   private func readHistory() async {
+    if let resuming, resuming.agentKind == .codex { return await readCodexHistory(resuming) }
     guard let file = resuming?.transcriptFile else {
       isLoadingHistory = false
       return
@@ -288,8 +313,45 @@ final class AgentSession {
     hasLoadedHistory = true
     // Said where the next message would be sent from: a session another process runs sends
     // nothing from here.
-    if !isReadOnly { self.transcript.noteColdCache() }
+    if !isReadOnly, features.showsPromptCache { self.transcript.noteColdCache() }
     // Prompts typed while the history was being read go after it.
+    for prompt in promptsDuringLoad {
+      self.transcript.addPrompt(
+        prompt.text, context: prompt.context, attachments: prompt.attachments)
+    }
+    promptsDuringLoad = []
+  }
+
+  /// A Codex session's history, from a short-lived `codex app-server`. Unreadable, the session
+  /// opens empty with a note and still resumes its thread on the next prompt.
+  private func readCodexHistory(_ target: ResumeTarget) async {
+    let environment = await Self.environment.value
+    var loaded: [AgentEvent] = []
+    var problem: String?
+    if let executable = executableOverride ?? CodexLaunch.locate(path: environment["PATH"]) {
+      do {
+        loaded = try await CodexHistory.events(
+          threadID: target.sessionID,
+          configuration: CodexLaunch.configuration(
+            executable: executable, environment: environment, folder: folder))
+      } catch {
+        problem = error.localizedDescription
+      }
+    } else {
+      problem = CodexLaunch.notFound
+    }
+    isLoadingHistory = false
+    var transcript = Transcript()
+    for event in loaded { transcript.apply(event) }
+    if let problem {
+      transcript.apply(
+        .note(
+          .init(
+            text: String(localized: "Codex's history of this session could not be read: \(problem)")
+          )))
+    }
+    self.transcript = transcript
+    hasLoadedHistory = true
     for prompt in promptsDuringLoad {
       self.transcript.addPrompt(
         prompt.text, context: prompt.context, attachments: prompt.attachments)
@@ -361,7 +423,7 @@ final class AgentSession {
     // The pills' picks, frozen for this process: the session's own, else Settings'.
     modelPick = pickedModel
     modePick = startingMode
-    let effort = effortPick ?? ClaudeChoice.defaultEffort
+    let effort = effortPick ?? (features.usesSettingsDefaults ? ClaudeChoice.defaultEffort : nil)
     let allowsBypass = ClaudeChoice.allowsBypass
     let environment = await Self.environment.value
     guard stillWanted(since: stops) else { return }
@@ -415,6 +477,7 @@ final class AgentSession {
   }
 
   private func isLiveElsewhere(_ target: ResumeTarget) -> Bool {
+    guard target.agentKind == .claude else { return false }
     let monitor = SessionMonitor.shared
     if monitor.hasReadRegistries, monitor.liveIDs.contains(target.sessionID) { return true }
     return LiveSession.read(account: target.account).contains { $0.sessionID == target.sessionID }
@@ -465,7 +528,7 @@ final class AgentSession {
     if process != nil {
       unsentName = title
       sendUnsentName()
-    } else if let target = ownTarget() {
+    } else if agent == .claude, let target = ownTarget() {
       // Written behind no process's back: one opened elsewhere since would keep its own name.
       guard !isLiveElsewhere(target),
         (try? SessionTitle.write(
@@ -612,6 +675,7 @@ final class AgentSession {
       }
     }
     if turnEnded {
+      if !features.picksApplyAtOnce { pillNote = nil }
       if savedTarget == nil { savedTarget = locateTarget() }
       // Not while a queued prompt is about to start the next one: said once the queue
       // empties without a turn, should it be cancelled or refused instead.
@@ -624,7 +688,11 @@ final class AgentSession {
     case .rateLimit(let info):
       if let account { accountStore.record(info, for: account) }
     case .models(let models):
-      if let account { catalog.record(models, for: account) }
+      if agent == .codex {
+        catalog.recordCodex(models)
+      } else if let account {
+        catalog.record(models, for: account)
+      }
     case .modeAdopted(let mode):
       adopt(mode: mode)
     case .initialized(let reply):
@@ -643,6 +711,8 @@ final class AgentSession {
     case .unusable(let message):
       stop()
       phase = .failed(message)
+      // As an exit says it: the window refreshes its attention and marks a background row.
+      onStopped?()
     }
   }
 
