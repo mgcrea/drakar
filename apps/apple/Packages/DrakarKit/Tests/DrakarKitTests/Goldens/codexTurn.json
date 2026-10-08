@@ -1,0 +1,138 @@
+{
+  "exited" : {
+    "agentTasks" : [
+
+    ],
+    "closingText" : "msg-1|Created hello.txt containing `hi`; the shell command was rejected.",
+    "contextUsage" : "244/0/21120/5/-",
+    "entries" : [
+      {
+        "attachments" : [
+
+        ],
+        "id" : "prompt#1",
+        "kind" : "prompt",
+        "text" : "Run it",
+        "thinkingLive" : false,
+        "thinkingTimed" : false
+      },
+      {
+        "attachments" : [
+
+        ],
+        "id" : "rs-1",
+        "kind" : "thinking",
+        "text" : "**Planning the file**",
+        "thinkingLive" : false,
+        "thinkingTimed" : true
+      },
+      {
+        "attachments" : [
+
+        ],
+        "id" : "patch-1",
+        "kind" : "tool",
+        "thinkingLive" : false,
+        "thinkingTimed" : false,
+        "tool" : {
+          "id" : "patch-1",
+          "input" : "[\n  {\n    \"diff\" : \"hi\\n\",\n    \"kind\" : {\n      \"type\" : \"add\"\n    },\n    \"path\" : \"/Users/me/project/hello.txt\"\n  }\n]",
+          "isError" : false,
+          "name" : "Edit",
+          "result" : "completed",
+          "summary" : "/Users/me/project/hello.txt"
+        }
+      },
+      {
+        "attachments" : [
+
+        ],
+        "id" : "msg-1",
+        "kind" : "text",
+        "text" : "Created hello.txt containing `hi`; the shell command was rejected.",
+        "thinkingLive" : false,
+        "thinkingTimed" : false
+      }
+    ],
+    "isCompacting" : false,
+    "isRunning" : false,
+    "lastTurn" : "text=-|cost=-|duration=21426",
+    "pending" : [
+
+    ],
+    "promptCache" : "unknown",
+    "queued" : [
+
+    ],
+    "session" : "thread-1|/Users/me/project|gpt-6-astra|-|0.160.1|-|",
+    "turnEnd" : "completed"
+  },
+  "running" : {
+    "agentTasks" : [
+
+    ],
+    "closingText" : "msg-1|Created hello.txt containing `hi`; the shell command was rejected.",
+    "contextUsage" : "244/0/21120/5/-",
+    "entries" : [
+      {
+        "attachments" : [
+
+        ],
+        "id" : "prompt#1",
+        "kind" : "prompt",
+        "text" : "Run it",
+        "thinkingLive" : false,
+        "thinkingTimed" : false
+      },
+      {
+        "attachments" : [
+
+        ],
+        "id" : "rs-1",
+        "kind" : "thinking",
+        "text" : "**Planning the file**",
+        "thinkingLive" : false,
+        "thinkingTimed" : true
+      },
+      {
+        "attachments" : [
+
+        ],
+        "id" : "patch-1",
+        "kind" : "tool",
+        "thinkingLive" : false,
+        "thinkingTimed" : false,
+        "tool" : {
+          "id" : "patch-1",
+          "input" : "[\n  {\n    \"diff\" : \"hi\\n\",\n    \"kind\" : {\n      \"type\" : \"add\"\n    },\n    \"path\" : \"/Users/me/project/hello.txt\"\n  }\n]",
+          "isError" : false,
+          "name" : "Edit",
+          "result" : "completed",
+          "summary" : "/Users/me/project/hello.txt"
+        }
+      },
+      {
+        "attachments" : [
+
+        ],
+        "id" : "msg-1",
+        "kind" : "text",
+        "text" : "Created hello.txt containing `hi`; the shell command was rejected.",
+        "thinkingLive" : false,
+        "thinkingTimed" : false
+      }
+    ],
+    "isCompacting" : false,
+    "isRunning" : false,
+    "lastTurn" : "text=-|cost=-|duration=21426",
+    "pending" : [
+
+    ],
+    "promptCache" : "unknown",
+    "queued" : [
+
+    ],
+    "session" : "thread-1|/Users/me/project|gpt-6-astra|-|0.160.1|-|",
+    "turnEnd" : "completed"
+  }
+}

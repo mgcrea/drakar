@@ -66,6 +66,13 @@ enum Fixture: String {
   /// window, the end. Server lines only; ids shortened, paths and account scrubbed. Not
   /// stream-json: read with `CodexTranslator`.
   case codexTurn = "codex-turn"
+  /// One `apply_patch` (codex-cli 0.160.1, 2026-10-07): `a.txt` updated, `b.txt` deleted,
+  /// `c.txt` renamed to `d.txt`, after an approval answered `accept`. Hand-trimmed from a
+  /// capture, ids and paths placeholders.
+  case codexFileChanges = "codex-file-changes"
+  /// A turn running `sleep 6` with a prompt steered into it (2026-10-07): each `userMessage`
+  /// carries the `clientUserMessageId` it was sent with, `prompt-1` and `prompt-2`.
+  case codexSteer = "codex-steer"
 
   var lines: [Data] {
     get throws {
@@ -78,5 +85,16 @@ enum Fixture: String {
 
   var messages: [StreamMessage] {
     get throws { try lines.map { try StreamMessage(line: $0) } }
+  }
+
+  /// One `thread/items/list` page (2026-10-07): a prompt, a commentary, a declined file
+  /// change, the answer. JSON, not lines.
+  static var codexItemsPage: JSONValue {
+    get throws {
+      let url = try #require(
+        Bundle.module.url(
+          forResource: "codex-items-page", withExtension: "json", subdirectory: "Fixtures"))
+      return try JSONValue.parse(Data(contentsOf: url))
+    }
   }
 }

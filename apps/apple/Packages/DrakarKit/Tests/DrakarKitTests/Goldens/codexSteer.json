@@ -1,0 +1,156 @@
+{
+  "exited" : {
+    "agentTasks" : [
+
+    ],
+    "closingText" : "msg-2|ALPHA BETA",
+    "entries" : [
+      {
+        "attachments" : [
+
+        ],
+        "id" : "prompt#1",
+        "kind" : "prompt",
+        "text" : "Run it",
+        "thinkingLive" : false,
+        "thinkingTimed" : false
+      },
+      {
+        "attachments" : [
+
+        ],
+        "id" : "msg-1",
+        "kind" : "text",
+        "text" : "I’ll run `sleep 6` now.",
+        "thinkingLive" : false,
+        "thinkingTimed" : false
+      },
+      {
+        "attachments" : [
+
+        ],
+        "id" : "exec-1",
+        "kind" : "tool",
+        "thinkingLive" : false,
+        "thinkingTimed" : false,
+        "tool" : {
+          "id" : "exec-1",
+          "input" : "{\n  \"command\" : \"/bin/zsh -lc 'sleep 6'\"\n}",
+          "isError" : false,
+          "name" : "Shell",
+          "result" : "",
+          "summary" : "sleep 6"
+        }
+      },
+      {
+        "attachments" : [
+
+        ],
+        "id" : "prompt#2",
+        "kind" : "prompt",
+        "text" : "Also add the word BETA to your reply.",
+        "thinkingLive" : false,
+        "thinkingTimed" : false
+      },
+      {
+        "attachments" : [
+
+        ],
+        "id" : "msg-2",
+        "kind" : "text",
+        "text" : "ALPHA BETA",
+        "thinkingLive" : false,
+        "thinkingTimed" : false
+      }
+    ],
+    "isCompacting" : false,
+    "isRunning" : false,
+    "lastTurn" : "text=-|cost=-|duration=11800",
+    "pending" : [
+
+    ],
+    "promptCache" : "unknown",
+    "queued" : [
+
+    ],
+    "session" : "thread-3|/Users/me/project|gpt-6-astra|-|0.160.1|-|",
+    "turnEnd" : "completed"
+  },
+  "running" : {
+    "agentTasks" : [
+
+    ],
+    "closingText" : "msg-2|ALPHA BETA",
+    "entries" : [
+      {
+        "attachments" : [
+
+        ],
+        "id" : "prompt#1",
+        "kind" : "prompt",
+        "text" : "Run it",
+        "thinkingLive" : false,
+        "thinkingTimed" : false
+      },
+      {
+        "attachments" : [
+
+        ],
+        "id" : "msg-1",
+        "kind" : "text",
+        "text" : "I’ll run `sleep 6` now.",
+        "thinkingLive" : false,
+        "thinkingTimed" : false
+      },
+      {
+        "attachments" : [
+
+        ],
+        "id" : "exec-1",
+        "kind" : "tool",
+        "thinkingLive" : false,
+        "thinkingTimed" : false,
+        "tool" : {
+          "id" : "exec-1",
+          "input" : "{\n  \"command\" : \"/bin/zsh -lc 'sleep 6'\"\n}",
+          "isError" : false,
+          "name" : "Shell",
+          "result" : "",
+          "summary" : "sleep 6"
+        }
+      },
+      {
+        "attachments" : [
+
+        ],
+        "id" : "prompt#2",
+        "kind" : "prompt",
+        "text" : "Also add the word BETA to your reply.",
+        "thinkingLive" : false,
+        "thinkingTimed" : false
+      },
+      {
+        "attachments" : [
+
+        ],
+        "id" : "msg-2",
+        "kind" : "text",
+        "text" : "ALPHA BETA",
+        "thinkingLive" : false,
+        "thinkingTimed" : false
+      }
+    ],
+    "isCompacting" : false,
+    "isRunning" : false,
+    "lastTurn" : "text=-|cost=-|duration=11800",
+    "pending" : [
+
+    ],
+    "promptCache" : "unknown",
+    "queued" : [
+
+    ],
+    "session" : "thread-3|/Users/me/project|gpt-6-astra|-|0.160.1|-|",
+    "turnEnd" : "completed"
+  }
+}

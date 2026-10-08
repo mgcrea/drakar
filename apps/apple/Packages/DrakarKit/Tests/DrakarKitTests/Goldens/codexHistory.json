@@ -1,0 +1,152 @@
+{
+  "exited" : {
+    "agentTasks" : [
+
+    ],
+    "closingText" : "msg-2|Both actions were rejected; I couldn’t read `a.txt` or create `e.txt`.",
+    "entries" : [
+      {
+        "attachments" : [
+
+        ],
+        "id" : "notice#1",
+        "kind" : "notice",
+        "text" : "Codex keeps no record of commands that were declined.",
+        "thinkingLive" : false,
+        "thinkingTimed" : false
+      },
+      {
+        "attachments" : [
+
+        ],
+        "id" : "prompt#1",
+        "kind" : "prompt",
+        "text" : "Run `cat a.txt`, then create e.txt containing hi with apply_patch, then reply OK.",
+        "thinkingLive" : false,
+        "thinkingTimed" : false
+      },
+      {
+        "attachments" : [
+
+        ],
+        "id" : "msg-1",
+        "kind" : "text",
+        "text" : "I’ll read `a.txt`, then create `e.txt` containing `hi`.\n",
+        "thinkingLive" : false,
+        "thinkingTimed" : false
+      },
+      {
+        "attachments" : [
+
+        ],
+        "id" : "patch-1",
+        "kind" : "tool",
+        "thinkingLive" : false,
+        "thinkingTimed" : false,
+        "tool" : {
+          "id" : "patch-1",
+          "input" : "[\n  {\n    \"diff\" : \"hi\\n\",\n    \"kind\" : {\n      \"type\" : \"add\"\n    },\n    \"path\" : \"/Users/me/project/e.txt\"\n  }\n]",
+          "isError" : true,
+          "name" : "Edit",
+          "result" : "declined",
+          "summary" : "/Users/me/project/e.txt"
+        }
+      },
+      {
+        "attachments" : [
+
+        ],
+        "id" : "msg-2",
+        "kind" : "text",
+        "text" : "Both actions were rejected; I couldn’t read `a.txt` or create `e.txt`.",
+        "thinkingLive" : false,
+        "thinkingTimed" : false
+      }
+    ],
+    "isCompacting" : false,
+    "isRunning" : false,
+    "pending" : [
+
+    ],
+    "promptCache" : "unknown",
+    "queued" : [
+
+    ],
+    "turnEnd" : "completed"
+  },
+  "running" : {
+    "agentTasks" : [
+
+    ],
+    "closingText" : "msg-2|Both actions were rejected; I couldn’t read `a.txt` or create `e.txt`.",
+    "entries" : [
+      {
+        "attachments" : [
+
+        ],
+        "id" : "notice#1",
+        "kind" : "notice",
+        "text" : "Codex keeps no record of commands that were declined.",
+        "thinkingLive" : false,
+        "thinkingTimed" : false
+      },
+      {
+        "attachments" : [
+
+        ],
+        "id" : "prompt#1",
+        "kind" : "prompt",
+        "text" : "Run `cat a.txt`, then create e.txt containing hi with apply_patch, then reply OK.",
+        "thinkingLive" : false,
+        "thinkingTimed" : false
+      },
+      {
+        "attachments" : [
+
+        ],
+        "id" : "msg-1",
+        "kind" : "text",
+        "text" : "I’ll read `a.txt`, then create `e.txt` containing `hi`.\n",
+        "thinkingLive" : false,
+        "thinkingTimed" : false
+      },
+      {
+        "attachments" : [
+
+        ],
+        "id" : "patch-1",
+        "kind" : "tool",
+        "thinkingLive" : false,
+        "thinkingTimed" : false,
+        "tool" : {
+          "id" : "patch-1",
+          "input" : "[\n  {\n    \"diff\" : \"hi\\n\",\n    \"kind\" : {\n      \"type\" : \"add\"\n    },\n    \"path\" : \"/Users/me/project/e.txt\"\n  }\n]",
+          "isError" : true,
+          "name" : "Edit",
+          "result" : "declined",
+          "summary" : "/Users/me/project/e.txt"
+        }
+      },
+      {
+        "attachments" : [
+
+        ],
+        "id" : "msg-2",
+        "kind" : "text",
+        "text" : "Both actions were rejected; I couldn’t read `a.txt` or create `e.txt`.",
+        "thinkingLive" : false,
+        "thinkingTimed" : false
+      }
+    ],
+    "isCompacting" : false,
+    "isRunning" : false,
+    "pending" : [
+
+    ],
+    "promptCache" : "unknown",
+    "queued" : [
+
+    ],
+    "turnEnd" : "completed"
+  }
+}

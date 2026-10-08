@@ -1,0 +1,116 @@
+{
+  "exited" : {
+    "agentTasks" : [
+
+    ],
+    "closingText" : "msg-1|DONE",
+    "entries" : [
+      {
+        "attachments" : [
+
+        ],
+        "id" : "prompt#1",
+        "kind" : "prompt",
+        "text" : "Run it",
+        "thinkingLive" : false,
+        "thinkingTimed" : false
+      },
+      {
+        "attachments" : [
+
+        ],
+        "id" : "patch-1",
+        "kind" : "tool",
+        "thinkingLive" : false,
+        "thinkingTimed" : false,
+        "tool" : {
+          "id" : "patch-1",
+          "input" : "[\n  {\n    \"diff\" : \"@@ -1,3 +1,3 @@\\n one\\n-two\\n+TWO\\n three\\n\",\n    \"kind\" : {\n      \"move_path\" : null,\n      \"type\" : \"update\"\n    },\n    \"path\" : \"/Users/me/project/a.txt\"\n  },\n  {\n    \"diff\" : \"bye\\n\",\n    \"kind\" : {\n      \"type\" : \"delete\"\n    },\n    \"path\" : \"/Users/me/project/b.txt\"\n  },\n  {\n    \"diff\" : \"\\n\\nMoved to: /Users/me/project/d.txt\",\n    \"kind\" : {\n      \"move_path\" : \"/Users/me/project/d.txt\",\n      \"type\" : \"update\"\n    },\n    \"path\" : \"/Users/me/project/c.txt\"\n  }\n]",
+          "isError" : false,
+          "name" : "Edit",
+          "result" : "completed",
+          "summary" : "/Users/me/project/a.txt"
+        }
+      },
+      {
+        "attachments" : [
+
+        ],
+        "id" : "msg-1",
+        "kind" : "text",
+        "text" : "DONE",
+        "thinkingLive" : false,
+        "thinkingTimed" : false
+      }
+    ],
+    "isCompacting" : false,
+    "isRunning" : false,
+    "lastTurn" : "text=-|cost=-|duration=9100",
+    "pending" : [
+
+    ],
+    "promptCache" : "unknown",
+    "queued" : [
+
+    ],
+    "session" : "thread-2|/Users/me/project|gpt-6-astra|-|0.160.1|-|",
+    "turnEnd" : "completed"
+  },
+  "running" : {
+    "agentTasks" : [
+
+    ],
+    "closingText" : "msg-1|DONE",
+    "entries" : [
+      {
+        "attachments" : [
+
+        ],
+        "id" : "prompt#1",
+        "kind" : "prompt",
+        "text" : "Run it",
+        "thinkingLive" : false,
+        "thinkingTimed" : false
+      },
+      {
+        "attachments" : [
+
+        ],
+        "id" : "patch-1",
+        "kind" : "tool",
+        "thinkingLive" : false,
+        "thinkingTimed" : false,
+        "tool" : {
+          "id" : "patch-1",
+          "input" : "[\n  {\n    \"diff\" : \"@@ -1,3 +1,3 @@\\n one\\n-two\\n+TWO\\n three\\n\",\n    \"kind\" : {\n      \"move_path\" : null,\n      \"type\" : \"update\"\n    },\n    \"path\" : \"/Users/me/project/a.txt\"\n  },\n  {\n    \"diff\" : \"bye\\n\",\n    \"kind\" : {\n      \"type\" : \"delete\"\n    },\n    \"path\" : \"/Users/me/project/b.txt\"\n  },\n  {\n    \"diff\" : \"\\n\\nMoved to: /Users/me/project/d.txt\",\n    \"kind\" : {\n      \"move_path\" : \"/Users/me/project/d.txt\",\n      \"type\" : \"update\"\n    },\n    \"path\" : \"/Users/me/project/c.txt\"\n  }\n]",
+          "isError" : false,
+          "name" : "Edit",
+          "result" : "completed",
+          "summary" : "/Users/me/project/a.txt"
+        }
+      },
+      {
+        "attachments" : [
+
+        ],
+        "id" : "msg-1",
+        "kind" : "text",
+        "text" : "DONE",
+        "thinkingLive" : false,
+        "thinkingTimed" : false
+      }
+    ],
+    "isCompacting" : false,
+    "isRunning" : false,
+    "lastTurn" : "text=-|cost=-|duration=9100",
+    "pending" : [
+
+    ],
+    "promptCache" : "unknown",
+    "queued" : [
+
+    ],
+    "session" : "thread-2|/Users/me/project|gpt-6-astra|-|0.160.1|-|",
+    "turnEnd" : "completed"
+  }
+}

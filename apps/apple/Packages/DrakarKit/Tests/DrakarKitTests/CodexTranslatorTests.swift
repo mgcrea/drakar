@@ -227,4 +227,122 @@ struct CodexTranslatorTests {
     #expect(t.entries[1].thinkingSince == nil)
     #expect(t.entries[1].thinkingDuration != nil)
   }
+
+  private func foldFile(_ fixture: Fixture, queued: [QueuedPrompt] = []) throws -> Transcript {
+    var translator = CodexTranslator()
+    var transcript = Transcript()
+    transcript.addPrompt("go")
+    for prompt in queued { transcript.queue(prompt) }
+    for line in try fixture.lines {
+      for event in translator.translate(try JSONValue.parse(line), at: nil) {
+        transcript.apply(event)
+      }
+    }
+    return transcript
+  }
+
+  @Test func aPatchUpdatesDeletesAndRenames() throws {
+    let t = try foldFile(.codexFileChanges)
+    guard case .tool(let call) = t.entries[1].kind, case .fileChange(_, let edits) = call.kind
+    else {
+      Issue.record("\(t.entries)")
+      return
+    }
+    let changes = FileChange.each(edits: edits)
+    #expect(
+      changes.map(\.path) == [
+        "/Users/me/project/a.txt", "/Users/me/project/b.txt", "/Users/me/project/c.txt",
+      ])
+    #expect(changes[0].addedCount == 1 && changes[0].removedCount == 1)
+    #expect(changes[1].isDeleted && changes[1].removedCount == 1)
+    #expect(changes[2].movedTo == "/Users/me/project/d.txt")
+    #expect(changes[2].diffs.isEmpty)
+    #expect(call.result?.isError == false)
+  }
+
+  @Test func aFileChangeOffersAcceptingForTheSession() throws {
+    var translator = CodexTranslator()
+    var events: [AgentEvent] = []
+    for line in try Fixture.codexFileChanges.lines.prefix(6) {
+      events += translator.translate(try JSONValue.parse(line), at: nil)
+    }
+    guard case .permissionRequested(let pending)? = events.last else {
+      Issue.record("\(events)")
+      return
+    }
+    #expect(pending.requestID == "0")
+    #expect(pending.request.suggestions == [CodexPolicy.acceptForSession])
+  }
+
+  @Test func aSteeredPromptLeavesTheQueueWhenCodexTakesIt() throws {
+    let t = try foldFile(
+      .codexSteer,
+      queued: [QueuedPrompt(uuid: "prompt-2", text: "Also add the word BETA to your reply.")])
+    #expect(t.queuedPrompts.isEmpty)
+    #expect(t.entries.map(\.kind).contains(.prompt("Also add the word BETA to your reply.")))
+    #expect(t.entries.last?.kind == .text("ALPHA BETA"))
+    #expect(t.turnEnd == .completed)
+  }
+
+  @Test func aRetryShowsUntilTheNextLine() throws {
+    let retrying = try fold([
+      #"{"method":"error","params":{"error":{"message":"Overloaded"},"willRetry":true,"threadId":"t","turnId":"turn-1"}}"#
+    ])
+    #expect(retrying.retry != nil)
+    let resumed = try fold([
+      #"{"method":"error","params":{"error":{"message":"Overloaded"},"willRetry":true,"threadId":"t","turnId":"turn-1"}}"#,
+      #"{"method":"item/agentMessage/delta","params":{"threadId":"t","turnId":"turn-1","itemId":"m","delta":"x"}}"#,
+    ])
+    #expect(resumed.retry == nil)
+    let given = try fold([
+      #"{"method":"error","params":{"error":{"message":"Usage limit reached"},"willRetry":false,"threadId":"t","turnId":"turn-1"}}"#
+    ])
+    #expect(given.entries.last?.kind == .failure("Usage limit reached"))
+  }
+
+  @Test func historyFoldsAPage() throws {
+    var t = Transcript()
+    for event in CodexTranslator.history(try Fixture.codexItemsPage["data"]?.arrayValue ?? []) {
+      t.apply(event)
+    }
+    let kinds = t.entries.map(\.kind)
+    #expect(kinds.first == .notice("Codex keeps no record of commands that were declined."))
+    #expect(
+      kinds[1]
+        == .prompt(
+          "Run `cat a.txt`, then create e.txt containing hi with apply_patch, then reply OK."))
+    #expect(kinds[2] == .text("I’ll read `a.txt`, then create `e.txt` containing `hi`.\n"))
+    guard case .tool(let call) = kinds[3] else {
+      Issue.record("\(kinds)")
+      return
+    }
+    #expect(call.result?.isError == true)
+    #expect(
+      kinds[4] == .text("Both actions were rejected; I couldn’t read `a.txt` or create `e.txt`."))
+    #expect(!t.isRunning)
+    #expect(t.turnEnd == .completed)
+  }
+
+  @Test func historyReadsContextAndAttachmentsBack() throws {
+    let selection =
+      "<ide_opened_file>The user opened the file /p/a.swift in the IDE. This may or may not be related to the current task.</ide_opened_file>"
+    let entry: JSONValue = .object([
+      "turnId": .string("turn-1"),
+      "item": .object([
+        "type": .string("userMessage"), "id": .string("u"), "clientId": .null,
+        "content": .array([
+          CodexInput.text(selection), CodexInput.text("Look"),
+          .object(["type": .string("image"), "url": .string("data:image/png;base64,AAAA")]),
+          CodexInput.text("<attachment name=\"notes.txt\">\nhi\n</attachment>"),
+        ]),
+      ]),
+    ])
+    var t = Transcript()
+    for event in CodexTranslator.history([entry]) { t.apply(event) }
+    let prompt = try #require(t.entries.first { if case .prompt = $0.kind { true } else { false } })
+    #expect(prompt.kind == .prompt("Look"))
+    #expect(prompt.context == "a.swift")
+    #expect(prompt.attachments.map(\.kind) == [.image, .text])
+    #expect(prompt.attachments.last?.name == "notes.txt")
+  }
 }
