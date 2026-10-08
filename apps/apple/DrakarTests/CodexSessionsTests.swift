@@ -155,4 +155,14 @@ struct CodexSessionsTests {
     ]
     #expect(SessionPills.modelLabel(for: session, in: models) == "GPT-6.1-Sol")
   }
+
+  @Test func theOtherAgentIsTheOneNotDefault() {
+    ClaudeChoice.$testSuite.withValue("codex-default-\(UUID())") {
+      #expect(ClaudeChoice.defaultAgent == .claude)
+      #expect(ClaudeChoice.defaultAgent.other == .codex)
+      ClaudeChoice.defaults.set("codex", forKey: PreferenceKey.defaultAgent)
+      #expect(ClaudeChoice.defaultAgent == .codex)
+      #expect(ClaudeChoice.defaultAgent.other == .claude)
+    }
+  }
 }

@@ -294,9 +294,30 @@ struct SettingsView: View {
 
 struct GeneralPane: View {
   @AppStorage(PreferenceKey.editorScope) private var editorScope = EditorScope.openFolders
+  @AppStorage(PreferenceKey.defaultAgent) private var defaultAgent = AgentKind.claude.rawValue
+  @State private var codexPath: String?
 
   var body: some View {
     Form {
+      Section {
+        Picker("New sessions run", selection: $defaultAgent) {
+          ForEach(AgentKind.allCases, id: \.self) { agent in
+            Text(agent.name).tag(agent.rawValue)
+          }
+        }
+        .accessibilityIdentifier("settings.defaultAgent")
+        LabeledContent("Codex") {
+          Text(
+            codexPath.map { ContentView.abbreviated(URL(filePath: $0)) }
+              ?? String(localized: "Not found: brew install --cask codex"))
+        }
+      } footer: {
+        Text("⌥-click New Session, or press ⌃⌘N, to start the other one.")
+      }
+      .task {
+        let environment = await AgentSession.environment.value
+        codexPath = CodexLaunch.locate(path: environment["PATH"])?.path(percentEncoded: false)
+      }
       ClaudeSection()
       Section {
         Picker("Be the editor for Claude Code in a terminal", selection: $editorScope) {

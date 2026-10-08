@@ -114,6 +114,11 @@ private struct SessionCommands: View {
     Button("New Session") { project?.newSession() }
       .keyboardShortcut("n")
       .disabled(project == nil)
+    Button("New \(ClaudeChoice.defaultAgent.other.name) Session") {
+      project?.newSession(agent: ClaudeChoice.defaultAgent.other)
+    }
+    .keyboardShortcut("n", modifiers: [.command, .control])
+    .disabled(project == nil)
     ForkSessionCommand(project: project)
     Button("Rename Session…") {
       if let selected = project?.selected { RenameSessionPrompt.run(for: selected) }

@@ -280,7 +280,8 @@ struct ContentView: View {
   /// `make run ARGS='-drakar.debugFolder <path> -drakar.debugPrompt <text>'` opens a
   /// project with a new session and sends it a first prompt with no clicks.
   /// `-drakar.debugResume <session id>` attaches one from the index instead.
-  /// `-drakar.debugModel <id>` picks a cheap model for the new session, and
+  /// `-drakar.debugModel <id>` picks a cheap model for the new session,
+  /// `-drakar.debugAgent codex` starts a Codex session instead of Claude Code's, and
   /// `-drakar.debugSettingSources project` keeps the user's own permission rules and hooks
   /// out of one that needs a permission prompt to appear. `-drakar.debugOpen <path>`,
   /// `-drakar.debugQuickOpen <query>` and `-drakar.debugSearch <query>` drive the editor.
@@ -306,7 +307,13 @@ struct ContentView: View {
       guard let path = defaults.string(forKey: "drakar.debugFolder") else { return }
       route = .project(URL(filePath: path, directoryHint: .isDirectory))
       open(route)  // now, not on the next update: the rest needs the project
-      guard let project, let item = project.selected else { return }
+      let codex = defaults.string(forKey: "drakar.debugAgent") == "codex"
+      guard let project else { return }
+      let item = codex ? project.newSession(agent: .codex) : project.selected
+      guard let item else { return }
+      if codex, let model = defaults.string(forKey: "drakar.debugModel") {
+        item.session.setModel(model)
+      }
       (item.session.backend as? ClaudeBackend)?.command = ClaudeCommand(
         model: defaults.string(forKey: "drakar.debugModel"),
         extraArguments: defaults.string(forKey: "drakar.debugSettingSources").map {

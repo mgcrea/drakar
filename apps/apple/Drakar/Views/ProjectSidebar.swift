@@ -66,11 +66,22 @@ struct SessionListView: View {
           .accessibilityLabel("\(project.waitingCount) waiting for you")
           .accessibilityIdentifier("sessions.waiting")
       }
-      Button("New Session", systemImage: "plus") { project.newSession() }
-        .labelStyle(.iconOnly)
-        .buttonStyle(.borderless)
-        .help("New session (⌘N)")
-        .accessibilityIdentifier("sessions.new")
+      Button("New Session", systemImage: "plus") {
+        // ⌥-click starts the agent that is not the default.
+        let other = NSEvent.modifierFlags.contains(.option)
+        project.newSession(agent: other ? ClaudeChoice.defaultAgent.other : nil)
+      }
+      .labelStyle(.iconOnly)
+      .buttonStyle(.borderless)
+      .help(
+        "New \(ClaudeChoice.defaultAgent.name) session (⌘N); ⌥-click for \(ClaudeChoice.defaultAgent.other.name) (⌃⌘N)"
+      )
+      .contextMenu {
+        ForEach(AgentKind.allCases, id: \.self) { agent in
+          Button("New \(agent.name) Session") { project.newSession(agent: agent) }
+        }
+      }
+      .accessibilityIdentifier("sessions.new")
     }
   }
 
@@ -302,6 +313,14 @@ struct SessionRow: View {
           if item.isUnread {
             Circle().fill(.blue).frame(width: 5, height: 5).accessibilityLabel("Unread")
           }
+          if item.session.agent == .codex {
+            Text("Codex")
+              .font(.caption2)
+              .padding(.horizontal, 5)
+              .padding(.vertical, 1)
+              .background(Capsule().fill(.quaternary))
+              .accessibilityIdentifier("sessions.agent.codex")
+          }
           if let other = otherAccount {
             Text(AccountStore.shared.profile(for: other).name)
               .font(.caption2)
@@ -331,7 +350,8 @@ struct SessionRow: View {
 
   /// The session's account when it is not the window's.
   private var otherAccount: ClaudeAccount? {
-    guard let account = item.session.effectiveAccount, account.key != windowAccount.key
+    guard item.session.features.showsAccount,
+      let account = item.session.effectiveAccount, account.key != windowAccount.key
     else { return nil }
     return account
   }

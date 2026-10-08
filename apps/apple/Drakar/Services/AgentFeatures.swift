@@ -6,6 +6,9 @@ import Foundation
 enum AgentKind: String, Codable, CaseIterable {
   case claude, codex
 
+  /// The agent ⌥-click and ⌃⌘N start.
+  var other: AgentKind { self == .claude ? .codex : .claude }
+
   /// The product's name: "Claude Code exited", the footer's version.
   var name: String {
     switch self {
