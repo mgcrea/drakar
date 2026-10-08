@@ -90,7 +90,8 @@ public struct CodexSession: Sendable {
   private var beforeThread: [Waiting] = []
   /// Prompts sent while a turn was starting, steered once it has an id.
   private var beforeTurnID: [Waiting] = []
-  /// Stop was pressed while a turn was starting.
+  /// Stop was pressed while the thread was opening or a turn starting: the turn is
+  /// interrupted once it has an id.
   private var interruptsWhenStarted = false
   /// Steered prompts Codex has not echoed yet, by uuid.
   private var steered: [String] = []
