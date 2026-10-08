@@ -19,7 +19,7 @@ final class CodexBackend: AgentBackend {
     session = CodexSession(
       cwd: start.folder.path(percentEncoded: false), resuming: start.resuming?.sessionID,
       mode: start.mode ?? .ask, model: start.model == "default" ? nil : start.model,
-      effort: start.effort, version: CodexLaunch.appVersion)
+      effort: start.effort, version: CodexLaunch.appVersion, name: start.name)
     return AgentLaunch(
       configuration: executable.map {
         CodexLaunch.configuration(

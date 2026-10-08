@@ -318,6 +318,61 @@ struct CodexSessionTests {
       rename["params"] == .object(["threadId": .string("t-1"), "name": .string("Pineapple")]))
   }
 
+  /// A name given while the thread opens goes once it runs; the old name it answers with
+  /// is not shown over it.
+  @Test func aRenameBeforeTheThreadIsReadyIsSentOnceReady() throws {
+    var (session, _) = initialized(resuming: "t-1")
+    let resume = try write("thread/resume", in: session.send(.prompt(input: input("x"), uuid: "p")))
+    #expect(session.send(.rename("Pineapple")).writes.isEmpty)
+    let resumed = answer(
+      &session, resume, #"{"thread":{"id":"t-1","cwd":"/p","name":"Mango"},"model":"m"}"#)
+    let rename = try write("thread/name/set", in: resumed)
+    #expect(
+      rename["params"] == .object(["threadId": .string("t-1"), "name": .string("Pineapple")]))
+    #expect(!resumed.events.contains(.title(.custom("Mango"))))
+    #expect(methods(resumed).filter { $0 == "thread/name/set" }.count == 1)
+  }
+
+  /// A name the session started with goes once the thread runs.
+  @Test func aNameGivenAtStartIsSentOnceTheThreadRuns() throws {
+    var session = CodexSession(
+      cwd: "/p", resuming: nil, mode: .ask, model: nil, effort: nil, version: "1.0",
+      name: "Pineapple")
+    let start = session.start()
+    _ = answer(&session, start.writes[0], "{}")
+    let opening = session.send(.prompt(input: input("one"), uuid: "p-1"))
+    let started = answer(&session, try write("thread/start", in: opening), thread)
+    #expect(
+      try write("thread/name/set", in: started)["params"]?["name"] == .string("Pineapple"))
+  }
+
+  @Test func aResumedThreadsNameIsItsTitle() throws {
+    var (session, _) = initialized(resuming: "t-1")
+    let resume = try write("thread/resume", in: session.send(.prompt(input: input("x"), uuid: "p")))
+    let resumed = answer(
+      &session, resume, #"{"thread":{"id":"t-1","cwd":"/p","name":"Pineapple"},"model":"m"}"#)
+    #expect(resumed.events.contains(.title(.custom("Pineapple"))))
+    #expect(!methods(resumed).contains("thread/name/set"))
+  }
+
+  @Test func aThreadWithNoNameHasNoTitle() throws {
+    var (session, _) = initialized()
+    let opening = session.send(.prompt(input: input("one"), uuid: "p-1"))
+    let started = answer(
+      &session, try write("thread/start", in: opening),
+      #"{"thread":{"id":"t-1","cwd":"/p","name":null},"model":"m"}"#)
+    #expect(!started.events.contains { if case .title = $0 { true } else { false } })
+  }
+
+  @Test func aNameUpdateIsTheTitle() throws {
+    var session = try running()
+    let updated = session.receive(
+      json(
+        #"{"method":"thread/name/updated","params":{"threadId":"t-1","threadName":"Pineapple"}}"#),
+      at: nil)
+    #expect(updated.events == [.title(.custom("Pineapple"))])
+  }
+
   @Test func linesStillReachTheTranslator() throws {
     var session = try running()
     let step = session.receive(

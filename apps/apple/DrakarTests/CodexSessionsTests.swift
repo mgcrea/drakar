@@ -111,6 +111,33 @@ struct CodexSessionsTests {
       })
   }
 
+  /// A restored Codex session is titled with its thread's name, as Codex stores it.
+  @Test func aRestoredSessionTakesItsThreadsName() async throws {
+    let script = folder.appending(path: "drakar-codex-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: script) }
+    try Data(
+      #"""
+      #!/bin/sh
+      while read -r line; do
+        id=$(printf '%s' "$line" | /usr/bin/sed -n 's/.*"id":\([0-9.]*\).*/\1/p')
+        case "$line" in
+          *'"initialize"'*) echo "{\"id\":$id,\"result\":{}}" ;;
+          *'"thread/read"'*) echo "{\"id\":$id,\"result\":{\"thread\":{\"id\":\"t-1\",\"name\":\"Pineapple\"}}}" ;;
+          *'"thread/items/list"'*) echo "{\"id\":$id,\"result\":{\"data\":[],\"nextCursor\":null}}" ;;
+        esac
+      done
+      """#.utf8
+    ).write(to: script)
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script.path)
+    let target = ResumeTarget(
+      sessionID: "t-1", cwd: folder.path(percentEncoded: false), file: "", accountDirectory: "/h",
+      accountIsDefault: true, agent: .codex)
+    let session = AgentSession(folder: folder, resuming: target)
+    session.executableOverride = script
+    await session.loadHistory()
+    #expect(session.transcript.customTitle == "Pineapple")
+  }
+
   /// An `.unusable` signal ends the session as an exit does: the process gone, the queue
   /// emptied, the reason in `phase`, and the window told it stopped.
   @Test func anUnusableSignalStopsTheSessionAndSaysSo() async throws {

@@ -62,20 +62,28 @@ struct CodexOneShot {
   }
 }
 
-/// A Codex session's history, from its thread's stored items (`thread/items/list`, which
-/// needs no resume and takes no lock: verified 2026-10-06).
+/// A Codex session's history: its thread's name (`thread/read`), then its stored items
+/// (`thread/items/list`). Neither needs a resume or takes a lock (verified 2026-10-06).
 enum CodexHistory {
   static func events(threadID: String, configuration: AgentProcess.Configuration) async throws
     -> [AgentEvent]
   {
-    let pages = try await CodexOneShot(configuration: configuration).run { previous in
+    var hasRead = false
+    let results = try await CodexOneShot(configuration: configuration).run { previous in
+      guard let previous else { return ("thread/read", .object(["threadId": .string(threadID)])) }
       var params: [String: JSONValue] = ["threadId": .string(threadID), "limit": .number(200)]
-      if let previous {
+      if hasRead {
         guard let cursor = previous["nextCursor"]?.stringValue else { return nil }
         params["cursor"] = .string(cursor)
       }
+      hasRead = true
       return ("thread/items/list", .object(params))
     }
-    return CodexTranslator.history(pages.flatMap { $0["data"]?.arrayValue ?? [] })
+    var events: [AgentEvent] = []
+    if let name = results.first?["thread"]?["name"]?.stringValue, !name.isEmpty {
+      events.append(.title(.custom(name)))
+    }
+    return events
+      + CodexTranslator.history(results.dropFirst().flatMap { $0["data"]?.arrayValue ?? [] })
   }
 }

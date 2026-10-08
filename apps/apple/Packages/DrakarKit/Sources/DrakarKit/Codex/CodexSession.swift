@@ -100,12 +100,14 @@ public struct CodexSession: Sendable {
   private var mode: PermissionMode
   private var model: String?
   private var effort: String?
+  /// A name given before the thread ran, sent once it does.
+  private var pendingName: String?
 
   /// `resuming` is the thread to resume; nil starts one. `model` and `effort` nil leave
-  /// Codex's own (`config.toml`).
+  /// Codex's own (`config.toml`). `name` names the thread once it runs.
   public init(
     cwd: String, resuming: String?, mode: PermissionMode, model: String?, effort: String?,
-    version: String
+    version: String, name: String? = nil
   ) {
     self.cwd = cwd
     threadID = resuming
@@ -113,6 +115,7 @@ public struct CodexSession: Sendable {
     self.model = model
     self.effort = effort
     self.version = version
+    pendingName = name
   }
 
   public mutating func start() -> Step {
@@ -157,11 +160,8 @@ public struct CodexSession: Sendable {
     case .setEffort(let effort):
       self.effort = effort
     case .rename(let name):
-      guard isThreadReady, let threadID else { break }
-      step.writes.append(
-        calls.make(
-          "thread/name/set",
-          .object(["threadId": .string(threadID), "name": .string(name)]), for: .other))
+      pendingName = name
+      if isThreadReady { sendPendingName(into: &step) }
     }
     return step
   }
@@ -242,6 +242,12 @@ public struct CodexSession: Sendable {
         .thread(id: id, path: thread["path"]?.stringValue, codexHome: codexHome),
         .modeAdopted(mode.rawValue),
       ]
+      // A name given meanwhile replaces the thread's own, which is not shown over it.
+      if pendingName != nil {
+        sendPendingName(into: &step)
+      } else if let name = thread["name"]?.stringValue, !name.isEmpty {
+        step.events.append(.title(.custom(name)))
+      }
       let waiting = beforeThread
       beforeThread = []
       guard let first = waiting.first else { return }
@@ -307,6 +313,10 @@ public struct CodexSession: Sendable {
       turn = .idle
       approvals.removeAll()
       return true
+    case "thread/name/updated":
+      if let name = params["threadName"]?.stringValue, !name.isEmpty {
+        step.events.append(.title(.custom(name)))
+      }
     case "serverRequest/resolved":
       if let id = CodexRPC.ID(params["requestId"]) { approvals[id.text] = nil }
     case "item/started":
@@ -345,6 +355,15 @@ public struct CodexSession: Sendable {
       return nil
     case .running(let id): return steer(prompt, into: id)
     }
+  }
+
+  private mutating func sendPendingName(into step: inout Step) {
+    guard let name = pendingName, let threadID else { return }
+    pendingName = nil
+    step.writes.append(
+      calls.make(
+        "thread/name/set",
+        .object(["threadId": .string(threadID), "name": .string(name)]), for: .other))
   }
 
   private mutating func openThread() -> JSONValue {
