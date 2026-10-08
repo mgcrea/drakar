@@ -435,6 +435,35 @@ final class Project {
     }
   }
 
+  /// The agent whose skills the inspector lists and a new session runs them in: the shown
+  /// session's, Claude Code's when none is shown.
+  var skillsAgent: AgentKind { selected?.session.agent ?? .claude }
+
+  /// Codex's skills for `session`'s folder, the project's own without a session: what its
+  /// `/` menu lists and its prompts can name.
+  func codexSkills(for session: AgentSession?) -> CodexSkills {
+    CodexSkillStore.shared.skills(for: session?.folder ?? folder)
+  }
+
+  /// What `session`'s `/` menu offers: Codex's skills for a Codex session, Claude Code's
+  /// commands and skills for the project otherwise.
+  func slashCommands(for session: AgentSession) -> [SkillEntry] {
+    guard session.features.slashCommands else { return [] }
+    switch session.agent {
+    case .claude: return capabilities.lists.commands ?? capabilities.lists.skills ?? []
+    case .codex: return codexSkills(for: session).skills ?? []
+    }
+  }
+
+  /// The first `/` typed in `session` reads its agent's list.
+  func loadSlashCommands(for session: AgentSession) {
+    guard session.features.slashCommands else { return }
+    switch session.agent {
+    case .claude: capabilities.loadIfNeeded()
+    case .codex: codexSkills(for: session).loadIfNeeded()
+    }
+  }
+
   /// A skill from the inspector: sent at once when it takes nothing, otherwise put at the
   /// start of the composer with what it takes shown, the focus there.
   func run(_ skill: SkillEntry, in target: SkillTarget) {
@@ -442,7 +471,7 @@ final class Project {
     capabilityMarks.skills.remove(skill.name)
     let item: ProjectSession
     switch target {
-    case .newSession: item = newSession(agent: .claude)
+    case .newSession: item = newSession(agent: skillsAgent)
     case .current:
       guard let selected else { return }
       item = selected
@@ -491,11 +520,12 @@ final class Project {
   }
 
   /// A session's `initialize` lists the project's skills only from the project's own
-  /// folder, under the account the lists are for: a worktree is another checkout.
+  /// folder, under the account the lists are for: a worktree is another checkout. The lists
+  /// are Claude Code's: a Codex session never speaks for them.
   func speaksForProject(_ session: AgentSession) -> Bool {
     ProjectPath.normalize(session.folder.path(percentEncoded: false))
       == ProjectPath.normalize(folder.path(percentEncoded: false))
-      && session.features.slashCommands && session.account?.key == capabilities.accountKey
+      && session.agent == .claude && session.account?.key == capabilities.accountKey
   }
 
   private func observeCapabilities() {

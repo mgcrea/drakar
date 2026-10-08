@@ -12,6 +12,9 @@ struct SkillRunTests {
   private let check = SkillEntry(name: "check", description: "Fix it")
   private let audit = SkillEntry(
     name: "marketing:seo-audit", description: "Audit", argumentHint: "<url or topic>")
+  private let deploy = SkillEntry(
+    name: "deploy", description: "Deploy to staging",
+    path: "/Users/me/project/.agents/skills/deploy/SKILL.md")
 
   init() throws {
     folder = FileManager.default.temporaryDirectory.appending(
@@ -102,14 +105,90 @@ struct SkillRunTests {
     #expect(project.sessions.count == 1)
   }
 
-  /// A skill is Claude Code's: a Codex session would take its name as a prompt.
-  @Test func aCodexSessionCannotRunOne() throws {
+  /// A Codex skill goes to a Codex session as its name, which its prompt turns into the
+  /// skill (`CodexInput`).
+  @Test func aCodexSessionRunsOneByName() throws {
     let project = Project(folder: folder)
+    project.executableOverride = try standIn()
     let item = project.newSession(agent: .codex)
-    #expect(item.session.canSend)
-    #expect(!project.canRun(in: .current))
-    project.run(audit, in: .current)
-    #expect(item.draft.isEmpty)
+    defer { project.stopAll() }
+    #expect(project.canRun(in: .current))
+    project.run(deploy, in: .current)
+    #expect(project.sessions.count == 1)
+    #expect(item.session.transcript.entries.map(\.kind) == [.prompt("/deploy")])
+    #expect(item.session.transcript.isRunning)
+  }
+
+  /// A new session runs the shown session's agent, whose skills the inspector lists;
+  /// Claude Code's when none is shown.
+  @Test func aNewSessionRunsTheShownSessionsAgent() throws {
+    let project = Project(folder: folder)
+    #expect(project.skillsAgent == .claude)
+    project.run(audit, in: .newSession)
+    #expect(project.selected?.session.agent == .claude)
+    project.newSession(agent: .codex)
+    #expect(project.skillsAgent == .codex)
+    project.run(audit, in: .newSession)
+    #expect(project.selected?.session.agent == .codex)
+    #expect(project.selected?.draft == "/marketing:seo-audit ")
+    project.newSession(agent: .claude)
+    project.run(audit, in: .newSession)
+    #expect(project.selected?.session.agent == .claude)
+    #expect(project.sessions.count == 5)
+  }
+
+  /// A Codex session's `/` menu lists Codex's skills for its folder; a Claude session's
+  /// lists Claude Code's commands, as before.
+  @Test func theMenuListsTheSessionsAgentsSkills() async throws {
+    let project = Project(folder: folder)
+    let codex = project.newSession(agent: .codex).session
+    let claude = project.newSession(agent: .claude).session
+    let entry = project.codexSkills(for: codex)
+    #expect(entry === CodexSkillStore.shared.skills(for: folder))
+    entry.reader = { _, _ in [self.deploy] }
+    entry.refresh()
+    try await settle(entry)
+    project.capabilities.probe = { _, _ in
+      ProbeOutcome(capabilities: ProjectCapabilities(skills: [self.check], commands: [self.audit]))
+    }
+    project.capabilities.refresh()
+    try await settle(project.capabilities)
+    #expect(project.slashCommands(for: codex) == [deploy])
+    #expect(project.slashCommands(for: claude) == [audit])
+  }
+
+  /// Typing `/` reads the shown session's agent's list, and only that one.
+  @Test func typingASlashLoadsTheSessionsAgentsList() async throws {
+    let project = Project(folder: folder)
+    let codex = project.newSession(agent: .codex).session
+    let claude = project.newSession(agent: .claude).session
+    let entry = project.codexSkills(for: codex)
+    let reads = CapabilityStoreTests.Calls()
+    entry.reader = { _, _ in
+      reads.count += 1
+      return []
+    }
+    let probes = CapabilityStoreTests.Calls()
+    project.capabilities.probe = { _, _ in
+      probes.count += 1
+      return ProbeOutcome(capabilities: ProjectCapabilities(skills: [], mcpServers: []))
+    }
+    project.loadSlashCommands(for: codex)
+    try await settle(entry)
+    #expect(reads.count == 1)
+    #expect(probes.count == 0)
+    project.loadSlashCommands(for: claude)
+    try await settle(project.capabilities)
+    #expect(probes.count == 1)
+    #expect(reads.count == 1)
+  }
+
+  /// A Codex session never speaks for Claude Code's lists.
+  @Test func aCodexSessionDoesNotSpeakForTheProject() {
+    let project = Project(folder: folder)
+    let codex = project.newSession(agent: .codex)
+    #expect(codex.session.features.slashCommands)
+    #expect(!project.speaksForProject(codex.session))
   }
 
   @Test func aSessionMidTurnCannotRunOne() async throws {
@@ -123,6 +202,12 @@ struct SkillRunTests {
   }
 
   private func settle(_ entry: Capabilities) async throws {
+    for _ in 0..<100 where entry.isLoading {
+      try await Task.sleep(for: .milliseconds(20))
+    }
+  }
+
+  private func settle(_ entry: CodexSkills) async throws {
     for _ in 0..<100 where entry.isLoading {
       try await Task.sleep(for: .milliseconds(20))
     }

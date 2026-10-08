@@ -117,9 +117,7 @@ struct SessionView: View {
             focused: { workspace.focusedPane = .composer },
             pills: SessionPills(session: session, folder: project.folder, account: account),
             cycleMode: { SessionPills.cycle(session, account: account) },
-            commands: session.features.slashCommands
-              ? (project.capabilities.lists.commands ?? project.capabilities.lists.skills ?? [])
-              : [],
+            commands: project.slashCommands(for: session),
             pickCommand: { command in
               let text = "/\(command.name) "
               item.draft = text
@@ -133,7 +131,7 @@ struct SessionView: View {
           )
           // The menu's list comes from a short probe, read once the first `/` is typed.
           .onChange(of: item.draft.hasPrefix("/")) { _, typed in
-            if typed, session.features.slashCommands { project.capabilities.loadIfNeeded() }
+            if typed { project.loadSlashCommands(for: session) }
           }
         }
         let _ = (picks, settingsAccount)

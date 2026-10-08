@@ -3,8 +3,9 @@ import DrakarKit
 import SwiftUI
 
 /// The window's right-hand column: what the project's `claude` would load, its skills over
-/// its MCP servers, both filtered by one field. The split and the folding are kept per
-/// window, as the sidebar's are.
+/// its MCP servers, both filtered by one field; Codex's skills instead of Claude Code's while
+/// a Codex session is shown. The split and the folding are kept per window, as the
+/// sidebar's are.
 struct InspectorView: View {
   let project: Project
   @SceneStorage("drakar.skillsFraction") private var fraction = 0.6
@@ -41,9 +42,27 @@ private struct SkillsPane: View {
   @State private var lastRun: SkillClick?
 
   private var capabilities: Capabilities { project.capabilities }
+  /// Codex's list while a Codex session is shown; nil for Claude Code's.
+  private var codex: CodexSkills? {
+    project.skillsAgent == .codex ? project.codexSkills(for: project.selected?.session) : nil
+  }
 
   var body: some View {
-    let all = capabilities.lists.skills
+    let codex = codex
+    let all: [SkillEntry]? = if let codex { codex.skills } else { capabilities.lists.skills }
+    let reading =
+      if let codex {
+        PaneReading(
+          isLoading: codex.isLoading, problem: codex.problem, agent: .codex,
+          refresh: { codex.refresh(force: true) })
+      } else {
+        PaneReading(
+          isLoading: capabilities.isLoading, problem: capabilities.skillsProblem,
+          diagnostics: capabilities.diagnostics, agent: .claude,
+          refresh: { capabilities.refresh() })
+      }
+    // Codex's list marks nothing new.
+    let marks = codex == nil ? project.capabilityMarks.skills : []
     let shown = (all ?? []).filter { $0.matches(filter) }
     VStack(spacing: 0) {
       PaneHeader(
@@ -53,16 +72,16 @@ private struct SkillsPane: View {
       ) {
         if let all { CountLabel(count: all.count) }
         RefreshButton(
-          capabilities: capabilities, problem: all == nil ? nil : capabilities.skillsProblem,
+          reading: reading, problem: all == nil ? nil : reading.problem,
           identifier: "inspector.skills.refresh")
       }
       if !isCollapsed {
         if all == nil {
-          PaneStatus(capabilities: capabilities, problem: capabilities.skillsProblem)
+          PaneStatus(reading: reading)
         } else {
           List {
             ForEach(shown) { skill in
-              SkillRow(skill: skill, isMarked: project.capabilityMarks.skills.contains(skill.name))
+              SkillRow(skill: skill, isMarked: marks.contains(skill.name))
                 .pressableRow { clicked(skill) }
                 .accessibilityAddTraits(.isButton)
                 .accessibilityAction { clicked(skill) }
@@ -81,6 +100,8 @@ private struct SkillsPane: View {
         }
       }
     }
+    // Claude Code's lists are read with the window; Codex's once shown.
+    .task(id: codex.map(ObjectIdentifier.init)) { codex?.loadIfNeeded() }
   }
 
   /// A click runs the skill in a new session, but not again as the second click of a
@@ -172,6 +193,9 @@ private struct ServersPane: View {
 
   var body: some View {
     let all = capabilities.lists.mcpServers
+    let reading = PaneReading(
+      isLoading: capabilities.isLoading, problem: capabilities.serversProblem,
+      diagnostics: capabilities.diagnostics, agent: .claude, refresh: { capabilities.refresh() })
     let shown = (all ?? []).filter { $0.matches(filter) }
     VStack(spacing: 0) {
       PaneHeader(
@@ -183,12 +207,12 @@ private struct ServersPane: View {
       ) {
         if let all { CountLabel(count: all.count) }
         RefreshButton(
-          capabilities: capabilities, problem: all == nil ? nil : capabilities.serversProblem,
+          reading: reading, problem: all == nil ? nil : reading.problem,
           identifier: "inspector.servers.refresh")
       }
       if !isCollapsed {
         if all == nil {
-          PaneStatus(capabilities: capabilities, problem: capabilities.serversProblem)
+          PaneStatus(reading: reading)
         } else {
           List {
             ForEach(shown) { server in
@@ -313,20 +337,32 @@ private struct NewDot: View {
   }
 }
 
+/// How a pane's list is being read, from Claude Code's probe or Codex's `skills/list`.
+private struct PaneReading {
+  var isLoading: Bool
+  /// Why the last reading has no list.
+  var problem: String?
+  var diagnostics = ""
+  /// Who is asked.
+  var agent: AgentKind
+  /// Reads the list again; Retry and the refresh button.
+  var refresh: () -> Void
+}
+
 /// Reads the lists again; a spinner while a probe runs, a warning while the lists shown are
 /// older than a reload that failed.
 private struct RefreshButton: View {
-  let capabilities: Capabilities
+  let reading: PaneReading
   let problem: String?
   let identifier: String
 
   var body: some View {
-    if capabilities.isLoading {
+    if reading.isLoading {
       ProgressView().controlSize(.small)
     } else {
       Button(
         "Refresh", systemImage: problem == nil ? "arrow.clockwise" : "exclamationmark.triangle"
-      ) { capabilities.refresh() }
+      ) { reading.refresh() }
       .labelStyle(.iconOnly)
       .buttonStyle(.borderless)
       .foregroundStyle(problem == nil ? Color.secondary : Color.orange)
@@ -338,27 +374,26 @@ private struct RefreshButton: View {
 
 /// A pane with no list yet: asking, or why it could not, with Retry.
 private struct PaneStatus: View {
-  let capabilities: Capabilities
-  let problem: String?
+  let reading: PaneReading
 
   var body: some View {
     VStack(spacing: 8) {
-      if let problem, !capabilities.isLoading {
+      if let problem = reading.problem, !reading.isLoading {
         Label(problem, systemImage: "exclamationmark.triangle.fill")
           .foregroundStyle(.orange)
           .font(.callout)
-        if !capabilities.diagnostics.isEmpty {
+        if !reading.diagnostics.isEmpty {
           DisclosureGroup("Details") {
-            Text(capabilities.diagnostics.suffix(600))
+            Text(reading.diagnostics.suffix(600))
               .font(.caption.monospaced())
               .foregroundStyle(.secondary)
               .textSelection(.enabled)
           }
         }
-        Button("Retry") { capabilities.refresh() }
+        Button("Retry") { reading.refresh() }
       } else {
         ProgressView().controlSize(.small)
-        Text("Asking Claude Code…").font(.caption).foregroundStyle(.secondary)
+        Text("Asking \(reading.agent.name)…").font(.caption).foregroundStyle(.secondary)
       }
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)

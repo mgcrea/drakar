@@ -36,7 +36,8 @@ struct AgentFeatures: Equatable {
   var agent: AgentKind
   /// A prompt sent mid-turn can be taken back.
   var cancelsQueued: Bool
-  /// The composer's `/` menu lists the agent's commands and skills.
+  /// The composer's `/` menu lists the agent's commands and skills (`Project.slashCommands`),
+  /// and the inspector's skills run in its sessions.
   var slashCommands: Bool
   var forks: Bool
   /// Its files can move to another account.
@@ -60,7 +61,7 @@ struct AgentFeatures: Equatable {
     picksApplyAtOnce: true)
 
   static let codex = AgentFeatures(
-    agent: .codex, cancelsQueued: false, slashCommands: false, forks: false, moves: false,
+    agent: .codex, cancelsQueued: false, slashCommands: true, forks: false, moves: false,
     showsAccount: false, showsPromptCache: false, acceptsPDF: false,
     usesSettingsDefaults: false, picksApplyAtOnce: false)
 }
