@@ -109,13 +109,15 @@ private struct InspectorCommand: View {
 /// The Session menu: what acts on the focused project's sessions.
 private struct SessionCommands: View {
   @FocusedValue(\.project) private var project
+  @AppStorage(PreferenceKey.defaultAgent) private var defaultAgentRaw = AgentKind.claude.rawValue
+  private var otherAgent: AgentKind { (AgentKind(rawValue: defaultAgentRaw) ?? .claude).other }
 
   var body: some View {
     Button("New Session") { project?.newSession() }
       .keyboardShortcut("n")
       .disabled(project == nil)
-    Button("New \(ClaudeChoice.defaultAgent.other.name) Session") {
-      project?.newSession(agent: ClaudeChoice.defaultAgent.other)
+    Button("New \(otherAgent.name) Session") {
+      project?.newSession(agent: otherAgent)
     }
     .keyboardShortcut("n", modifiers: [.command, .control])
     .disabled(project == nil)

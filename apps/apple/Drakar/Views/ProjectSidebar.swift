@@ -33,6 +33,9 @@ struct SessionListView: View {
   /// Read only to redraw the account badges when a pick or the Settings default changes.
   @AppStorage(PreferenceKey.accountForFolder) private var picks = ""
   @AppStorage(PreferenceKey.newSessionAccount) private var settingsAccount = ""
+  /// The default agent, observed so the New Session button's labels follow Settings.
+  @AppStorage(PreferenceKey.defaultAgent) private var defaultAgentRaw = AgentKind.claude.rawValue
+  private var defaultAgent: AgentKind { AgentKind(rawValue: defaultAgentRaw) ?? .claude }
   /// The list keeps the arrow keys while they move through it; a click hands them to the
   /// composer.
   @FocusState private var isFocused: Bool
@@ -69,12 +72,12 @@ struct SessionListView: View {
       Button("New Session", systemImage: "plus") {
         // ⌥-click starts the agent that is not the default.
         let other = NSEvent.modifierFlags.contains(.option)
-        project.newSession(agent: other ? ClaudeChoice.defaultAgent.other : nil)
+        project.newSession(agent: other ? defaultAgent.other : nil)
       }
       .labelStyle(.iconOnly)
       .buttonStyle(.borderless)
       .help(
-        "New \(ClaudeChoice.defaultAgent.name) session (⌘N); ⌥-click for \(ClaudeChoice.defaultAgent.other.name) (⌃⌘N)"
+        "New \(defaultAgent.name) session (⌘N); ⌥-click for \(defaultAgent.other.name) (⌃⌘N)"
       )
       .contextMenu {
         ForEach(AgentKind.allCases, id: \.self) { agent in
