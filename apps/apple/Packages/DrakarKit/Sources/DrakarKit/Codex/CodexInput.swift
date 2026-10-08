@@ -5,13 +5,31 @@ import Foundation
 /// then each attachment. Codex has no document input: a text file goes inline, and a PDF is
 /// refused before it gets here.
 public enum CodexInput {
-  public static func make(text: String, context: [EditorSelection], attachments: [Attachment])
-    -> JSONValue
-  {
+  /// A prompt that starts with one of `skills` by name (`/deploy now`) carries that skill's
+  /// item after its text, which stays as typed.
+  public static func make(
+    text: String, context: [EditorSelection], attachments: [Attachment],
+    skills: [SkillEntry] = []
+  ) -> JSONValue {
     var items = context.map { Self.text($0.promptContext) }
     if !text.isEmpty { items.append(Self.text(text)) }
+    if let skill = named(in: text, among: skills), let path = skill.path {
+      items.append(
+        .object([
+          "type": .string("skill"), "name": .string(skill.name), "path": .string(path),
+        ]))
+    }
     items += attachments.compactMap { item($0.block) }
     return .array(items)
+  }
+
+  /// The skill `text` starts with: `/`, its whole name, then whitespace or nothing.
+  static func named(in text: String, among skills: [SkillEntry]) -> SkillEntry? {
+    let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard text.hasPrefix("/") else { return nil }
+    let name = text.dropFirst().prefix { !$0.isWhitespace }
+    guard !name.isEmpty else { return nil }
+    return skills.first { $0.name == name && $0.path != nil }
   }
 
   public static func text(_ text: String) -> JSONValue {

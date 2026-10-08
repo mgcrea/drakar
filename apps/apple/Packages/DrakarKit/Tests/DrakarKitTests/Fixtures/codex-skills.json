@@ -1,0 +1,7 @@
+{"data":[{"cwd":"/Users/me/project","skills":[
+{"name":"skill-creator","description":"Create or update a skill, the bundled way.","shortDescription":null,"interface":null,"path":"/Users/me/.codex/skills/.system/skill-creator/SKILL.md","scope":"system","enabled":true,"pluginId":null},
+{"name":"deploy","description":"Deploy the project to staging once the checks pass, then say where it runs.","interface":{"displayName":"Deploy","shortDescription":"Deploy to staging","defaultPrompt":"Deploy to staging"},"path":"/Users/me/project/.agents/skills/deploy/SKILL.md","scope":"repo","enabled":true,"pluginId":null},
+{"name":"skill-creator","description":"My own way to write a skill.","path":"/Users/me/.agents/skills/skill-creator/SKILL.md","scope":"user","enabled":true,"pluginId":null},
+{"name":"data:analyze","description":"Analyze a dataset and chart what stands out.","shortDescription":"Analyze data","path":"/Users/me/.codex/plugins/cache/data/skills/analyze/SKILL.md","scope":"user","enabled":true,"pluginId":"data"},
+{"name":"legacy-notes","description":"Notes the old way.","path":"/Users/me/project/.codex/skills/legacy-notes/SKILL.md","scope":"repo","enabled":false,"pluginId":null}
+],"errors":[]}]}

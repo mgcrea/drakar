@@ -1,7 +1,8 @@
 import Foundation
 
 /// A skill or command the project's `claude` offers: one entry of the `initialize` reply's
-/// `commands` (docs/claude-stream-json.md, "Skills and MCP status").
+/// `commands` (docs/claude-stream-json.md, "Skills and MCP status"). Codex's skills are
+/// entries too (`CodexSkillList`).
 public struct SkillEntry: Sendable, Hashable, Identifiable {
   public var name: String
   public var description: String
@@ -9,14 +10,18 @@ public struct SkillEntry: Sendable, Hashable, Identifiable {
   public var argumentHint: String
   /// The CLI's own (`/compact`, `/context`…), the skills it bundles among them.
   public var isBuiltin: Bool
+  /// A Codex skill's SKILL.md, which the prompt naming it carries; nil for Claude Code's.
+  public var path: String?
 
   public init(
-    name: String, description: String = "", argumentHint: String = "", isBuiltin: Bool = false
+    name: String, description: String = "", argumentHint: String = "", isBuiltin: Bool = false,
+    path: String? = nil
   ) {
     self.name = name
     self.description = description
     self.argumentHint = argumentHint
     self.isBuiltin = isBuiltin
+    self.path = path
   }
 
   public var id: String { name }

@@ -97,4 +97,16 @@ enum Fixture: String {
       return try JSONValue.parse(Data(contentsOf: url))
     }
   }
+
+  /// A `skills/list` result for one folder, hand-made in the shape codex-cli 0.160.1 answers
+  /// (2026-10-08): a repo skill with an `interface`, a user skill shadowing a system one of
+  /// the same name, a plugin's skill with a legacy `shortDescription`, a disabled one.
+  static var codexSkillsList: JSONValue {
+    get throws {
+      let url = try #require(
+        Bundle.module.url(
+          forResource: "codex-skills", withExtension: "json", subdirectory: "Fixtures"))
+      return try JSONValue.parse(Data(contentsOf: url))
+    }
+  }
 }
