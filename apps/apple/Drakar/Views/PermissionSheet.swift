@@ -9,11 +9,11 @@ struct PermissionSheet: View {
 
   private var request: PermissionRequest { pending.request }
 
-  /// An edit shown as the diff it would make; a Write is diffed against the file as it
-  /// is now, read once when the sheet appears.
-  @State private var change: FileChange?
+  /// An edit shown as the diffs it would make, one per file; a Write is diffed against the
+  /// file as it is now, read once when the sheet appears.
+  @State private var changes: [FileChange] = []
 
-  private var isEdit: Bool { change != nil }
+  private var isEdit: Bool { !changes.isEmpty }
 
   var body: some View {
     VStack(alignment: .leading, spacing: 14) {
@@ -25,8 +25,10 @@ struct PermissionSheet: View {
       if let description = request.description, !description.isEmpty {
         Text(description)
       }
-      if let change {
-        FileChangeView(change: change)
+      if isEdit {
+        ForEach(changes, id: \.path) { change in
+          FileChangeView(change: change)
+        }
       } else {
         CodeBlock(text: request.summary.isEmpty ? request.input.prettyPrinted : request.summary)
       }
@@ -59,11 +61,14 @@ struct PermissionSheet: View {
     .padding(20)
     .frame(width: isEdit ? 680 : 460)
     .interactiveDismissDisabled()
-    .task(id: pending.requestID) { change = Self.change(for: request) }
+    .task(id: pending.requestID) { changes = Self.changes(for: request) }
   }
 
-  private static func change(for request: PermissionRequest) -> FileChange? {
-    guard case .fileChange(let path, let edits) = request.kind else { return nil }
+  /// One change per file: a Codex patch can touch several. Claude's calls touch one, and a
+  /// Write is diffed against the file on disk.
+  static func changes(for request: PermissionRequest) -> [FileChange] {
+    guard case .fileChange(let path, let edits) = request.kind else { return [] }
+    guard Set(edits.map(\.path)).count <= 1 else { return FileChange.each(edits: edits) }
     var existing: String?
     if edits.contains(where: { if case .write = $0.change { true } else { false } }) {
       let url = URL(filePath: path)
@@ -72,7 +77,7 @@ struct PermissionSheet: View {
         existing = try? String(contentsOf: url, encoding: .utf8)
       }
     }
-    return FileChange(path: path, edits: edits, existing: existing)
+    return [FileChange(path: path, edits: edits, existing: existing)].compactMap { $0 }
   }
 
   /// A suggestion's button label. Codex's own wording names what its session-long yes covers.
