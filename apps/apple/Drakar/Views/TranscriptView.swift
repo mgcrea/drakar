@@ -11,7 +11,7 @@ struct TranscriptView: View {
   /// The entry at the top when this session was last shown; nil while following.
   @Binding var anchor: String?
   /// Takes back a prompt queued behind the turn.
-  var cancelQueued: (QueuedPrompt) -> Void = { _ in }
+  var cancelQueued: ((QueuedPrompt) -> Void)? = { _ in }
 
   @State private var position = ScrollPosition(edge: .bottom)
   /// Whether new output scrolls into view. Scrolling up to read stops it; scrolling back
@@ -64,7 +64,8 @@ struct TranscriptView: View {
         }
         // Below the turn they wait behind, until the CLI takes each into the conversation.
         ForEach(transcript.queuedPrompts) { prompt in
-          QueuedPromptView(prompt: prompt, cancel: { cancelQueued(prompt) })
+          QueuedPromptView(
+            prompt: prompt, cancel: cancelQueued.map { cancel in { cancel(prompt) } })
         }
       }
       .scrollTargetLayout()
@@ -376,10 +377,10 @@ struct ToolCallView: View {
     DisclosureGroup(isExpanded: $isExpanded) {
       VStack(alignment: .leading, spacing: 8) {
         // After the fact a Write's previous content is gone, so it shows as all added.
-        if case .fileChange(let path, let edits) = call.kind,
-          let change = FileChange(path: path, edits: edits)
-        {
-          FileChangeView(change: change)
+        if case .fileChange(_, let edits) = call.kind, !FileChange.each(edits: edits).isEmpty {
+          ForEach(FileChange.each(edits: edits), id: \.path) { change in
+            FileChangeView(change: change)
+          }
         } else if case .shell = call.kind, !call.summary.isEmpty {
           // The whole command, which the one-line header cuts short.
           CodeBlock(text: call.summary)
@@ -538,7 +539,7 @@ struct OpenInEditorAction: Equatable {
 /// taken back with ×.
 private struct QueuedPromptView: View {
   let prompt: QueuedPrompt
-  let cancel: () -> Void
+  let cancel: (() -> Void)?
 
   var body: some View {
     VStack(alignment: .leading, spacing: 4) {
@@ -555,12 +556,14 @@ private struct QueuedPromptView: View {
         Text(prompt.text)
           .textSelection(.enabled)
           .foregroundStyle(.secondary)
-        Button("Cancel", systemImage: "xmark.circle.fill", action: cancel)
-          .labelStyle(.iconOnly)
-          .buttonStyle(.plain)
-          .foregroundStyle(.tertiary)
-          .help("Don't send this message")
-          .accessibilityIdentifier("queued.cancel")
+        if let cancel {
+          Button("Cancel", systemImage: "xmark.circle.fill", action: cancel)
+            .labelStyle(.iconOnly)
+            .buttonStyle(.plain)
+            .foregroundStyle(.tertiary)
+            .help("Don't send this message")
+            .accessibilityIdentifier("queued.cancel")
+        }
       }
       .padding(.horizontal, 12)
       .padding(.vertical, 8)

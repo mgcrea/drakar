@@ -139,4 +139,20 @@ struct CodexSessionsTests {
     #expect(session.transcript.queuedPrompts.isEmpty)
     #expect(stopped == 1)
   }
+
+  @Test func aCodexPillOffersCodexsModes() {
+    let session = AgentSession(folder: folder, agent: .codex)
+    let modes = SessionPills.offeredModes(session, models: nil)
+    #expect(!modes.contains(.plan) && !modes.contains(.auto))
+    #expect(modes.prefix(2) == [.ask, .acceptEdits])
+  }
+
+  @Test func aCodexPillNamesTheModelByItsListedName() {
+    let session = AgentSession(folder: folder, agent: .codex)
+    session.setModel("gpt-6.1-sol")
+    let models = [
+      ModelOption(value: "gpt-6.1-sol", resolvedModel: "gpt-6.1-sol", displayName: "GPT-6.1-Sol")
+    ]
+    #expect(SessionPills.modelLabel(for: session, in: models) == "GPT-6.1-Sol")
+  }
 }

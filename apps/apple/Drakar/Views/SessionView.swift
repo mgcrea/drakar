@@ -25,7 +25,7 @@ struct SessionView: View {
   var body: some View {
     TranscriptView(
       transcript: session.transcript, anchor: $item.scrollAnchor,
-      cancelQueued: session.cancelQueued
+      cancelQueued: session.features.cancelsQueued ? { session.cancelQueued($0) } : nil
     )
     // Below the transcript's end, not after it: the history scrolls on under the composer
     // to the window's edge, and the scroll view keeps room for it as it grows. An inset and
@@ -100,7 +100,7 @@ struct SessionView: View {
           }
           ComposerView(
             text: $item.draft, canSend: session.canSend || session.canQueue,
-            isRunning: session.transcript.isRunning,
+            isRunning: session.transcript.isRunning, agentName: session.agent.shortName,
             context: workspace.selection, pinned: workspace.pinned,
             unpin: { selection in workspace.pinned.removeAll { $0 == selection } },
             send: { text, context in
@@ -117,8 +117,9 @@ struct SessionView: View {
             focused: { workspace.focusedPane = .composer },
             pills: SessionPills(session: session, folder: project.folder, account: account),
             cycleMode: { SessionPills.cycle(session, account: account) },
-            commands: project.capabilities.lists.commands ?? project.capabilities.lists.skills
-              ?? [],
+            commands: session.features.slashCommands
+              ? (project.capabilities.lists.commands ?? project.capabilities.lists.skills ?? [])
+              : [],
             pickCommand: { command in
               let text = "/\(command.name) "
               item.draft = text
@@ -132,7 +133,7 @@ struct SessionView: View {
           )
           // The menu's list comes from a short probe, read once the first `/` is typed.
           .onChange(of: item.draft.hasPrefix("/")) { _, typed in
-            if typed { project.capabilities.loadIfNeeded() }
+            if typed, session.features.slashCommands { project.capabilities.loadIfNeeded() }
           }
         }
         let _ = (picks, settingsAccount)
@@ -222,7 +223,7 @@ struct SessionView: View {
 
   /// The session's model takes auto mode, as the mode pill reads it.
   private var offersAutoMode: Bool {
-    SessionPills.offeredModes(session, models: ModelCatalog.shared.models(for: account))
+    SessionPills.offeredModes(session, models: SessionPills.models(for: session, account: account))
       .contains(.auto)
   }
 
@@ -240,7 +241,7 @@ struct SessionView: View {
     switch session.phase {
     case .failed(let message): message
     case .exited(let status) where status != 0:
-      String(localized: "Claude Code exited with status \(status).")
+      String(localized: "\(session.agent.name) exited with status \(status).")
     case .idle, .starting, .ready, .exited: nil
     }
   }
@@ -348,9 +349,19 @@ enum ElsewhereStatus: Equatable {
 private struct VersionLabel: View {
   let version: String
   let executable: URL?
+  let agent: AgentKind
 
   var body: some View {
     let path = executable.map { ContentView.abbreviated($0) } ?? ""
+    if agent == .codex {
+      Text("Codex \(version)").help(path)
+    } else {
+      claudeBody(path: path)
+    }
+  }
+
+  /// Claude Code's version against the range Drakar was tested with.
+  @ViewBuilder private func claudeBody(path: String) -> some View {
     let tested = ClaudeVersion.tested
     let range = "\(tested.lowerBound.description) to \(tested.upperBound.description)"
     switch ClaudeVersion(version)?.drift {
@@ -436,14 +447,16 @@ private struct SessionFooter: View {
           Text(EffortLevel.title(of: effort)).help("Effort")
         }
       }
-      account
+      if session.features.showsAccount { account }
       if let version = session.transcript.session?.agentVersion {
-        VersionLabel(version: version, executable: session.executable)
+        VersionLabel(version: version, executable: session.executable, agent: session.agent)
       } else if let version = session.transcript.writerVersion {
         // Not Drakar's process: how its version compares to Drakar's is not this session's.
-        Text("Claude Code \(version)").help("The version that last wrote this session")
+        Text("\(session.agent.name) \(version)").help("The version that last wrote this session")
       }
-      if session.transcript.promptCache.state(at: .now) != .unknown {
+      if session.features.showsPromptCache,
+        session.transcript.promptCache.state(at: .now) != .unknown
+      {
         PromptCacheLabel(cache: session.transcript.promptCache)
       }
       if let cost = session.transcript.lastTurn?.costUSD {

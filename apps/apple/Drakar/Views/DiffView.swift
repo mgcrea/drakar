@@ -21,11 +21,18 @@ struct FileChangeView: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 6) {
       HStack(spacing: 8) {
-        Image(systemName: change.isNewFile ? "doc.badge.plus" : "doc.text")
+        Image(
+          systemName: change.isDeleted ? "trash" : change.isNewFile ? "doc.badge.plus" : "doc.text")
         Text(displayedPath)
           .font(.callout.monospaced())
           .lineLimit(1)
           .truncationMode(.head)
+        if let movedTo = change.movedTo {
+          Text("→ \(URL(filePath: movedTo).lastPathComponent)")
+            .font(.callout.monospaced())
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+        }
         Spacer()
         Text("+\(change.addedCount)").foregroundStyle(.green)
         Text("−\(change.removedCount)").foregroundStyle(.red)

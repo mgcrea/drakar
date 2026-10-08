@@ -14,6 +14,7 @@ struct ComposerView: View {
   @Binding var text: String
   let canSend: Bool
   let isRunning: Bool
+  var agentName = "Claude"
   let context: EditorSelection?
   let pinned: [EditorSelection]
   let unpin: (EditorSelection) -> Void
@@ -177,7 +178,8 @@ struct ComposerView: View {
 
   private var field: some View {
     TextField(
-      isRunning && canSend ? "Queue another message…" : "Ask Claude to do something…", text: $text,
+      isRunning && canSend ? "Queue another message…" : "Ask \(agentName) to do something…",
+      text: $text,
       axis: .vertical
     )
     .textFieldStyle(.plain)
