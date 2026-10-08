@@ -38,7 +38,7 @@ struct PermissionSheet: View {
       if !request.parsedSuggestions.isEmpty {
         VStack(alignment: .leading, spacing: 6) {
           ForEach(request.parsedSuggestions) { suggestion in
-            Button(Self.title(suggestion)) {
+            Button(Self.title(suggestion, for: request)) {
               answer(.allow(updatedInput: request.input, updatedPermissions: [suggestion.raw]))
             }
             .buttonStyle(.link)
@@ -75,7 +75,8 @@ struct PermissionSheet: View {
     return FileChange(path: path, edits: edits, existing: existing)
   }
 
-  private static func title(_ suggestion: PermissionSuggestion) -> String {
+  /// A suggestion's button label. Codex's own wording names what its session-long yes covers.
+  static func title(_ suggestion: PermissionSuggestion, for request: PermissionRequest) -> String {
     let scope =
       suggestion.isPersistent
       ? String(localized: "from now on") : String(localized: "for this session")
@@ -90,7 +91,9 @@ struct PermissionSheet: View {
     case .setMode(let mode):
       return String(localized: "Switch to \(mode) mode \(scope)")
     case .codexDecision:
-      return String(localized: "Allow for this session")
+      return request.toolName == "Shell"
+        ? String(localized: "Allow, and don't ask again for this command")
+        : String(localized: "Allow, and don't ask again for these files")
     case .other(let type):
       return String(localized: "Allow (\(type)) \(scope)")
     }

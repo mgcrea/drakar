@@ -411,6 +411,9 @@ Decisions: commands take `accept`, `acceptForSession`,
 - **A file-change request carries no `availableDecisions`**; a command request's listed
   `accept`, `acceptWithExecpolicyAmendment` and `cancel` in every probe, never
   `acceptForSession` (rechecked 2026-10-07).
+  Codex's own TUI labels `acceptForSession` "Yes, and don't ask again for these files" (file
+  change) and "Yes, and don't ask again for this command in this session" (command), seen in
+  the 0.160.1 binary's strings (2026-10-08); its effect is still unverified live.
 - **`availableDecisions` arrived without `experimentalApi`**, though the types put it in the
   experimental half. It listed neither `decline` nor `acceptForSession`, and `decline` was
   honoured anyway. Offer the listed ones plus `decline`.
