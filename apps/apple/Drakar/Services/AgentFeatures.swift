@@ -46,7 +46,8 @@ struct AgentFeatures: Equatable {
   var showsAccount: Bool
   var showsPromptCache: Bool
   var acceptsPDF: Bool
-  /// Settings' model, mode and effort for new sessions apply: they are Claude Code's.
+  /// Settings' model and effort for new sessions apply: they are Claude Code's. Each agent
+  /// has its own default mode.
   var usesSettingsDefaults: Bool
   /// A mode, model or effort pick reaches a running process at once; Codex's wait for the
   /// next turn.

@@ -73,6 +73,21 @@ struct CodexSessionsTests {
     }
   }
 
+  @Test func codexHasADefaultModeOfItsOwn() {
+    ClaudeChoice.$testSuite.withValue("codex-sessions-\(UUID())") {
+      ClaudeChoice.defaults.set("plan", forKey: PreferenceKey.defaultMode)
+      ClaudeChoice.defaults.set("bypassPermissions", forKey: PreferenceKey.codexDefaultMode)
+      #expect(AgentSession(folder: folder, agent: .codex).startingMode == .bypass)
+      #expect(AgentSession(folder: folder, agent: .claude).startingMode == .plan)
+      // Bypass only while Settings allows it.
+      ClaudeChoice.defaults.set(false, forKey: PreferenceKey.allowsBypass)
+      #expect(AgentSession(folder: folder, agent: .codex).startingMode == nil)
+      // A mode Codex doesn't offer is none.
+      ClaudeChoice.defaults.set("plan", forKey: PreferenceKey.codexDefaultMode)
+      #expect(ClaudeChoice.codexDefaultMode == nil)
+    }
+  }
+
   @Test func aCodexSessionCannotFork() {
     let project = Project(folder: folder)
     let item = project.newSession(agent: .codex)
