@@ -12,6 +12,7 @@ final class ClaudeBackend: AgentBackend {
   private var requestCount = 0
 
   var notFoundMessage: String { ClaudeLaunch.notFound }
+  let features = AgentFeatures.claude
 
   func launch(_ start: AgentStart) -> AgentLaunch {
     var command = command

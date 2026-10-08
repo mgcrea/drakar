@@ -640,6 +640,9 @@ final class AgentSession {
       changeAnswered(id, refusal: refusal)
     case .queueChanged:
       break
+    case .unusable(let message):
+      stop()
+      phase = .failed(message)
     }
   }
 

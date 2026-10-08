@@ -36,10 +36,13 @@ struct ResumeTarget: Codable, Hashable {
   /// Continue a copy under a new id: the session is open in another process. Optional so
   /// that a target stored before the field existed still decodes.
   var forks: Bool?
+  /// The agent that writes it. Optional so that a target stored before Codex arrived still
+  /// decodes, as Claude Code's.
+  var agent: AgentKind?
 
   init(
     sessionID: String, cwd: String, file: String, accountDirectory: String,
-    accountIsDefault: Bool, forks: Bool? = nil
+    accountIsDefault: Bool, forks: Bool? = nil, agent: AgentKind? = nil
   ) {
     self.sessionID = sessionID
     self.cwd = cwd
@@ -47,6 +50,7 @@ struct ResumeTarget: Codable, Hashable {
     self.accountDirectory = accountDirectory
     self.accountIsDefault = accountIsDefault
     self.forks = forks
+    self.agent = agent
   }
 
   init?(_ summary: SessionSummary, forking: Bool = false) {
@@ -62,6 +66,8 @@ struct ResumeTarget: Codable, Hashable {
       directory: URL(filePath: accountDirectory, directoryHint: .isDirectory),
       isDefault: accountIsDefault)
   }
+
+  var agentKind: AgentKind { agent ?? .claude }
 
   var transcriptFile: URL { URL(filePath: file) }
 }

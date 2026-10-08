@@ -9,6 +9,8 @@ import Foundation
 protocol AgentBackend: AnyObject {
   /// Shown when the agent's CLI was not found.
   var notFoundMessage: String { get }
+  /// What its sessions can do beyond a conversation.
+  var features: AgentFeatures { get }
   /// What to run for `start`; no executable when the CLI was not found.
   func launch(_ start: AgentStart) -> AgentLaunch
   /// Everything owed right after the process started, then `first`, the prompt typed before
@@ -81,4 +83,7 @@ enum SessionSignal: Equatable {
   case changeAnswered(requestID: String, refusal: String?)
   /// A queued prompt moved: taken, cancelled, dropped, or only acknowledged.
   case queueChanged
+  /// Nothing can go through this process: not signed in, or its session held by another
+  /// process. The session stops and says why.
+  case unusable(String)
 }
