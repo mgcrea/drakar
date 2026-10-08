@@ -28,6 +28,8 @@ public struct CodexSession: Sendable {
     case modeAdopted(String)
     /// Nothing can go through: not signed in, or the thread is another process's.
     case unusable(String)
+    /// Codex's skills changed (`skills/changed`): a list read before is stale.
+    case skillsChanged
   }
 
   public struct Step: Sendable, Equatable {
@@ -326,6 +328,8 @@ public struct CodexSession: Sendable {
       if let name = params["threadName"]?.stringValue, !name.isEmpty {
         step.events.append(.title(.custom(name)))
       }
+    case "skills/changed":
+      step.signals.append(.skillsChanged)
     case "serverRequest/resolved":
       if let id = CodexRPC.ID(params["requestId"]) { approvals[id.text] = nil }
     case "item/started":

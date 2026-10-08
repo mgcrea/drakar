@@ -10,11 +10,14 @@ final class CodexBackend: AgentBackend {
   /// Where the thread's files are, once it runs: what reopening the window resumes.
   private var threadPath: String?
   private var codexHome: String?
+  /// The session's folder: the skills a prompt can name are its own.
+  private var folder: URL?
 
   var notFoundMessage: String { CodexLaunch.notFound }
 
   func launch(_ start: AgentStart) -> AgentLaunch {
     let executable = start.executableOverride ?? CodexLaunch.locate(path: start.environment["PATH"])
+    folder = start.folder
     // A new process starts afresh: a stopped session resumes its thread on its first prompt.
     session = CodexSession(
       cwd: start.folder.path(percentEncoded: false), resuming: start.resuming?.sessionID,
@@ -31,7 +34,7 @@ final class CodexBackend: AgentBackend {
   func started(_ process: AgentProcess, then first: AgentCommand?) throws {
     guard var session else { return }
     var writes = session.start().writes
-    if let first, let command = Self.command(first) { writes += session.send(command).writes }
+    if let first, let command = self.command(first) { writes += session.send(command).writes }
     self.session = session
     for line in writes { try process.send(line) }
   }
@@ -39,7 +42,7 @@ final class CodexBackend: AgentBackend {
   @discardableResult func send(_ command: AgentCommand, to process: AgentProcess) throws
     -> String?
   {
-    guard var session, let command = Self.command(command) else { return nil }
+    guard var session, let command = self.command(command) else { return nil }
     let step = session.send(command)
     self.session = session
     for line in step.writes { try process.send(line) }
@@ -61,6 +64,7 @@ final class CodexBackend: AgentBackend {
       case .models(let models): output.signals.append(.models(models))
       case .modeAdopted(let mode): output.signals.append(.modeAdopted(mode))
       case .unusable(let message): output.signals.append(.unusable(message))
+      case .skillsChanged: output.signals.append(.skillsChanged)
       case .thread(_, let path, let home):
         threadPath = path
         codexHome = home
@@ -85,12 +89,16 @@ final class CodexBackend: AgentBackend {
       accountIsDefault: true, agent: .codex)
   }
 
-  /// `command` in the session's words; nil for what Codex cannot do (take back a steer).
-  private static func command(_ command: AgentCommand) -> CodexSession.Command? {
+  /// `command` in the session's words; nil for what Codex cannot do (take back a steer). A
+  /// prompt can name one of the folder's skills, as last listed.
+  private func command(_ command: AgentCommand) -> CodexSession.Command? {
     switch command {
     case .prompt(let text, let context, let uuid, let attachments):
       .prompt(
-        input: CodexInput.make(text: text, context: context, attachments: attachments), uuid: uuid)
+        input: CodexInput.make(
+          text: text, context: context, attachments: attachments,
+          skills: folder.flatMap { CodexSkillStore.shared.skills(for: $0).skills } ?? []),
+        uuid: uuid)
     case .answer(let id, let decision): .answer(requestID: id, decision: decision)
     case .interrupt: .interrupt
     case .cancelQueued: nil

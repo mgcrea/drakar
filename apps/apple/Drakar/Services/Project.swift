@@ -509,8 +509,9 @@ final class Project {
     let delay = capabilityDebounce
     capabilityRefresh = Task { [weak self] in
       try? await Task.sleep(for: delay)
-      guard !Task.isCancelled else { return }
-      self?.capabilities.refreshIfLoaded()
+      guard !Task.isCancelled, let self else { return }
+      self.capabilities.refreshIfLoaded()
+      CodexSkillStore.shared.skills(for: self.folder).refreshIfLoaded()
     }
   }
 

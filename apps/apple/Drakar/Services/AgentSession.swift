@@ -713,6 +713,8 @@ final class AgentSession {
       changeAnswered(id, refusal: refusal)
     case .queueChanged:
       break
+    case .skillsChanged:
+      CodexSkillStore.shared.skills(for: folder).refreshIfLoaded()
     case .unusable(let message):
       stop()
       phase = .failed(message)

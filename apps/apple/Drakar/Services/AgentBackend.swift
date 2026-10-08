@@ -86,4 +86,6 @@ enum SessionSignal: Equatable {
   /// Nothing can go through this process: not signed in, or its session held by another
   /// process. The session stops and says why.
   case unusable(String)
+  /// The agent's skills changed: a list read before is stale.
+  case skillsChanged
 }

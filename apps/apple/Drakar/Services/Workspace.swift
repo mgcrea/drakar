@@ -225,15 +225,16 @@ final class Workspace {
     }
   }
 
-  /// What the CLI reads from the project itself: `.mcp.json`, and `.claude/skills/`,
-  /// `.claude/commands/` and `.claude/settings*.json`. A worktree's copies are another
-  /// checkout's, and a subfolder's `.mcp.json` is not the project's.
+  /// What the CLIs read from the project itself: `.mcp.json`, `.claude/skills/`,
+  /// `.claude/commands/` and `.claude/settings*.json` for Claude Code, `.agents/skills/` and
+  /// `.codex/skills/` for Codex. A worktree's copies are another checkout's, and a
+  /// subfolder's `.mcp.json` is not the project's.
   static func touchesCapabilities(_ paths: [String], root: String) -> Bool {
     paths.contains { path in
       guard path.hasPrefix(root + "/") else { return false }
       let relative = path.dropFirst(root.count + 1)
       if relative == ".mcp.json" { return true }
-      for folder in [".claude/skills", ".claude/commands"]
+      for folder in [".claude/skills", ".claude/commands", ".agents/skills", ".codex/skills"]
       where relative == folder || relative.hasPrefix(folder + "/") {
         return true
       }

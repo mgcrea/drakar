@@ -420,6 +420,15 @@ struct CodexSessionTests {
     #expect(updated.events == [.title(.custom("Pineapple"))])
   }
 
+  /// Codex says its skills changed, without listing them: the session says so too.
+  @Test func aSkillsChangeIsASignal() throws {
+    var session = try running()
+    let step = session.receive(json(#"{"method":"skills/changed"}"#), at: nil)
+    #expect(step.signals == [.skillsChanged])
+    #expect(step.writes.isEmpty)
+    #expect(step.events.isEmpty)
+  }
+
   @Test func linesStillReachTheTranslator() throws {
     var session = try running()
     let step = session.receive(
