@@ -281,6 +281,8 @@ struct AgentSessionTests {
   @Test func aStopBeforeTheSpawnRunsStartsNothing() async throws {
     let session = AgentSession(folder: folder)
     session.executableOverride = fake
+    // Warm the shared shell environment so the start's awaits don't count against the 1 s window.
+    _ = await AgentSession.environment.value
     session.send("hello")
     session.stop()
     try await expectNothingStarted(session)
@@ -290,6 +292,8 @@ struct AgentSessionTests {
   @Test func aStopDuringTheStartStartsNothing() async throws {
     let session = AgentSession(folder: folder)
     session.executableOverride = fake
+    // Warm the shared shell environment so the start's awaits don't count against the 1 s window.
+    _ = await AgentSession.environment.value
     session.send("hello")
     await untilStarting(session)
     session.stop()
@@ -302,6 +306,8 @@ struct AgentSessionTests {
   @Test func aSessionOpenedElsewhereDuringTheStartIsNotWritten() async throws {
     let session = AgentSession(folder: folder)
     session.executableOverride = fake
+    // Warm the shared shell environment so the start's awaits don't count against the 1 s window.
+    _ = await AgentSession.environment.value
     session.send("hello")
     await untilStarting(session)
     session.isReadOnly = true
@@ -330,6 +336,8 @@ struct AgentSessionTests {
     let session = AgentSession(folder: folder, resuming: target)
     session.executableOverride = fake
     await session.loadHistory()
+    // Warm the shared shell environment so the start's awaits don't count against the 1 s window.
+    _ = await AgentSession.environment.value
     session.send("hello")
     try await expectNothingStarted(session)
     #expect(session.isReadOnly)
