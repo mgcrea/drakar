@@ -178,6 +178,36 @@ struct CodexSessionTests {
     _ = started
   }
 
+  /// Stop means stop: a prompt waiting for the turn's id is dropped, not steered in.
+  @Test func stopBeforeTheTurnHasAnIdDropsThePromptsWaitingForIt() throws {
+    var (session, _) = initialized()
+    let opening = session.send(.prompt(input: input("one"), uuid: "p-1"))
+    let started = answer(&session, try write("thread/start", in: opening), thread)
+    _ = try write("turn/start", in: started)
+    #expect(session.send(.prompt(input: input("two"), uuid: "p-2")).writes.isEmpty)
+    #expect(session.send(.interrupt).writes.isEmpty)
+    let running = session.receive(
+      json(
+        #"{"method":"turn/started","params":{"threadId":"t-1","turn":{"id":"turn-1","status":"inProgress"}}}"#
+      ),
+      at: nil)
+    #expect(methods(running) == ["turn/interrupt"])
+    #expect(running.events.contains(.queue(id: "p-2", .dropped(agent: "Codex"))))
+  }
+
+  /// The same while the thread is still opening: only the first prompt's turn starts.
+  @Test func stopWhileTheThreadOpensDropsTheLaterPrompts() throws {
+    var (session, _) = initialized()
+    let opening = session.send(.prompt(input: input("one"), uuid: "p-1"))
+    _ = session.send(.prompt(input: input("two"), uuid: "p-2"))
+    #expect(session.send(.interrupt).writes.isEmpty)
+    let started = answer(&session, try write("thread/start", in: opening), thread)
+    let running = answer(
+      &session, try write("turn/start", in: started), #"{"turn":{"id":"turn-1"}}"#)
+    #expect(methods(running) == ["turn/interrupt"])
+    #expect(running.events == [.queue(id: "p-2", .dropped(agent: "Codex"))])
+  }
+
   @Test func stopCancelsAWaitingApprovalThenInterrupts() throws {
     var session = try running()
     let asked = session.receive(

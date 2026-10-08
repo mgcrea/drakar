@@ -332,17 +332,20 @@ public struct CodexSession: Sendable {
   }
 
   /// The turn has its id, from `turn/start`'s answer or `turn/started`, whichever comes
-  /// first: what waited for it goes now.
+  /// first: what waited for it goes now, or, when Stop was pressed meanwhile, is dropped and
+  /// the turn interrupted.
   private mutating func turnStarted(_ id: String, into step: inout Step) {
     guard turn != .running(id) else { return }
     turn = .running(id)
     let waiting = beforeTurnID
     beforeTurnID = []
-    step.writes += waiting.map { steer($0, into: id) }
-    if interruptsWhenStarted {
-      interruptsWhenStarted = false
-      step.writes.append(interrupt(id))
+    guard interruptsWhenStarted else {
+      step.writes += waiting.map { steer($0, into: id) }
+      return
     }
+    interruptsWhenStarted = false
+    step.events += waiting.map { AgentEvent.queue(id: $0.uuid, .dropped(agent: "Codex")) }
+    step.writes.append(interrupt(id))
   }
 
   /// What to write to run `prompt` now: a turn of its own, a steer into the running turn, or
