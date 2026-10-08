@@ -66,6 +66,10 @@ final class CodexBackend: AgentBackend {
         codexHome = home
       }
     }
+    // A queued prompt taken, steered in or dropped: the session may owe the window its turn end.
+    if step.events.contains(where: { if case .queue = $0 { true } else { false } }) {
+      output.signals.append(.queueChanged)
+    }
     return output
   }
 

@@ -75,6 +75,32 @@ struct CodexBackendTests {
     #expect(target?.accountDirectory == "/home/.codex")
   }
 
+  /// A queued prompt that moves says so: the session tells the window a turn ended once its
+  /// queue empties.
+  @Test func aQueueChangeIsSignalled() throws {
+    let backend = CodexBackend()
+    _ = backend.launch(start())
+    let process = try process()
+    defer { process.terminate() }
+    try backend.started(process, then: nil)
+    _ = backend.receive(try line(#"{"id":1,"result":{}}"#), from: process, at: .now)
+    _ = try backend.send(
+      .prompt(text: "one", context: [], uuid: "p-1", attachments: []), to: process)
+    _ = backend.receive(
+      try line(#"{"id":4,"result":{"thread":{"id":"t-1","cwd":"/p"},"model":"m"}}"#),
+      from: process, at: .now)
+    let started = backend.receive(
+      try line(#"{"id":5,"result":{"turn":{"id":"turn-1"}}}"#), from: process, at: .now)
+    #expect(!started.signals.contains(.queueChanged))
+    _ = try backend.send(
+      .prompt(text: "two", context: [], uuid: "p-2", attachments: []), to: process)
+    let refused = backend.receive(
+      try line(#"{"id":6,"error":{"code":-32600,"message":"expected turn mismatch"}}"#),
+      from: process, at: .now)
+    #expect(refused.events == [.queue(id: "p-2", .dropped(agent: "Codex"))])
+    #expect(refused.signals == [.queueChanged])
+  }
+
   @Test func notSignedInIsUnusable() throws {
     let backend = CodexBackend()
     _ = backend.launch(start())
