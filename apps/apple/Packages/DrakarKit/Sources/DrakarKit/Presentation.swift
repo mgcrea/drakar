@@ -52,6 +52,8 @@ public struct PermissionSuggestion: Sendable, Equatable, Identifiable {
     case addRules([String])
     case addDirectories([String])
     case setMode(String)
+    /// One of Codex's own approval decisions (`acceptForSession`), passed back as the answer.
+    case codexDecision(String)
     case other(String)
   }
 
@@ -79,6 +81,8 @@ public struct PermissionSuggestion: Sendable, Equatable, Identifiable {
       kind = .addDirectories(raw["directories"]?.arrayValue?.compactMap(\.stringValue) ?? [])
     case "setMode":
       kind = .setMode(raw["mode"]?.stringValue ?? "")
+    case "codexDecision":
+      kind = .codexDecision(raw["decision"]?.stringValue ?? "")
     default:
       kind = .other(type)
     }

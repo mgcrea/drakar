@@ -89,6 +89,8 @@ struct PermissionSheet: View {
       return String(localized: "Accept all edits \(scope)")
     case .setMode(let mode):
       return String(localized: "Switch to \(mode) mode \(scope)")
+    case .codexDecision:
+      return String(localized: "Allow for this session")
     case .other(let type):
       return String(localized: "Allow (\(type)) \(scope)")
     }

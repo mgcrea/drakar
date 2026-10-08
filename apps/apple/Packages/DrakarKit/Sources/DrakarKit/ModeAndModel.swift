@@ -118,6 +118,7 @@ public enum EffortLevel {
     case "high": String(localized: "High")
     case "xhigh": String(localized: "Extra high")
     case "max": String(localized: "Max")
+    case "ultra": String(localized: "Ultra")
     default: raw
     }
   }
@@ -130,6 +131,7 @@ public enum EffortLevel {
     case "high": "gauge.with.dots.needle.50percent"
     case "xhigh": "gauge.with.dots.needle.67percent"
     case "max": "gauge.with.dots.needle.100percent"
+    case "ultra": "gauge.with.dots.needle.100percent"
     default: "gauge.with.dots.needle.bottom.50percent"
     }
   }
