@@ -45,6 +45,18 @@ struct AgentSessionPillsTests {
     for _ in 0..<50 where !condition() { try await Task.sleep(for: .milliseconds(100)) }
   }
 
+  /// A Codex pick mid-turn says when it takes, which is no refusal.
+  @Test func aCodexPickMidTurnIsNotARefusal() async throws {
+    let session = AgentSession(folder: folder, agent: .codex)
+    session.executableOverride = try standIn("codex", "cat > /dev/null")
+    session.send("working")
+    defer { session.stop() }
+    #expect(session.transcript.isRunning)
+    session.setMode(.acceptEdits)
+    #expect(session.pillNote == AgentSession.fromNextTurn)
+    #expect(!session.pillNoteIsRefusal)
+  }
+
   @Test func picksBeforeTheStartGoOnTheCommandLine() async throws {
     try await scoped {
       let script = try standIn("claude", #"printf '%s\n' "$*" >> "$0.args"; cat > /dev/null"#)

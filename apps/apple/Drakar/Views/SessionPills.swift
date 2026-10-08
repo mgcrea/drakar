@@ -20,7 +20,8 @@ struct SessionPills {
       ? ModelCatalog.shared.codexModels : ModelCatalog.shared.models(for: account)
   }
 
-  /// The model, its effort when it takes one, and why the last change was refused if it was.
+  /// The model, its effort when it takes one, and why the last change was refused if it was
+  /// (in red), or that it takes from the next turn.
   var model: some View {
     let models = Self.models(for: session, account: account)
     return HStack(spacing: 6) {
@@ -28,7 +29,11 @@ struct SessionPills {
       let levels = Self.effortLevels(session, models: models)
       if !levels.isEmpty { effortMenu(levels) }
       if let note = session.pillNote {
-        Text(note).font(.caption).foregroundStyle(.red).lineLimit(1).help(note)
+        Text(note).font(.caption)
+          .foregroundStyle(
+            session.pillNoteIsRefusal ? AnyShapeStyle(.red) : AnyShapeStyle(.secondary)
+          )
+          .lineLimit(1).help(note)
       }
     }
     .onAppear {

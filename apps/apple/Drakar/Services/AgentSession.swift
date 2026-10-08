@@ -66,8 +66,13 @@ final class AgentSession {
   private(set) var appliedModel: String?
   /// The running process started with `--allow-dangerously-skip-permissions`.
   private(set) var launchedWithBypass = false
-  /// Why the last change was refused, until the next change.
+  /// Why the last change was refused, or that it takes from the next turn, until the next
+  /// change.
   private(set) var pillNote: String?
+  /// What `pillNote` says of a pick made mid-turn that takes from the next one.
+  static let fromNextTurn = String(localized: "From the next turn")
+  /// The note is a refusal, shown in red; the next-turn note is only information.
+  var pillNoteIsRefusal: Bool { pillNote != nil && pillNote != Self.fromNextTurn }
   /// Where `initialize`'s model list goes; tests give their own.
   @ObservationIgnored var catalog: ModelCatalog = .shared
   /// Switches the CLI has not answered, oldest first: which pill, and what puts it back if
@@ -211,7 +216,7 @@ final class AgentSession {
     let (previousPick, previousMode) = (modePick, permissionMode)
     modePick = mode
     if !features.picksApplyAtOnce, transcript.isRunning {
-      pillNote = String(localized: "From the next turn")
+      pillNote = Self.fromNextTurn
     }
     guard let process else { return }
     permissionMode = mode.rawValue
@@ -229,7 +234,7 @@ final class AgentSession {
     let previous = modelPick
     modelPick = value
     if !features.picksApplyAtOnce, transcript.isRunning {
-      pillNote = String(localized: "From the next turn")
+      pillNote = Self.fromNextTurn
     }
     guard let process else { return }
     guard let id = try? backend.send(.setModel(value), to: process) else { return }
@@ -244,7 +249,7 @@ final class AgentSession {
     let previous = effortPick
     effortPick = level
     if !features.picksApplyAtOnce, transcript.isRunning {
-      pillNote = String(localized: "From the next turn")
+      pillNote = Self.fromNextTurn
     }
     guard let process else { return }
     guard let id = try? backend.send(.setEffort(level), to: process) else { return }
