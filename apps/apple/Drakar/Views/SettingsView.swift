@@ -73,6 +73,9 @@ enum PreferenceKey {
   /// The permission mode new sessions start with (`PermissionMode`'s raw value); empty for
   /// Claude Code's default.
   static let defaultMode = "drakar.defaultMode"
+  /// The permission mode new Codex sessions start with (`PermissionMode`'s raw value); empty
+  /// for Ask before edits.
+  static let codexDefaultMode = "drakar.codexDefaultMode"
   /// The effort new sessions start with (`low` … `max`); empty for Claude Code's default.
   static let defaultEffort = "drakar.defaultEffort"
   /// The accent colour, as `RRGGBBAA` hex; absent for the catalog's.
@@ -161,6 +164,16 @@ enum ClaudeChoice {
     _ = AttentionDefaults.shared.revision
     let mode = stored(PreferenceKey.defaultMode).flatMap(PermissionMode.init(rawValue:))
     return mode == .bypass && !allowsBypass ? nil : mode
+  }
+
+  /// The mode new Codex sessions start with, from Settings: one Codex offers, Bypass only
+  /// while Settings allows it; nil for Ask before edits.
+  static var codexDefaultMode: PermissionMode? {
+    _ = AttentionDefaults.shared.revision
+    let mode = stored(PreferenceKey.codexDefaultMode).flatMap(PermissionMode.init(rawValue:))
+    return mode.flatMap {
+      CodexPolicy.offeredModes(allowsBypass: allowsBypass).contains($0) ? $0 : nil
+    }
   }
 
   /// The effort new sessions start with, from Settings; nil for Claude Code's
@@ -295,6 +308,8 @@ struct SettingsView: View {
 struct GeneralPane: View {
   @AppStorage(PreferenceKey.editorScope) private var editorScope = EditorScope.openFolders
   @AppStorage(PreferenceKey.defaultAgent) private var defaultAgent = AgentKind.claude.rawValue
+  @AppStorage(PreferenceKey.codexDefaultMode) private var codexDefaultMode = ""
+  @AppStorage(PreferenceKey.allowsBypass) private var allowsBypass = true
   @State private var codexPath: String?
 
   var body: some View {
@@ -311,6 +326,15 @@ struct GeneralPane: View {
             codexPath.map { ContentView.abbreviated(URL(filePath: $0)) }
               ?? String(localized: "Not found: brew install --cask codex"))
         }
+        Picker("Mode for new Codex sessions", selection: $codexDefaultMode) {
+          ForEach(CodexPolicy.offeredModes(allowsBypass: allowsBypass), id: \.self) { mode in
+            Text(mode.title).tag(mode == .ask ? "" : mode.rawValue)
+          }
+          if codexDefaultMode == PermissionMode.bypass.rawValue, !allowsBypass {
+            Text("Bypass permissions, not allowed").tag(codexDefaultMode)
+          }
+        }
+        .accessibilityIdentifier("settings.codexDefaultMode")
       } footer: {
         Text("⌥-click New Session, or press ⌃⌘N, to start the other one.")
       }

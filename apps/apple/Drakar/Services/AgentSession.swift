@@ -170,12 +170,11 @@ final class AgentSession {
     return (startingMode ?? .ask).rawValue
   }
 
-  /// The mode the next start passes: this session's pick, else Settings' default; Bypass
-  /// only while Settings allows it.
+  /// The mode the next start passes: this session's pick, else Settings' default for its
+  /// agent; Bypass only while Settings allows it.
   var startingMode: PermissionMode? {
-    let mode =
-      modePick
-      ?? (isProcessRunning || !features.usesSettingsDefaults ? nil : ClaudeChoice.defaultMode)
+    let fallback = agent == .codex ? ClaudeChoice.codexDefaultMode : ClaudeChoice.defaultMode
+    let mode = modePick ?? (isProcessRunning ? nil : fallback)
     return mode == .bypass && !ClaudeChoice.allowsBypass ? nil : mode
   }
 
