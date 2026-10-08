@@ -14,7 +14,8 @@ public struct CodexSession: Sendable {
     case prompt(input: JSONValue, uuid: String)
     case answer(requestID: String, decision: PermissionDecision)
     case interrupt
-    /// Picks: Codex takes them with the next turn, and keeps them for the turns after.
+    /// Picks: Codex takes them with the next turn, and keeps them for the turns after. A
+    /// mode's approvals apply at once: what it lets through is accepted here meanwhile.
     case setMode(PermissionMode)
     case setModel(String)
     case setEffort(String)
@@ -73,6 +74,11 @@ public struct CodexSession: Sendable {
     case running(String)
   }
 
+  private struct Approval: Sendable {
+    var id: CodexRPC.ID
+    var method: String
+  }
+
   private struct Waiting: Sendable {
     var input: JSONValue
     var uuid: String
@@ -100,7 +106,7 @@ public struct CodexSession: Sendable {
   /// Steers already reported dropped: a late answer to them changes nothing.
   private var reportedDropped: Set<String> = []
   /// Approval requests waiting, by the id the transcript knows them by.
-  private var approvals: [String: CodexRPC.ID] = [:]
+  private var approvals: [String: Approval] = [:]
   private var mode: PermissionMode
   private var model: String?
   private var effort: String?
@@ -141,14 +147,14 @@ public struct CodexSession: Sendable {
       }
       if let write = place(prompt) { step.writes.append(write) }
     case .answer(let requestID, let decision):
-      guard let id = approvals.removeValue(forKey: requestID) else { break }
+      guard let approval = approvals.removeValue(forKey: requestID) else { break }
       step.writes.append(
-        CodexRPC.answer(id, result: .object(["decision": CodexPolicy.decision(decision)])))
+        CodexRPC.answer(approval.id, result: .object(["decision": CodexPolicy.decision(decision)])))
     case .interrupt:
       for key in approvals.keys.sorted() {
-        if let id = approvals[key] {
+        if let approval = approvals[key] {
           step.writes.append(
-            CodexRPC.answer(id, result: .object(["decision": .string("cancel")])))
+            CodexRPC.answer(approval.id, result: .object(["decision": .string("cancel")])))
         }
       }
       approvals.removeAll()
@@ -159,6 +165,13 @@ public struct CodexSession: Sendable {
       }
     case .setMode(let mode):
       self.mode = mode
+      for key in approvals.keys.sorted() {
+        guard let approval = approvals[key], CodexPolicy.letsThrough(approval.method, in: mode)
+        else { continue }
+        approvals[key] = nil
+        step.writes.append(Self.accept(approval.id))
+        step.events.append(.permissionWithdrawn(requestID: key))
+      }
     case .setModel(let model):
       self.model = model
     case .setEffort(let effort):
@@ -182,8 +195,12 @@ public struct CodexSession: Sendable {
       if method == "item/commandExecution/requestApproval"
         || method == "item/fileChange/requestApproval"
       {
-        approvals[id.text] = id
-        step.events += translator.translate(message, at: time)
+        if CodexPolicy.letsThrough(method, in: mode) {
+          step.writes.append(Self.accept(id))
+        } else {
+          approvals[id.text] = Approval(id: id, method: method)
+          step.events += translator.translate(message, at: time)
+        }
       } else {
         step.writes.append(CodexRPC.refusal(id, message: "Drakar does not answer \(method)."))
         step.events.append(
@@ -371,6 +388,10 @@ public struct CodexSession: Sendable {
       return nil
     case .running(let id): return steer(prompt, into: id)
     }
+  }
+
+  private static func accept(_ id: CodexRPC.ID) -> JSONValue {
+    CodexRPC.answer(id, result: .object(["decision": .string("accept")]))
   }
 
   private mutating func sendPendingName(into step: inout Step) {

@@ -57,6 +57,17 @@ struct AgentSessionPillsTests {
     #expect(!session.pillNoteIsRefusal)
   }
 
+  /// Bypass mid-turn needs no note: what the turn would ask, Drakar accepts meanwhile.
+  @Test func aCodexSwitchToBypassMidTurnHoldsAtOnce() async throws {
+    let session = AgentSession(folder: folder, agent: .codex)
+    session.executableOverride = try standIn("codex", "cat > /dev/null")
+    session.send("working")
+    defer { session.stop() }
+    #expect(session.transcript.isRunning)
+    session.setMode(.bypass)
+    #expect(session.pillNote == nil)
+  }
+
   @Test func picksBeforeTheStartGoOnTheCommandLine() async throws {
     try await scoped {
       let script = try standIn("claude", #"printf '%s\n' "$*" >> "$0.args"; cat > /dev/null"#)

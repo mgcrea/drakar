@@ -36,6 +36,17 @@ struct CodexPolicyTests {
     #expect(CodexPolicy.offeredModes(allowsBypass: false) == [.ask, .acceptEdits])
   }
 
+  @Test func aModeLetsThroughWhatItRunsUnasked() {
+    let command = "item/commandExecution/requestApproval"
+    let file = "item/fileChange/requestApproval"
+    #expect(CodexPolicy.letsThrough(command, in: .bypass))
+    #expect(CodexPolicy.letsThrough(file, in: .bypass))
+    #expect(CodexPolicy.letsThrough(file, in: .acceptEdits))
+    #expect(!CodexPolicy.letsThrough(command, in: .acceptEdits))
+    #expect(!CodexPolicy.letsThrough(file, in: .ask))
+    #expect(!CodexPolicy.letsThrough(command, in: .ask))
+  }
+
   @Test func decisionsMapOntoCodexs() {
     #expect(CodexPolicy.decision(.allow(updatedInput: .null)) == .string("accept"))
     #expect(

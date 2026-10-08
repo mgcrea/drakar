@@ -215,7 +215,9 @@ final class AgentSession {
     pillNote = nil
     let (previousPick, previousMode) = (modePick, permissionMode)
     modePick = mode
-    if !features.picksApplyAtOnce, transcript.isRunning {
+    // Codex's running turn keeps its policy, but what Bypass lets through is accepted at
+    // once (`CodexPolicy.letsThrough`): it already holds.
+    if !features.picksApplyAtOnce, transcript.isRunning, mode != .bypass {
       pillNote = Self.fromNextTurn
     }
     guard let process else { return }
