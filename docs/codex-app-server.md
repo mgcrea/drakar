@@ -196,8 +196,9 @@ The response, then a `thread/started` notification with the same `thread`:
 - `thread/turns/list {threadId, limit, itemsView?}` → turns, newest first; the default
   `summary` view keeps only the prompt and the final answer of each.
 - Cursors are opaque strings (JSON inside; do not parse).
-- `thread/read {threadId}` gives the metadata; `includeTurns: true` is deprecated like the
-  resume hydration.
+- `thread/read {threadId}` gives the metadata, `thread.name` included; `includeTurns: true` is
+  deprecated like the resume hydration. It also works on a thread no process has loaded
+  (Drakar's history restore read a renamed thread's name this way, 2026-10-08).
 - **Each entry is `{turnId, item, startedAtMs, completedAtMs}`**, both times numbers; a
   short thread fits one page (`nextCursor: null`). A `userMessage` keeps its `clientId`
   (verified 2026-10-07; `Fixtures/codex-items-page.json`).
@@ -413,7 +414,10 @@ Decisions: commands take `accept`, `acceptForSession`,
   `acceptForSession` (rechecked 2026-10-07).
   Codex's own TUI labels `acceptForSession` "Yes, and don't ask again for these files" (file
   change) and "Yes, and don't ask again for this command in this session" (command), seen in
-  the 0.160.1 binary's strings (2026-10-08); its effect is still unverified live.
+  the 0.160.1 binary's strings (2026-10-08). **On a file change it covers later changes to the
+  same files only** (checked in Drakar, 2026-10-08): after `acceptForSession` on an edit of
+  `a.txt`, a second patch to `a.txt` applied without a request; a patch to `b.txt` in the
+  same session still asked. The command side is unexercised (never offered).
 - **`availableDecisions` arrived without `experimentalApi`**, though the types put it in the
   experimental half. It listed neither `decline` nor `acceptForSession`, and `decline` was
   honoured anyway. Offer the listed ones plus `decline`.
@@ -609,7 +613,7 @@ against 0.152–0.153) has the detail; what Drakar needs from it, rechecked wher
   `exec_command`.
 - How a plan-mode plan is approved and what Codex's own clients send to go ahead.
 - `item/tool/requestUserInput` outside plan mode; what an empty or skipped answer does.
-- `acceptForSession`, `acceptWithExecpolicyAmendment` (where the rule is saved),
+- `acceptForSession` on a command, `acceptWithExecpolicyAmendment` (where the rule is saved),
   `item/permissions/requestApproval`, network approvals, `mcpServer/elicitation/request`:
   none exercised.
 - Whether `serverRequest/resolved` also withdraws a request nobody answered (Claude's
