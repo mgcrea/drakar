@@ -56,6 +56,7 @@ public struct CodexSession: Sendable {
     localized: "Codex isn't signed in. Run `codex login` in a terminal, then send again.")
   public static let heldElsewhere = String(
     localized: "This thread is open in another Codex process. Close it there, then send again.")
+  public static let noThread = String(localized: "Codex opened no thread. Send again.")
 
   private enum Call: Sendable {
     case initialize, account, models, thread, turnStart
@@ -227,9 +228,11 @@ public struct CodexSession: Sendable {
     case .models:
       step.signals.append(.models(CodexModels.list(result)))
     case .thread:
-      isOpeningThread = false
       let thread = result["thread"] ?? .null
-      guard let id = thread["id"]?.stringValue else { return }
+      guard let id = thread["id"]?.stringValue else {
+        return threadFailed(Self.noThread, into: &step)
+      }
+      isOpeningThread = false
       threadID = id
       isThreadReady = true
       step.events.append(
@@ -265,19 +268,7 @@ public struct CodexSession: Sendable {
     case .initialize:
       step.signals.append(.unusable(message))
     case .thread:
-      isOpeningThread = false
-      interruptsWhenStarted = false
-      let waiting = beforeThread
-      beforeThread = []
-      if message.contains("active writer") {
-        step.signals.append(.unusable(Self.heldElsewhere))
-        return
-      }
-      guard !waiting.isEmpty else { return }
-      step.events.append(.turnEnded(TurnSummary(outcome: .failed, failureText: message)))
-      step.events += waiting.dropFirst().map {
-        AgentEvent.queue(id: $0.uuid, .dropped(agent: "Codex"))
-      }
+      threadFailed(message, into: &step)
     case .turnStart:
       turn = .idle
       interruptsWhenStarted = false
@@ -296,6 +287,23 @@ public struct CodexSession: Sendable {
       }
     case .account, .models, .other:
       break
+    }
+  }
+
+  /// The thread did not open: the prompts waiting for it end, the first as a failed turn.
+  private mutating func threadFailed(_ message: String, into step: inout Step) {
+    isOpeningThread = false
+    interruptsWhenStarted = false
+    let waiting = beforeThread
+    beforeThread = []
+    if message.contains("active writer") {
+      step.signals.append(.unusable(Self.heldElsewhere))
+      return
+    }
+    guard !waiting.isEmpty else { return }
+    step.events.append(.turnEnded(TurnSummary(outcome: .failed, failureText: message)))
+    step.events += waiting.dropFirst().map {
+      AgentEvent.queue(id: $0.uuid, .dropped(agent: "Codex"))
     }
   }
 

@@ -330,6 +330,23 @@ struct CodexSessionTests {
         == [.unusable(CodexSession.heldElsewhere)])
   }
 
+  /// A thread answer with no id opened nothing: the prompts end as a failed open does, and
+  /// the next prompt opens the thread again.
+  @Test func aThreadAnswerWithoutAnIdFailsTheOpen() throws {
+    var (session, _) = initialized()
+    let opening = session.send(.prompt(input: input("one"), uuid: "p-1"))
+    _ = session.send(.prompt(input: input("two"), uuid: "p-2"))
+    let answered = answer(&session, try write("thread/start", in: opening), #"{"thread":{}}"#)
+    #expect(answered.writes.isEmpty)
+    #expect(
+      answered.events
+        == [
+          .turnEnded(TurnSummary(outcome: .failed, failureText: CodexSession.noThread)),
+          .queue(id: "p-2", .dropped(agent: "Codex")),
+        ])
+    #expect(methods(session.send(.prompt(input: input("x"), uuid: "p-3"))) == ["thread/start"])
+  }
+
   @Test func aTurnThatCannotStartEndsFailed() throws {
     var (session, _) = initialized()
     let opening = session.send(.prompt(input: input("one"), uuid: "p-1"))
