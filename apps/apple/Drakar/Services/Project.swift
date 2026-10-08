@@ -426,11 +426,12 @@ final class Project {
   }
 
   /// Whether a skill can go to `target`: a new session always can; the shown one only when
-  /// it could take a prompt now (not read-only, not mid-turn).
+  /// it takes slash commands and could take a prompt now (not read-only, not mid-turn).
   func canRun(in target: SkillTarget) -> Bool {
     switch target {
     case .newSession: true
-    case .current: selected?.session.canSend == true
+    case .current:
+      selected?.session.features.slashCommands == true && selected?.session.canSend == true
     }
   }
 

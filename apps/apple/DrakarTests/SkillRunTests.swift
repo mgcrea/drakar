@@ -102,6 +102,16 @@ struct SkillRunTests {
     #expect(project.sessions.count == 1)
   }
 
+  /// A skill is Claude Code's: a Codex session would take its name as a prompt.
+  @Test func aCodexSessionCannotRunOne() throws {
+    let project = Project(folder: folder)
+    let item = project.newSession(agent: .codex)
+    #expect(item.session.canSend)
+    #expect(!project.canRun(in: .current))
+    project.run(audit, in: .current)
+    #expect(item.draft.isEmpty)
+  }
+
   @Test func aSessionMidTurnCannotRunOne() async throws {
     let project = Project(folder: folder)
     project.executableOverride = try standIn()
