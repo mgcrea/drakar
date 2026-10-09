@@ -31,6 +31,7 @@ struct DrakarApp: App {
       }
       // ⌘P, as in VS Code and Zed: Drakar prints nothing.
       CommandGroup(replacing: .printItem) { QuickOpenCommand() }
+      CommandGroup(before: .windowList) { SkillsCommand() }
     }
 
     // A real Settings scene: Drakar is a windowed app with a Dock icon and menus, unlike
@@ -40,6 +41,17 @@ struct DrakarApp: App {
       SettingsView()
         .themed()
     }
+
+    // The Skills window: one for the app, opened from Window › Skills or the inspector's
+    // Manage…, on the project of the window it came from. Its own menu item is replaced by
+    // `SkillsCommand`, which knows that project; it is not reopened at launch.
+    Window("Skills", id: SkillsManager.windowID) {
+      SkillsWindow(manager: .shared)
+        .themed()
+    }
+    .defaultSize(width: 1040, height: 640)
+    .restorationBehavior(.disabled)
+    .commandsRemoved()
   }
 }
 
@@ -242,6 +254,19 @@ private struct QuickOpenCommand: View {
     Button("Search in Folder…") { workspace?.showSearch() }
       .keyboardShortcut("f", modifiers: [.command, .shift])
       .disabled(workspace == nil)
+  }
+}
+
+/// Window › Skills: the Skills window, on the focused window's project.
+private struct SkillsCommand: View {
+  @Environment(\.openWindow) private var openWindow
+  @FocusedValue(\.project) private var project
+
+  var body: some View {
+    Button("Skills") {
+      SkillsManager.shared.show(project: project?.folder) { openWindow(id: $0) }
+    }
+    Divider()
   }
 }
 

@@ -71,6 +71,7 @@ private struct SkillsPane: View {
         identifier: "inspector.skills.header"
       ) {
         if let all { CountLabel(count: all.count) }
+        ManageSkillsButton(folder: project.folder)
         RefreshButton(
           reading: reading, problem: all == nil ? nil : reading.problem,
           identifier: "inspector.skills.refresh")
@@ -122,6 +123,23 @@ private struct SkillsPane: View {
       NSPasteboard.general.clearContents()
       NSPasteboard.general.setString(skill.name, forType: .string)
     }
+  }
+}
+
+/// Opens the Skills window on this window's project.
+private struct ManageSkillsButton: View {
+  let folder: URL
+  @Environment(\.openWindow) private var openWindow
+
+  var body: some View {
+    Button("Manage…", systemImage: "slider.horizontal.3") {
+      SkillsManager.shared.show(project: folder) { openWindow(id: $0) }
+    }
+    .labelStyle(.iconOnly)
+    .buttonStyle(.borderless)
+    .foregroundStyle(.secondary)
+    .help(String(localized: "Manage Skills…"))
+    .accessibilityIdentifier("inspector.skills.manage")
   }
 }
 

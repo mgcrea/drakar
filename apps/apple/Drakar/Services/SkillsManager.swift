@@ -66,6 +66,8 @@ final class SkillsManager {
   /// How long file changes settle before the folders are read again; tests shorten it.
   @ObservationIgnored var settleDelay: Duration = .milliseconds(250)
   @ObservationIgnored private var isStarted = false
+  /// The account the folders were last read for.
+  @ObservationIgnored private var readAccount: String?
   @ObservationIgnored private var merged: (inputs: Inputs, records: [SkillRecord])?
 
   private struct WeakProject {
@@ -171,6 +173,14 @@ final class SkillsManager {
     }
   }
 
+  /// A pick, the Settings default or the shell's account changed: when the window's account is
+  /// another, its folders are watched and read instead, and both agents asked under it.
+  func accountMayHaveChanged() {
+    guard account.directory.skillPath != readAccount else { return }
+    if isStarted { watch() }
+    refresh(load: true)
+  }
+
   /// A file in the project's skill folders changed; the project reads both lists again itself.
   func projectFilesChanged() { rescan(after: settleDelay) }
 
@@ -192,6 +202,7 @@ final class SkillsManager {
   private func rescan(after delay: Duration = .zero) {
     scanning?.cancel()
     let account = account.directory
+    readAccount = account.skillPath
     let project = project
     let codexFolders = places.codexFolders
     isScanning = true
@@ -278,15 +289,25 @@ final class SkillsManager {
 
   func isFromGit(_ record: SkillRecord) -> Bool { places.clone(containing: record.realPath) != nil }
 
+  /// The SKILL.md or command file Open opens; nil for a link whose target is gone.
+  func fileToOpen(_ record: SkillRecord) -> URL? {
+    guard !record.isMissing, let file = record.file else { return nil }
+    return URL(filePath: file)
+  }
+
+  /// What Reveal in Finder selects: the first agent's folder, the link itself when it is one.
+  func itemToReveal(_ record: SkillRecord) -> URL {
+    URL(filePath: record.sightings.compactMap(\.path).first ?? record.realPath)
+  }
+
   /// The first 4 KB of the SKILL.md or command file.
   func preview(of record: SkillRecord) -> String? {
-    record.file.flatMap { files.read(URL(filePath: $0), limit: 4096) }
+    fileToOpen(record).flatMap { files.read($0, limit: 4096) }
   }
 
   /// In the project window's editor, or the default app with no project.
   func open(_ record: SkillRecord) {
-    guard let file = record.file else { return }
-    let url = URL(filePath: file)
+    guard let url = fileToOpen(record) else { return }
     if let project, let window = projectAt(project) {
       window.workspace.open(url)
       window.workspace.window?.makeKeyAndOrderFront(nil)
@@ -296,8 +317,7 @@ final class SkillsManager {
   }
 
   func reveal(_ record: SkillRecord) {
-    let path = record.sightings.compactMap(\.path).first ?? record.realPath
-    NSWorkspace.shared.activateFileViewerSelecting([URL(filePath: path)])
+    NSWorkspace.shared.activateFileViewerSelecting([itemToReveal(record)])
   }
 
   private func perform(_ action: () throws -> Void) {

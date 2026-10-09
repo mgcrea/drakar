@@ -257,6 +257,59 @@ struct SkillsManagerTests {
     #expect(manager.preview(of: record)?.utf8.count == 4096)
   }
 
+  /// Review focus: a link whose target is gone has nothing to open, and Reveal shows the link.
+  @Test func aMissingLinkRevealsTheLinkAndOpensNothing() async throws {
+    defer { cleanUp() }
+    let manager = manager(Stubs())
+    let link = account.appending(path: "skills/gone")
+    try FileManager.default.createSymbolicLink(
+      at: link, withDestinationURL: root.appending(path: "nowhere/gone"))
+    manager.refresh(load: true)
+    try await settle(manager)
+    let gone = try #require(manager.records.first { $0.name == "gone" })
+    #expect(gone.isMissing)
+    #expect(gone.file != nil)
+    #expect(manager.fileToOpen(gone) == nil)
+    #expect(manager.itemToReveal(gone).skillPath == link.skillPath)
+    let review = try #require(manager.records.first { $0.name == "review" })
+    #expect(
+      manager.fileToOpen(review)?.skillPath
+        == account.appending(path: "skills/review/SKILL.md").skillPath)
+  }
+
+  /// Review focus: when the window's account changes, its skills are read and watched instead.
+  @Test func aNewAccountIsReadAndWatched() async throws {
+    defer { cleanUp() }
+    let stubs = Stubs()
+    let manager = manager(stubs)
+    let other = home.appending(path: ".claude-other", directoryHint: .isDirectory)
+    try skill(other.appending(path: "skills/lint"))
+    var current = ClaudeAccount(directory: account, isDefault: false)
+    manager.accountFor = { _ in current }
+    manager.settleDelay = .milliseconds(10)
+    manager.start()
+    defer { manager.stop() }
+    try await settle(manager)
+    #expect(manager.records.map(\.name) == ["review"])
+    let probes = stubs.probes
+    manager.accountMayHaveChanged()
+    #expect(!manager.isScanning)
+    current = ClaudeAccount(directory: other, isDefault: false)
+    manager.accountMayHaveChanged()
+    #expect(manager.isScanning)
+    try await settle(manager)
+    #expect(manager.records.map(\.name) == ["lint"])
+    #expect(stubs.probes > probes)
+    // The new account's folder is the one watched now.
+    for attempt in 0..<5 where !manager.records.contains(where: { $0.name.hasPrefix("added") }) {
+      try skill(other.appending(path: "skills/added\(attempt)"))
+      for _ in 0..<10 where !manager.records.contains(where: { $0.name.hasPrefix("added") }) {
+        try await Task.sleep(for: .milliseconds(100))
+      }
+    }
+    #expect(manager.records.contains { $0.name.hasPrefix("added") })
+  }
+
   /// A project window tells the Skills window about its skill files as they change.
   @Test func aProjectsSkillFileChangeIsHeard() async throws {
     let window = Project(folder: project)
