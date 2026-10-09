@@ -163,6 +163,12 @@ struct DeleteSheet: View {
         Label(line, systemImage: "arrow.right.circle")
           .fixedSize(horizontal: false, vertical: true)
       }
+      // Then what stays, which is no step.
+      ForEach(request.plan.notes, id: \.self) { note in
+        Label(note, systemImage: "info.circle")
+          .foregroundStyle(.secondary)
+          .fixedSize(horizontal: false, vertical: true)
+      }
       HStack {
         Spacer()
         Button("Cancel", role: .cancel) { dismiss() }

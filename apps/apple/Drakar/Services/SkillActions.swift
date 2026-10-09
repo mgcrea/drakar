@@ -207,6 +207,8 @@ struct DeletePlan: Equatable {
   var steps: [Step] = []
   /// One sentence per step, in the same order.
   var lines: [String] = []
+  /// What stays that the person might expect to go, a sentence each: no step of their own.
+  var notes: [String] = []
 
   /// `targetStays` when nothing in the plan trashes the folder the link points to.
   mutating func removeLink(_ link: String, targetStays: Bool) {
@@ -268,7 +270,8 @@ struct SkillActions {
 
   /// What deleting `record` does: each link to it goes. The real folder (or command file) goes
   /// to the Trash only when the row shows it, not just a link to it, and it lies in one of the
-  /// skill folders; a clone goes with its last link. Anything else stays.
+  /// skill folders. A git clone never goes: another project or account may link into it, so
+  /// the plan says it stays. Anything else stays.
   func deletePlan(for record: SkillRecord) throws -> DeletePlan {
     guard record.canDelete else {
       throw SkillActionError(
@@ -286,30 +289,23 @@ struct SkillActions {
       found.append(link)
     }
     var trash: (path: String, line: String)?
-    if !record.isMissing, files.exists(URL(filePath: record.realPath)) {
-      if let clone = places.clone(containing: record.realPath) {
-        let spellings = SkillPlaces.spellings(of: clone)
-        let others = links { target in spellings.contains { ProjectPath.contains($0, target) } }
-          .filter { !seen.contains(Self.key(ofLink: $0)) }
-        if others.isEmpty {
-          trash = (
-            clone.skillPath,
-            String(
-              localized:
-                "Move the clone at \(SkillText.path(clone)) to the Trash: no link in these folders points into it."
-            )
-          )
-        }
-      } else if showsRealFolder(record), isInRoots(record.realPath) {
-        trash = (
-          record.realPath,
-          String(localized: "Move \(SkillText.path(record.realPath)) to the Trash.")
-        )
+    var notes: [String] = []
+    if let clone = places.clone(containing: record.realPath) {
+      if files.exists(clone) {
+        notes.append(String(localized: "The clone at \(SkillText.path(clone)) stays."))
       }
+    } else if !record.isMissing, files.exists(URL(filePath: record.realPath)),
+      showsRealFolder(record), isInRoots(record.realPath)
+    {
+      trash = (
+        record.realPath,
+        String(localized: "Move \(SkillText.path(record.realPath)) to the Trash.")
+      )
     }
     var plan = DeletePlan()
     for link in found { plan.removeLink(link, targetStays: trash == nil && !record.isMissing) }
     if let trash { plan.trash(trash.path, saying: trash.line) }
+    plan.notes = notes
     guard !plan.steps.isEmpty else {
       throw SkillActionError(
         message: String(

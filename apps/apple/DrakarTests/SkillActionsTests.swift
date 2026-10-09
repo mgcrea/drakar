@@ -349,8 +349,9 @@ struct SkillActionsTests {
     #expect(throws: SkillActionError.self) { try actions.deletePlan(for: record) }
   }
 
-  /// Review focus: a clone goes to the Trash with its last link, not before.
-  @Test func aClonesLastLinkTakesTheCloneWithIt() throws {
+  /// Review focus: a clone never goes to the Trash, not even with its last link here: another
+  /// project or account may link into it. The sheet says it stays.
+  @Test func aClonesLastLinkLeavesTheClone() throws {
     defer { cleanUp() }
     let clone = places.sources.appending(path: "local/me/repo", directoryHint: .isDirectory)
     let one = try skill(clone.appending(path: "skills/one"))
@@ -359,22 +360,23 @@ struct SkillActionsTests {
     let twoLink = account.appending(path: "skills/two")
     try link(oneLink, to: one)
     try link(twoLink, to: two)
+    let stays = "The clone at \(SkillText.path(clone)) stays."
     let first = try actions.deletePlan(for: try row("one"))
     #expect(first.steps == [.removeLink(oneLink.skillPath)])
-    #expect(first.lines.last?.contains("stays") == true)
+    #expect(first.notes == [stays])
     expectLinesSay(first)
     try actions.delete(first)
     let last = try actions.deletePlan(for: try row("two"))
-    #expect(last.steps == [.removeLink(twoLink.skillPath), .trash(clone.skillPath)])
-    expectLinesSay(last)
+    #expect(last.steps == [.removeLink(twoLink.skillPath)])
     #expect(
       last.lines == [
-        "Remove the link at \(SkillText.path(twoLink)).",
-        "Move the clone at \(SkillText.path(clone)) to the Trash: no link in these folders points into it.",
+        "Remove the link at \(SkillText.path(twoLink)) (the folder it points to stays)."
       ])
+    #expect(last.notes == [stays])
     try actions.delete(last)
-    #expect(!exists(clone))
-    #expect(exists(trash.appending(path: "repo")))
+    #expect(!exists(twoLink))
+    #expect(exists(two.appending(path: "SKILL.md")))
+    #expect(try FileManager.default.contentsOfDirectory(atPath: trash.skillPath).isEmpty)
   }
 
   @Test func installsByLinkingForBothAgents() throws {

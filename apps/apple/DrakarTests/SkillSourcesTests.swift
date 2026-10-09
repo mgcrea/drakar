@@ -134,8 +134,8 @@ struct SkillSourcesTests {
     #expect(text.contains("Better."))
   }
 
-  /// Review focus: the clone goes to the Trash with its last link.
-  @Test func theCloneGoesWithItsLastLink() async throws {
+  /// Review focus: the clone stays when its last link goes; another project may use it.
+  @Test func theCloneStaysAfterItsLastLink() async throws {
     defer { cleanUp() }
     try await makeOrigin()
     let clone = try await sources.fetch(address)
@@ -146,8 +146,9 @@ struct SkillSourcesTests {
       let record = try #require(rows().first { $0.name == name })
       try actions.delete(try actions.deletePlan(for: record))
     }
-    #expect(!FileManager.default.fileExists(atPath: clone.skillPath))
-    #expect(FileManager.default.fileExists(atPath: trash.appending(path: "skills-repo").skillPath))
+    #expect(rows().isEmpty)
+    #expect(FileManager.default.fileExists(atPath: clone.appending(path: "skills/one").skillPath))
+    #expect(try FileManager.default.contentsOfDirectory(atPath: trash.skillPath).isEmpty)
   }
 
   @Test func gitsOwnWordsSayWhatFailed() async throws {
