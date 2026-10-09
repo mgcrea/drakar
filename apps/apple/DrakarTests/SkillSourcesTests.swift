@@ -211,18 +211,24 @@ struct SkillSourcesTests {
     #expect(result.timedOut)
   }
 
-  /// Cancelling the caller stops git.
-  @Test func cancellingStopsGit() async throws {
-    defer { cleanUp() }
+  /// Started, cancelled and timed off the main actor, which other suites can keep busy.
+  private nonisolated static func timedCancel() async throws -> (GitRunner.Output, Duration) {
     let started = ContinuousClock.now
-    let running = Task.detached {
+    let running = Task {
       try await GitRunner.run(
-        URL(filePath: "/bin/sleep"), ["8"], environment: [:], timeout: .seconds(60))
+        URL(filePath: "/bin/sleep"), ["30"], environment: [:], timeout: .seconds(60))
     }
     try await Task.sleep(for: .milliseconds(200))
     running.cancel()
     let result = try await running.value
-    #expect(ContinuousClock.now - started < .seconds(6))
+    return (result, ContinuousClock.now - started)
+  }
+
+  /// Cancelling the caller stops git.
+  @Test func cancellingStopsGit() async throws {
+    defer { cleanUp() }
+    let (result, took) = try await Self.timedCancel()
+    #expect(took < .seconds(10))
     #expect(!result.timedOut)
     #expect(result.status != 0)
   }
