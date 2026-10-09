@@ -24,8 +24,16 @@ struct SkillsManagerTests {
     let started = DispatchSemaphore(value: 0)
     let release = DispatchSemaphore(value: 0)
 
-    /// Whether the reading started within five seconds; blocks, so off the main actor.
-    nonisolated func hasStarted() -> Bool { started.wait(timeout: .now() + 5) == .success }
+    /// Whether the reading started within 30 seconds, a bound against a hang, not a timing.
+    /// The wait blocks a dispatch thread, not the cooperative pool: the held reading already
+    /// takes one of its threads, and parallel suites under load can take the rest.
+    nonisolated func hasStarted() async -> Bool {
+      await withCheckedContinuation { done in
+        DispatchQueue.global().async {
+          done.resume(returning: self.started.wait(timeout: .now() + 30) == .success)
+        }
+      }
+    }
   }
 
   private let root: URL
@@ -273,8 +281,7 @@ struct SkillsManagerTests {
       return ClaudeSkillScan.scan(account: account, project: project, codexFolders: folders)
     }
     manager.choose(project: project)
-    // Waited for off the main actor, where the scan's task is started from.
-    try #require(await Task.detached { gate.hasStarted() }.value)
+    try #require(await gate.hasStarted())
     manager.choose(project: nil)
     gate.release.signal()
     try await settle(manager)
