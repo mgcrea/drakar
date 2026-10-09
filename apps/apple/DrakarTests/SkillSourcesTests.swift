@@ -176,11 +176,62 @@ struct SkillSourcesTests {
     #expect(error?.message.contains("is not a git URL") == true)
   }
 
-  @Test func aGitThatHangsIsStopped() async throws {
-    defer { cleanUp() }
+  /// Timed off the main actor, which other suites can keep busy for seconds.
+  private nonisolated static func timedSleep() async throws -> (GitRunner.Output, Duration) {
+    let started = ContinuousClock.now
     let result = try await GitRunner.run(
       URL(filePath: "/bin/sleep"), ["5"], environment: [:], timeout: .milliseconds(200))
+    return (result, ContinuousClock.now - started)
+  }
+
+  @Test func aGitThatHangsIsStopped() async throws {
+    defer { cleanUp() }
+    let (result, took) = try await Self.timedSleep()
+    #expect(took < .seconds(4))
     #expect(result.timedOut)
     #expect(result.status != 0)
+  }
+
+  @Test func anAddressThatLooksLikeAnOptionIsRefusedWithoutRunningGit() async throws {
+    defer { cleanUp() }
+    let sources = SkillSources(root: places.sources, environment: { ["PATH": "/nowhere"] })
+    for address in ["--upload-pack=x@h:o/r", "ext::sh -c x@h:o/r"] {
+      let error = await #expect(throws: SkillActionError.self) {
+        try await sources.fetch(address)
+      }
+      #expect(error?.message.contains("is not a git URL") == true)
+    }
+  }
+
+  @Test func anotherRepositoryAtTheSameFolderIsNotReused() async throws {
+    defer { cleanUp() }
+    try await makeOrigin()
+    let clone = try await sources.fetch(address)
+    let other = root.appending(path: "other/origin/skills-repo", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: other, withIntermediateDirectories: true)
+    let executable = try #require(GitRunner.locate(path: environment["PATH"]))
+    let made = try await GitRunner.run(
+      executable, ["init", "-q", other.skillPath], environment: environment, timeout: .seconds(30))
+    try #require(made.status == 0)
+    let error = await #expect(throws: SkillActionError.self) {
+      try await sources.fetch("file://" + other.skillPath)
+    }
+    #expect(error?.message.contains("A different repository is already cloned") == true)
+    #expect(
+      FileManager.default.fileExists(atPath: clone.appending(path: "skills/one/SKILL.md").skillPath)
+    )
+  }
+
+  @Test func aFailedPullSaysWhyAndLeavesTheCloneAlone() async throws {
+    defer { cleanUp() }
+    try await makeOrigin()
+    let clone = try await sources.fetch(address)
+    let file = clone.appending(path: "skills/one/SKILL.md")
+    try Data("mine\n".utf8).write(to: file)
+    try skill("one", description: "Theirs.")
+    try await commit("Changed upstream")
+    let error = await #expect(throws: SkillActionError.self) { try await sources.fetch(address) }
+    #expect(error?.message.isEmpty == false)
+    #expect(try String(contentsOf: file, encoding: .utf8) == "mine\n")
   }
 }

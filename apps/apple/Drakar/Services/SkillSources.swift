@@ -52,7 +52,8 @@ nonisolated enum GitRunner {
     try process.run()
     let watchdog = Task {
       try await Task.sleep(for: timeout)
-      if process.isRunning { process.terminate() }
+      guard process.isRunning else { return false }
+      process.terminate()
       return true
     }
     async let out = drain(output)
@@ -79,7 +80,7 @@ struct SkillSources {
   /// Clones `address`, or pulls the clone already there; returns the clone's folder.
   func fetch(_ address: String) async throws -> URL {
     let address = address.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard let source = GitSource(address) else {
+    guard !address.hasPrefix("-"), !address.contains("::"), let source = GitSource(address) else {
       throw SkillActionError(
         message: String(
           localized:
@@ -88,11 +89,18 @@ struct SkillSources {
     }
     let folder = source.folder(in: root)
     if FileManager.default.fileExists(atPath: folder.appending(path: ".git").skillPath) {
+      let stored = try await git(["-C", folder.skillPath, "remote", "get-url", "origin"])
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+      guard stored == address else {
+        throw SkillActionError(
+          message: String(
+            localized: "A different repository is already cloned at \(folder.skillPath)."))
+      }
       try await git(["-C", folder.skillPath, "pull", "--ff-only"])
     } else {
       try FileManager.default.createDirectory(
         at: folder.deletingLastPathComponent(), withIntermediateDirectories: true)
-      try await git(["clone", "--depth", "1", address, folder.skillPath])
+      try await git(["clone", "--depth", "1", "--", address, folder.skillPath])
     }
     return folder
   }
@@ -106,7 +114,8 @@ struct SkillSources {
     try await git(["-C", clone.skillPath, "pull", "--ff-only"])
   }
 
-  private func git(_ arguments: [String]) async throws {
+  @discardableResult
+  private func git(_ arguments: [String]) async throws -> String {
     let environment = await environment()
     guard let executable = GitRunner.locate(path: environment["PATH"]) else {
       throw SkillActionError(
@@ -126,5 +135,6 @@ struct SkillSources {
         message: words.isEmpty
           ? String(localized: "Git failed with status \(result.status).") : words)
     }
+    return result.output
   }
 }
