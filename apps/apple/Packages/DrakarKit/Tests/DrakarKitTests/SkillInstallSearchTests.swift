@@ -76,20 +76,21 @@ struct SkillInstallSearchTests {
     #expect(GitSource("git@github.com:me/skills.git") == skills)
     #expect(GitSource("  https://github.com/me/skills \n") == skills)
     #expect(
-      GitSource("ssh://git@gitlab.example.com/team/sub/tools.git")
-        == GitSource(host: "gitlab.example.com", owner: "sub", repo: "tools"))
-    #expect(
       GitSource("file:///Users/me/src/skills")
         == GitSource(host: "local", owner: "src", repo: "skills"))
   }
 
-  /// Nothing that would put a clone outside its folder, or is not a repository's address.
+  /// Nothing that would put a clone outside its folder, or is not a repository's address; of
+  /// the schemes only https and file, and scp only as `git@`.
   @Test func refusesWhatIsNotARepository() {
     for text in [
       "skills please", "github.com/me/skills", "https://github.com/me",
       "https://github.com/me/../../etc", "ftp://host/me/skills", "git@github.com:skills", "",
       "https://github.com/me/...git", "https://github.com/me/..git", "git@..:me/skills",
       "git@.:me/skills", "https://github.com/%2e%2e/x/y", "https://github.com/me/a b",
+      "http://github.com/me/skills", "git://github.com/me/skills",
+      "ssh://git@gitlab.example.com/team/sub/tools.git", "me@github.com:me/skills",
+      "-git@github.com:me/skills",
     ] {
       #expect(GitSource(text) == nil, "\(text)")
     }
@@ -106,7 +107,7 @@ struct SkillInstallSearchTests {
     let sources = URL(filePath: "/Users/me/.agents/skill-sources", directoryHint: .isDirectory)
     for text in [
       "https://github.com/me/skills", "git@github.com:me/skills.git", "file:///Users/me/src/skills",
-      "ssh://git@gitlab.example.com:2222/team/sub/tools.git", "https://github.com/me/.hidden",
+      "https://github.com/me/.hidden",
     ] {
       let source = try #require(GitSource(text), "\(text)")
       let folder = source.folder(in: sources).standardizedFileURL.path(percentEncoded: false)

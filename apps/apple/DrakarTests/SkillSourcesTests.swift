@@ -193,6 +193,78 @@ struct SkillSourcesTests {
     #expect(result.status != 0)
   }
 
+  /// Review focus: a git that ignores the stop, and a process it started that holds the pipes
+  /// after it, do not hold the call: it returns after the grace.
+  private nonisolated static func timedDescendant() async throws -> (GitRunner.Output, Duration) {
+    let started = ContinuousClock.now
+    let result = try await GitRunner.run(
+      URL(filePath: "/bin/sh"), ["-c", "trap '' TERM; sleep 8 & sleep 8"], environment: [:],
+      timeout: .milliseconds(200))
+    return (result, ContinuousClock.now - started)
+  }
+
+  @Test func aStoppedGitsChildDoesNotHoldTheCall() async throws {
+    defer { cleanUp() }
+    let (result, took) = try await Self.timedDescendant()
+    #expect(took > .seconds(1))
+    #expect(took < .seconds(6))
+    #expect(result.timedOut)
+  }
+
+  /// Cancelling the caller stops git.
+  @Test func cancellingStopsGit() async throws {
+    defer { cleanUp() }
+    let started = ContinuousClock.now
+    let running = Task.detached {
+      try await GitRunner.run(
+        URL(filePath: "/bin/sleep"), ["8"], environment: [:], timeout: .seconds(60))
+    }
+    try await Task.sleep(for: .milliseconds(200))
+    running.cancel()
+    let result = try await running.value
+    #expect(ContinuousClock.now - started < .seconds(6))
+    #expect(!result.timedOut)
+    #expect(result.status != 0)
+  }
+
+  /// git never waits on a prompt nobody sees; a value the shell already sets stays.
+  @Test func gitIsKeptFromAsking() {
+    let environment = SkillSources.gitEnvironment(["PATH": "/usr/bin"])
+    #expect(environment["GIT_TERMINAL_PROMPT"] == "0")
+    #expect(environment["GIT_SSH_COMMAND"] == "ssh -o BatchMode=yes")
+    #expect(environment["PATH"] == "/usr/bin")
+    let mine = SkillSources.gitEnvironment(["GIT_SSH_COMMAND": "ssh -i key"])
+    #expect(mine["GIT_SSH_COMMAND"] == "ssh -i key")
+  }
+
+  /// Review focus: one repository however it is spelled; a local one only by its path.
+  @Test func aRepositorySpelledAnotherWayIsTheSame() {
+    for (stored, address) in [
+      ("https://github.com/me/skills", "git@github.com:me/skills.git"),
+      ("https://github.com/me/skills.git", "https://GitHub.com/me/skills/"),
+      ("file:///Users/me/src/skills", "file:///Users/me/src/skills/"),
+      ("odd origin", "odd origin"),
+    ] {
+      #expect(SkillSources.isSameRepository(stored, address), "\(stored) \(address)")
+    }
+    for (stored, address) in [
+      ("https://github.com/me/skills", "https://github.com/you/skills"),
+      ("file:///Users/me/a/skills", "file:///Users/me/b/skills"),
+      ("file:///Users/me/src/skills", "https://local/src/skills"),
+      ("odd origin", "https://github.com/me/skills"),
+    ] {
+      #expect(!SkillSources.isSameRepository(stored, address), "\(stored) \(address)")
+    }
+  }
+
+  /// The clone of an address spelled another way is pulled, not refused.
+  @Test func anAddressSpelledAnotherWayReusesTheClone() async throws {
+    defer { cleanUp() }
+    try await makeOrigin()
+    let clone = try await sources.fetch(address)
+    #expect(try await sources.fetch(address + "/").skillPath == clone.skillPath)
+  }
+
   @Test func anAddressThatLooksLikeAnOptionIsRefusedWithoutRunningGit() async throws {
     defer { cleanUp() }
     let sources = SkillSources(root: places.sources, environment: { ["PATH": "/nowhere"] })

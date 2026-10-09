@@ -13,19 +13,18 @@ public struct GitSource: Sendable, Hashable {
     self.repo = repo
   }
 
-  /// `https://host/owner/repo(.git)`, `ssh://…`, `git://…`, `file://…` (host `local`), or
-  /// `git@host:owner/repo(.git)`; nil for anything else, or a path with `.` or `..` in it.
+  /// `https://host/owner/repo(.git)`, `git@host:owner/repo(.git)`, or `file://…` (host
+  /// `local`, for a repository on this Mac); nil for anything else, `http`, `git://` and
+  /// `ssh://` included, or a path with `.` or `..` in it.
   public init?(_ text: String) {
     let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
     let host: String
     let path: String
-    if !text.contains("://"), let at = text.firstIndex(of: "@"),
-      let colon = text[at...].firstIndex(of: ":")
-    {
-      host = String(text[text.index(after: at)..<colon])
+    if text.hasPrefix("git@"), !text.contains("://"), let colon = text.firstIndex(of: ":") {
+      host = String(text[text.index(text.startIndex, offsetBy: 4)..<colon])
       path = String(text[text.index(after: colon)...])
     } else if let url = URL(string: text), let scheme = url.scheme?.lowercased(),
-      ["https", "http", "ssh", "git", "file"].contains(scheme)
+      scheme == "https" || scheme == "file"
     {
       host = url.host(percentEncoded: false) ?? (scheme == "file" ? "local" : "")
       path = url.path(percentEncoded: false)
