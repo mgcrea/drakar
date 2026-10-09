@@ -376,4 +376,119 @@ struct SkillActionsTests {
     #expect(!exists(clone))
     #expect(exists(trash.appending(path: "repo")))
   }
+
+  @Test func installsByLinkingForBothAgents() throws {
+    defer { cleanUp() }
+    let one = try skill(outside.appending(path: "lib/one"))
+    let made = try actions.install([one], place: .user, agents: [.codex, .claude], method: .link)
+    #expect(
+      made.map(\.skillPath) == [
+        account.appending(path: "skills/one").skillPath,
+        home.appending(path: ".agents/skills/one").skillPath,
+      ])
+    for url in made {
+      #expect(SkillPath.isLink(url.skillPath))
+      #expect(SkillPath.real(url.skillPath) == one.skillPath)
+    }
+  }
+
+  @Test func aCopyIsMadeOnceAndLinkedForTheOtherAgent() throws {
+    defer { cleanUp() }
+    let one = try skill(outside.appending(path: "lib/one"))
+    try actions.install([one], place: .user, agents: [.claude, .codex], method: .copy)
+    let copy = account.appending(path: "skills/one")
+    #expect(!SkillPath.isLink(copy.skillPath))
+    #expect(FileManager.default.fileExists(atPath: copy.appending(path: "SKILL.md").skillPath))
+    #expect(SkillPath.real(home.appending(path: ".agents/skills/one").skillPath) == copy.skillPath)
+    #expect(exists(one.appending(path: "SKILL.md")))
+  }
+
+  @Test func installsIntoTheProjectForOneAgent() throws {
+    defer { cleanUp() }
+    let one = try skill(outside.appending(path: "lib/one"))
+    try actions.install([one], place: .project, agents: [.codex], method: .link)
+    #expect(SkillPath.isLink(project.appending(path: ".agents/skills/one").skillPath))
+    #expect(!exists(project.appending(path: ".claude/skills/one")))
+  }
+
+  /// A name taken at any destination refuses the whole install: nothing is written.
+  @Test func aClashRefusesTheWholeInstall() throws {
+    defer { cleanUp() }
+    let one = try skill(outside.appending(path: "lib/one"))
+    let two = try skill(outside.appending(path: "lib/two"))
+    try skill(home.appending(path: ".agents/skills/two"))
+    #expect(
+      throws: SkillActionError.exists(
+        "two", in: home.appending(path: ".agents/skills", directoryHint: .isDirectory))
+    ) { try actions.install([one, two], place: .user, agents: [.claude, .codex], method: .link) }
+    #expect(!exists(account.appending(path: "skills/one")))
+    #expect(!exists(home.appending(path: ".agents/skills/one")))
+  }
+
+  /// A file, a folder or a link whose target is gone: none is ever replaced.
+  @Test func nothingAtADestinationIsOverwritten() throws {
+    defer { cleanUp() }
+    let one = try skill(outside.appending(path: "lib/one"))
+    let dangling = account.appending(path: "skills/one")
+    try link(dangling, to: outside.appending(path: "gone"))
+    #expect(throws: SkillActionError.self) {
+      try actions.install([one], place: .user, agents: [.claude], method: .copy)
+    }
+    #expect(
+      SkillPath.target(ofLink: dangling.skillPath) == outside.appending(path: "gone").skillPath)
+    let file = home.appending(path: ".agents/skills/one")
+    try write("mine", to: file)
+    #expect(throws: SkillActionError.self) {
+      try actions.install([one], place: .user, agents: [.codex], method: .link)
+    }
+    #expect((try? String(contentsOf: file, encoding: .utf8)) == "mine")
+  }
+
+  /// Review focus: with no project chosen there is no project to install into.
+  @Test func withoutAProjectOnlyYoursCanBeInstalledInto() throws {
+    defer { cleanUp() }
+    let one = try skill(outside.appending(path: "lib/one"))
+    let actions = SkillActions(
+      places: SkillPlaces(account: account, home: home, project: nil), files: files)
+    #expect(throws: SkillActionError.self) {
+      try actions.install([one], place: .project, agents: [.claude], method: .link)
+    }
+    try actions.install([one], place: .user, agents: [.claude], method: .link)
+    #expect(SkillPath.isLink(account.appending(path: "skills/one").skillPath))
+  }
+
+  @Test func aFolderWithoutASkillIsRefused() throws {
+    defer { cleanUp() }
+    let empty = outside.appending(path: "empty", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: empty, withIntermediateDirectories: true)
+    #expect(throws: SkillActionError.self) {
+      try actions.install([empty], place: .user, agents: [.claude], method: .link)
+    }
+    #expect(throws: SkillActionError.self) {
+      try actions.install([], place: .user, agents: [], method: .link)
+    }
+  }
+
+  @Test func twoFoldersWithOneNameAreRefused() throws {
+    defer { cleanUp() }
+    let first = try skill(outside.appending(path: "a/one"))
+    let second = try skill(outside.appending(path: "b/one"))
+    #expect(throws: SkillActionError.self) {
+      try actions.install([first, second], place: .user, agents: [.claude], method: .link)
+    }
+    #expect(!exists(account.appending(path: "skills/one")))
+  }
+
+  /// A step that fails after others succeeded says what was already made.
+  @Test func aLaterFailureNamesWhatWasAlreadyMade() throws {
+    defer { cleanUp() }
+    let one = try skill(outside.appending(path: "lib/one"))
+    try write("in the way", to: home.appending(path: ".agents"))
+    let error = #expect(throws: SkillActionError.self) {
+      try actions.install([one], place: .user, agents: [.claude, .codex], method: .link)
+    }
+    let made = account.appending(path: "skills/one")
+    #expect(SkillPath.isLink(made.skillPath))
+    #expect(error?.message.contains(SkillText.path(made)) == true)
+  }
 }

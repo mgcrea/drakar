@@ -333,6 +333,70 @@ struct SkillActions {
     }
   }
 
+  /// Puts each skill folder of `sources` into `place` for `agents`, Claude Code first: a link
+  /// per agent, or one copy and links to it. Every destination is checked before anything is
+  /// written, and nothing is ever replaced; returns what was made. A step that fails after
+  /// others succeeded says what was already made.
+  @discardableResult
+  func install(
+    _ sources: [URL], place: SkillPlace, agents: [SkillAgent], method: InstallMethod
+  ) throws -> [URL] {
+    let agents = SkillAgent.allCases.filter(agents.contains)
+    guard !agents.isEmpty, !sources.isEmpty else {
+      throw SkillActionError(
+        message: String(localized: "Choose a skill, and Claude Code, Codex or both."))
+    }
+    let folders = try agents.map { agent in
+      guard let folder = places.folder(place, for: agent) else {
+        throw SkillActionError(message: String(localized: "Choose a project to install into it."))
+      }
+      return folder
+    }
+    var names = Set<String>()
+    for source in sources {
+      let name = source.lastPathComponent
+      guard files.exists(source.appending(path: "SKILL.md")) else {
+        throw SkillActionError(
+          message: String(
+            localized: "\(SkillText.path(source)) has no SKILL.md, so it is not a skill."))
+      }
+      guard names.insert(name).inserted else {
+        throw SkillActionError(
+          message: String(localized: "Two of the chosen skills are named \(name)."))
+      }
+      for folder in folders where files.exists(folder.appending(path: name)) {
+        throw SkillActionError.exists(name, in: folder)
+      }
+    }
+    var made: [URL] = []
+    do {
+      for source in sources {
+        let name = source.lastPathComponent
+        var target = URL(filePath: SkillPath.real(source.skillPath), directoryHint: .isDirectory)
+        for (index, folder) in folders.enumerated() {
+          try files.createFolder(folder)
+          let destination = folder.appending(path: name)
+          if method == .copy, index == 0 {
+            try files.copy(target, to: destination)
+            target = destination
+          } else {
+            try files.link(destination, to: target)
+          }
+          made.append(destination)
+        }
+      }
+    } catch {
+      guard !made.isEmpty else { throw error }
+      let list = made.map { SkillText.path($0) }.joined(separator: ", ")
+      throw SkillActionError(
+        message: String(
+          localized:
+            "The install stopped: \(error.localizedDescription) Already made, and left in place: \(list)."
+        ))
+    }
+    return made
+  }
+
   /// A link to remove is still a link; an item to trash is still there, not a link, and still
   /// resolves to itself: a link put in its place or above it leads elsewhere.
   private func check(_ step: DeletePlan.Step) throws {
