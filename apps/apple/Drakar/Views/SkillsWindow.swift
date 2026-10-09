@@ -228,6 +228,9 @@ private struct SkillsSidebar: View {
         .accessibilityIdentifier("skills.place.\(place.rawValue)")
       }
     }
+    // On the list, not the inset: an identifier set after `safeAreaInset` overrides the
+    // picker's own.
+    .accessibilityIdentifier("skills.sidebar")
     .safeAreaInset(edge: .top) {
       Picker("Project", selection: projectBinding) {
         Text("No Project").tag(String?.none)
@@ -241,7 +244,6 @@ private struct SkillsSidebar: View {
       .padding(.top, 8)
       .accessibilityIdentifier("skills.project")
     }
-    .accessibilityIdentifier("skills.sidebar")
   }
 
   private var placeBinding: Binding<SkillsPlace?> {
