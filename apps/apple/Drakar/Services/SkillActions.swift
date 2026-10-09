@@ -141,6 +141,8 @@ nonisolated struct SkillFileSystem: Sendable {
     try manager.createSymbolicLink(at: url, withDestinationURL: target)
   }
 
+  /// The folder as it is: a link inside it stays a link, so a relative one that led out of
+  /// the folder may lead nowhere from the copy.
   func copy(_ source: URL, to destination: URL) throws {
     try manager.copyItem(at: source, to: destination)
   }
@@ -247,7 +249,8 @@ nonisolated struct DeletePlan: Equatable, Sendable {
 nonisolated enum InstallMethod: Sendable {
   /// A link per agent to the folder where it is.
   case link
-  /// Copied once into the first agent's folder, the other agent linked to the copy.
+  /// Copied once into the first agent's folder, the other agent linked to the copy. Links
+  /// inside the skill are copied as links.
   case copy
 }
 

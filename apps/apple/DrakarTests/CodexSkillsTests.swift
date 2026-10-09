@@ -186,6 +186,24 @@ struct CodexSkillsTests {
     #expect(!entry.isCodexMissing)
   }
 
+  /// Another failure is no missing Codex, before or after one.
+  @Test func anotherFailureIsNoMissingCodex() async throws {
+    let entry = CodexSkills(folder: folder)
+    entry.reader = { _, _ in throw CodexOneShot.Failure(message: "boom") }
+    entry.refresh()
+    try await settle(entry)
+    #expect(!entry.isCodexMissing)
+    entry.reader = { _, _ in throw CodexSkills.NotFound() }
+    entry.refresh()
+    try await settle(entry)
+    #expect(entry.isCodexMissing)
+    entry.reader = { _, _ in throw CodexOneShot.Failure(message: "boom") }
+    entry.refresh()
+    try await settle(entry)
+    #expect(!entry.isCodexMissing)
+    #expect(entry.problem == "Couldn't read Codex's skills. boom")
+  }
+
   /// A change refreshes only a list something asked for.
   @Test func refreshIfLoadedLeavesAnUnloadedEntryAlone() async throws {
     let entry = CodexSkills(folder: folder)

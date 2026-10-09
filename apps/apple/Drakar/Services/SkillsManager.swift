@@ -44,7 +44,7 @@ final class SkillsManager {
   private(set) var isScanning = false
 
   /// The seams tests replace: the home folder, the account, the open projects, both agents'
-  /// lists, the disk's trash, the login shell's environment.
+  /// lists, the disk's trash, the folders' reading, the login shell's environment.
   @ObservationIgnored var home = FileManager.default.homeDirectoryForCurrentUser
   @ObservationIgnored var accountFor: (URL?) -> ClaudeAccount = { SkillsManager.account(for: $0) }
   @ObservationIgnored var openFolders: () -> [URL] = { SkillsManager.openProjectFolders() }
@@ -56,6 +56,10 @@ final class SkillsManager {
     CapabilityStore.shared.capabilities(for: $0, account: $1)
   }
   @ObservationIgnored var files = SkillFileSystem()
+  /// Reads the folders, off the main actor; tests hold a reading in flight.
+  @ObservationIgnored var scanner:
+    @Sendable (_ account: URL, _ project: URL?, _ codexFolders: [SkillFolder]) ->
+      ClaudeSkillScan.Result = { ClaudeSkillScan.scan(account: $0, project: $1, codexFolders: $2) }
   @ObservationIgnored var environment: () async -> [String: String] = {
     await AgentSession.environment.value
   }
@@ -209,12 +213,13 @@ final class SkillsManager {
     readAccount = account.skillPath
     let project = project
     let codexFolders = places.codexFolders
+    let scanner = scanner
     isScanning = true
     scanning = Task { [weak self] in
       if delay > .zero { try? await Task.sleep(for: delay) }
       guard !Task.isCancelled else { return }
       let result = await Task.detached(priority: .userInitiated) {
-        ClaudeSkillScan.scan(account: account, project: project, codexFolders: codexFolders)
+        scanner(account, project, codexFolders)
       }.value
       // A newer reading has taken over when this one is cancelled, and clears the flag itself.
       guard !Task.isCancelled, let self else { return }

@@ -19,6 +19,15 @@ struct SkillsManagerTests {
 
   final class Counter { var count = 0 }
 
+  /// A reading held until the test lets it go.
+  final class Gate: @unchecked Sendable {
+    let started = DispatchSemaphore(value: 0)
+    let release = DispatchSemaphore(value: 0)
+
+    /// Whether the reading started within five seconds; blocks, so off the main actor.
+    nonisolated func hasStarted() -> Bool { started.wait(timeout: .now() + 5) == .success }
+  }
+
   private let root: URL
   private let home: URL
   private let account: URL
@@ -248,6 +257,31 @@ struct SkillsManagerTests {
     #expect(manager.records.map(\.name).contains("two"))
     await manager.install(found, place: .user, agents: [.claude], method: .copy)
     #expect(manager.failure?.hasPrefix("A skill named one is already in") == true)
+  }
+
+  /// Review focus: a reading still running for a project that is no longer shown is dropped;
+  /// the newer one's is what the window lists.
+  @Test func aScanInFlightAcrossAProjectChangeIsDropped() async throws {
+    defer { cleanUp() }
+    let manager = manager(Stubs())
+    let gate = Gate()
+    manager.scanner = { account, project, folders in
+      if project != nil {
+        gate.started.signal()
+        gate.release.wait()
+      }
+      return ClaudeSkillScan.scan(account: account, project: project, codexFolders: folders)
+    }
+    manager.choose(project: project)
+    // Waited for off the main actor, where the scan's task is started from.
+    try #require(await Task.detached { gate.hasStarted() }.value)
+    manager.choose(project: nil)
+    gate.release.signal()
+    try await settle(manager)
+    try await Task.sleep(for: .milliseconds(100))
+    #expect(manager.project == nil)
+    #expect(!manager.isScanning)
+    #expect(manager.records.map(\.name) == ["review"])
   }
 
   /// The inspector's Manage… and Window › Skills: the window opens on the project asked for,

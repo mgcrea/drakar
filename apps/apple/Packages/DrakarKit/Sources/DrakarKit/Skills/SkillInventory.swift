@@ -87,8 +87,10 @@ public enum SkillInventory {
   /// One row per real folder: Claude Code's scan, then Codex's records joined by the folder
   /// they resolve to. `claude` is the names Claude Code reports, nil until they load: then a
   /// scanned skill it does not list is marked, and a name no row explains is a row of its own.
-  /// `resolve` gives a folder's real path and whether it is a link; the disk unless a test
-  /// says otherwise.
+  /// A row's name, kind and origin are those of the first to find its folder: the scan in its
+  /// order, then Codex's records; a later one adds its sighting, and its description when the
+  /// row has none. `resolve` gives a folder's real path and whether it is a link; the disk
+  /// unless a test says otherwise.
   public static func merge(
     scan: [ScannedSkill], claude: [SkillEntry]?, codex: [CodexSkillRecord]?,
     resolve: (String) -> (real: String, isLink: Bool) = {

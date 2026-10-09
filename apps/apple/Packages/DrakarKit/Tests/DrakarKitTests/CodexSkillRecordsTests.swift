@@ -80,6 +80,38 @@ struct CodexSkillRecordsTests {
     #expect(CodexSkillList.records(.null).isEmpty)
   }
 
+  private func listed(_ skills: [[String: JSONValue]]) -> JSONValue {
+    .object(["data": .array([.object(["skills": .array(skills.map { .object($0) })])])])
+  }
+
+  /// Of two enabled skills of one name and one scope, the first listed is Codex's; a disabled
+  /// nearer one shadows nothing.
+  @Test func aTieGoesToTheFirstAndADisabledSkillShadowsNothing() {
+    func skill(_ path: String, _ scope: String, enabled: Bool = true) -> [String: JSONValue] {
+      [
+        "name": .string("x"), "path": .string(path), "scope": .string(scope),
+        "enabled": .bool(enabled),
+      ]
+    }
+    let tie = CodexSkillList.records(
+      listed([skill("/a/SKILL.md", "user"), skill("/b/SKILL.md", "user")]))
+    #expect(tie.map(\.isShadowed) == [false, true])
+    let off = CodexSkillList.records(
+      listed([skill("/repo/SKILL.md", "repo", enabled: false), skill("/u/SKILL.md", "user")]))
+    #expect(off.map(\.isShadowed) == [false, false])
+    #expect(off.map(\.isEnabled) == [false, true])
+  }
+
+  /// A skill without a path is left out of the records, which need its folder; the menu's
+  /// entries keep it.
+  @Test func aSkillWithoutAPathIsNoRecord() {
+    let result = listed([
+      ["name": .string("bare"), "scope": .string("user"), "enabled": .bool(true)]
+    ])
+    #expect(CodexSkillList.records(result).isEmpty)
+    #expect(CodexSkillList.entries(result).map(\.name) == ["bare"])
+  }
+
   /// One answer serves the `/` menu and the manager.
   @Test func aListingCarriesBoth() throws {
     let result = try Fixture.codexSkillsList

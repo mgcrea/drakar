@@ -126,6 +126,41 @@ struct SkillInventoryTests {
     #expect(deploy.sighting(for: .claude) == nil)
   }
 
+  /// Two folders holding a skill of one name are two rows; a name no folder explains is known
+  /// by its name.
+  @Test func oneNameInTwoFoldersIsTwoRows() {
+    let mine = ScannedSkill(
+      name: "review", origin: .user, path: "/Users/me/.claude/skills/review",
+      realPath: "/Users/me/.claude/skills/review")
+    let theirs = ScannedSkill(
+      name: "review", origin: .project, path: "/Users/me/p/.claude/skills/review",
+      realPath: "/Users/me/p/.claude/skills/review")
+    let rows = merge([mine, theirs], claude: [SkillEntry(name: "review"), SkillEntry(name: "x")])
+    #expect(rows.map(\.id) == [mine.realPath, theirs.realPath, "unknown:x"])
+    #expect(rows.map(\.origin) == [.user, .project, .unknown])
+  }
+
+  /// The first to find a folder names the row and gives its origin; Codex adds its sighting,
+  /// and its description only to a row without one.
+  @Test func theScanGivesARowItsOrigin() {
+    let folder = "/Users/me/.agents/skills/deploy"
+    let scanned = ScannedSkill(
+      name: "deploy", origin: .user, path: "/Users/me/.claude/skills/deploy", realPath: folder,
+      isLink: true)
+    let codex = CodexSkillRecord(
+      name: "deploy-codex", description: "Deploy it.", path: folder + "/SKILL.md", scope: .repo,
+      pluginID: nil, isEnabled: true)
+    let rows = merge([scanned], codex: [codex])
+    #expect(rows.count == 1)
+    #expect(rows.first?.name == "deploy")
+    #expect(rows.first?.origin == .user)
+    #expect(rows.first?.description == "Deploy it.")
+    #expect(rows.first?.sightings.map(\.agent) == [.claude, .codex])
+    var described = scanned
+    described.description = "Mine."
+    #expect(merge([described], codex: [codex]).first?.description == "Mine.")
+  }
+
   @Test func aRowMatchesItsNameAndDescription() {
     let row = SkillRecord(
       name: "deploy", description: "Ship to staging", kind: .skill, origin: .project,
