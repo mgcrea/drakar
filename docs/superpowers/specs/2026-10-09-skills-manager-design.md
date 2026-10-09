@@ -48,7 +48,10 @@ names only, so a DrakarKit scanner, `ClaudeSkillScan`, reads:
   plugin's install path; an install is in effect for a `user` scope, or a `project` or
   `local` scope whose `projectPath` is the chosen project. `<account
   directory>/settings.json` `enabledPlugins["name@marketplace"]` says on or off (absent
-  means on). Skills are `<installPath>/skills/<name>/SKILL.md`, named `plugin:name`.
+  means on). Skills are `<installPath>/skills/<name>/SKILL.md`, named `plugin:name`;
+  commands are `<installPath>/commands/**/*.md`, named the same way;
+- the account's own commands, `<account directory>/commands/**/*.md` (added during review,
+  2026-10-09: without them Claude's own and plugin commands showed as "Unknown").
 
 A skill's name and description come from its SKILL.md frontmatter (`name`, `description`),
 else the folder name; a command's description from its frontmatter `description`, else
@@ -154,16 +157,20 @@ Copy into the place's folder). Link: a link per agent pointing at the chosen fol
 the folder is copied once into the first selected agent's folder and the other agent gets a
 link to the copy.
 
-**Install from Git…**: a sheet with a URL field (https or `git@`), then the same Place and
-Agents choices. Drakar runs `git clone --depth 1 <url> <dest>` with the login-shell
+**Install from Git…**: a sheet with a URL field (https, or scp-style `git@host:owner/repo`;
+`file://` is accepted too, for tests; `http`, `git://` and `ssh://` are refused, as is
+anything starting with `-` or containing `::`), then the same Place and
+Agents choices. Drakar runs `git clone --depth 1 -- <url> <dest>` with the login-shell
 environment (`AgentSession.environment`), 120 s timeout, where `<dest>` is
 `~/.agents/skill-sources/<host>/<owner>/<repo>` (from the URL; an existing clone there is
-reused after `git -C <dest> pull --ff-only`). The clone's SKILL.md folders (depth ≤ 4) are
+reused after `git -C <dest> pull --ff-only`, and only when its `origin` is the same
+repository; git never prompts: `GIT_TERMINAL_PROMPT=0`, ssh in batch mode). The clone's SKILL.md folders (depth ≤ 4) are
 offered as a checklist; each picked skill is linked into the chosen agents' folders. Errors
 show git's stderr. `git` not found: "Git was not found. Install the Xcode command line
 tools." A skill whose `realPath` is inside `skill-sources` shows "Update" in the detail
-(runs the pull) and its Delete removes the links, then moves the clone to the Trash when no
-link in the four folders points into it any more.
+(runs the pull) and its Delete removes the links and leaves the clone in place, saying so
+(changed during review, 2026-10-09: another project or account may still link into it, and
+the four folders cannot tell).
 
 ## Errors and edge cases
 
