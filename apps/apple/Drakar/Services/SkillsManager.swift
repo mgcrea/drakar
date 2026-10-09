@@ -38,6 +38,8 @@ final class SkillsManager {
   var failure: String?
   /// A git clone or pull is running.
   var isFetching: Bool { fetches > 0 }
+  /// A folder is being searched for skills, or an install is writing.
+  var isBusy: Bool { busy > 0 }
   /// The folders are being read again.
   private(set) var isScanning = false
 
@@ -63,6 +65,8 @@ final class SkillsManager {
   @ObservationIgnored private var refreshing: Task<Void, Never>?
   /// Clones and pulls running; `isFetching` while any is.
   private var fetches = 0
+  /// Searches and installs running; `isBusy` while any is.
+  private var busy = 0
   /// How long file changes settle before the folders are read again; tests shorten it.
   @ObservationIgnored var settleDelay: Duration = .milliseconds(250)
   @ObservationIgnored private var isStarted = false
@@ -263,8 +267,27 @@ final class SkillsManager {
 
   func delete(_ plan: DeletePlan) { perform { try actions.delete(plan) } }
 
-  func install(_ folders: [URL], place: SkillPlace, agents: [SkillAgent], method: InstallMethod) {
-    perform { _ = try actions.install(folders, place: place, agents: agents, method: method) }
+  /// Off the main actor: a copy can take a while.
+  func install(
+    _ folders: [URL], place: SkillPlace, agents: [SkillAgent], method: InstallMethod
+  ) async {
+    let actions = actions
+    busy += 1
+    let result = await Task.detached(priority: .userInitiated) {
+      Result { try actions.install(folders, place: place, agents: agents, method: method) }
+    }.value
+    busy -= 1
+    if case .failure(let error) = result { failure = error.localizedDescription }
+    afterAction()
+  }
+
+  /// The skills `folder` offers, `depth` levels down at most, searched off the main actor.
+  func skills(in folder: URL, depth: Int) async -> [URL] {
+    busy += 1
+    defer { busy -= 1 }
+    return await Task.detached(priority: .userInitiated) {
+      SkillFolderSearch.skills(in: folder, depth: depth)
+    }.value
   }
 
   /// Clones or pulls `address`; the skills its clone offers.
@@ -272,7 +295,7 @@ final class SkillsManager {
     fetches += 1
     defer { fetches -= 1 }
     let folder = try await sources.fetch(address)
-    return SkillFolderSearch.skills(in: folder, depth: 4)
+    return await skills(in: folder, depth: 4)
   }
 
   /// Update: pulls the clone `record` came from.

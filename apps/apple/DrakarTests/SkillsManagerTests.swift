@@ -227,6 +227,29 @@ struct SkillsManagerTests {
     #expect(manager.records.map(\.name) == ["review"])
   }
 
+  /// A folder search and an install run off the main actor and are not busy after; the
+  /// install reads everything again, and says why it did nothing.
+  @Test func searchAndInstallRunOffTheMainActor() async throws {
+    defer { cleanUp() }
+    let manager = manager(Stubs())
+    let lib = root.appending(path: "lib", directoryHint: .isDirectory)
+    try skill(lib.appending(path: "one"))
+    try skill(lib.appending(path: "two"))
+    let found = await manager.skills(in: lib, depth: 3)
+    #expect(found.map(\.lastPathComponent) == ["one", "two"])
+    #expect(!manager.isBusy)
+    await manager.install(found, place: .user, agents: [.claude], method: .copy)
+    #expect(!manager.isBusy)
+    #expect(manager.failure == nil)
+    let copy = account.appending(path: "skills/one")
+    #expect(!SkillPath.isLink(copy.skillPath))
+    #expect(FileManager.default.fileExists(atPath: copy.appending(path: "SKILL.md").skillPath))
+    try await settle(manager)
+    #expect(manager.records.map(\.name).contains("two"))
+    await manager.install(found, place: .user, agents: [.claude], method: .copy)
+    #expect(manager.failure?.hasPrefix("A skill named one is already in") == true)
+  }
+
   /// The inspector's Manage… and Window › Skills: the window opens on the project asked for,
   /// keeps its project when none is, and drops one no longer open.
   @Test func manageOpensTheWindowOnItsProject() {

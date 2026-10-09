@@ -125,14 +125,18 @@ struct SkillsWindow: View {
 
   @ToolbarContentBuilder private var toolbar: some ToolbarContent {
     ToolbarItemGroup {
+      if manager.isBusy {
+        ProgressView().controlSize(.small)
+      }
       Button("Install from Folder…", systemImage: "folder.badge.plus") { chooseFolder() }
         .help(String(localized: "Install from Folder…"))
+        .disabled(manager.isBusy)
         .accessibilityIdentifier("skills.install.folder")
       Button("Install from Git…", systemImage: "arrow.down.circle") {
         install = InstallRequest(source: .git)
       }
       .help(String(localized: "Install from Git…"))
-      .disabled(manager.isFetching)
+      .disabled(manager.isFetching || manager.isBusy)
       .accessibilityIdentifier("skills.install.git")
       Button("Refresh", systemImage: "arrow.clockwise") { manager.refresh() }
         .help(String(localized: "Read the skills again"))
@@ -167,14 +171,16 @@ struct SkillsWindow: View {
     {
       folder.deleteLastPathComponent()
     }
-    let found = SkillFolderSearch.skills(in: folder, depth: 3)
-    guard !found.isEmpty else {
-      manager.failure = String(
-        localized:
-          "\(SkillText.path(folder)) has no SKILL.md, nor do its folders three levels down.")
-      return
+    Task { [folder] in
+      let found = await manager.skills(in: folder, depth: 3)
+      guard !found.isEmpty else {
+        manager.failure = String(
+          localized:
+            "\(SkillText.path(folder)) has no SKILL.md, nor do its folders three levels down.")
+        return
+      }
+      install = InstallRequest(source: .folder(found))
     }
-    install = InstallRequest(source: .folder(found))
   }
 }
 

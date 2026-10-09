@@ -95,9 +95,9 @@ struct InstallSheet: View {
         Button("Cancel", role: .cancel) { dismiss() }
           .keyboardShortcut(.cancelAction)
         Button("Install") {
-          manager.install(
-            found.filter(picked.contains), place: place, agents: agents,
-            method: isGit ? .link : method)
+          let folders = found.filter(picked.contains)
+          let (place, agents, method) = (place, agents, isGit ? .link : method)
+          Task { await manager.install(folders, place: place, agents: agents, method: method) }
           dismiss()
         }
         .keyboardShortcut(.defaultAction)

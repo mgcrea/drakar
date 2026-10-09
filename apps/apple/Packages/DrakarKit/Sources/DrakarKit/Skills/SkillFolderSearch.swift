@@ -4,7 +4,8 @@ import Foundation
 /// a git clone.
 public enum SkillFolderSearch {
   /// `folder` itself when it holds a SKILL.md; else its folders that do, `depth` levels down
-  /// at most, in path order. Hidden folders are skipped, and a skill's own folders are not
+  /// at most, in path order. Hidden folders, `node_modules` and linked folders are skipped, so
+  /// the search never leaves `folder` nor finds a skill twice; a skill's own folders are not
   /// searched.
   public static func skills(in folder: URL, depth: Int) -> [URL] {
     let manager = FileManager.default
@@ -19,14 +20,13 @@ public enum SkillFolderSearch {
       for parent in level {
         let names =
           ((try? manager.contentsOfDirectory(atPath: parent.path(percentEncoded: false))) ?? [])
-          .filter { !$0.hasPrefix(".") }.sorted()
+          .filter { !$0.hasPrefix(".") && $0 != "node_modules" }.sorted()
         for name in names {
           let child = parent.appending(path: name, directoryHint: .isDirectory)
-          var isFolder: ObjCBool = false
-          guard
-            manager.fileExists(atPath: child.path(percentEncoded: false), isDirectory: &isFolder),
-            isFolder.boolValue
-          else { continue }
+          // The item itself, not what a link leads to: no trailing slash, which lstat follows.
+          let item = parent.appending(path: name, directoryHint: .notDirectory)
+          let type = try? manager.attributesOfItem(atPath: item.path(percentEncoded: false))[.type]
+          guard type as? FileAttributeType == .typeDirectory else { continue }
           if holdsSkill(child) { found.append(child) } else { next.append(child) }
         }
       }

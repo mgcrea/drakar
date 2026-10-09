@@ -53,6 +53,22 @@ struct SkillInstallSearchTests {
     #expect(SkillFolderSearch.skills(in: root.appending(path: "missing"), depth: 3).isEmpty)
   }
 
+  /// A linked folder is not searched, nor is `node_modules`: a link back up never repeats a
+  /// skill, and a link out never leads out of the folder chosen.
+  @Test func linksAndPackagesAreNotSearched() throws {
+    defer { cleanUp() }
+    for relative in ["chosen/a", "chosen/node_modules/pkg/b", "chosen/group/node_modules/c", "far"]
+    {
+      try skill(relative)
+    }
+    let chosen = root.appending(path: "chosen", directoryHint: .isDirectory)
+    try FileManager.default.createSymbolicLink(
+      at: chosen.appending(path: "group/up"), withDestinationURL: chosen)
+    try FileManager.default.createSymbolicLink(
+      at: chosen.appending(path: "far"), withDestinationURL: root.appending(path: "far"))
+    #expect(names(SkillFolderSearch.skills(in: chosen, depth: 4)) == ["chosen/a"])
+  }
+
   @Test func readsWhereAGitAddressClonesTo() {
     let skills = GitSource(host: "github.com", owner: "me", repo: "skills")
     #expect(GitSource("https://github.com/me/skills") == skills)

@@ -21,7 +21,7 @@ enum SkillText {
 }
 
 /// The two places a skill of the person's own lives.
-enum SkillPlace: CaseIterable {
+nonisolated enum SkillPlace: CaseIterable {
   /// The account's and `~/.agents`'s: every project.
   case user
   case project
@@ -29,7 +29,7 @@ enum SkillPlace: CaseIterable {
 
 extension SkillOrigin {
   /// The place an own skill lives in; nil for the others.
-  var place: SkillPlace? {
+  nonisolated var place: SkillPlace? {
     switch self {
     case .user: .user
     case .project: .project
@@ -44,7 +44,7 @@ extension SkillAgent {
 
 /// The folders one account and one project keep skills in: where installs and shares write,
 /// and where a delete looks for links.
-struct SkillPlaces: Equatable {
+nonisolated struct SkillPlaces: Equatable, Sendable {
   var account: URL
   var home: URL
   var project: URL?
@@ -118,9 +118,9 @@ struct SkillPlaces: Equatable {
 }
 
 /// The file operations the actions make, apart so tests can give a trash of their own.
-struct SkillFileSystem {
+nonisolated struct SkillFileSystem: Sendable {
   /// Moves an item to the Trash; tests move it into a folder of theirs.
-  var moveToTrash: (URL) throws -> Void = {
+  var moveToTrash: @Sendable (URL) throws -> Void = {
     try FileManager.default.trashItem(at: $0, resultingItemURL: nil)
   }
 
@@ -181,7 +181,7 @@ struct SkillFileSystem {
 }
 
 /// Why an action did nothing, as the window's alert says it.
-struct SkillActionError: Error, LocalizedError, Equatable {
+nonisolated struct SkillActionError: Error, LocalizedError, Equatable {
   var message: String
   var errorDescription: String? { message }
 
@@ -199,7 +199,7 @@ struct SkillActionError: Error, LocalizedError, Equatable {
 }
 
 /// What a delete will do, step by step, and the sentences the confirmation says it in.
-struct DeletePlan: Equatable {
+nonisolated struct DeletePlan: Equatable, Sendable {
   enum Step: Hashable {
     case removeLink(String)
     case trash(String)
@@ -228,7 +228,7 @@ struct DeletePlan: Equatable {
 }
 
 /// How Install from Folder… puts a skill in place.
-enum InstallMethod {
+nonisolated enum InstallMethod: Sendable {
   /// A link per agent to the folder where it is.
   case link
   /// Copied once into the first agent's folder, the other agent linked to the copy.
@@ -236,14 +236,15 @@ enum InstallMethod {
 }
 
 /// The Skills window's file operations: share, delete, install. Nothing overwrites: a name
-/// already taken at a destination is refused before anything is written.
-struct SkillActions {
+/// already taken at a destination is refused before anything is written. Nonisolated, so an
+/// install, which may copy folders, runs off the main actor.
+nonisolated struct SkillActions: Sendable {
   var places: SkillPlaces
   var files = SkillFileSystem()
 
   /// A link, in the other agent's folder of the same place, to the skill's real folder;
   /// returns the link.
-  @discardableResult
+  @MainActor @discardableResult
   func share(_ record: SkillRecord) throws -> URL {
     guard record.canShare, let place = record.origin.place,
       let seen = record.sightings.first(where: { $0.path != nil }), let seenPath = seen.path
