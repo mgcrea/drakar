@@ -341,6 +341,31 @@ struct SkillActionsTests {
     #expect(!exists(file))
   }
 
+  /// The account's commands are the person's: one there goes to the Trash, a link there goes
+  /// alone, and neither is shared.
+  @Test func theAccountsCommandsAreDeletedNotShared() throws {
+    defer { cleanUp() }
+    let file = account.appending(path: "commands/ship.md")
+    try write("Ship.", to: file)
+    let elsewhere = outside.appending(path: "lint.md")
+    try write("Lint.", to: elsewhere)
+    let linked = account.appending(path: "commands/lint.md")
+    try link(linked, to: elsewhere)
+    let ship = try row("ship")
+    #expect(ship.origin == .user && ship.kind == .command)
+    #expect(throws: SkillActionError.self) { try actions.share(ship) }
+    let plan = try actions.deletePlan(for: ship)
+    #expect(plan.steps == [.trash(file.skillPath)])
+    try actions.delete(plan)
+    #expect(!exists(file))
+    let lint = try actions.deletePlan(for: try row("lint"))
+    #expect(lint.steps == [.removeLink(linked.skillPath)])
+    expectLinesSay(lint)
+    try actions.delete(lint)
+    #expect(!exists(linked))
+    #expect(exists(elsewhere))
+  }
+
   @Test func pluginSkillsAreNotDeleted() throws {
     defer { cleanUp() }
     let record = SkillRecord(

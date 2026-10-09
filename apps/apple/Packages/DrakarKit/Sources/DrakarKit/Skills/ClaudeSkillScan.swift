@@ -37,8 +37,8 @@ public struct ScannedSkill: Sendable, Hashable {
 }
 
 /// The places Claude Code reads skills from, read the way it reads them: the account's
-/// `skills/`, the project's `.claude/skills/` and `.claude/commands/`, and the skills of the
-/// plugins in effect for the project. Claude Code's `initialize` reports names only, so this
+/// `skills/` and `commands/`, the project's `.claude/skills/` and `.claude/commands/`, and the
+/// skills and commands of the plugins in effect for the project. Claude Code's `initialize` reports names only, so this
 /// is where the Skills window learns where a skill lives.
 public enum ClaudeSkillScan {
   public struct Result: Sendable, Equatable {
@@ -59,9 +59,10 @@ public enum ClaudeSkillScan {
   {
     var result = Result()
     result.skills += skills(in: account.appending(path: "skills"), origin: .user)
+    result.skills += commands(in: account.appending(path: "commands"), origin: .user)
     if let project {
       result.skills += skills(in: project.appending(path: ".claude/skills"), origin: .project)
-      result.skills += commands(in: project.appending(path: ".claude/commands"))
+      result.skills += commands(in: project.appending(path: ".claude/commands"), origin: .project)
     }
     plugins(account: account, project: project, into: &result)
     for folder in codexFolders {
@@ -101,17 +102,21 @@ public enum ClaudeSkillScan {
     }
   }
 
-  /// The project's commands, every `.md` below `folder`, named by their path below it.
-  static func commands(in folder: URL) -> [ScannedSkill] {
+  /// The commands of `folder`, every `.md` below it, named by their path below it: `a/b.md` is
+  /// `a:b`. Hidden folders and `node_modules` are not walked, nor are linked folders.
+  static func commands(
+    in folder: URL, origin: SkillOrigin, prefix: String = "", disabled: Bool = false
+  ) -> [ScannedSkill] {
     let root = path(folder)
     guard let walker = FileManager.default.enumerator(atPath: root) else { return [] }
     var found: [ScannedSkill] = []
-    for case let relative as String in walker
-    where relative.hasSuffix(".md")
-      && !relative.split(separator: "/").contains(where: {
-        $0.hasPrefix(".")
-      })
-    {
+    while let relative = walker.nextObject() as? String {
+      let last = relative.split(separator: "/").last.map(String.init) ?? relative
+      if last.hasPrefix(".") || last == "node_modules" {
+        walker.skipDescendants()
+        continue
+      }
+      guard relative.hasSuffix(".md") else { continue }
       let location = root + "/" + relative
       var isFolder: ObjCBool = false
       guard FileManager.default.fileExists(atPath: location, isDirectory: &isFolder),
@@ -121,15 +126,15 @@ public enum ClaudeSkillScan {
       let fields = SkillFrontmatter.fields(head(location))
       found.append(
         ScannedSkill(
-          name: name, description: fields["description"] ?? "", kind: .command,
-          origin: .project, path: location, realPath: SkillPath.real(location),
-          isLink: SkillPath.isLink(location)))
+          name: prefix + name, description: fields["description"] ?? "", kind: .command,
+          origin: origin, path: location, realPath: SkillPath.real(location),
+          isLink: SkillPath.isLink(location), isPluginDisabled: disabled))
     }
     return found.sorted { $0.path < $1.path }
   }
 
-  /// The skills of every plugin `installed_plugins.json` (version 2) has in effect, named
-  /// `plugin:skill`. A file of another shape is a problem; an entry of another shape is skipped.
+  /// The skills and commands of every plugin `installed_plugins.json` (version 2) has in
+  /// effect, named `plugin:skill`. A file of another shape is a problem; an entry of another shape is skipped.
   static func plugins(account: URL, project: URL?, into result: inout Result) {
     let file = account.appending(path: "plugins/installed_plugins.json")
     guard let data = FileManager.default.contents(atPath: path(file)) else { return }
@@ -148,9 +153,14 @@ public enum ClaudeSkillScan {
         !installPath.isEmpty
       else { continue }
       let name = id.split(separator: "@", maxSplits: 1).first.map(String.init) ?? id
+      let folder = URL(filePath: installPath, directoryHint: .isDirectory)
+      let disabled = enabled[id] == false
       result.skills += skills(
-        in: URL(filePath: installPath, directoryHint: .isDirectory).appending(path: "skills"),
-        origin: .plugin(id), prefix: name + ":", disabled: enabled[id] == false)
+        in: folder.appending(path: "skills"), origin: .plugin(id), prefix: name + ":",
+        disabled: disabled)
+      result.skills += commands(
+        in: folder.appending(path: "commands"), origin: .plugin(id), prefix: name + ":",
+        disabled: disabled)
     }
   }
 

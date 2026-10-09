@@ -141,6 +141,46 @@ struct ClaudeSkillScanTests {
       ])
   }
 
+  /// The account's own commands are the person's, named as the project's are; hidden folders
+  /// and `node_modules` are not walked.
+  @Test func readsTheAccountsCommands() throws {
+    defer { cleanUp() }
+    let commands = account.appending(path: "commands")
+    try write("---\ndescription: Ship it.\n---\n", to: commands.appending(path: "ship.md"))
+    try write("Nested.", to: commands.appending(path: "a/b.md"))
+    try write("Hidden.", to: commands.appending(path: ".drafts/c.md"))
+    try write("A package's.", to: commands.appending(path: "node_modules/pkg/readme.md"))
+    try write("A package's.", to: commands.appending(path: "a/node_modules/pkg/readme.md"))
+    let folder = path(commands)
+    #expect(
+      ClaudeSkillScan.scan(account: account, project: nil).skills == [
+        ScannedSkill(
+          name: "a:b", kind: .command, origin: .user, path: folder + "/a/b.md",
+          realPath: folder + "/a/b.md"),
+        ScannedSkill(
+          name: "ship", description: "Ship it.", kind: .command, origin: .user,
+          path: folder + "/ship.md", realPath: folder + "/ship.md"),
+      ])
+  }
+
+  /// A plugin's commands are its own, named `plugin:command`, and off with it.
+  @Test func readsThePluginsCommands() throws {
+    defer { cleanUp() }
+    let tools = root.appending(path: "plugin-cache/tools", directoryHint: .isDirectory)
+    try write("---\ndescription: Format.\n---\n", to: tools.appending(path: "commands/fmt.md"))
+    try write("Deep.", to: tools.appending(path: "commands/sub/deep.md"))
+    try write(
+      #"{"version":2,"plugins":{"tools@m":[{"scope":"user","installPath":"\#(path(tools))"}]}}"#,
+      to: account.appending(path: "plugins/installed_plugins.json"))
+    try write(
+      #"{"enabledPlugins":{"tools@m":false}}"#, to: account.appending(path: "settings.json"))
+    let skills = ClaudeSkillScan.scan(account: account, project: project).skills
+    #expect(skills.map(\.name) == ["tools:fmt", "tools:sub:deep"])
+    #expect(skills.allSatisfy { $0.kind == .command && $0.origin == .plugin("tools@m") })
+    #expect(skills.allSatisfy { $0.isPluginDisabled })
+    #expect(skills.first?.description == "Format.")
+  }
+
   /// A user install is in effect everywhere, a project or local one only in its project; a
   /// plugin `settings.json` turns off is kept and marked.
   @Test func readsThePluginsInEffectForTheProject() throws {

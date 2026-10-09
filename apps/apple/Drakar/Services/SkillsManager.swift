@@ -184,7 +184,7 @@ final class SkillsManager {
   /// A file in the project's skill folders changed; the project reads both lists again itself.
   func projectFilesChanged() { rescan(after: settleDelay) }
 
-  /// A file in the account's, `~/.agents`'s or `~/.codex`'s skills changed.
+  /// A file in the account's skills or commands, `~/.agents`'s or `~/.codex`'s skills changed.
   func userFilesChanged() {
     rescan(after: settleDelay)
     refreshing?.cancel()
@@ -223,8 +223,8 @@ final class SkillsManager {
   private func watch() {
     unwatch()
     let roots = [
-      account.directory.appending(path: "skills"), home.appending(path: ".agents/skills"),
-      home.appending(path: ".codex/skills"),
+      account.directory.appending(path: "skills"), account.directory.appending(path: "commands"),
+      home.appending(path: ".agents/skills"), home.appending(path: ".codex/skills"),
     ]
     watchers = roots.filter { FileManager.default.fileExists(atPath: $0.skillPath) }.compactMap {
       FolderWatcher(folder: $0) { [weak self] _ in self?.userFilesChanged() }

@@ -62,10 +62,11 @@ struct SkillPlaces: Equatable {
   }
 
   /// Every folder a skill of the person's own sits in: the four install folders, Codex's
-  /// `.codex/skills`, and the project's commands.
+  /// `.codex/skills`, and the account's and the project's commands.
   var roots: [URL] {
     var roots = [
       account.appending(path: "skills", directoryHint: .isDirectory),
+      account.appending(path: "commands", directoryHint: .isDirectory),
       home.appending(path: ".agents/skills", directoryHint: .isDirectory),
       home.appending(path: ".codex/skills", directoryHint: .isDirectory),
     ]
