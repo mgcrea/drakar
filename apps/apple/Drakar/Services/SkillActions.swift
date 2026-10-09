@@ -149,13 +149,18 @@ nonisolated struct SkillFileSystem: Sendable {
 
   /// Removes the link itself, never what it points to; anything else at `url` is refused.
   /// The check comes first because `unlink` would remove a file; `unlink` cannot remove a
-  /// folder, so one swapped in after the check stays.
+  /// folder, so one swapped in after the check stays. A regular file swapped in between the
+  /// check and the `unlink` would be removed: the window is those two calls, and only links
+  /// and command files sit where a link is removed.
   func removeLink(_ url: URL) throws {
+    guard exists(url) else { throw SkillActionError.alreadyGone(url) }
     guard isLink(url) else { throw SkillActionError.notALink(url) }
     guard unlink(url.skillPath) != 0 else { return }
     let code = errno
     switch code {
-    case EPERM, EISDIR, ENOTDIR, ENOENT: throw SkillActionError.notALink(url)
+    case ENOENT: throw SkillActionError.alreadyGone(url)
+    case EPERM: throw SkillActionError.locked(url)
+    case EISDIR, ENOTDIR: throw SkillActionError.notALink(url)
     default:
       throw SkillActionError(
         message: String(
@@ -196,6 +201,16 @@ nonisolated struct SkillActionError: Error, LocalizedError, Equatable {
     SkillActionError(
       message: String(localized: "\(SkillText.path(url)) is not a link, so it was left alone."))
   }
+
+  static func alreadyGone(_ url: URL) -> SkillActionError {
+    SkillActionError(message: String(localized: "\(SkillText.path(url)) is already gone."))
+  }
+
+  /// A link the system will not remove, such as one with the immutable flag.
+  static func locked(_ url: URL) -> SkillActionError {
+    SkillActionError(
+      message: String(localized: "\(SkillText.path(url)) is locked, so it was left alone."))
+  }
 }
 
 /// What a delete will do, step by step, and the sentences the confirmation says it in.
@@ -211,7 +226,8 @@ nonisolated struct DeletePlan: Equatable, Sendable {
   /// What stays that the person might expect to go, a sentence each: no step of their own.
   var notes: [String] = []
 
-  /// `targetStays` when nothing in the plan trashes the folder the link points to.
+  /// `targetStays` when nothing in the plan trashes the folder the link points to, and it is
+  /// there.
   mutating func removeLink(_ link: String, targetStays: Bool) {
     steps.append(.removeLink(link))
     lines.append(
@@ -304,8 +320,11 @@ nonisolated struct SkillActions: Sendable {
         String(localized: "Move \(SkillText.path(record.realPath)) to the Trash.")
       )
     }
+    // Said to stay only while it is there: it may have gone since the folders were read.
+    let targetStays =
+      trash == nil && !record.isMissing && files.exists(URL(filePath: record.realPath))
     var plan = DeletePlan()
-    for link in found { plan.removeLink(link, targetStays: trash == nil && !record.isMissing) }
+    for link in found { plan.removeLink(link, targetStays: targetStays) }
     if let trash { plan.trash(trash.path, saying: trash.line) }
     plan.notes = notes
     guard !plan.steps.isEmpty else {
@@ -400,9 +419,9 @@ nonisolated struct SkillActions: Sendable {
   private func check(_ step: DeletePlan.Step) throws {
     switch step {
     case .removeLink(let path):
-      guard files.isLink(URL(filePath: path)) else {
-        throw SkillActionError.notALink(URL(filePath: path))
-      }
+      let url = URL(filePath: path)
+      guard files.exists(url) else { throw SkillActionError.alreadyGone(url) }
+      guard files.isLink(url) else { throw SkillActionError.notALink(url) }
     case .trash(let path):
       let url = URL(filePath: path)
       guard files.exists(url), !files.isLink(url), SkillPath.real(path) == path else {

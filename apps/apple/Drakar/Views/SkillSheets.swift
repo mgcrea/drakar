@@ -171,17 +171,18 @@ struct DeleteSheet: View {
       }
       HStack {
         Spacer()
+        // Return cancels, as in a destructive alert; Escape too.
         Button("Cancel", role: .cancel) { dismiss() }
-          .keyboardShortcut(.cancelAction)
+          .keyboardShortcut(.defaultAction)
         Button("Delete", role: .destructive) {
           manager.delete(request.plan)
           dismiss()
         }
-        .keyboardShortcut(.defaultAction)
         .accessibilityIdentifier("skills.delete.confirm")
       }
     }
     .padding(20)
     .frame(width: 480)
+    .onExitCommand { dismiss() }
   }
 }

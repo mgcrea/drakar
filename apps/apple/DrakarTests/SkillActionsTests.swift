@@ -270,6 +270,35 @@ struct SkillActionsTests {
     #expect(exists(notes.appending(path: "SKILL.md")))
   }
 
+  /// A folder gone since the folders were read is not said to stay.
+  @Test func aFolderGoneSinceTheReadingIsNotSaidToStay() throws {
+    defer { cleanUp() }
+    let notes = try skill(outside.appending(path: "notes"))
+    let seen = account.appending(path: "skills/notes")
+    try link(seen, to: notes)
+    let record = try row("notes")
+    try FileManager.default.removeItem(at: notes)
+    let plan = try actions.deletePlan(for: record)
+    #expect(plan.lines == ["Remove the link at \(SkillText.path(seen))."])
+  }
+
+  /// A link already gone, or locked, says so rather than "not a link".
+  @Test func aGoneOrLockedLinkSaysSo() throws {
+    defer { cleanUp() }
+    let gone = account.appending(path: "skills/gone")
+    #expect(throws: SkillActionError.alreadyGone(gone)) { try files.removeLink(gone) }
+    #expect(
+      SkillActionError.alreadyGone(gone).message == "\(SkillText.path(gone)) is already gone.")
+    let notes = try skill(outside.appending(path: "notes"))
+    let locked = account.appending(path: "skills/notes")
+    try link(locked, to: notes)
+    try #require(lchflags(locked.skillPath, UInt32(UF_IMMUTABLE)) == 0)
+    defer { lchflags(locked.skillPath, 0) }
+    let error = #expect(throws: SkillActionError.self) { try files.removeLink(locked) }
+    #expect(error?.message == "\(SkillText.path(locked)) is locked, so it was left alone.")
+    #expect(SkillPath.isLink(locked.skillPath))
+  }
+
   /// One link spelled through `/private` and without is one step.
   @Test func aLinkSpelledTwoWaysIsRemovedOnce() throws {
     defer { cleanUp() }
