@@ -1,0 +1,186 @@
+import DrakarKit
+import Foundation
+import Testing
+
+@testable import Drakar
+
+/// Clones from a repository made in the test, by a `file://` address; `git` runs with no
+/// system or global configuration, so the person's signing and hooks never reach it.
+@MainActor
+@Suite("Skills installed from git")
+struct SkillSourcesTests {
+  private let root: URL
+  private let home: URL
+  private let account: URL
+  private let origin: URL
+  private let trash: URL
+
+  init() throws {
+    root = URL(
+      filePath: SkillPath.real(FileManager.default.temporaryDirectory.path(percentEncoded: false)),
+      directoryHint: .isDirectory
+    ).appending(path: "drakar-skill-sources-\(UUID().uuidString)", directoryHint: .isDirectory)
+    home = root.appending(path: "home", directoryHint: .isDirectory)
+    account = home.appending(path: ".claude-test", directoryHint: .isDirectory)
+    origin = root.appending(path: "origin/skills-repo", directoryHint: .isDirectory)
+    trash = root.appending(path: "trash", directoryHint: .isDirectory)
+    for folder in [account, origin, trash] {
+      try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    }
+  }
+
+  private func cleanUp() { try? FileManager.default.removeItem(at: root) }
+
+  private var environment: [String: String] {
+    [
+      "PATH": "/usr/bin:/bin:/opt/homebrew/bin:/usr/local/bin", "HOME": home.skillPath,
+      "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_TERMINAL_PROMPT": "0",
+    ]
+  }
+
+  private var places: SkillPlaces { SkillPlaces(account: account, home: home, project: nil) }
+
+  private var sources: SkillSources {
+    let environment = environment
+    return SkillSources(root: places.sources, environment: { environment })
+  }
+
+  private var actions: SkillActions {
+    let trash = trash
+    return SkillActions(
+      places: places,
+      files: SkillFileSystem(moveToTrash: { item in
+        try FileManager.default.moveItem(
+          at: item, to: trash.appending(path: item.lastPathComponent))
+      }))
+  }
+
+  private var address: String { "file://" + origin.skillPath }
+
+  private func git(_ arguments: [String]) async throws {
+    let executable = try #require(GitRunner.locate(path: environment["PATH"]))
+    let result = try await GitRunner.run(
+      executable, ["-C", origin.skillPath] + arguments, environment: environment,
+      timeout: .seconds(30))
+    try #require(result.status == 0, "git \(arguments.joined(separator: " ")): \(result.errors)")
+  }
+
+  private func skill(_ name: String, description: String = "") throws {
+    let folder = origin.appending(path: "skills/\(name)", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    try Data("---\nname: \(name)\ndescription: \(description)\n---\n".utf8).write(
+      to: folder.appending(path: "SKILL.md"))
+  }
+
+  private func commit(_ message: String) async throws {
+    try await git(["add", "-A"])
+    try await git([
+      "-c", "user.name=Drakar", "-c", "user.email=tests@drakar.invalid", "-c",
+      "commit.gpgsign=false", "commit", "-q", "-m", message,
+    ])
+  }
+
+  private func makeOrigin() async throws {
+    try skill("one")
+    try skill("two")
+    try await git(["init", "-q", "-b", "main"])
+    try await commit("Two skills")
+  }
+
+  private func rows() -> [SkillRecord] {
+    SkillInventory.merge(
+      scan: ClaudeSkillScan.scan(account: account, project: nil).skills, claude: nil, codex: nil)
+  }
+
+  @Test func clonesOnceAndLinksTheChosenSkills() async throws {
+    defer { cleanUp() }
+    try await makeOrigin()
+    let clone = try await sources.fetch(address)
+    #expect(clone.skillPath == places.sources.appending(path: "local/origin/skills-repo").skillPath)
+    let found = SkillFolderSearch.skills(in: clone, depth: 4)
+    #expect(found.map(\.lastPathComponent) == ["one", "two"])
+    try actions.install([found[0]], place: .user, agents: [.claude, .codex], method: .link)
+    let linked = SkillPath.real(account.appending(path: "skills/one").skillPath)
+    #expect(linked == found[0].skillPath)
+    #expect(places.clone(containing: linked)?.skillPath == clone.skillPath)
+  }
+
+  /// An address cloned before is pulled, not cloned again.
+  @Test func fetchingAgainPullsTheClone() async throws {
+    defer { cleanUp() }
+    try await makeOrigin()
+    let clone = try await sources.fetch(address)
+    try skill("three")
+    try await commit("A third")
+    #expect(try await sources.fetch(address).skillPath == clone.skillPath)
+    #expect(
+      FileManager.default.fileExists(
+        atPath: clone.appending(path: "skills/three/SKILL.md").skillPath))
+  }
+
+  @Test func updatePullsTheCloneASkillCameFrom() async throws {
+    defer { cleanUp() }
+    try await makeOrigin()
+    let clone = try await sources.fetch(address)
+    try actions.install(
+      [clone.appending(path: "skills/one", directoryHint: .isDirectory)], place: .user,
+      agents: [.claude], method: .link)
+    let record = try #require(rows().first { $0.name == "one" })
+    try skill("one", description: "Better.")
+    try await commit("A better one")
+    try await sources.update(record)
+    let text = try String(
+      contentsOf: clone.appending(path: "skills/one/SKILL.md"), encoding: .utf8)
+    #expect(text.contains("Better."))
+  }
+
+  /// Review focus: the clone goes to the Trash with its last link.
+  @Test func theCloneGoesWithItsLastLink() async throws {
+    defer { cleanUp() }
+    try await makeOrigin()
+    let clone = try await sources.fetch(address)
+    try actions.install(
+      SkillFolderSearch.skills(in: clone, depth: 4), place: .user, agents: [.claude],
+      method: .link)
+    for name in ["one", "two"] {
+      let record = try #require(rows().first { $0.name == name })
+      try actions.delete(try actions.deletePlan(for: record))
+    }
+    #expect(!FileManager.default.fileExists(atPath: clone.skillPath))
+    #expect(FileManager.default.fileExists(atPath: trash.appending(path: "skills-repo").skillPath))
+  }
+
+  @Test func gitsOwnWordsSayWhatFailed() async throws {
+    defer { cleanUp() }
+    let missing = "file://" + root.appending(path: "nowhere/repo").skillPath
+    let error = await #expect(throws: SkillActionError.self) {
+      try await sources.fetch(missing)
+    }
+    #expect(error?.message.contains("fatal") == true)
+  }
+
+  @Test func withoutGitItSaysSo() async throws {
+    defer { cleanUp() }
+    let sources = SkillSources(root: places.sources, environment: { ["PATH": "/nowhere"] })
+    let error = await #expect(throws: SkillActionError.self) {
+      try await sources.fetch("https://github.com/me/skills")
+    }
+    #expect(error?.message == "Git was not found. Install the Xcode command line tools.")
+  }
+
+  @Test func anAddressGitCannotCloneIsRefused() async throws {
+    defer { cleanUp() }
+    let error = await #expect(throws: SkillActionError.self) {
+      try await sources.fetch("skills please")
+    }
+    #expect(error?.message.contains("is not a git URL") == true)
+  }
+
+  @Test func aGitThatHangsIsStopped() async throws {
+    defer { cleanUp() }
+    let result = try await GitRunner.run(
+      URL(filePath: "/bin/sleep"), ["5"], environment: [:], timeout: .milliseconds(200))
+    #expect(result.timedOut)
+    #expect(result.status != 0)
+  }
+}
