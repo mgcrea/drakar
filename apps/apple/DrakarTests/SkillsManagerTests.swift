@@ -1,0 +1,259 @@
+import DrakarKit
+import Foundation
+import Testing
+
+@testable import Drakar
+
+@MainActor
+@Suite("The Skills window's model")
+struct SkillsManagerTests {
+  /// Codex and Claude Code standing in, one list per folder, each read counted.
+  final class Stubs {
+    var codexRecords: [CodexSkillRecord] = []
+    var claudeSkills: [SkillEntry]?
+    var codex: [String: CodexSkills] = [:]
+    var claude: [String: Capabilities] = [:]
+    var forced: [Bool] = []
+    var probes = 0
+  }
+
+  final class Counter { var count = 0 }
+
+  private let root: URL
+  private let home: URL
+  private let account: URL
+  private let project: URL
+  private let trash: URL
+
+  init() throws {
+    root = URL(
+      filePath: SkillPath.real(FileManager.default.temporaryDirectory.path(percentEncoded: false)),
+      directoryHint: .isDirectory
+    ).appending(path: "drakar-skills-window-\(UUID().uuidString)", directoryHint: .isDirectory)
+    home = root.appending(path: "home", directoryHint: .isDirectory)
+    account = home.appending(path: ".claude-test", directoryHint: .isDirectory)
+    project = root.appending(path: "project", directoryHint: .isDirectory)
+    trash = root.appending(path: "trash", directoryHint: .isDirectory)
+    for folder in [account, project, trash] {
+      try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    }
+    try skill(account.appending(path: "skills/review"), description: "Review the diff.")
+    try skill(project.appending(path: ".claude/skills/deploy"))
+  }
+
+  private func cleanUp() { try? FileManager.default.removeItem(at: root) }
+
+  private func skill(_ folder: URL, description: String = "") throws {
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    try Data("---\nname: \(folder.lastPathComponent)\ndescription: \(description)\n---\n".utf8)
+      .write(to: folder.appending(path: "SKILL.md"))
+  }
+
+  private func settle(_ manager: SkillsManager) async throws {
+    for _ in 0..<100 where manager.isLoading {
+      try await Task.sleep(for: .milliseconds(20))
+    }
+  }
+
+  /// A manager over this test's folders, its trash and stand-ins; the project is open.
+  private func manager(_ stubs: Stubs) -> SkillsManager {
+    let manager = SkillsManager()
+    manager.home = home
+    let claudeAccount = ClaudeAccount(directory: account, isDefault: false)
+    manager.accountFor = { _ in claudeAccount }
+    let project = project
+    manager.openFolders = { [project] }
+    manager.projectAt = { _ in nil }
+    let trash = trash
+    manager.files = SkillFileSystem(moveToTrash: { item in
+      try FileManager.default.moveItem(at: item, to: trash.appending(path: item.lastPathComponent))
+    })
+    manager.codexFor = { folder in
+      if let entry = stubs.codex[folder.skillPath] { return entry }
+      let entry = CodexSkills(folder: folder)
+      entry.reader = { _, force in
+        stubs.forced.append(force)
+        return CodexSkillList.Listing(records: stubs.codexRecords)
+      }
+      stubs.codex[folder.skillPath] = entry
+      return entry
+    }
+    manager.claudeFor = { folder, account in
+      if let entry = stubs.claude[folder.skillPath] { return entry }
+      let entry = Capabilities(folder: folder, account: account)
+      entry.probe = { _, _ in
+        stubs.probes += 1
+        return ProbeOutcome(capabilities: ProjectCapabilities(skills: stubs.claudeSkills))
+      }
+      stubs.claude[folder.skillPath] = entry
+      return entry
+    }
+    return manager
+  }
+
+  /// The project window's account; with no project, Settings' for new sessions.
+  @Test func theAccountIsTheProjectWindowsOrSettings() throws {
+    let suite = "drakar-tests-\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer {
+      defaults.removePersistentDomain(forName: suite)
+      cleanUp()
+    }
+    let settings = root.appending(path: ".claude-settings", directoryHint: .isDirectory)
+    let picked = root.appending(path: ".claude-picked", directoryHint: .isDirectory)
+    for folder in [settings, picked] {
+      try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    }
+    defaults.set(settings.path(percentEncoded: false), forKey: PreferenceKey.newSessionAccount)
+    ClaudeChoice.$testSuite.withValue(suite) {
+      ClaudeChoice.pick(ClaudeChoice.account(at: picked.path(percentEncoded: false)), for: project)
+      #expect(SkillsManager.account(for: nil).name == "settings")
+      #expect(SkillsManager.account(for: project).name == "picked")
+    }
+  }
+
+  /// Review focus: with no project, user-level skills only, both agents asked about the home
+  /// folder, and no "This project"; choosing the project adds its place and its skills.
+  @Test func aProjectAddsItsPlaceAndItsSkills() async throws {
+    defer { cleanUp() }
+    let stubs = Stubs()
+    let manager = manager(stubs)
+    manager.refresh(load: true)
+    try await settle(manager)
+    #expect(manager.records.map(\.name) == ["review"])
+    #expect(!manager.visiblePlaces.contains(.project))
+    #expect(stubs.codex[home.skillPath]?.hasLoaded == true)
+    #expect(stubs.claude[home.skillPath] != nil)
+    manager.choose(project: project)
+    try await settle(manager)
+    #expect(manager.records.map(\.name) == ["deploy", "review"])
+    #expect(manager.visiblePlaces.contains(.project))
+    #expect(stubs.codex[project.skillPath]?.hasLoaded == true)
+    #expect(manager.places.project?.skillPath == project.skillPath)
+    manager.place = .project
+    manager.choose(project: nil)
+    #expect(manager.place == .all)
+  }
+
+  @Test func placesAndTheFilterNarrowTheList() async throws {
+    defer { cleanUp() }
+    let stubs = Stubs()
+    stubs.codexRecords = [
+      CodexSkillRecord(
+        name: "skill-creator", description: "",
+        path: "/Users/me/.codex/skills/.system/skill-creator/SKILL.md", scope: .system,
+        pluginID: nil, isEnabled: true)
+    ]
+    let manager = manager(stubs)
+    manager.choose(project: project)
+    try await settle(manager)
+    #expect(manager.count(.all) == 3)
+    #expect(manager.count(.yours) == 1)
+    #expect(manager.count(.project) == 1)
+    #expect(manager.count(.codex) == 1)
+    #expect(manager.count(.plugins) == 0)
+    manager.place = .yours
+    #expect(manager.shown.map(\.name) == ["review"])
+    manager.place = .all
+    manager.filter = "diff"
+    #expect(manager.shown.map(\.name) == ["review"])
+    manager.filter = "DEP"
+    #expect(manager.shown.map(\.name) == ["deploy"])
+  }
+
+  /// After an action the folders are read again at once, and both agents asked again.
+  @Test func anActionReadsEverythingAgain() async throws {
+    defer { cleanUp() }
+    let stubs = Stubs()
+    let manager = manager(stubs)
+    manager.choose(project: project)
+    try await settle(manager)
+    let probes = stubs.probes
+    let deploy = try #require(manager.records.first { $0.name == "deploy" })
+    manager.share(deploy)
+    #expect(manager.failure == nil)
+    try await settle(manager)
+    #expect(stubs.forced.last == true)
+    #expect(stubs.probes > probes)
+    let shared = project.appending(path: ".agents/skills/deploy")
+    #expect(SkillPath.isLink(shared.skillPath))
+    let plan = try #require(manager.deletePlan(for: deploy))
+    manager.delete(plan)
+    #expect(!manager.records.contains { $0.name == "deploy" })
+    #expect(FileManager.default.fileExists(atPath: trash.appending(path: "deploy").skillPath))
+    #expect(!SkillPath.isLink(shared.skillPath))
+  }
+
+  /// A refusal is said in the alert, and nothing changes.
+  @Test func aRefusalIsSaid() async throws {
+    defer { cleanUp() }
+    let manager = manager(Stubs())
+    manager.choose(project: project)
+    let review = try #require(manager.records.first { $0.name == "review" })
+    try skill(home.appending(path: ".agents/skills/review"))
+    manager.share(review)
+    #expect(manager.failure?.hasPrefix("A skill named review is already in") == true)
+  }
+
+  @Test func aSkillRemovedByHandClearsTheSelection() async throws {
+    defer { cleanUp() }
+    let manager = manager(Stubs())
+    manager.choose(project: project)
+    try await settle(manager)
+    let review = try #require(manager.records.first { $0.name == "review" })
+    manager.selection = review.id
+    #expect(manager.selected?.name == "review")
+    try FileManager.default.removeItem(at: account.appending(path: "skills/review"))
+    manager.projectFilesChanged()
+    #expect(manager.selection == nil)
+    #expect(manager.selected == nil)
+  }
+
+  /// The inspector's Manage… and Window › Skills: the window opens on the project asked for,
+  /// keeps its project when none is, and drops one no longer open.
+  @Test func manageOpensTheWindowOnItsProject() {
+    defer { cleanUp() }
+    let manager = manager(Stubs())
+    var opened: [String] = []
+    manager.show(project: project) { opened.append($0) }
+    #expect(opened == ["skills"])
+    #expect(manager.project?.skillPath == project.skillPath)
+    manager.show(project: nil) { opened.append($0) }
+    #expect(manager.project?.skillPath == project.skillPath)
+    manager.openFolders = { [] }
+    manager.show(project: nil) { opened.append($0) }
+    #expect(manager.project == nil)
+    #expect(opened == ["skills", "skills", "skills"])
+  }
+
+  @Test func thePreviewIsTheFirstFourKilobytes() throws {
+    defer { cleanUp() }
+    let manager = manager(Stubs())
+    let long = account.appending(path: "skills/long")
+    try FileManager.default.createDirectory(at: long, withIntermediateDirectories: true)
+    try Data(("---\nname: long\n---\n" + String(repeating: "x", count: 10_000)).utf8).write(
+      to: long.appending(path: "SKILL.md"))
+    manager.refresh(load: true)
+    let record = try #require(manager.records.first { $0.name == "long" })
+    #expect(manager.preview(of: record)?.utf8.count == 4096)
+  }
+
+  /// A project window tells the Skills window about its skill files as they change.
+  @Test func aProjectsSkillFileChangeIsHeard() async throws {
+    let window = Project(folder: project)
+    defer {
+      window.stopAll()
+      cleanUp()
+    }
+    let heard = Counter()
+    let id = window.observeSkillFiles { heard.count += 1 }
+    for attempt in 0..<5 where heard.count == 0 {
+      try skill(project.appending(path: ".claude/skills/s\(attempt)"))
+      for _ in 0..<10 where heard.count == 0 {
+        try await Task.sleep(for: .milliseconds(100))
+      }
+    }
+    #expect(heard.count > 0)
+    window.stopObservingSkillFiles(id)
+  }
+}

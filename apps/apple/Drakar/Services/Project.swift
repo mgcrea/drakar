@@ -280,6 +280,8 @@ final class Project {
   @ObservationIgnored private var capabilityObserver: UUID?
   @ObservationIgnored private var capabilityRefresh: Task<Void, Never>?
   @ObservationIgnored private var codexSkillRefresh: Task<Void, Never>?
+  /// Who hears the project's skill files change as it happens: the Skills window.
+  @ObservationIgnored private var skillFileObservers: [UUID: () -> Void] = [:]
   /// The pane that had the keys at the last quit, until it takes them back.
   @ObservationIgnored private var restoredFocus: FocusedPane?
 
@@ -538,6 +540,22 @@ final class Project {
       && session.agent == .claude && session.account?.key == capabilities.accountKey
   }
 
+  /// `handler` hears each change to a file either agent reads the project's skills from, as
+  /// it comes (the lists themselves are read again once changes settle).
+  func observeSkillFiles(_ handler: @escaping () -> Void) -> UUID {
+    let id = UUID()
+    skillFileObservers[id] = handler
+    return id
+  }
+
+  func stopObservingSkillFiles(_ id: UUID) {
+    skillFileObservers[id] = nil
+  }
+
+  private func tellSkillFileObservers() {
+    for handler in skillFileObservers.values { handler() }
+  }
+
   private func observeCapabilities() {
     capabilityObserver = capabilities.observe { [weak self] changes in
       self?.capabilityMarks.add(changes)
@@ -545,12 +563,14 @@ final class Project {
   }
 
   private func capabilityFilesChanged() {
+    tellSkillFileObservers()
     capabilityRefresh = settled(replacing: capabilityRefresh) {
       $0.capabilities.refreshIfLoaded()
     }
   }
 
   private func codexSkillFilesChanged() {
+    tellSkillFileObservers()
     codexSkillRefresh = settled(replacing: codexSkillRefresh) {
       CodexSkillStore.shared.skills(for: $0.folder).refreshIfLoaded()
     }
