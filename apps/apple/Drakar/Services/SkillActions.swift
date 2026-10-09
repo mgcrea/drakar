@@ -352,8 +352,10 @@ nonisolated struct SkillActions: Sendable {
 
   /// Puts each skill folder of `sources` into `place` for `agents`, Claude Code first: a link
   /// per agent, or one copy and links to it. Every destination is checked before anything is
-  /// written, and nothing is ever replaced; returns what was made. A step that fails after
-  /// others succeeded says what was already made.
+  /// written, and nothing is ever replaced; a destination that already is the skill, or a link
+  /// to it, is left as it is, so a skill from one agent's folder is linked for the other only.
+  /// Returns what was made. A step that fails after others succeeded says what was already
+  /// made.
   @discardableResult
   func install(
     _ sources: [URL], place: SkillPlace, agents: [SkillAgent], method: InstallMethod
@@ -370,6 +372,8 @@ nonisolated struct SkillActions: Sendable {
       return folder
     }
     var names = Set<String>()
+    // Each skill's folder resolved, and the folders it is not in yet.
+    var plans: [(name: String, real: URL, missing: [URL])] = []
     for source in sources {
       let name = source.lastPathComponent
       guard files.exists(source.appending(path: "SKILL.md")) else {
@@ -381,19 +385,33 @@ nonisolated struct SkillActions: Sendable {
         throw SkillActionError(
           message: String(localized: "Two of the chosen skills are named \(name)."))
       }
-      for folder in folders where files.exists(folder.appending(path: name)) {
-        throw SkillActionError.exists(name, in: folder)
+      let real = SkillPath.real(source.skillPath)
+      var missing: [URL] = []
+      for folder in folders {
+        let destination = folder.appending(path: name)
+        if !files.exists(destination) {
+          missing.append(folder)
+        } else if SkillPath.real(destination.skillPath) != real {
+          throw SkillActionError.exists(name, in: folder)
+        }
       }
+      plans.append((name, URL(filePath: real, directoryHint: .isDirectory), missing))
+    }
+    guard plans.contains(where: { !$0.missing.isEmpty }) else {
+      throw SkillActionError(
+        message: String(
+          localized: "The chosen skills are already there for these agents. Nothing was written."))
     }
     var made: [URL] = []
     do {
-      for source in sources {
-        let name = source.lastPathComponent
-        var target = URL(filePath: SkillPath.real(source.skillPath), directoryHint: .isDirectory)
-        for (index, folder) in folders.enumerated() {
+      for plan in plans {
+        var target = plan.real
+        // A copy only when no agent sees the skill in this place yet; else a link to it.
+        let copies = method == .copy && plan.missing.count == folders.count
+        for (index, folder) in plan.missing.enumerated() {
           try files.createFolder(folder)
-          let destination = folder.appending(path: name)
-          if method == .copy, index == 0 {
+          let destination = folder.appending(path: plan.name)
+          if copies, index == 0 {
             try files.copy(target, to: destination)
             target = destination
           } else {

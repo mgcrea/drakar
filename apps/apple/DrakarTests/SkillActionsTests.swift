@@ -467,6 +467,35 @@ struct SkillActionsTests {
     #expect(!exists(project.appending(path: ".claude/skills/one")))
   }
 
+  /// A skill from one agent's folder, installed for both, is linked for the other only, even
+  /// when asked to copy.
+  @Test func aSkillInOneAgentsFolderIsLinkedForTheOther() throws {
+    defer { cleanUp() }
+    let one = try skill(account.appending(path: "skills/one"))
+    for method in [InstallMethod.link, .copy] {
+      let made = try actions.install(
+        [one], place: .user, agents: [.claude, .codex], method: method)
+      let codex = home.appending(path: ".agents/skills/one")
+      #expect(made.map(\.skillPath) == [codex.skillPath])
+      #expect(SkillPath.isLink(codex.skillPath))
+      #expect(SkillPath.real(codex.skillPath) == one.skillPath)
+      #expect(!SkillPath.isLink(one.skillPath))
+      try FileManager.default.removeItem(at: codex)
+    }
+  }
+
+  /// A skill already in its destination: nothing to do, and the alert says so.
+  @Test func aSkillAlreadyInItsDestinationWritesNothing() throws {
+    defer { cleanUp() }
+    let one = try skill(account.appending(path: "skills/one"))
+    let error = #expect(throws: SkillActionError.self) {
+      try actions.install([one], place: .user, agents: [.claude], method: .link)
+    }
+    #expect(error?.message.contains("already there") == true)
+    #expect(!SkillPath.isLink(one.skillPath))
+    #expect(exists(one.appending(path: "SKILL.md")))
+  }
+
   /// A name taken at any destination refuses the whole install: nothing is written.
   @Test func aClashRefusesTheWholeInstall() throws {
     defer { cleanUp() }
