@@ -72,6 +72,8 @@ struct SkillInstallSearchTests {
     for text in [
       "skills please", "github.com/me/skills", "https://github.com/me",
       "https://github.com/me/../../etc", "ftp://host/me/skills", "git@github.com:skills", "",
+      "https://github.com/me/...git", "https://github.com/me/..git", "git@..:me/skills",
+      "git@.:me/skills", "https://github.com/%2e%2e/x/y", "https://github.com/me/a b",
     ] {
       #expect(GitSource(text) == nil, "\(text)")
     }
@@ -82,5 +84,17 @@ struct SkillInstallSearchTests {
     #expect(
       GitSource("git@github.com:me/skills.git")?.folder(in: sources).path(percentEncoded: false)
         == "/Users/me/.agents/skill-sources/github.com/me/skills/")
+  }
+
+  @Test func everyAcceptedCloneStaysUnderItsRoot() throws {
+    let sources = URL(filePath: "/Users/me/.agents/skill-sources", directoryHint: .isDirectory)
+    for text in [
+      "https://github.com/me/skills", "git@github.com:me/skills.git", "file:///Users/me/src/skills",
+      "ssh://git@gitlab.example.com:2222/team/sub/tools.git", "https://github.com/me/.hidden",
+    ] {
+      let source = try #require(GitSource(text), "\(text)")
+      let folder = source.folder(in: sources).standardizedFileURL.path(percentEncoded: false)
+      #expect(folder.hasPrefix(sources.path(percentEncoded: false)), "\(text)")
+    }
   }
 }

@@ -33,19 +33,28 @@ public struct GitSource: Sendable, Hashable {
       return nil
     }
     let parts = path.split(separator: "/").map(String.init)
-    guard parts.count >= 2, !host.isEmpty, !host.contains("/"),
-      parts.allSatisfy({ $0 != "." && $0 != ".." })
-    else { return nil }
+    guard parts.count >= 2, parts.allSatisfy({ $0.contains { $0 != "." } }) else { return nil }
     var repo = parts[parts.count - 1]
     if repo.hasSuffix(".git") { repo.removeLast(4) }
-    guard !repo.isEmpty else { return nil }
-    self.host = host.lowercased()
-    self.owner = parts[parts.count - 2]
+    let lowered = host.lowercased()
+    let owner = parts[parts.count - 2]
+    guard [lowered, owner, repo].allSatisfy(Self.isFolderName) else { return nil }
+    self.host = lowered
+    self.owner = owner
     self.repo = repo
   }
 
+  /// A name that is one plain folder: letters, digits, `.`, `_` and `-`, and not only dots.
+  private static func isFolderName(_ name: String) -> Bool {
+    !name.isEmpty && name.contains { $0 != "." }
+      && name.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || "._-".contains($0)) }
+  }
+
+  /// Where the clone goes. A source built by hand with an unsafe name is a programmer error.
   public func folder(in root: URL) -> URL {
-    root.appending(path: host, directoryHint: .isDirectory)
+    precondition(
+      [host, owner, repo].allSatisfy(Self.isFolderName), "unsafe clone folder name in \(self)")
+    return root.appending(path: host, directoryHint: .isDirectory)
       .appending(path: owner, directoryHint: .isDirectory)
       .appending(path: repo, directoryHint: .isDirectory)
   }
