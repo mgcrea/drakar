@@ -147,12 +147,21 @@ struct SkillFileSystem {
   func trash(_ url: URL) throws { try moveToTrash(url) }
 
   /// Removes the link itself, never what it points to; anything else at `url` is refused.
+  /// The check comes first because `unlink` would remove a file; `unlink` cannot remove a
+  /// folder, so one swapped in after the check stays.
   func removeLink(_ url: URL) throws {
-    guard isLink(url) else {
+    guard isLink(url) else { throw SkillActionError.notALink(url) }
+    guard unlink(url.skillPath) != 0 else { return }
+    let code = errno
+    switch code {
+    case EPERM, EISDIR, ENOTDIR, ENOENT: throw SkillActionError.notALink(url)
+    default:
       throw SkillActionError(
-        message: String(localized: "\(SkillText.path(url)) is not a link, so it was left alone."))
+        message: String(
+          localized:
+            "Couldn't remove the link at \(SkillText.path(url)): \(String(cString: strerror(code)))."
+        ))
     }
-    try manager.removeItem(atPath: url.skillPath)
   }
 
   func children(of folder: URL) -> [URL] {
@@ -181,6 +190,11 @@ struct SkillActionError: Error, LocalizedError, Equatable {
         localized:
           "A skill named \(name) is already in \(SkillText.path(folder)). Nothing was written."))
   }
+
+  static func notALink(_ url: URL) -> SkillActionError {
+    SkillActionError(
+      message: String(localized: "\(SkillText.path(url)) is not a link, so it was left alone."))
+  }
 }
 
 /// What a delete will do, step by step, and the sentences the confirmation says it in.
@@ -191,16 +205,17 @@ struct DeletePlan: Equatable {
   }
 
   var steps: [Step] = []
+  /// One sentence per step, in the same order.
   var lines: [String] = []
 
-  func removes(_ link: String) -> Bool { steps.contains(.removeLink(link)) }
-
-  mutating func removeLink(_ link: String) {
-    guard !removes(link) else { return }
+  /// `targetStays` when nothing in the plan trashes the folder the link points to.
+  mutating func removeLink(_ link: String, targetStays: Bool) {
     steps.append(.removeLink(link))
     lines.append(
-      String(
-        localized: "Remove the link at \(SkillText.path(link)) (the folder it points to stays)."))
+      targetStays
+        ? String(
+          localized: "Remove the link at \(SkillText.path(link)) (the folder it points to stays).")
+        : String(localized: "Remove the link at \(SkillText.path(link))."))
   }
 
   mutating func trash(_ item: String, saying line: String) {
@@ -251,9 +266,9 @@ struct SkillActions {
     return destination
   }
 
-  /// What deleting `record` does: each link to it goes; the real folder (or command file)
-  /// goes to the Trash when it lies in one of the skill folders, a clone with its last link,
-  /// and anything else stays.
+  /// What deleting `record` does: each link to it goes. The real folder (or command file) goes
+  /// to the Trash only when the row shows it, not just a link to it, and it lies in one of the
+  /// skill folders; a clone goes with its last link. Anything else stays.
   func deletePlan(for record: SkillRecord) throws -> DeletePlan {
     guard record.canDelete else {
       throw SkillActionError(
@@ -262,46 +277,93 @@ struct SkillActions {
             "\(record.name) is not yours to delete here: plugins, Codex's own skills and unknown ones are managed elsewhere."
         ))
     }
-    var plan = DeletePlan()
-    for sighting in record.sightings where sighting.isLink {
-      if let path = sighting.path { plan.removeLink(ProjectPath.normalize(path)) }
+    var found: [String] = []
+    var seen = Set<String>()
+    let candidates =
+      record.sightings.filter(\.isLink).compactMap(\.path).map(ProjectPath.normalize)
+      + links(where: { $0 == record.realPath })
+    for link in candidates where seen.insert(Self.key(ofLink: link)).inserted {
+      found.append(link)
     }
-    for link in links(where: { $0 == record.realPath }) { plan.removeLink(link) }
-    guard !record.isMissing, files.exists(URL(filePath: record.realPath)) else { return plan }
-    let shown = SkillText.path(record.realPath)
-    if let clone = places.clone(containing: record.realPath) {
-      let spellings = SkillPlaces.spellings(of: clone)
-      let others = links { target in spellings.contains { ProjectPath.contains($0, target) } }
-        .filter { !plan.removes($0) }
-      if others.isEmpty {
-        plan.trash(
-          clone.skillPath,
-          saying: String(
-            localized:
-              "Move the clone at \(SkillText.path(clone)) to the Trash: no other skill links into it."
-          ))
-      } else {
-        plan.lines.append(
-          String(
-            localized:
-              "The clone at \(SkillText.path(clone)) stays: other skills still link into it."))
+    var trash: (path: String, line: String)?
+    if !record.isMissing, files.exists(URL(filePath: record.realPath)) {
+      if let clone = places.clone(containing: record.realPath) {
+        let spellings = SkillPlaces.spellings(of: clone)
+        let others = links { target in spellings.contains { ProjectPath.contains($0, target) } }
+          .filter { !seen.contains(Self.key(ofLink: $0)) }
+        if others.isEmpty {
+          trash = (
+            clone.skillPath,
+            String(
+              localized:
+                "Move the clone at \(SkillText.path(clone)) to the Trash: no link in these folders points into it."
+            )
+          )
+        }
+      } else if showsRealFolder(record), isInRoots(record.realPath) {
+        trash = (
+          record.realPath,
+          String(localized: "Move \(SkillText.path(record.realPath)) to the Trash.")
+        )
       }
-    } else if isInRoots(record.realPath) {
-      plan.trash(record.realPath, saying: String(localized: "Move \(shown) to the Trash."))
-    } else {
-      plan.lines.append(String(localized: "\(shown) stays: it is outside the skill folders."))
+    }
+    var plan = DeletePlan()
+    for link in found { plan.removeLink(link, targetStays: trash == nil && !record.isMissing) }
+    if let trash { plan.trash(trash.path, saying: trash.line) }
+    guard !plan.steps.isEmpty else {
+      throw SkillActionError(
+        message: String(
+          localized:
+            "\(SkillText.path(record.realPath)) stays: Drakar deletes only links to a skill and folders it shows in the skill folders."
+        ))
     }
     return plan
   }
 
-  /// Carries out a plan: the links first, then the Trash.
+  /// Carries out a plan: the links first, then the Trash. Every step is checked against the
+  /// disk before any is made, and again right before it; one that no longer matches stops it.
   func delete(_ plan: DeletePlan) throws {
+    for step in plan.steps { try check(step) }
     for step in plan.steps {
+      try check(step)
       switch step {
       case .removeLink(let path): try files.removeLink(URL(filePath: path))
       case .trash(let path): try files.trash(URL(filePath: path))
       }
     }
+  }
+
+  /// A link to remove is still a link; an item to trash is still there, not a link, and still
+  /// resolves to itself: a link put in its place or above it leads elsewhere.
+  private func check(_ step: DeletePlan.Step) throws {
+    switch step {
+    case .removeLink(let path):
+      guard files.isLink(URL(filePath: path)) else {
+        throw SkillActionError.notALink(URL(filePath: path))
+      }
+    case .trash(let path):
+      let url = URL(filePath: path)
+      guard files.exists(url), !files.isLink(url), SkillPath.real(path) == path else {
+        throw SkillActionError(
+          message: String(
+            localized:
+              "\(SkillText.path(path)) changed since the delete was planned, so nothing more was done."
+          ))
+      }
+    }
+  }
+
+  /// The row shows the real folder (or command file) itself: a sighting of it that is no link.
+  private func showsRealFolder(_ record: SkillRecord) -> Bool {
+    record.sightings.contains { sighting in
+      !sighting.isLink && sighting.path.map(SkillPath.real) == record.realPath
+    }
+  }
+
+  /// One link however its folder is spelled: the folder resolved, then the link's name.
+  private static func key(ofLink path: String) -> String {
+    let url = URL(filePath: path)
+    return SkillPath.real(url.deletingLastPathComponent().skillPath) + "/" + url.lastPathComponent
   }
 
   /// The links directly in the roots whose resolved target `matches`.

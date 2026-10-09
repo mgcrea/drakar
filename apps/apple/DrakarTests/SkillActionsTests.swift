@@ -88,6 +88,24 @@ struct SkillActionsTests {
     try #require(rows(codex: codex, scope: scope).first { $0.name == name })
   }
 
+  /// The confirmation says each step, in order, and nothing else.
+  private func expectLinesSay(_ plan: DeletePlan, sourceLocation: SourceLocation = #_sourceLocation)
+  {
+    #expect(plan.lines.count == plan.steps.count, sourceLocation: sourceLocation)
+    for (step, line) in zip(plan.steps, plan.lines) {
+      switch step {
+      case .removeLink(let path):
+        #expect(
+          line.hasPrefix("Remove the link at \(SkillText.path(path))"),
+          sourceLocation: sourceLocation)
+      case .trash(let path):
+        #expect(
+          line.hasPrefix("Move ") && line.contains(SkillText.path(path))
+            && line.contains("to the Trash"), sourceLocation: sourceLocation)
+      }
+    }
+  }
+
   @Test func sharesYourSkillWithCodex() throws {
     defer { cleanUp() }
     let review = try skill(account.appending(path: "skills/review"))
@@ -123,6 +141,20 @@ struct SkillActionsTests {
     #expect(!SkillPath.isLink(theirs.skillPath))
   }
 
+  /// A link whose target is gone still takes the name.
+  @Test func aShareOntoADanglingLinkIsRefused() throws {
+    defer { cleanUp() }
+    try skill(account.appending(path: "skills/review"))
+    let dangling = home.appending(path: ".agents/skills/review")
+    try link(dangling, to: root.appending(path: "gone"))
+    let record = try #require(rows().first { $0.name == "review" && !$0.isMissing })
+    #expect(
+      throws: SkillActionError.exists(
+        "review", in: home.appending(path: ".agents/skills", directoryHint: .isDirectory))
+    ) { try actions.share(record) }
+    #expect(SkillPath.target(ofLink: dangling.skillPath) == root.appending(path: "gone").skillPath)
+  }
+
   @Test func commandsAreNotShared() throws {
     defer { cleanUp() }
     try write("Ship.", to: project.appending(path: ".claude/commands/ship.md"))
@@ -140,6 +172,7 @@ struct SkillActionsTests {
     #expect(plan.steps == [.removeLink(seen.skillPath)])
     #expect(plan.lines.first?.hasPrefix("Remove the link at") == true)
     #expect(plan.lines.last?.contains("stays") == true)
+    expectLinesSay(plan)
     try actions.delete(plan)
     #expect(!exists(seen))
     #expect(FileManager.default.fileExists(atPath: notes.appending(path: "SKILL.md").skillPath))
@@ -152,6 +185,15 @@ struct SkillActionsTests {
     let real = try skill(account.appending(path: "skills/real"))
     #expect(throws: SkillActionError.self) { try files.removeLink(real) }
     #expect(exists(real.appending(path: "SKILL.md")))
+  }
+
+  /// Review focus: a file is not a link either, and stays.
+  @Test func removingALinkRefusesAFile() throws {
+    defer { cleanUp() }
+    let file = project.appending(path: ".claude/commands/ship.md")
+    try write("Ship.", to: file)
+    #expect(throws: SkillActionError.self) { try files.removeLink(file) }
+    #expect(exists(file))
   }
 
   /// Review focus: the real folder goes with every link to it, so none is left dangling.
@@ -168,9 +210,111 @@ struct SkillActionsTests {
         .removeLink(claude.skillPath), .removeLink(inProject.skillPath), .trash(real.skillPath),
       ])
     #expect(plan.steps.last == .trash(real.skillPath))
+    expectLinesSay(plan)
+    #expect(!plan.lines.contains { $0.contains("stays") })
     try actions.delete(plan)
     for url in [claude, inProject, real] { #expect(!exists(url)) }
     #expect(exists(trash.appending(path: "find-skills")))
+  }
+
+  /// Review focus: Claude Code's link to a folder Codex sees; the row shows the folder itself,
+  /// so it goes, and the link's line does not say it stays.
+  @Test func aFolderTheRowShowsGoesWithItsLink() throws {
+    defer { cleanUp() }
+    let real = try skill(home.appending(path: ".agents/skills/find-skills"))
+    let claude = account.appending(path: "skills/find-skills")
+    try link(claude, to: real)
+    let plan = try actions.deletePlan(for: try row("find-skills", codex: [real]))
+    #expect(plan.steps == [.removeLink(claude.skillPath), .trash(real.skillPath)])
+    #expect(
+      plan.lines == [
+        "Remove the link at \(SkillText.path(claude)).",
+        "Move \(SkillText.path(real)) to the Trash.",
+      ])
+  }
+
+  /// Review focus: the same link with Codex's records not in: the row shows only the link, so
+  /// only the link goes.
+  @Test func aFolderOnlyALinkShowsStays() throws {
+    defer { cleanUp() }
+    let real = try skill(home.appending(path: ".agents/skills/find-skills"))
+    let claude = account.appending(path: "skills/find-skills")
+    try link(claude, to: real)
+    let plan = try actions.deletePlan(for: try row("find-skills"))
+    #expect(plan.steps == [.removeLink(claude.skillPath)])
+    #expect(
+      plan.lines == [
+        "Remove the link at \(SkillText.path(claude)) (the folder it points to stays)."
+      ])
+    try actions.delete(plan)
+    #expect(!exists(claude))
+    #expect(exists(real.appending(path: "SKILL.md")))
+    #expect(try FileManager.default.contentsOfDirectory(atPath: trash.skillPath).isEmpty)
+  }
+
+  /// Review focus: a link to a link: both go, the folder at the end stays.
+  @Test func aChainOfLinksKeepsItsTarget() throws {
+    defer { cleanUp() }
+    let notes = try skill(outside.appending(path: "notes"))
+    let middle = home.appending(path: ".agents/skills/notes")
+    let seen = account.appending(path: "skills/notes")
+    try link(middle, to: notes)
+    try link(seen, to: middle)
+    let plan = try actions.deletePlan(for: try row("notes"))
+    #expect(plan.steps == [.removeLink(seen.skillPath), .removeLink(middle.skillPath)])
+    expectLinesSay(plan)
+    #expect(plan.lines.allSatisfy { $0.contains("stays") })
+    try actions.delete(plan)
+    #expect(!exists(seen))
+    #expect(!exists(middle))
+    #expect(exists(notes.appending(path: "SKILL.md")))
+  }
+
+  /// One link spelled through `/private` and without is one step.
+  @Test func aLinkSpelledTwoWaysIsRemovedOnce() throws {
+    defer { cleanUp() }
+    let notes = try skill(outside.appending(path: "notes"))
+    let seen = account.appending(path: "skills/notes")
+    try link(seen, to: notes)
+    let other = "/private" + seen.skillPath
+    try #require(SkillPath.isLink(other))
+    var record = try row("notes")
+    record.sightings[0].path = other
+    let plan = try actions.deletePlan(for: record)
+    #expect(plan.steps == [.removeLink(other)])
+    expectLinesSay(plan)
+  }
+
+  /// Review focus: the folder a plan trashes was swapped for a link: nothing happens.
+  @Test func aFolderReplacedByALinkIsNotTrashed() throws {
+    defer { cleanUp() }
+    let real = try skill(home.appending(path: ".agents/skills/find-skills"))
+    let claude = account.appending(path: "skills/find-skills")
+    try link(claude, to: real)
+    let plan = try actions.deletePlan(for: try row("find-skills", codex: [real]))
+    let moved = outside.appending(path: "find-skills")
+    try FileManager.default.moveItem(at: real, to: moved)
+    try link(real, to: moved)
+    #expect(throws: SkillActionError.self) { try actions.delete(plan) }
+    #expect(SkillPath.isLink(claude.skillPath))
+    #expect(SkillPath.isLink(real.skillPath))
+    #expect(exists(moved.appending(path: "SKILL.md")))
+    #expect(try FileManager.default.contentsOfDirectory(atPath: trash.skillPath).isEmpty)
+  }
+
+  /// Review focus: the folder's parent became a link to somewhere else: nothing is trashed.
+  @Test func aFolderReachedThroughANewLinkIsNotTrashed() throws {
+    defer { cleanUp() }
+    let real = try skill(home.appending(path: ".agents/skills/find-skills"))
+    let plan = try actions.deletePlan(for: try row("find-skills", codex: [real]))
+    #expect(plan.steps == [.trash(real.skillPath)])
+    let skills = home.appending(path: ".agents/skills")
+    let elsewhere = outside.appending(path: "skills")
+    try FileManager.default.moveItem(at: skills, to: elsewhere)
+    try link(skills, to: elsewhere)
+    #expect(throws: SkillActionError.self) { try actions.delete(plan) }
+    #expect(exists(elsewhere.appending(path: "find-skills/SKILL.md")))
+    #expect(try FileManager.default.contentsOfDirectory(atPath: trash.skillPath).isEmpty)
   }
 
   @Test func deletingAMissingLinkRemovesOnlyIt() throws {
@@ -181,6 +325,7 @@ struct SkillActionsTests {
     #expect(record.isMissing)
     let plan = try actions.deletePlan(for: record)
     #expect(plan.steps == [.removeLink(seen.skillPath)])
+    expectLinesSay(plan)
     try actions.delete(plan)
     #expect(!exists(seen))
   }
@@ -191,6 +336,7 @@ struct SkillActionsTests {
     try write("Do b.", to: file)
     let plan = try actions.deletePlan(for: try row("a:b"))
     #expect(plan.steps == [.trash(file.skillPath)])
+    expectLinesSay(plan)
     try actions.delete(plan)
     #expect(!exists(file))
   }
@@ -216,9 +362,16 @@ struct SkillActionsTests {
     let first = try actions.deletePlan(for: try row("one"))
     #expect(first.steps == [.removeLink(oneLink.skillPath)])
     #expect(first.lines.last?.contains("stays") == true)
+    expectLinesSay(first)
     try actions.delete(first)
     let last = try actions.deletePlan(for: try row("two"))
     #expect(last.steps == [.removeLink(twoLink.skillPath), .trash(clone.skillPath)])
+    expectLinesSay(last)
+    #expect(
+      last.lines == [
+        "Remove the link at \(SkillText.path(twoLink)).",
+        "Move the clone at \(SkillText.path(clone)) to the Trash: no link in these folders points into it.",
+      ])
     try actions.delete(last)
     #expect(!exists(clone))
     #expect(exists(trash.appending(path: "repo")))
