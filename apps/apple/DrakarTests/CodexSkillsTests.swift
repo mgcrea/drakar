@@ -70,7 +70,7 @@ struct CodexSkillsTests {
     entry.reader = { _, force in
       calls.count += 1
       calls.forced.append(force)
-      return skills
+      return CodexSkillList.Listing(entries: skills)
     }
     return calls
   }
@@ -107,7 +107,7 @@ struct CodexSkillsTests {
       calls.count += 1
       calls.forced.append(force)
       try? await Task.sleep(for: .milliseconds(100))
-      return []
+      return CodexSkillList.Listing()
     }
     entry.refresh()
     entry.refresh()
@@ -134,7 +134,7 @@ struct CodexSkillsTests {
     try await Task.sleep(for: .milliseconds(100))
     try await settle(entry)
     #expect(calls.count == 1)
-    entry.reader = { _, _ in [self.deploy] }
+    entry.reader = { _, _ in CodexSkillList.Listing(entries: [self.deploy]) }
     entry.refresh(force: true)
     try await settle(entry)
     #expect(entry.skills == [deploy])
@@ -144,7 +144,7 @@ struct CodexSkillsTests {
   /// A reload that fails keeps the list shown, and says why beside it.
   @Test func aFailedReloadKeepsTheLastList() async throws {
     let entry = CodexSkills(folder: folder)
-    entry.reader = { _, _ in [self.deploy] }
+    entry.reader = { _, _ in CodexSkillList.Listing(entries: [self.deploy]) }
     entry.refresh()
     try await settle(entry)
     entry.reader = { _, _ in throw CodexOneShot.Failure(message: "boom") }
@@ -152,6 +152,38 @@ struct CodexSkillsTests {
     try await settle(entry)
     #expect(entry.skills == [deploy])
     #expect(entry.problem == "Couldn't read Codex's skills. boom")
+  }
+
+  /// One `skills/list` answers both: the menu's entries and the Skills window's records; a
+  /// failed reload keeps them, as it keeps the entries.
+  @Test func keepsTheRecordsBesideTheEntries() async throws {
+    let entry = CodexSkills(folder: folder)
+    let record = CodexSkillRecord(
+      name: "deploy", description: "Deploy to staging", path: deploy.path ?? "", scope: .repo,
+      pluginID: nil, isEnabled: true)
+    entry.reader = { _, _ in CodexSkillList.Listing(entries: [self.deploy], records: [record]) }
+    entry.refresh()
+    try await settle(entry)
+    #expect(entry.records == [record])
+    entry.reader = { _, _ in throw CodexOneShot.Failure(message: "boom") }
+    entry.refresh()
+    try await settle(entry)
+    #expect(entry.records == [record])
+  }
+
+  /// No `codex` at all is told apart from a read that failed, for the Skills window's caption;
+  /// the inspector's sentence is the same as before.
+  @Test func aMissingCodexIsToldApart() async throws {
+    let entry = CodexSkills(folder: folder)
+    entry.reader = { _, _ in throw CodexSkills.NotFound() }
+    entry.refresh()
+    try await settle(entry)
+    #expect(entry.isCodexMissing)
+    #expect(entry.problem == "Couldn't read Codex's skills. Codex was not found.")
+    entry.reader = { _, _ in CodexSkillList.Listing() }
+    entry.refresh()
+    try await settle(entry)
+    #expect(!entry.isCodexMissing)
   }
 
   /// A change refreshes only a list something asked for.
@@ -204,11 +236,12 @@ struct CodexSkillsTests {
       executable: script, environment: [:], folder: folder)
     let plain = try await CodexSkills.read(
       folder: URL(filePath: path), force: false, configuration: configuration)
-    #expect(plain.map(\.name) == ["plain"])
-    #expect(plain.first?.path == "/plain/SKILL.md")
+    #expect(plain.entries.map(\.name) == ["plain"])
+    #expect(plain.entries.first?.path == "/plain/SKILL.md")
+    #expect(plain.records.map(\.name) == ["plain"])
     let forced = try await CodexSkills.read(
       folder: URL(filePath: path), force: true, configuration: configuration)
-    #expect(forced.map(\.name) == ["forced"])
+    #expect(forced.entries.map(\.name) == ["forced"])
   }
 
   /// Codex saying its skills changed reads the session's folder's list again.
@@ -304,7 +337,7 @@ struct CodexSkillsTests {
   /// A prompt naming a skill of the session's folder goes to Codex with its skill item.
   @Test func theBackendNamesASkillOfItsFolder() async throws {
     let entry = CodexSkillStore.shared.skills(for: folder)
-    entry.reader = { _, _ in [self.deploy] }
+    entry.reader = { _, _ in CodexSkillList.Listing(entries: [self.deploy]) }
     entry.refresh()
     try await settle(entry)
     let backend = CodexBackend()

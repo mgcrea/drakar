@@ -189,7 +189,7 @@ struct SkillRunTests {
     let claude = project.newSession(agent: .claude).session
     let entry = project.codexSkills(for: codex)
     #expect(entry === CodexSkillStore.shared.skills(for: folder))
-    entry.reader = { _, _ in [self.deploy] }
+    entry.reader = { _, _ in CodexSkillList.Listing(entries: [self.deploy]) }
     entry.refresh()
     try await settle(entry)
     project.capabilities.probe = { _, _ in
@@ -210,7 +210,7 @@ struct SkillRunTests {
     let reads = CapabilityStoreTests.Calls()
     entry.reader = { _, _ in
       reads.count += 1
-      return []
+      return CodexSkillList.Listing()
     }
     let probes = CapabilityStoreTests.Calls()
     project.capabilities.probe = { _, _ in
