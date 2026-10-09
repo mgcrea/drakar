@@ -6,16 +6,25 @@ import Foundation
 public enum SkillFrontmatter {
   /// The fields; empty when the text has no frontmatter, or it never closes.
   public static func fields(_ text: String) -> [String: String] {
-    // "\r\n" is one Character in Swift, so line ends are made "\n" before splitting.
-    let lines = text.replacingOccurrences(of: "\r\n", with: "\n")
-      .split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
-    guard lines.first?.trimmingCharacters(in: .whitespaces) == "---" else { return [:] }
+    // Lines are cut as they are read, so a long body after the closing "---" is never touched.
+    // "\r\n" is one Character in Swift, so both line ends are told apart from the rest here.
+    var rest = Substring(text)
+    func next() -> Substring? {
+      guard !rest.isEmpty else { return nil }
+      guard let end = rest.firstIndex(where: { $0 == "\n" || $0 == "\r\n" }) else {
+        defer { rest = "" }
+        return rest
+      }
+      defer { rest = rest[rest.index(after: end)...] }
+      return rest[..<end]
+    }
+    func isFence(_ line: Substring) -> Bool { line.trimmingCharacters(in: .whitespaces) == "---" }
+    guard let opening = next(), isFence(opening) else { return [:] }
     var fields: [String: String] = [:]
-    var index = 1
-    while index < lines.count {
-      let line = lines[index]
-      index += 1
-      if line.trimmingCharacters(in: .whitespaces) == "---" { return fields }
+    var pending = next()
+    while let line = pending {
+      pending = next()
+      if isFence(line) { return fields }
       guard let first = line.first, !first.isWhitespace, first != "#",
         let colon = line.firstIndex(of: ":")
       else { continue }
@@ -23,12 +32,10 @@ public enum SkillFrontmatter {
       let value = line[line.index(after: colon)...].trimmingCharacters(in: .whitespaces)
       if let style = value.first, style == "|" || style == ">", value.count <= 2 {
         var block: [String] = []
-        while index < lines.count, lines[index].first?.isWhitespace ?? true,
-          lines[index].trimmingCharacters(in: .whitespaces) != "---"
-        {
-          let part = lines[index].trimmingCharacters(in: .whitespaces)
+        while let more = pending, more.first?.isWhitespace ?? true, !isFence(more) {
+          let part = more.trimmingCharacters(in: .whitespaces)
           if !part.isEmpty { block.append(part) }
-          index += 1
+          pending = next()
         }
         fields[key] = block.joined(separator: style == ">" ? " " : "\n")
       } else {

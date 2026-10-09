@@ -58,6 +58,12 @@ struct ClaudeSkillScanTests {
     #expect(SkillFrontmatter.fields("---\nname: 'it''s'\n---") == ["name": "it's"])
     #expect(SkillFrontmatter.fields("# Title\nname: x\n").isEmpty)
     #expect(SkillFrontmatter.fields("---\nname: never closed\n").isEmpty)
+    #expect(
+      SkillFrontmatter.fields("---\nname: a\n---\nother: not a field\n---\n") == ["name": "a"])
+    #expect(
+      SkillFrontmatter.fields("---\r\ndescription: |\r\n  one\r\n  two\r\n---\r\n") == [
+        "description": "one\ntwo"
+      ])
   }
 
   /// A folder with a SKILL.md is a skill, named by its frontmatter, else by the folder; a
