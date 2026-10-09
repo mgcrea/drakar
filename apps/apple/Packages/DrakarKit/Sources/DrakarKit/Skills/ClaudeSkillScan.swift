@@ -66,18 +66,18 @@ public enum ClaudeSkillScan {
     }
     plugins(account: account, project: project, into: &result)
     for folder in codexFolders {
-      result.skills += skills(in: folder.url, origin: folder.origin, agent: .codex).filter {
-        $0.missingTarget != nil
-      }
+      result.skills += skills(
+        in: folder.url, origin: folder.origin, agent: .codex, missingOnly: true)
     }
     return result
   }
 
   /// Each folder of `folder` holding a SKILL.md, and each link in it whose target is gone, in
-  /// name order. Hidden entries are skipped.
+  /// name order; with `missingOnly`, those links alone, no SKILL.md read. Hidden entries are
+  /// skipped.
   static func skills(
     in folder: URL, origin: SkillOrigin, agent: SkillAgent = .claude, prefix: String = "",
-    disabled: Bool = false
+    disabled: Bool = false, missingOnly: Bool = false
   ) -> [ScannedSkill] {
     let manager = FileManager.default
     let names = ((try? manager.contentsOfDirectory(atPath: path(folder))) ?? [])
@@ -91,6 +91,7 @@ public enum ClaudeSkillScan {
           name: prefix + name, origin: origin, agent: agent, path: location, realPath: target,
           isLink: true, missingTarget: target, isPluginDisabled: disabled)
       }
+      if missingOnly { return nil }
       let file = location + "/SKILL.md"
       guard manager.fileExists(atPath: file) else { return nil }
       let fields = SkillFrontmatter.fields(head(file))
@@ -134,11 +135,18 @@ public enum ClaudeSkillScan {
   }
 
   /// The skills and commands of every plugin `installed_plugins.json` (version 2) has in
-  /// effect, named `plugin:skill`. A file of another shape is a problem; an entry of another shape is skipped.
+  /// effect, named `plugin:skill`. No file is no plugins; a file that can't be read, or of
+  /// another version or shape, is a problem; an entry of another shape is skipped.
   static func plugins(account: URL, project: URL?, into result: inout Result) {
     let file = account.appending(path: "plugins/installed_plugins.json")
-    guard let data = FileManager.default.contents(atPath: path(file)) else { return }
-    guard let json = try? JSONValue.parse(data), case .object(let plugins)? = json["plugins"]
+    guard FileManager.default.fileExists(atPath: path(file)) else { return }
+    guard let data = FileManager.default.contents(atPath: path(file)) else {
+      result.problems.append(
+        "Couldn't read the plugins Claude Code installed: \(path(file)) can't be read.")
+      return
+    }
+    guard let json = try? JSONValue.parse(data), json["version"]?.intValue == 2,
+      case .object(let plugins)? = json["plugins"]
     else {
       result.problems.append(
         "Couldn't read the plugins Claude Code installed: \(path(file)) is not in a shape Drakar knows."

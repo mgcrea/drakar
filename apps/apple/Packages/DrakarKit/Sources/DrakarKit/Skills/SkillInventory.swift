@@ -65,9 +65,10 @@ public struct SkillRecord: Sendable, Hashable, Identifiable {
   /// Their own skill folders that are there: Codex has no commands.
   public var canShare: Bool { origin.isOwn && kind == .skill && !isMissing }
 
-  /// What the detail shows and Open opens: the SKILL.md, or the command file.
+  /// What the detail shows and Open opens: the SKILL.md, or the command file; nil for a link
+  /// whose target is gone, and a name no folder explains.
   public var file: String? {
-    guard !realPath.isEmpty else { return nil }
+    guard !realPath.isEmpty, !isMissing else { return nil }
     return kind == .command ? realPath : realPath + "/SKILL.md"
   }
 

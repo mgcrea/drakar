@@ -66,6 +66,20 @@ struct ClaudeSkillScanTests {
       ])
   }
 
+  /// A byte order mark is no part of the block; a plain value goes on over indented lines.
+  @Test func readsAMarkAndAFoldedValue() {
+    #expect(SkillFrontmatter.fields("\u{FEFF}---\nname: a\n---\n") == ["name": "a"])
+    #expect(
+      SkillFrontmatter.fields("---\ndescription: One\n  two\n\tthree\nname: x\n---\n")
+        == ["description": "One two three", "name": "x"])
+    #expect(
+      SkillFrontmatter.fields("---\ndescription:\n  Only below.\n---\n")
+        == ["description": "Only below."])
+    #expect(
+      SkillFrontmatter.fields("---\ndescription: \"Quoted\"\n  stray\nname: x\n---\n")
+        == ["description": "Quoted", "name": "x"])
+  }
+
   /// A folder with a SKILL.md is a skill, named by its frontmatter, else by the folder; a
   /// folder without one, and a hidden one, are not.
   @Test func readsTheAccountsSkills() throws {
@@ -228,11 +242,77 @@ struct ClaudeSkillScanTests {
     let tools = root.appending(path: "plugin-cache/tools", directoryHint: .isDirectory)
     try skill(tools.appending(path: "skills/lint"), name: "lint")
     try write(
-      #"{"plugins":{"tools@m":{"scope":"user","installPath":"\#(path(tools))"},"bare@m":[{"scope":"user"}],"odd@m":[42,"x",null],"who@m":[{"scope":"team","installPath":"/nowhere"}]}}"#,
+      #"{"version":2,"plugins":{"tools@m":{"scope":"user","installPath":"\#(path(tools))"},"bare@m":[{"scope":"user"}],"odd@m":[42,"x",null],"who@m":[{"scope":"team","installPath":"/nowhere"}]}}"#,
       to: file)
     let result = ClaudeSkillScan.scan(account: account, project: project)
     #expect(result.skills.map(\.name) == ["review", "tools:lint"])
     #expect(result.problems.isEmpty)
+  }
+
+  /// A link back to its own folder is read once, never walked into.
+  @Test func aLinkLoopIsReadOnce() throws {
+    defer { cleanUp() }
+    try skill(account.appending(path: "skills/review"), name: "review")
+    try link(account.appending(path: "skills/loop"), to: account.appending(path: "skills"))
+    let commands = account.appending(path: "commands")
+    try write("Ship.", to: commands.appending(path: "ship.md"))
+    try link(commands.appending(path: "a/up"), to: commands)
+    let skills = ClaudeSkillScan.scan(account: account, project: nil).skills
+    #expect(skills.map(\.name) == ["review", "ship"])
+  }
+
+  /// A command link whose target is gone is left out: there is nothing to read.
+  @Test func aDanglingCommandLinkIsLeftOut() throws {
+    defer { cleanUp() }
+    let commands = project.appending(path: ".claude/commands")
+    try write("Ship.", to: commands.appending(path: "ship.md"))
+    try link(commands.appending(path: "gone.md"), to: root.appending(path: "nowhere.md"))
+    let skills = ClaudeSkillScan.scan(account: account, project: project).skills
+    #expect(skills.map(\.name) == ["ship"])
+  }
+
+  /// A plugins file of another version, or one that can't be read, is a problem, and its
+  /// plugins are not guessed at.
+  @Test func aPluginsFileOfAnotherVersionOrUnreadableIsAProblem() throws {
+    defer { cleanUp() }
+    let tools = root.appending(path: "plugin-cache/tools", directoryHint: .isDirectory)
+    try skill(tools.appending(path: "skills/lint"), name: "lint")
+    let file = account.appending(path: "plugins/installed_plugins.json")
+    let entry = #""tools@m":[{"scope":"user","installPath":"\#(path(tools))"}]"#
+    try write(#"{"version":1,"plugins":{\#(entry)}}"#, to: file)
+    var result = ClaudeSkillScan.scan(account: account, project: nil)
+    #expect(result.skills.isEmpty)
+    #expect(result.problems.count == 1)
+    try write(#"{"version":2,"plugins":{\#(entry)}}"#, to: file)
+    try FileManager.default.setAttributes([.posixPermissions: 0], ofItemAtPath: path(file))
+    defer {
+      try? FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: path(file))
+    }
+    result = ClaudeSkillScan.scan(account: account, project: nil)
+    #expect(result.skills.isEmpty)
+    #expect(
+      result.problems == [
+        "Couldn't read the plugins Claude Code installed: \(path(file)) can't be read."
+      ])
+  }
+
+  /// A `settings.json` Drakar can't read turns no plugin off.
+  @Test func aBadSettingsFileLeavesPluginsOn() throws {
+    defer { cleanUp() }
+    let tools = root.appending(path: "plugin-cache/tools", directoryHint: .isDirectory)
+    try skill(tools.appending(path: "skills/lint"), name: "lint")
+    try write(
+      #"{"version":2,"plugins":{"tools@m":[{"scope":"user","installPath":"\#(path(tools))"}]}}"#,
+      to: account.appending(path: "plugins/installed_plugins.json"))
+    for text in [
+      "not json", #"{"enabledPlugins":["tools@m"]}"#, #"{"enabledPlugins":{"tools@m":"no"}}"#,
+    ] {
+      try write(text, to: account.appending(path: "settings.json"))
+      let result = ClaudeSkillScan.scan(account: account, project: nil)
+      #expect(result.skills.map(\.name) == ["tools:lint"])
+      #expect(result.skills.allSatisfy { !$0.isPluginDisabled })
+      #expect(result.problems.isEmpty)
+    }
   }
 
   /// Codex lists its live skills itself: only its links whose target is gone come from here.

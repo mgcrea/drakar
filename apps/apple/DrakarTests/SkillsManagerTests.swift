@@ -291,7 +291,7 @@ struct SkillsManagerTests {
     try await settle(manager)
     let gone = try #require(manager.records.first { $0.name == "gone" })
     #expect(gone.isMissing)
-    #expect(gone.file != nil)
+    #expect(gone.file == nil)
     #expect(manager.fileToOpen(gone) == nil)
     #expect(manager.itemToReveal(gone).skillPath == link.skillPath)
     let review = try #require(manager.records.first { $0.name == "review" })

@@ -313,10 +313,7 @@ final class SkillsManager {
   func isFromGit(_ record: SkillRecord) -> Bool { places.clone(containing: record.realPath) != nil }
 
   /// The SKILL.md or command file Open opens; nil for a link whose target is gone.
-  func fileToOpen(_ record: SkillRecord) -> URL? {
-    guard !record.isMissing, let file = record.file else { return nil }
-    return URL(filePath: file)
-  }
+  func fileToOpen(_ record: SkillRecord) -> URL? { record.file.map { URL(filePath: $0) } }
 
   /// What Reveal in Finder selects: the first agent's folder, the link itself when it is one.
   func itemToReveal(_ record: SkillRecord) -> URL {
