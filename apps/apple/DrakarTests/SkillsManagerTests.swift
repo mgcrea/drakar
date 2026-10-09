@@ -179,6 +179,7 @@ struct SkillsManagerTests {
     #expect(SkillPath.isLink(shared.skillPath))
     let plan = try #require(manager.deletePlan(for: deploy))
     manager.delete(plan)
+    try await settle(manager)
     #expect(!manager.records.contains { $0.name == "deploy" })
     #expect(FileManager.default.fileExists(atPath: trash.appending(path: "deploy").skillPath))
     #expect(!SkillPath.isLink(shared.skillPath))
@@ -189,6 +190,7 @@ struct SkillsManagerTests {
     defer { cleanUp() }
     let manager = manager(Stubs())
     manager.choose(project: project)
+    try await settle(manager)
     let review = try #require(manager.records.first { $0.name == "review" })
     try skill(home.appending(path: ".agents/skills/review"))
     manager.share(review)
@@ -204,9 +206,25 @@ struct SkillsManagerTests {
     manager.selection = review.id
     #expect(manager.selected?.name == "review")
     try FileManager.default.removeItem(at: account.appending(path: "skills/review"))
+    manager.settleDelay = .milliseconds(10)
     manager.projectFilesChanged()
+    try await settle(manager)
     #expect(manager.selection == nil)
     #expect(manager.selected == nil)
+  }
+
+  /// File events come in bursts: the readings merge into one, and none leaves the flag set.
+  @Test func aBurstOfFileEventsEndsScanning() async throws {
+    defer { cleanUp() }
+    let manager = manager(Stubs())
+    manager.settleDelay = .milliseconds(10)
+    manager.choose(project: project)
+    for _ in 0..<5 { manager.projectFilesChanged() }
+    manager.choose(project: nil)
+    #expect(manager.isScanning)
+    try await settle(manager)
+    #expect(!manager.isScanning)
+    #expect(manager.records.map(\.name) == ["review"])
   }
 
   /// The inspector's Manage… and Window › Skills: the window opens on the project asked for,
@@ -226,7 +244,7 @@ struct SkillsManagerTests {
     #expect(opened == ["skills", "skills", "skills"])
   }
 
-  @Test func thePreviewIsTheFirstFourKilobytes() throws {
+  @Test func thePreviewIsTheFirstFourKilobytes() async throws {
     defer { cleanUp() }
     let manager = manager(Stubs())
     let long = account.appending(path: "skills/long")
@@ -234,6 +252,7 @@ struct SkillsManagerTests {
     try Data(("---\nname: long\n---\n" + String(repeating: "x", count: 10_000)).utf8).write(
       to: long.appending(path: "SKILL.md"))
     manager.refresh(load: true)
+    try await settle(manager)
     let record = try #require(manager.records.first { $0.name == "long" })
     #expect(manager.preview(of: record)?.utf8.count == 4096)
   }

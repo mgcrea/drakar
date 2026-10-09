@@ -37,7 +37,9 @@ final class SkillsManager {
   /// Why the last action did nothing, for the alert.
   var failure: String?
   /// A git clone or pull is running.
-  private(set) var isFetching = false
+  var isFetching: Bool { fetches > 0 }
+  /// The folders are being read again.
+  private(set) var isScanning = false
 
   /// The seams tests replace: the home folder, the account, the open projects, both agents'
   /// lists, the disk's trash, the login shell's environment.
@@ -56,9 +58,19 @@ final class SkillsManager {
     await AgentSession.environment.value
   }
   @ObservationIgnored private var watchers: [FolderWatcher] = []
-  @ObservationIgnored private var observed: (project: Project, id: UUID)?
+  @ObservationIgnored private var observed: (project: WeakProject, id: UUID)?
+  @ObservationIgnored private var scanning: Task<Void, Never>?
+  @ObservationIgnored private var refreshing: Task<Void, Never>?
+  /// Clones and pulls running; `isFetching` while any is.
+  private var fetches = 0
+  /// How long file changes settle before the folders are read again; tests shorten it.
+  @ObservationIgnored var settleDelay: Duration = .milliseconds(250)
   @ObservationIgnored private var isStarted = false
   @ObservationIgnored private var merged: (inputs: Inputs, records: [SkillRecord])?
+
+  private struct WeakProject {
+    weak var project: Project?
+  }
 
   private struct Inputs: Equatable {
     var scan: [ScannedSkill]
@@ -103,7 +115,7 @@ final class SkillsManager {
     scan.problems + (codex.isCodexMissing ? [] : [codex.problem].compactMap { $0 })
   }
 
-  var isLoading: Bool { codex.isLoading || claude.isLoading }
+  var isLoading: Bool { isScanning || codex.isLoading || claude.isLoading }
 
   // MARK: - Choosing the project
 
@@ -160,19 +172,41 @@ final class SkillsManager {
   }
 
   /// A file in the project's skill folders changed; the project reads both lists again itself.
-  func projectFilesChanged() { rescan() }
+  func projectFilesChanged() { rescan(after: settleDelay) }
 
   /// A file in the account's, `~/.agents`'s or `~/.codex`'s skills changed.
   func userFilesChanged() {
-    rescan()
-    codex.refreshIfLoaded()
-    claude.refreshIfLoaded()
+    rescan(after: settleDelay)
+    refreshing?.cancel()
+    let delay = settleDelay
+    refreshing = Task { [weak self] in
+      try? await Task.sleep(for: delay)
+      guard !Task.isCancelled, let self else { return }
+      codex.refreshIfLoaded()
+      claude.refreshIfLoaded()
+    }
   }
 
-  private func rescan() {
-    scan = ClaudeSkillScan.scan(
-      account: account.directory, project: project, codexFolders: places.codexFolders)
-    if let selection, !records.contains(where: { $0.id == selection }) { self.selection = nil }
+  /// Reads the folders off the main actor, after `delay` when file changes are still coming; a
+  /// newer reading replaces one still waiting or running.
+  private func rescan(after delay: Duration = .zero) {
+    scanning?.cancel()
+    let account = account.directory
+    let project = project
+    let codexFolders = places.codexFolders
+    isScanning = true
+    scanning = Task { [weak self] in
+      if delay > .zero { try? await Task.sleep(for: delay) }
+      guard !Task.isCancelled else { return }
+      let result = await Task.detached(priority: .userInitiated) {
+        ClaudeSkillScan.scan(account: account, project: project, codexFolders: codexFolders)
+      }.value
+      // A newer reading has taken over when this one is cancelled, and clears the flag itself.
+      guard !Task.isCancelled, let self else { return }
+      scan = result
+      isScanning = false
+      if let selection, !records.contains(where: { $0.id == selection }) { self.selection = nil }
+    }
   }
 
   private func watch() {
@@ -185,14 +219,17 @@ final class SkillsManager {
       FolderWatcher(folder: $0) { [weak self] _ in self?.userFilesChanged() }
     }
     if let project, let window = projectAt(project) {
-      observed = (window, window.observeSkillFiles { [weak self] in self?.projectFilesChanged() })
+      observed = (
+        WeakProject(project: window),
+        window.observeSkillFiles { [weak self] in self?.projectFilesChanged() }
+      )
     }
   }
 
   private func unwatch() {
     for watcher in watchers { watcher.stop() }
     watchers = []
-    if let observed { observed.project.stopObservingSkillFiles(observed.id) }
+    if let observed { observed.project.project?.stopObservingSkillFiles(observed.id) }
     observed = nil
   }
 
@@ -221,21 +258,21 @@ final class SkillsManager {
 
   /// Clones or pulls `address`; the skills its clone offers.
   func fetch(_ address: String) async throws -> [URL] {
-    isFetching = true
-    defer { isFetching = false }
+    fetches += 1
+    defer { fetches -= 1 }
     let folder = try await sources.fetch(address)
     return SkillFolderSearch.skills(in: folder, depth: 4)
   }
 
   /// Update: pulls the clone `record` came from.
   func update(_ record: SkillRecord) async {
-    isFetching = true
+    fetches += 1
     do {
       try await sources.update(record)
     } catch {
       failure = error.localizedDescription
     }
-    isFetching = false
+    fetches -= 1
     afterAction()
   }
 
