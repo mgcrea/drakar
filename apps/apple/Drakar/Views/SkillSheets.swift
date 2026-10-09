@@ -27,6 +27,8 @@ struct InstallSheet: View {
   @State private var forCodex = true
   @State private var method: InstallMethod = .link
   @State private var note: String?
+  /// A fetch this sheet started is running: set at once, before the manager's count rises.
+  @State private var isFetching = false
 
   private var isGit: Bool {
     if case .git = request.source { true } else { false }
@@ -34,7 +36,10 @@ struct InstallSheet: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 14) {
-      Text(isGit ? "Install from Git" : "Install from Folder").font(.headline)
+      Group {
+        if isGit { Text("Install from Git") } else { Text("Install from Folder") }
+      }
+      .font(.headline)
       if isGit {
         HStack {
           TextField(
@@ -44,7 +49,7 @@ struct InstallSheet: View {
           .textFieldStyle(.roundedBorder)
           .onSubmit(fetch)
           .accessibilityIdentifier("skills.git.url")
-          if manager.isFetching {
+          if isFetching || manager.isFetching {
             ProgressView().controlSize(.small)
           } else {
             Button("Fetch", action: fetch)
@@ -101,7 +106,7 @@ struct InstallSheet: View {
           dismiss()
         }
         .keyboardShortcut(.defaultAction)
-        .disabled(picked.isEmpty || agents.isEmpty)
+        .disabled(picked.isEmpty || agents.isEmpty || isFetching || manager.isFetching)
         .accessibilityIdentifier("skills.install.confirm")
       }
     }
@@ -113,6 +118,8 @@ struct InstallSheet: View {
         picked = Set(folders)
       }
     }
+    // The project closed: there is no project to install into any more.
+    .onChange(of: manager.project) { if manager.project == nil { place = .user } }
   }
 
   private var agents: [SkillAgent] {
@@ -125,9 +132,15 @@ struct InstallSheet: View {
       set: { if $0 { picked.insert(folder) } else { picked.remove(folder) } })
   }
 
+  /// Return in the field too; never a second fetch while one runs.
   private func fetch() {
+    guard !isFetching, !manager.isFetching,
+      !address.trimmingCharacters(in: .whitespaces).isEmpty
+    else { return }
     note = nil
+    isFetching = true
     Task {
+      defer { isFetching = false }
       do {
         let skills = try await manager.fetch(address)
         found = skills

@@ -60,6 +60,22 @@ struct SkillsWindowTests {
     #expect(SkillText.notes(of: record).contains("Turned off for Codex"))
   }
 
+  /// Install from Folder…'s panel offers folders, and of the files only a SKILL.md.
+  @Test func thePanelOffersFoldersAndSkillFilesOnly() throws {
+    let folder = FileManager.default.temporaryDirectory.appending(
+      path: "drakar-panel-\(UUID().uuidString)", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: folder) }
+    for name in ["SKILL.md", "README.md"] {
+      try Data("x".utf8).write(to: folder.appending(path: name))
+    }
+    let filter = SkillFileFilter()
+    let panel = NSObject()
+    #expect(filter.panel(panel, shouldEnable: URL(filePath: folder.path(percentEncoded: false))))
+    #expect(filter.panel(panel, shouldEnable: folder.appending(path: "SKILL.md")))
+    #expect(!filter.panel(panel, shouldEnable: folder.appending(path: "README.md")))
+  }
+
   @Test func eachPlaceHasATitle() {
     #expect(
       SkillsPlace.allCases.map(\.title) == [

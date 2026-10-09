@@ -106,6 +106,7 @@ struct SkillsWindow: View {
       .sheet(item: $deleting) { request in DeleteSheet(request: request, manager: manager) }
       // The window keeps its size between openings; SwiftUI does not reopen it at launch.
       .background(WindowReader { $0.setFrameAutosaveName("drakar.skills") })
+      .accessibilityElement(children: .contain)
       .accessibilityIdentifier("skills.window")
   }
 
@@ -158,13 +159,17 @@ struct SkillsWindow: View {
   /// A skill's folder or its SKILL.md, or a folder of skills three levels deep at most.
   private func chooseFolder() {
     let panel = NSOpenPanel()
+    let onlySkillFiles = SkillFileFilter()
+    panel.delegate = onlySkillFiles
     panel.canChooseDirectories = true
     panel.canChooseFiles = true
     panel.allowsMultipleSelection = false
     panel.prompt = String(localized: "Choose")
     panel.message = String(
       localized: "Choose a skill's folder or its SKILL.md, or a folder of skills.")
-    guard panel.runModal() == .OK, var folder = panel.url else { return }
+    let answer = panel.runModal()
+    withExtendedLifetime(onlySkillFiles) {}
+    guard answer == .OK, var folder = panel.url else { return }
     var isFolder: ObjCBool = false
     if !FileManager.default.fileExists(atPath: folder.skillPath, isDirectory: &isFolder)
       || !isFolder.boolValue
@@ -181,6 +186,14 @@ struct SkillsWindow: View {
       }
       install = InstallRequest(source: .folder(found))
     }
+  }
+}
+
+/// Install from Folder…'s panel: folders, and of the files only a SKILL.md.
+final class SkillFileFilter: NSObject, NSOpenSavePanelDelegate {
+  func panel(_ sender: Any, shouldEnable url: URL) -> Bool {
+    url.lastPathComponent == "SKILL.md"
+      || (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
   }
 }
 
@@ -290,7 +303,10 @@ private struct SkillsList: View {
           if manager.isLoading {
             ProgressView()
           } else {
-            Text(manager.filter.isEmpty ? "No skills" : "No match").foregroundStyle(.secondary)
+            Group {
+              if manager.filter.isEmpty { Text("No skills") } else { Text("No match") }
+            }
+            .foregroundStyle(.secondary)
           }
         }
       }
@@ -358,6 +374,8 @@ private struct AgentTags: View {
 private struct SkillDetail: View {
   @Bindable var manager: SkillsManager
   let delete: (SkillRecord) -> Void
+  /// The first 4 KB of the shown skill's file.
+  @State private var preview: String?
 
   var body: some View {
     if let record = manager.selected {
@@ -385,7 +403,7 @@ private struct SkillDetail: View {
               .foregroundStyle(.secondary)
           }
           buttons(record)
-          if let preview = manager.preview(of: record) {
+          if let preview {
             Text(preview)
               .font(.body.monospaced())
               .textSelection(.enabled)
@@ -397,6 +415,8 @@ private struct SkillDetail: View {
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
       }
+      // Read once per skill shown, not on every redraw.
+      .task(id: record) { preview = manager.preview(of: record) }
       .accessibilityIdentifier("skills.detail")
     } else {
       Text("Select a skill")
