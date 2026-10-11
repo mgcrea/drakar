@@ -563,10 +563,11 @@ final class AgentSession {
     _ = try? backend.send(.rename(title: title, sessionID: id), to: process)
   }
 
-  /// Stops the turn, and drops what was queued behind it: stop means stop.
-  func interrupt() {
+  /// Stops the turn, and drops what was queued behind it: stop means stop. Esc keeps the
+  /// queue, as the extension's does: what was queued runs next.
+  func interrupt(keepingQueued: Bool = false) {
     guard transcript.isRunning else { return }
-    write(.interrupt(cancelQueued: true))
+    write(.interrupt(cancelQueued: !keepingQueued))
   }
 
   /// Takes back a prompt sent while a turn ran, unless the CLI took it already; it leaves

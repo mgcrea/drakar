@@ -100,7 +100,7 @@ final class CodexBackend: AgentBackend {
           skills: folder.flatMap { CodexSkillStore.shared.skills(for: $0).skills } ?? []),
         uuid: uuid)
     case .answer(let id, let decision): .answer(requestID: id, decision: decision)
-    case .interrupt: .interrupt
+    case .interrupt(let cancelQueued): cancelQueued ? .interrupt : .interruptKeepingQueued
     case .cancelQueued: nil
     case .setMode(let raw): PermissionMode(rawValue: raw).map { .setMode($0) }
     case .setModel(let model): .setModel(model)

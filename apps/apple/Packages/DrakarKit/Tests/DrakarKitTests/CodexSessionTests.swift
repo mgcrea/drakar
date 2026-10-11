@@ -148,6 +148,68 @@ struct CodexSessionTests {
     #expect(end.events.last == .queue(id: "p-2", .dropped(agent: "Codex")))
   }
 
+  /// Esc, as in the extension: the turn stops, and what was queued behind it runs next.
+  @Test func escSendsAnInterruptedTurnsSteersAgainAsTheNextTurn() throws {
+    var session = try running()
+    let steer = try write("turn/steer", in: session.send(.prompt(input: input("two"), uuid: "p-2")))
+    #expect(methods(session.send(.interruptKeepingQueued)) == ["turn/interrupt"])
+    let end = session.receive(
+      json(
+        #"{"method":"turn/completed","params":{"threadId":"t-1","turn":{"id":"turn-1","status":"interrupted"}}}"#
+      ),
+      at: nil)
+    #expect(!end.events.contains(.queue(id: "p-2", .dropped(agent: "Codex"))))
+    let turn = try write("turn/start", in: end)
+    #expect(turn["params"]?["clientUserMessageId"] == .string("p-2"))
+    #expect(turn["params"]?["input"] == input("two"))
+    // The steer's own late refusal does not start it a second time.
+    #expect(fail(&session, steer, "no active turn to steer").writes.isEmpty)
+  }
+
+  /// Several queued: the first starts the turn, the rest are steered into it.
+  @Test func escBeforeTheTurnHasAnIdHoldsWhatWaitedForTheNextTurn() throws {
+    var (session, _) = initialized()
+    let opening = session.send(.prompt(input: input("one"), uuid: "p-1"))
+    let started = answer(&session, try write("thread/start", in: opening), thread)
+    _ = try write("turn/start", in: started)
+    _ = session.send(.prompt(input: input("two"), uuid: "p-2"))
+    _ = session.send(.prompt(input: input("three"), uuid: "p-3"))
+    #expect(session.send(.interruptKeepingQueued).writes.isEmpty)
+    let running = session.receive(
+      json(
+        #"{"method":"turn/started","params":{"threadId":"t-1","turn":{"id":"turn-1","status":"inProgress"}}}"#
+      ),
+      at: nil)
+    #expect(methods(running) == ["turn/interrupt"])
+    #expect(!running.events.contains { if case .queue = $0 { true } else { false } })
+    let end = session.receive(
+      json(
+        #"{"method":"turn/completed","params":{"threadId":"t-1","turn":{"id":"turn-1","status":"interrupted"}}}"#
+      ),
+      at: nil)
+    #expect(
+      try write("turn/start", in: end)["params"]?["clientUserMessageId"] == .string("p-2"))
+    let next = answer(
+      &session, try write("turn/start", in: end), #"{"turn":{"id":"turn-2"}}"#)
+    #expect(
+      try write("turn/steer", in: next)["params"]?["clientUserMessageId"] == .string("p-3"))
+  }
+
+  /// Stop after Esc still means stop.
+  @Test func stopAfterEscDropsTheQueueAfterAll() throws {
+    var session = try running()
+    _ = session.send(.prompt(input: input("two"), uuid: "p-2"))
+    _ = session.send(.interruptKeepingQueued)
+    _ = session.send(.interrupt)
+    let end = session.receive(
+      json(
+        #"{"method":"turn/completed","params":{"threadId":"t-1","turn":{"id":"turn-1","status":"interrupted"}}}"#
+      ),
+      at: nil)
+    #expect(end.events.last == .queue(id: "p-2", .dropped(agent: "Codex")))
+    #expect(methods(end).isEmpty)
+  }
+
   /// Review Focus 1.
   @Test func aSecondPromptWhileTheThreadOpensJoinsTheFirstTurn() throws {
     var (session, _) = initialized()

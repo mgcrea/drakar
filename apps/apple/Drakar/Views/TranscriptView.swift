@@ -532,6 +532,14 @@ struct OpenInEditorAction: Equatable {
 
   func callAsFunction(_ url: URL) { workspace.open(url) }
 
+  /// The file, with the caret on the link's line if it names one.
+  func callAsFunction(_ link: FileLink) {
+    guard let document = workspace.open(URL(filePath: link.path)),
+      let offset = link.offset(in: document.storage.string)
+    else { return }
+    document.select(NSRange(location: offset, length: 0))
+  }
+
   static func == (a: Self, b: Self) -> Bool { a.workspace === b.workspace }
 }
 

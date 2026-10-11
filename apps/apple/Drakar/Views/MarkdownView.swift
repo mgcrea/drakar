@@ -27,7 +27,7 @@ private struct BlockView: View {
         .font(level == 1 ? .title2.bold() : level == 2 ? .title3.bold() : .headline)
         .padding(.top, 4)
     case .paragraph(let text):
-      Text(inline(text))
+      InlineText(text: inline(text))
     case .code(_, let text):
       CodeBlock(text: text)
     case .listItem(let marker, let indent, let text):
@@ -35,12 +35,11 @@ private struct BlockView: View {
         Text(marker ?? "•")
           .monospacedDigit()
           .foregroundStyle(.secondary)
-        Text(inline(text))
+        InlineText(text: inline(text))
       }
       .padding(.leading, CGFloat(indent) * 18)
     case .quote(let text):
-      Text(inline(text))
-        .foregroundStyle(.secondary)
+      InlineText(text: inline(text), isSecondary: true)
         .padding(.leading, 10)
         .overlay(alignment: .leading) {
           Rectangle().fill(.tertiary).frame(width: 3)
@@ -58,5 +57,19 @@ private struct BlockView: View {
     (try? AttributedString(
       markdown: text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
       ?? AttributedString(text)
+  }
+}
+
+/// A `Text`, or a `LinkText` when it holds a link, for the pointing hand over it.
+private struct InlineText: View {
+  let text: AttributedString
+  var isSecondary = false
+
+  var body: some View {
+    if LinkText.holdsLink(text) {
+      LinkText(text: text, isSecondary: isSecondary)
+    } else {
+      Text(text).foregroundStyle(isSecondary ? AnyShapeStyle(.secondary) : AnyShapeStyle(.foreground))
+    }
   }
 }

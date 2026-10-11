@@ -7,13 +7,17 @@ import Foundation
 /// One process, one thread: the thread is started, or resumed with its settings passed again,
 /// on the first prompt, and every turn after runs on it. Nothing is sent before `initialize`
 /// is answered. A prompt sent while a turn runs is steered into it, named by the uuid Codex
-/// echoes when it takes it; one an interrupt cut short is dropped at the turn's end.
+/// echoes when it takes it; one an interrupt cut short is dropped at the turn's end, or, after
+/// `interruptKeepingQueued`, sent again as the next turn.
 public struct CodexSession: Sendable {
   public enum Command: Sendable, Equatable {
     /// `input` as `CodexInput.make` builds it; `uuid` names it in the transcript's queue.
     case prompt(input: JSONValue, uuid: String)
     case answer(requestID: String, decision: PermissionDecision)
+    /// Stop: the turn ends, and what was queued behind it with it.
     case interrupt
+    /// Esc, as in the extension: the turn ends, and what was queued runs next.
+    case interruptKeepingQueued
     /// Picks: Codex takes them with the next turn, and keeps them for the turns after. A
     /// mode's approvals apply at once: what it lets through is accepted here meanwhile.
     case setMode(PermissionMode)
@@ -101,9 +105,13 @@ public struct CodexSession: Sendable {
   /// Stop was pressed while the thread was opening or a turn starting: the turn is
   /// interrupted once it has an id.
   private var interruptsWhenStarted = false
-  /// Steered prompts Codex has not echoed yet, by uuid.
-  private var steered: [String] = []
-  /// Steers already reported dropped: a late answer to them changes nothing.
+  /// The interrupt was Esc's: what was queued starts the next turn once this one ends.
+  private var keepsQueued = false
+  /// Prompts held back from a turn being interrupted, for the next.
+  private var held: [Waiting] = []
+  /// Steered prompts Codex has not echoed yet.
+  private var steered: [Waiting] = []
+  /// Steers already reported dropped or sent again: a late answer to them changes nothing.
   private var reportedDropped: Set<String> = []
   /// Approval requests waiting, by the id the transcript knows them by.
   private var approvals: [String: Approval] = [:]
@@ -150,7 +158,8 @@ public struct CodexSession: Sendable {
       guard let approval = approvals.removeValue(forKey: requestID) else { break }
       step.writes.append(
         CodexRPC.answer(approval.id, result: .object(["decision": CodexPolicy.decision(decision)])))
-    case .interrupt:
+    case .interrupt, .interruptKeepingQueued:
+      keepsQueued = command == .interruptKeepingQueued
       for key in approvals.keys.sorted() {
         if let approval = approvals[key] {
           step.writes.append(
@@ -216,12 +225,22 @@ public struct CodexSession: Sendable {
       step.events += translator.translate(message, at: time)
       if endsTurn {
         // A completed turn leaves in-flight steers to their own answers; one that was cut
-        // short took them down with it.
+        // short took them down with it, unless Esc cut it: they start the next turn.
         let status = params["turn"]?["status"]?.stringValue
+        var again = held
         if status == "interrupted" || status == "failed" {
-          step.events += steered.map { AgentEvent.queue(id: $0, .dropped(agent: "Codex")) }
-          reportedDropped.formUnion(steered)
+          if keepsQueued {
+            again += steered
+          } else {
+            step.events += steered.map { AgentEvent.queue(id: $0.uuid, .dropped(agent: "Codex")) }
+          }
+          reportedDropped.formUnion(steered.map(\.uuid))
           steered = []
+        }
+        keepsQueued = false
+        held = []
+        for prompt in again {
+          if let write = place(prompt) { step.writes.append(write) }
         }
       }
     }
@@ -296,7 +315,7 @@ public struct CodexSession: Sendable {
       step.events += beforeTurnID.map { AgentEvent.queue(id: $0.uuid, .dropped(agent: "Codex")) }
       beforeTurnID = []
     case .steer(let uuid, let input, let steeredTurn):
-      steered.removeAll { $0 == uuid }
+      steered.removeAll { $0.uuid == uuid }
       if reportedDropped.remove(uuid) != nil { break }
       if message.contains("no active turn") {
         // The turn ended between the prompt and the steer: it starts the next one.
@@ -353,7 +372,7 @@ public struct CodexSession: Sendable {
       if params["item"]?["type"] == .string("userMessage"),
         let client = params["item"]?["clientId"]?.stringValue
       {
-        steered.removeAll { $0 == client }
+        steered.removeAll { $0.uuid == client }
       }
     default:
       break
@@ -362,8 +381,8 @@ public struct CodexSession: Sendable {
   }
 
   /// The turn has its id, from `turn/start`'s answer or `turn/started`, whichever comes
-  /// first: what waited for it goes now, or, when Stop was pressed meanwhile, is dropped and
-  /// the turn interrupted.
+  /// first: what waited for it goes now, or, when Stop was pressed meanwhile, is dropped (Esc:
+  /// held for the next turn) and the turn interrupted.
   private mutating func turnStarted(_ id: String, into step: inout Step) {
     guard turn != .running(id) else { return }
     turn = .running(id)
@@ -374,7 +393,11 @@ public struct CodexSession: Sendable {
       return
     }
     interruptsWhenStarted = false
-    step.events += waiting.map { AgentEvent.queue(id: $0.uuid, .dropped(agent: "Codex")) }
+    if keepsQueued {
+      held += waiting
+    } else {
+      step.events += waiting.map { AgentEvent.queue(id: $0.uuid, .dropped(agent: "Codex")) }
+    }
     step.writes.append(interrupt(id))
   }
 
@@ -426,7 +449,7 @@ public struct CodexSession: Sendable {
   }
 
   private mutating func steer(_ prompt: Waiting, into turn: String) -> JSONValue {
-    steered.append(prompt.uuid)
+    steered.append(prompt)
     return calls.make(
       "turn/steer",
       .object([

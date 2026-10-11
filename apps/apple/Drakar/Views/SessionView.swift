@@ -110,7 +110,7 @@ struct SessionView: View {
               item.attachments = []
               item.attachmentNote = nil
             },
-            stop: session.interrupt,
+            stop: { session.interrupt() },
             sessionFolder: session.folder, projectFolder: project.folder,
             takesFocus: project.focusesComposer,
             hint: item.composerHint, focusRequest: item.focusRequest,
@@ -155,6 +155,16 @@ struct SessionView: View {
     .sheet(item: pendingPermission) { pending in
       PermissionSheet(pending: pending) { decision in session.answer(pending, decision) }
     }
+    // Esc anywhere in the session, as in the extension: the turn stops, what was queued
+    // runs next, and the composer takes the keys. A panel or menu with Esc of its own
+    // takes it first.
+    .onKeyPress(.escape) {
+      guard session.transcript.isRunning, !session.isReadOnly else { return .ignored }
+      session.interrupt(keepingQueued: true)
+      item.focusRequest += 1
+      return .handled
+    }
+    .opensFileLinks()
     .environment(\.sessionFolder, session.folder)
     .environment(\.openInEditor, OpenInEditorAction(workspace: workspace))
     // Files and images dropped anywhere on the session go with the next prompt: from the
