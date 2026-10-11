@@ -68,6 +68,7 @@ private struct InlineText: View {
   var body: some View {
     if LinkText.holdsLink(text) {
       LinkText(text: text, isSecondary: isSecondary)
+        .alignmentGuide(.firstTextBaseline) { _ in LinkText.firstBaseline }
     } else {
       Text(text).foregroundStyle(isSecondary ? AnyShapeStyle(.secondary) : AnyShapeStyle(.foreground))
     }

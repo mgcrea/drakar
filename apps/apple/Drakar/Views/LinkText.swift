@@ -13,6 +13,11 @@ struct LinkText: NSViewRepresentable {
     text.runs.contains { $0.link != nil }
   }
 
+  /// The first line's baseline from the top: a representable has none of its own, and a
+  /// list item's marker, aligned on it, would sit a line above the text.
+  static let firstBaseline = NSLayoutManager().defaultBaselineOffset(
+    for: .systemFont(ofSize: NSFont.systemFontSize))
+
   func makeCoordinator() -> Coordinator { Coordinator() }
 
   func makeNSView(context: Context) -> NSTextView {
