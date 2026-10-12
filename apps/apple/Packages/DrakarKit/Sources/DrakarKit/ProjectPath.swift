@@ -24,6 +24,19 @@ public enum ProjectPath {
     return path == root || path.hasPrefix(root + "/")
   }
 
+  /// The first component of `path` below `root`: the subfolder a session runs in. Nil for
+  /// `root` itself, a path outside it, or one below a hidden folder (a worktree in
+  /// `.claude/worktrees` is labelled by its own name).
+  public static func child(of path: String, below root: String) -> String? {
+    let (path, root) = (normalize(path), normalize(root))
+    guard path != root, contains(root, path) else { return nil }
+    let rest = path.dropFirst(root.count).drop { $0 == "/" }
+    guard let first = rest.split(separator: "/").first, !first.hasPrefix(".") else {
+      return nil
+    }
+    return String(first)
+  }
+
   /// The path with its symbolic links resolved, as Claude Code records a `cwd`: a folder
   /// under `/tmp` is `/private/tmp/…` there. `realpath`, because `URL` leaves `/var` alone.
   public static func resolved(_ path: String) -> String {
