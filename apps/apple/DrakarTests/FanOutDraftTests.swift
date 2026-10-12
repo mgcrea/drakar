@@ -164,4 +164,17 @@ struct FanOutDraftTests {
     try await loaded(beta)
     #expect(draft.reachUnchecked)
   }
+
+  /// Opening the picker reads the list it shows: Codex's for a Codex session, which nothing
+  /// else may have read yet.
+  @Test func loadingThePickersListReadsCodexs() async throws {
+    let project = Project(folder: parent)
+    let item = project.newSession(agent: .codex)
+    let codex = project.codexSkills(for: item.session)
+    let deploy = SkillEntry(name: "deploy", path: "/x/deploy/SKILL.md")
+    codex.reader = { _, _ in CodexSkillList.Listing(entries: [deploy]) }
+    project.loadFanOutSkills()
+    try await loaded(codex)
+    #expect(project.fanOutSkills == [deploy])
+  }
 }

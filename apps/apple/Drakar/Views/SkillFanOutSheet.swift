@@ -24,7 +24,7 @@ struct SkillFanOutSheet: View {
     .frame(width: 520, height: 560)
     .onAppear {
       if draft == nil, let skill = request.skill { draft = makeDraft(skill) }
-      if request.skill == nil { project.capabilities.loadIfNeeded() }
+      if request.skill == nil { project.loadFanOutSkills() }
     }
   }
 
@@ -60,6 +60,9 @@ private struct FanOutSkillPicker: View {
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("fanout.skill.\(skill.name)")
+      }
+      .overlay {
+        if skills.isEmpty { Text("No skills yet.").foregroundStyle(.secondary) }
       }
       HStack {
         Spacer()

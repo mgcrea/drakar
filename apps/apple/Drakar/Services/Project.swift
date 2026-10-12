@@ -483,6 +483,14 @@ final class Project {
     return all.filter { !$0.isBuiltin }
   }
 
+  /// Reads the list `fanOutSkills` gives.
+  func loadFanOutSkills() {
+    switch skillsAgent {
+    case .claude: capabilities.loadIfNeeded()
+    case .codex: codexSkills(for: selected?.session).loadIfNeeded()
+    }
+  }
+
   /// Codex's skills for `session`'s folder, the project's own without a session: what its
   /// `/` menu lists and its prompts can name.
   func codexSkills(for session: AgentSession?) -> CodexSkills {
