@@ -160,10 +160,7 @@ final class OpenSessions {
       for item in project.sessions {
         guard let id = item.sessionID else { continue }
         if live.contains(id) {
-          if item.session.isProcessRunning {
-            item.session.stop()
-            Attention.shared.continuedElsewhere(item, in: project)
-          }
+          if item.session.isProcessRunning { project.gaveWay(item) }
           item.session.isReadOnly = true
         } else if item.session.isReadOnly {
           item.session.catchUp()

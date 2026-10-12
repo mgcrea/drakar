@@ -138,4 +138,39 @@ struct ProjectFanOutTests {
     #expect(prompts(items[2]).isEmpty)
     #expect(project.fanOuts.isEmpty)
   }
+
+  /// Ending or removing a running session frees its slot: the next one is sent the skill.
+  @Test func endingOrRemovingARunningOneFreesItsSlot() throws {
+    let project = Project(folder: parent)
+    project.executableOverride = try standIn()
+    defer { project.stopAll() }
+    project.runInSubfolders(check, folders: folders, arguments: "", mode: nil, limit: 1)
+    let items = Array(project.sessions.prefix(3))
+    project.end(items[0])
+    #expect(prompts(items[1]) == ["/check"])
+    project.remove(items[1])
+    #expect(prompts(items[2]) == ["/check"])
+  }
+
+  /// One taken up in another process gives way here, and its slot with it.
+  @Test func oneTakenUpElsewhereFreesItsSlot() throws {
+    let project = Project(folder: parent)
+    project.executableOverride = try standIn()
+    defer { project.stopAll() }
+    project.runInSubfolders(check, folders: folders, arguments: "", mode: nil, limit: 1)
+    let items = Array(project.sessions.prefix(2))
+    project.gaveWay(items[0])
+    #expect(prompts(items[1]) == ["/check"])
+  }
+
+  /// Closing the window stops every session without sending the waiting ones.
+  @Test func stopAllSendsNothingMore() throws {
+    let project = Project(folder: parent)
+    project.executableOverride = try standIn()
+    project.runInSubfolders(check, folders: folders, arguments: "", mode: nil, limit: 1)
+    let items = Array(project.sessions.prefix(3))
+    project.stopAll()
+    #expect(prompts(items[1]).isEmpty)
+    #expect(prompts(items[2]).isEmpty)
+  }
 }

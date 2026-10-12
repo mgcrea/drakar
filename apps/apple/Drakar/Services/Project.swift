@@ -835,14 +835,24 @@ final class Project {
     Attention.shared.refresh()
   }
 
-  /// Stops the process; the row stays, and its next prompt resumes it.
+  /// Stops the process; the row stays, and its next prompt resumes it. A stop asked for
+  /// reports no exit, so its slot in a batch is freed here.
   func end(_ item: ProjectSession) {
     item.session.stop()
+    fanOutFinished(item)
+  }
+
+  /// Another process took `item` up: its process here stops.
+  func gaveWay(_ item: ProjectSession) {
+    item.session.stop()
+    fanOutFinished(item)
+    Attention.shared.continuedElsewhere(item, in: self)
   }
 
   func remove(_ item: ProjectSession) {
     item.session.stop()
     sessions.removeAll { $0.id == item.id }
+    fanOutFinished(item)
     if selectedID == item.id { selectedID = sessions.first?.id }
     if let selected { load(selected) }
     Attention.shared.refresh()
