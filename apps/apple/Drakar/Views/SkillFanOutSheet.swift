@@ -123,7 +123,9 @@ private struct FanOutForm: View {
         }
         Picker("Mode", selection: $draft.mode) {
           Text("Default").tag(PermissionMode?.none)
-          ForEach(modes, id: \.self) { mode in Text(mode.title).tag(Optional(mode)) }
+          ForEach(draft.offeredModes, id: \.self) { mode in
+            Text(mode.title).tag(Optional(mode))
+          }
         }
         TextField("Run at most", text: $draft.limitText, prompt: Text("Unlimited"))
           .accessibilityIdentifier("fanout.limit")
@@ -141,10 +143,6 @@ private struct FanOutForm: View {
       }
     }
     .padding(20)
-  }
-
-  private var modes: [PermissionMode] {
-    PermissionMode.allCases.filter { $0 != .bypass || ClaudeChoice.allowsBypass }
   }
 
   private func note(_ folder: Subfolder) -> String? {

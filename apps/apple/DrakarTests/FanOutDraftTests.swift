@@ -177,4 +177,36 @@ struct FanOutDraftTests {
     try await loaded(codex)
     #expect(project.fanOutSkills == [deploy])
   }
+
+  /// The modes offered are the ones the agent takes: Codex has no Plan or Auto.
+  @Test func theModesFollowTheAgent() {
+    #expect(draft().offeredModes.contains(.plan))
+    let codex = draft(SkillEntry(name: "deploy"), agent: .codex)
+    #expect(!codex.offeredModes.contains(.plan))
+    #expect(!codex.offeredModes.contains(.auto))
+    #expect(codex.offeredModes.prefix(2) == [.ask, .acceptEdits])
+  }
+
+  /// Codex is asked only about the folders shown: a hidden one is asked once shown.
+  @Test func codexIsAskedOnlyAboutShownFolders() async throws {
+    var asked: [String] = []
+    var stores: [URL: CodexSkills] = [:]
+    let draft = FanOutDraft(
+      skill: SkillEntry(name: "deploy"), agent: .codex, parent: parent, account: account,
+      codexSkills: { url in
+        if let store = stores[url] { return store }
+        let store = CodexSkills(folder: url)
+        store.reader = { folder, _ in
+          asked.append(folder.lastPathComponent)
+          return CodexSkillList.Listing()
+        }
+        stores[url] = store
+        return store
+      })
+    for store in stores.values { try await loaded(store) }
+    #expect(asked.sorted() == ["alpha", "beta"])
+    draft.gitOnly = false
+    for store in stores.values { try await loaded(store) }
+    #expect(asked.sorted() == ["alpha", "beta", "notes"])
+  }
 }

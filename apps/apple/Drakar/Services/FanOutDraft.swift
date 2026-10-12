@@ -11,7 +11,9 @@ final class FanOutDraft {
   private(set) var parent: URL
   private(set) var folders: [Subfolder] = []
   /// Only the folders holding a `.git`.
-  var gitOnly = true
+  var gitOnly = true {
+    didSet { askCodex() }
+  }
   var arguments = ""
   /// The mode each session starts in; nil for Settings' default.
   var mode: PermissionMode?
@@ -67,7 +69,15 @@ final class FanOutDraft {
 
   /// Codex could not say which folders hold the skill: every one is taken to.
   var reachUnchecked: Bool {
-    agent == .codex && folders.contains { codexSkills($0.url).problem != nil }
+    agent == .codex && shown.contains { codexSkills($0.url).problem != nil }
+  }
+
+  /// The modes the agent takes, as the composer offers them.
+  var offeredModes: [PermissionMode] {
+    switch agent {
+    case .claude: PermissionMode.allCases.filter { $0 != .bypass || ClaudeChoice.allowsBypass }
+    case .codex: CodexPolicy.offeredModes(allowsBypass: ClaudeChoice.allowsBypass)
+    }
   }
 
   var limit: Int? {
@@ -86,9 +96,14 @@ final class FanOutDraft {
       claudeMissing = SkillReach.claudeMissing(
         name: skill.name, isBuiltin: skill.isBuiltin, account: account, parent: parent,
         folders: folders.map(\.url))
-    case .codex:
-      // One short-lived `codex app-server` per folder, shared with the sessions' `/` menus.
-      for folder in folders { codexSkills(folder.url).loadIfNeeded() }
+    case .codex: askCodex()
     }
+  }
+
+  /// One short-lived `codex app-server` per folder shown, not yet asked: the list is shared
+  /// with the sessions' `/` menus.
+  private func askCodex() {
+    guard agent == .codex else { return }
+    for folder in shown { codexSkills(folder.url).loadIfNeeded() }
   }
 }
