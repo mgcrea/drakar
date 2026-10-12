@@ -95,6 +95,8 @@ final class AgentSession {
   @ObservationIgnored var onTurnEnded: (() -> Void)?
   @ObservationIgnored var onPermissionRequested: ((Transcript.PendingPermission) -> Void)?
   @ObservationIgnored var onStopped: (() -> Void)?
+  /// A start that failed before any process ran (folder gone, no CLI): no stop is reported.
+  @ObservationIgnored var onFailed: (() -> Void)?
   /// The number of waiting permission requests changed: asked, answered, cancelled, or gone
   /// with the process.
   @ObservationIgnored var onPermissionsChanged: (() -> Void)?
@@ -626,6 +628,7 @@ final class AgentSession {
     if let message { phase = .failed(message) }
     pendingPrompt = nil
     notingPermissions { transcript.processExited() }
+    onFailed?()
   }
 
   private func notingPermissions(_ change: () -> Void) {

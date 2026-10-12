@@ -15,6 +15,28 @@ enum SkillTarget {
   case current
 }
 
+/// A skill run in each of several folders: its sessions, and what is left to send them
+/// (docs/superpowers/specs/2026-10-12-skill-fanout-design.md).
+@Observable
+final class FanOutBatch: Identifiable {
+  let id = UUID()
+  let skillName: String
+  let prompt: String
+  var queue: FanOut<UUID>
+
+  init(skillName: String, prompt: String, queue: FanOut<UUID>) {
+    self.skillName = skillName
+    self.prompt = prompt
+    self.queue = queue
+  }
+}
+
+/// The Run in Each Subfolder sheet, on a skill, or with none yet to pick one.
+struct FanOutRequest: Identifiable {
+  let id = UUID()
+  var skill: SkillEntry?
+}
+
 /// One session as a project window holds it: the session, and what the window keeps for it
 /// while another is shown.
 @Observable
@@ -271,6 +293,10 @@ final class Project {
   @ObservationIgnored private(set) var focusesComposer = true
   /// Stands in for the located binary in every session this window makes, in tests.
   @ObservationIgnored var executableOverride: URL?
+  /// The batches still sending or running, one banner each; not saved with the window.
+  private(set) var fanOuts: [FanOutBatch] = []
+  /// The Run in Each Subfolder sheet, while shown.
+  var fanOutRequest: FanOutRequest?
   /// The lists the inspector shows: this folder's under the window's account.
   private(set) var capabilities: Capabilities
   /// What the lists brought since the inspector was last seen.
@@ -420,15 +446,15 @@ final class Project {
     selected.focusRequest += 1
   }
 
-  /// A new session in `folder` (the project's when nil), on top and shown, running `agent`
-  /// (Settings' default when nil). No process until it is prompted.
-  @discardableResult func newSession(agent: AgentKind? = nil, folder: URL? = nil)
-    -> ProjectSession
-  {
+  /// A new session in `folder` (the project's when nil), on top, running `agent` (Settings'
+  /// default when nil), and shown unless `shows` is false. No process until it is prompted.
+  @discardableResult func newSession(
+    agent: AgentKind? = nil, folder: URL? = nil, select shows: Bool = true
+  ) -> ProjectSession {
     let item = make(
       AgentSession(folder: folder ?? self.folder, agent: agent ?? ClaudeChoice.defaultAgent))
     sessions.insert(item, at: 0)
-    select(item)
+    if shows { select(item) }
     return item
   }
 
@@ -504,6 +530,57 @@ final class Project {
     } else {
       takeOver(item)
       item.session.send("/\(skill.name)")
+    }
+  }
+
+  /// `skill` in a new session in each of `folders`, on top in their order, the first shown:
+  /// named after the skill and the folder, in `mode` when given, and sent the skill all at
+  /// once or `limit` at a time.
+  func runInSubfolders(
+    _ skill: SkillEntry, folders: [URL], arguments: String, mode: PermissionMode?, limit: Int?
+  ) {
+    guard !folders.isEmpty else { return }
+    let agent = skillsAgent
+    if agent == .claude { capabilityMarks.skills.remove(skill.name) }
+    // Each goes on top, so the last folder first leaves them in order.
+    let items = Array(
+      folders.reversed().map { folder in
+        let item = newSession(agent: agent, folder: folder, select: false)
+        item.session.rename(to: "/\(skill.name) · \(folder.lastPathComponent)")
+        if let mode { item.session.setMode(mode) }
+        return item
+      }.reversed())
+    if let first = items.first { select(first) }
+    let arguments = arguments.trimmingCharacters(in: .whitespacesAndNewlines)
+    let batch = FanOutBatch(
+      skillName: skill.name,
+      prompt: arguments.isEmpty ? "/\(skill.name)" : "/\(skill.name) \(arguments)",
+      queue: FanOut(ids: items.map(\.id), limit: limit))
+    fanOuts.append(batch)
+    send(batch.queue.start(), in: batch)
+    fanOuts.removeAll { $0.queue.isDone }
+  }
+
+  /// The waiting sessions of `batch` are not sent; those running go on.
+  func cancelFanOut(_ batch: FanOutBatch) {
+    _ = batch.queue.cancel()
+    fanOuts.removeAll { $0.queue.isDone }
+  }
+
+  /// `item` ended a turn or stopped: its slot goes to the next waiting session.
+  private func fanOutFinished(_ item: ProjectSession) {
+    for batch in fanOuts { send(batch.queue.finished(item.id), in: batch) }
+    fanOuts.removeAll { $0.queue.isDone }
+  }
+
+  /// Sends `batch`'s prompt to `ids`; one closed meanwhile passes its slot on.
+  private func send(_ ids: [UUID], in batch: FanOutBatch) {
+    for id in ids {
+      guard let item = sessions.first(where: { $0.id == id }) else {
+        send(batch.queue.finished(id), in: batch)
+        continue
+      }
+      item.session.send(batch.prompt)
     }
   }
 
@@ -801,8 +878,14 @@ final class Project {
     let item = ProjectSession(session: session)
     session.onTurnEnded = { [weak self, weak item] in
       guard let self, let item else { return }
+      self.fanOutFinished(item)
       if item.id != self.selectedID { item.isUnread = true }
       Attention.shared.turnEnded(item, in: self)
+    }
+    // A start that failed reports no stop: its slot in a batch is freed all the same.
+    session.onFailed = { [weak self, weak item] in
+      guard let self, let item else { return }
+      self.fanOutFinished(item)
     }
     session.onPermissionRequested = { [weak self, weak item] _ in
       guard let self, let item else { return }
@@ -812,7 +895,9 @@ final class Project {
     session.onPromptSent = { Attention.shared.refresh() }
     session.onStopped = { [weak self, weak item] in
       Attention.shared.refresh()
-      guard let self, let item, item.id != self.selectedID, item.hasStopped else { return }
+      guard let self, let item else { return }
+      self.fanOutFinished(item)
+      guard item.id != self.selectedID, item.hasStopped else { return }
       item.isUnread = true
     }
     session.onInitialized = { [weak self, weak session] reply in
