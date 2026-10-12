@@ -80,6 +80,8 @@ enum PreferenceKey {
   static let defaultEffort = "drakar.defaultEffort"
   /// The accent colour, as `RRGGBBAA` hex; absent for the catalog's.
   static let accentColor = "drakar.accentColor"
+  /// Whether the editor sits left of the session; off, as the default, it opens to its right.
+  static let editorLeads = "drakar.editorLeads"
 }
 
 /// What Settings picked for the sessions Drakar starts.
@@ -310,6 +312,7 @@ struct GeneralPane: View {
   @AppStorage(PreferenceKey.defaultAgent) private var defaultAgent = AgentKind.claude.rawValue
   @AppStorage(PreferenceKey.codexDefaultMode) private var codexDefaultMode = ""
   @AppStorage(PreferenceKey.allowsBypass) private var allowsBypass = true
+  @AppStorage(PreferenceKey.editorLeads) private var editorLeads = false
   @State private var codexPath: String?
 
   var body: some View {
@@ -341,6 +344,15 @@ struct GeneralPane: View {
       .task {
         let environment = await AgentSession.environment.value
         codexPath = CodexLaunch.locate(path: environment["PATH"])?.path(percentEncoded: false)
+      }
+      Section {
+        Picker("Files open", selection: $editorLeads) {
+          Text("To the right of the session").tag(false)
+          Text("To the left of the session").tag(true)
+        }
+        .accessibilityIdentifier("settings.editorLeads")
+      } footer: {
+        Text("Where the editor sits: files from a link, the file tree or Quick Open.")
       }
       ClaudeSection()
       Section {

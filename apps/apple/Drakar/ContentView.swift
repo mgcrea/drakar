@@ -3,7 +3,7 @@ import DrakarKit
 import SwiftUI
 
 /// A window: the session picker until a project is chosen, then the project's sessions
-/// over its files in the sidebar, the editor, and the selected session.
+/// over its files in the sidebar, the selected session, and the editor beside it.
 struct ContentView: View {
   @Binding var route: WindowRoute?
   @State private var project: Project?
@@ -14,6 +14,8 @@ struct ContentView: View {
   @Environment(\.openWindow) private var openWindow
   /// The editor's share of the window beside the session, kept per window.
   @SceneStorage("drakar.editorFraction") private var editorFraction = 0.5
+  /// The editor left of the session rather than right (Settings).
+  @AppStorage(PreferenceKey.editorLeads) private var editorLeads = false
   /// Whether this window floats above other apps' windows, kept per window.
   @SceneStorage("drakar.keepsOnTop") private var keepsOnTop = false
   /// Whether the skills and MCP servers column is shown, kept per window.
@@ -31,9 +33,12 @@ struct ContentView: View {
             // The split view's own edge is half a point to aim at.
             .background(ColumnSash(edge: .trailing))
         } detail: {
-          SplitPanes(fraction: $editorFraction, showsLeading: !workspace.documents.isEmpty) {
+          SplitPanes(
+            fraction: $editorFraction, showsSide: !workspace.documents.isEmpty,
+            edge: editorLeads ? .leading : .trailing
+          ) {
             EditorView(workspace: workspace)
-          } trailing: {
+          } main: {
             SelectedSessionPane(project: project)
           }
         }
