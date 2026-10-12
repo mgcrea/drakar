@@ -166,6 +166,61 @@ struct CodexSessionTests {
     #expect(fail(&session, steer, "no active turn to steer").writes.isEmpty)
   }
 
+  /// Codex 0.162 takes a steer into the turn at once (captured 2026-10-12): Esc then leaves it
+  /// in the thread unanswered, and an empty turn has the model answer it.
+  @Test func escAfterCodexTookASteerStartsAnEmptyTurn() throws {
+    var session = try running()
+    _ = session.send(.prompt(input: input("two"), uuid: "p-2"))
+    _ = session.receive(
+      json(
+        #"{"method":"item/started","params":{"item":{"type":"userMessage","id":"u2","clientId":"p-2","content":[]},"threadId":"t-1","turnId":"turn-1"}}"#
+      ),
+      at: nil)
+    _ = session.send(.interruptKeepingQueued)
+    let end = session.receive(
+      json(
+        #"{"method":"turn/completed","params":{"threadId":"t-1","turn":{"id":"turn-1","status":"interrupted"}}}"#
+      ),
+      at: nil)
+    let turn = try write("turn/start", in: end)
+    #expect(turn["params"]?["input"] == .array([]))
+  }
+
+  /// Answered already (the model worked after taking it): nothing to start.
+  @Test func escAfterTheModelWorkedOnATakenSteerStartsNothing() throws {
+    var session = try running()
+    _ = session.send(.prompt(input: input("two"), uuid: "p-2"))
+    for line in [
+      #"{"method":"item/started","params":{"item":{"type":"userMessage","id":"u2","clientId":"p-2","content":[]},"threadId":"t-1","turnId":"turn-1"}}"#,
+      #"{"method":"item/started","params":{"item":{"type":"agentMessage","id":"m2","text":""},"threadId":"t-1","turnId":"turn-1"}}"#,
+    ] { _ = session.receive(json(line), at: nil) }
+    _ = session.send(.interruptKeepingQueued)
+    let end = session.receive(
+      json(
+        #"{"method":"turn/completed","params":{"threadId":"t-1","turn":{"id":"turn-1","status":"interrupted"}}}"#
+      ),
+      at: nil)
+    #expect(methods(end).isEmpty)
+  }
+
+  /// Stop leaves a taken steer where it is: the next prompt's turn reads it.
+  @Test func stopAfterCodexTookASteerStartsNothing() throws {
+    var session = try running()
+    _ = session.send(.prompt(input: input("two"), uuid: "p-2"))
+    _ = session.receive(
+      json(
+        #"{"method":"item/started","params":{"item":{"type":"userMessage","id":"u2","clientId":"p-2","content":[]},"threadId":"t-1","turnId":"turn-1"}}"#
+      ),
+      at: nil)
+    _ = session.send(.interrupt)
+    let end = session.receive(
+      json(
+        #"{"method":"turn/completed","params":{"threadId":"t-1","turn":{"id":"turn-1","status":"interrupted"}}}"#
+      ),
+      at: nil)
+    #expect(methods(end).isEmpty)
+  }
+
   /// Several queued: the first starts the turn, the rest are steered into it.
   @Test func escBeforeTheTurnHasAnIdHoldsWhatWaitedForTheNextTurn() throws {
     var (session, _) = initialized()
