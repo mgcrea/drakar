@@ -118,4 +118,50 @@ struct FanOutDraftTests {
     #expect(project.fanOuts.first?.queue.limit == 1)
     #expect(project.sessions.first?.session.startingMode == .plan)
   }
+
+  private func loaded(_ skills: CodexSkills) async throws {
+    for _ in 0..<100 where skills.isLoading { try await Task.sleep(for: .milliseconds(10)) }
+  }
+
+  /// The Session menu's picker lists the inspector's skills for the shown agent, the CLI's
+  /// own left out.
+  @Test func thePickerListsTheShownAgentsSkills() async throws {
+    let project = Project(folder: parent)
+    let item = project.newSession(agent: .codex)
+    let codex = project.codexSkills(for: item.session)
+    let deploy = SkillEntry(name: "deploy", path: "/x/deploy/SKILL.md")
+    codex.reader = { _, _ in
+      CodexSkillList.Listing(entries: [deploy, SkillEntry(name: "init", isBuiltin: true)])
+    }
+    codex.refresh()
+    try await loaded(codex)
+    #expect(project.fanOutSkills == [deploy])
+  }
+
+  /// A Codex skill reaches the folders whose own list has it; a folder Codex could not
+  /// answer for counts as reached, and the sheet says it could not check.
+  @Test func codexReachFollowsEachFolder() async throws {
+    var stores: [URL: CodexSkills] = [:]
+    let deploy = SkillEntry(name: "deploy", path: "/x/deploy/SKILL.md")
+    for (name, has) in [("alpha", true), ("beta", false)] {
+      let folder = parent.appending(path: name, directoryHint: .isDirectory)
+      let store = CodexSkills(folder: folder)
+      store.reader = { _, _ in CodexSkillList.Listing(entries: has ? [deploy] : []) }
+      stores[folder] = store
+    }
+    let draft = FanOutDraft(
+      skill: deploy, agent: .codex, parent: parent, account: account,
+      codexSkills: { url in
+        stores[url] ?? CodexSkills(folder: url)
+      })
+    for store in stores.values { try await loaded(store) }
+    #expect(draft.shown.map { draft.reaches($0) } == [true, false])
+    #expect(draft.chosen.map(\.lastPathComponent) == ["alpha"])
+    #expect(!draft.reachUnchecked)
+    let beta = try #require(stores.values.first { $0.folder.lastPathComponent == "beta" })
+    beta.reader = { _, _ in throw CodexOneShot.Failure(message: "boom") }
+    beta.refresh()
+    try await loaded(beta)
+    #expect(draft.reachUnchecked)
+  }
 }

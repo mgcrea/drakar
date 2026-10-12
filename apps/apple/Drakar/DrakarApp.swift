@@ -148,6 +148,8 @@ private struct SessionCommands: View {
     .keyboardShortcut("n", modifiers: [.command, .control])
     .disabled(project == nil)
     ForkSessionCommand(project: project)
+    Button("Run Skill in Subfolders…") { project?.fanOutRequest = FanOutRequest() }
+      .disabled(project == nil)
     Button("Rename Session…") {
       if let selected = project?.selected { RenameSessionPrompt.run(for: selected) }
     }

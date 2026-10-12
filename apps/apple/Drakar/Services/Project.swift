@@ -472,6 +472,17 @@ final class Project {
   /// session's, Claude Code's when none is shown.
   var skillsAgent: AgentKind { selected?.session.agent ?? .claude }
 
+  /// What Run Skill in Subfolders… offers: the inspector's list for `skillsAgent`, the CLI's
+  /// own left out.
+  var fanOutSkills: [SkillEntry] {
+    let all: [SkillEntry] =
+      switch skillsAgent {
+      case .claude: capabilities.lists.skills ?? []
+      case .codex: codexSkills(for: selected?.session).skills ?? []
+      }
+    return all.filter { !$0.isBuiltin }
+  }
+
   /// Codex's skills for `session`'s folder, the project's own without a session: what its
   /// `/` menu lists and its prompts can name.
   func codexSkills(for session: AgentSession?) -> CodexSkills {

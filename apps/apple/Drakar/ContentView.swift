@@ -76,6 +76,9 @@ struct ContentView: View {
         .focusedSceneValue(\.closeProject, closeProject)
         .sheet(isPresented: quickOpenShown(workspace)) { QuickOpenView(workspace: workspace) }
         .sheet(isPresented: searchShown(workspace)) { ProjectSearchView(workspace: workspace) }
+        .sheet(item: fanOutRequest(project)) { request in
+          SkillFanOutSheet(project: project, request: request)
+        }
         .onChange(of: appearsActive, initial: true) { _, active in
           if active { workspace.becameActive() }
         }
@@ -156,6 +159,10 @@ struct ContentView: View {
 
   private func quickOpenShown(_ workspace: Workspace) -> Binding<Bool> {
     Binding(get: { workspace.isQuickOpenShown }, set: { workspace.isQuickOpenShown = $0 })
+  }
+
+  private func fanOutRequest(_ project: Project) -> Binding<FanOutRequest?> {
+    Binding(get: { project.fanOutRequest }, set: { project.fanOutRequest = $0 })
   }
 
   private func searchShown(_ workspace: Workspace) -> Binding<Bool> {

@@ -118,6 +118,7 @@ private struct SkillsPane: View {
     Button("Run in Current Session") { project.run(skill, in: .current) }
       .disabled(!project.canRun(in: .current))
     Button("Run in New Session") { project.run(skill, in: .newSession) }
+    Button("Run in Each Subfolder…") { project.fanOutRequest = FanOutRequest(skill: skill) }
     Divider()
     Button("Copy Name") {
       NSPasteboard.general.clearContents()

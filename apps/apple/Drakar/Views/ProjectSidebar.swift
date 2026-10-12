@@ -91,10 +91,16 @@ struct SessionListView: View {
   private var list: some View {
     List {
       Section("This Window") {
+        ForEach(project.fanOuts) { batch in
+          FanOutBanner(batch: batch) { project.cancelFanOut(batch) }
+        }
         ForEach(project.held) { item in
           SessionRow(
             item: item, isSelected: item.id == project.selectedID,
-            windowAccount: AccountStore.shared.windowAccount(for: project.folder)
+            windowAccount: AccountStore.shared.windowAccount(for: project.folder),
+            subfolder: ProjectPath.child(
+              of: item.session.folder.path(percentEncoded: false),
+              below: project.folder.path(percentEncoded: false))
           )
           .pressableRow(isSelected: item.id == project.selectedID) {
             project.select(item)
@@ -305,6 +311,8 @@ struct SessionRow: View {
   let isSelected: Bool
   /// The account new sessions in this window start under.
   let windowAccount: ClaudeAccount
+  /// The project's subfolder it runs in, when not the project's own.
+  var subfolder: String? = nil
 
   var body: some View {
     HStack(alignment: .firstTextBaseline, spacing: 7) {
@@ -366,6 +374,7 @@ struct SessionRow: View {
     if let when = item.lastActivity {
       parts.append(when.formatted(.relative(presentation: .named)))
     }
+    if let subfolder { parts.append(subfolder) }
     if let worktreeName { parts.append(worktreeName) }
     return parts.isEmpty ? nil : parts.joined(separator: " · ")
   }
@@ -375,6 +384,24 @@ struct SessionRow: View {
     let path = item.session.folder.path(percentEncoded: false)
     guard let range = path.range(of: "/.claude/worktrees/") else { return nil }
     return String(path[range.upperBound...].prefix { $0 != "/" })
+  }
+}
+
+/// A skill running in each subfolder: how far it has got, and Cancel for those still waiting.
+private struct FanOutBanner: View {
+  let batch: FanOutBatch
+  let cancel: () -> Void
+
+  var body: some View {
+    HStack {
+      Text("/\(batch.skillName) · \(batch.queue.summary)")
+        .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+      Spacer()
+      if batch.queue.count(.waiting) > 0 {
+        Button("Cancel", action: cancel).buttonStyle(.link).font(.caption)
+      }
+    }
+    .accessibilityIdentifier("sessions.fanout.\(batch.skillName)")
   }
 }
 
