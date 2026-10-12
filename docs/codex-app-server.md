@@ -321,6 +321,13 @@ Codex session's `/` menu and the inspector, and sends a prompt starting `/name` 
   after the final answer had already streamed, it still joined the turn, which made another
   model request and answered both ("ONE TWO"). Sent before a `turn/interrupt`, it was dropped
   with no `userMessage`, no new turn and no notice.
+- **0.162 takes a steer at once** (verified 2026-10-12, 0.162.1): sent while a command ran,
+  its `userMessage` item started and completed right away, before the model's next step. An
+  interrupt then leaves it in the thread unanswered, where 0.160.1 dropped it. A `turn/start`
+  with `input: []` after the interrupt has the model answer it ("QUEUED"), with no second
+  copy of the message; on 0.160.1 the same empty turn is accepted, and the model only
+  remarks on the interruption. Drakar's Esc sends a steer Codex never echoed again as a turn,
+  and follows one it took but nobody answered with that empty turn.
 - **`turn/start` while a turn runs is a steer.** Its response carried the *running* turn's
   id, its prompt joined that turn, and the model answered only the newer prompt (asked for
   GAMMA, then DELTA: it said "DELTA"). Compare the returned turn id with the one running
@@ -732,6 +739,18 @@ What this suggests for a shared event type: an item model with `started` / `delt
 `stream_event` indexes map onto it); turns start and end explicitly in both; approvals and
 questions are requests with an id in both, answered once, each with its own answer shape;
 usage and limits are side channels, not part of a turn's result.
+
+## 0.162.1 (checked 2026-10-12)
+
+The bindings `generate-ts` writes for 0.160.1 and 0.162.1 differ in nothing Drakar reads or
+sends: `thread/prediction/updated` (notification) and `thread/attachmentOwner/list` (request)
+are new; `MessagePhase` adds `partial_answer`; `Turn` and `TurnStartParams` add
+`rootTurnId` (and `parentTurnId` on the start); a collab agent item adds `model` and
+`reasoningEffort`; skill paths are typed `LegacyAppPathString`, still a plain string;
+`CodexErrorInfo` may be any string or object. The same approval and steer scenario, run on
+both with Drakar's request shapes, differs only in when a steer is taken (above, "Prompts
+sent mid-turn"). Tested with the npm package `@openai/codex@0.162.1-darwin-arm64`, signed
+by the same team (`2DC432GLL2`) as the Homebrew cask.
 
 ## Raw captures
 

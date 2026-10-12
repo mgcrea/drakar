@@ -334,8 +334,11 @@ public struct TurnResult: Sendable, Equatable {
   public var terminalReason: String?
 
   /// An interrupt ends the turn as `error_during_execution` with `is_error: true`; it is
-  /// the user's own doing and must not be shown as a failure.
-  public var wasInterrupted: Bool { terminalReason == "aborted_streaming" }
+  /// the user's own doing and must not be shown as a failure. `aborted_streaming` while the
+  /// model wrote, `aborted_tools` while a tool ran: the CLI counts both as aborted.
+  public var wasInterrupted: Bool {
+    terminalReason == "aborted_streaming" || terminalReason == "aborted_tools"
+  }
   /// Why an `error_*` turn failed, such as "Reached maximum number of turns (3)". A failed
   /// `success` (an API error) says it in `text` instead.
   public var errors: [String]

@@ -111,6 +111,10 @@ public struct CodexSession: Sendable {
   private var held: [Waiting] = []
   /// Steered prompts Codex has not echoed yet.
   private var steered: [Waiting] = []
+  /// A steer Codex took into the running turn, and nothing the model did since: an interrupt
+  /// leaves it in the thread unanswered. Codex 0.162 takes a steer at once, 0.160 only at the
+  /// model's next step.
+  private var steerAwaitsAnswer = false
   /// Steers already reported dropped or sent again: a late answer to them changes nothing.
   private var reportedDropped: Set<String> = []
   /// Approval requests waiting, by the id the transcript knows them by.
@@ -231,6 +235,11 @@ public struct CodexSession: Sendable {
         if status == "interrupted" || status == "failed" {
           if keepsQueued {
             again += steered
+            // Taken but never answered: a turn with no input of its own has the model answer
+            // it, where sending it again would say it twice.
+            if again.isEmpty, steerAwaitsAnswer {
+              again.append(Waiting(input: .array([]), uuid: UUID().uuidString.lowercased()))
+            }
           } else {
             step.events += steered.map { AgentEvent.queue(id: $0.uuid, .dropped(agent: "Codex")) }
           }
@@ -238,6 +247,7 @@ public struct CodexSession: Sendable {
           steered = []
         }
         keepsQueued = false
+        steerAwaitsAnswer = false
         held = []
         for prompt in again {
           if let write = place(prompt) { step.writes.append(write) }
@@ -372,7 +382,10 @@ public struct CodexSession: Sendable {
       if params["item"]?["type"] == .string("userMessage"),
         let client = params["item"]?["clientId"]?.stringValue
       {
+        if steered.contains(where: { $0.uuid == client }) { steerAwaitsAnswer = true }
         steered.removeAll { $0.uuid == client }
+      } else {
+        steerAwaitsAnswer = false
       }
     default:
       break
