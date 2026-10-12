@@ -123,4 +123,35 @@ struct QueuedPromptTests {
         == #"{"request":{"subtype":"interrupt"},"request_id":"int-2","type":"control_request"}"#
         + "\n")
   }
+
+  /// Esc, as the extension sends it (no `cancel_queued`): the turn stops, and the prompt
+  /// queued behind it starts the next one.
+  @Test func anInterruptWithoutCancelLetsTheQueuedPromptRun() throws {
+    let esc = "eeeeeeee-5555-4555-8555-555555555555"
+    var transcript = ClaudeFeed()
+    transcript.addPrompt("Sleep for 25 seconds")
+    let messages = try Fixture.interruptKeepsQueue.messages
+    let firstEnd = try #require(messages.firstIndex { if case .result = $0 { true } else { false } })
+    for message in messages[..<firstEnd] { transcript.apply(message) }
+    transcript.queue(QueuedPrompt(uuid: esc, text: "Reply with the single word QUEUED."))
+    for message in messages[firstEnd...].prefix(4) { transcript.apply(message) }
+    #expect(transcript.queuedPrompts.isEmpty)
+    #expect(transcript.entries.last?.kind == .text("QUEUED"))
+    #expect(transcript.turnEnd == .completed)
+  }
+
+  /// Stop's interrupt (`cancel_queued`): the queued prompt is cancelled with the turn.
+  @Test func anInterruptWithCancelDropsTheQueuedPrompt() throws {
+    let stop = "ffffffff-6666-4666-8666-666666666666"
+    var transcript = ClaudeFeed()
+    let messages = try Fixture.interruptKeepsQueue.messages
+    let secondTurn = try #require(
+      messages.lastIndex { if case .commandLifecycle(_, "completed") = $0 { true } else { false } })
+    transcript.addPrompt("Sleep for 25 seconds")
+    transcript.queue(QueuedPrompt(uuid: stop, text: "Reply with the single word DROPPED."))
+    for message in messages[(secondTurn + 1)...] { transcript.apply(message) }
+    #expect(transcript.queuedPrompts.isEmpty)
+    #expect(transcript.turnEnd == .interrupted)
+    #expect(!transcript.entries.contains { $0.kind == .prompt("Reply with the single word DROPPED.") })
+  }
 }

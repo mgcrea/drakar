@@ -174,8 +174,8 @@ struct ClaudeVersionTests {
   @Test func saysWhichSideOfTheTestedRange() throws {
     #expect(ClaudeVersion("2.1.222")?.drift == .older)
     #expect(ClaudeVersion("2.1.284")?.drift == nil)
-    #expect(ClaudeVersion("2.1.288")?.drift == nil)
-    #expect(ClaudeVersion("2.1.289")?.drift == .newer)
+    #expect(ClaudeVersion("2.1.296")?.drift == nil)
+    #expect(ClaudeVersion("2.1.297")?.drift == .newer)
     #expect(ClaudeVersion("3.0.0")?.drift == .newer)
   }
 

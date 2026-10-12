@@ -58,6 +58,11 @@ enum Fixture: String {
   /// `cancel_async_message`: the `command_lifecycle` lines, the first turn's result, then
   /// banana's own turn. Trimmed as the others.
   case queuedPrompts = "queued-prompts"
+  /// Two foreground Bash turns on Claude Code 2.1.296 (2026-10-12, `haiku` 4.5), each with a
+  /// prompt queued while the command ran, then interrupted: first with a plain `interrupt`,
+  /// Esc's (`eeeeeeee-…` starts and is answered "QUEUED"), then with `cancel_queued`, Stop's
+  /// (`ffffffff-…` cancelled). Stream events, thinking and status lines dropped; paths cut.
+  case interruptKeepsQueue = "interrupt-keeps-queue"
   /// The transcript line Claude Code 2.1.288 wrote for a prompt sent with a 64×64 red PNG
   /// and a text document `notes.txt` (2026-10-06): blocks kept as sent, keys trimmed.
   case historyWithAttachments = "history-with-attachments"

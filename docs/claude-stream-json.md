@@ -147,9 +147,18 @@ The CLI answers within milliseconds with `control_response` success
 (`{"still_queued":[]}`), flushes the block it was writing as an `assistant` line, writes
 a user turn whose content is the text `[Request interrupted by user]`, and ends the turn
 with a `result` whose `subtype` is `error_during_execution` and `is_error` true. Only
-`terminal_reason: "aborted_streaming"` says it was an interrupt, not a failure. The
-process stays up and takes the next prompt normally (`terminal_reason: "completed"`).
-Captured as the `interrupt-then-turn` fixture.
+`terminal_reason` says it was an interrupt, not a failure: `aborted_streaming` while the
+model was writing, `aborted_tools` while a tool ran (the note is then `[Request interrupted
+by user for tool use]`). The CLI's own check counts both as aborted; until 2026-10-12 Drakar
+knew only the first, and showed a Stop during a command as a failed turn. The process stays
+up and takes the next prompt normally (`terminal_reason: "completed"`). Captured as the
+`interrupt-then-turn` fixture.
+
+A plain `interrupt` leaves prompts queued behind the turn alone: the CLI starts the first
+once the interrupted turn's `result` is out (`command_lifecycle` `started`). With
+`cancel_queued: true` they are `cancelled` before the result. The extension's Esc and its
+stop button both send the plain one; Drakar's Esc does too, its Stop (⌘.) cancels. Checked
+on 2.1.296 (2026-10-12), captured as the `interrupt-keeps-queue` fixture.
 
 Other control subtypes the extension sends, unverified here:
 `set_max_thinking_tokens`, `rewind_files`,
@@ -257,7 +266,10 @@ suggestions. The extension's three answers, which Drakar's plan panel sends as t
 
 **TodoWrite** is deferred (a `ToolSearch` loads it first) and carries the whole list each
 time: `{todos: [{content, activeForm, status: pending | in_progress | completed}]}`. The
-structured result has `oldTodos` and `newTodos`.
+structured result has `oldTodos` and `newTodos`. It is offered only to older models: the CLI
+(2.1.288 and 2.1.296 alike) lists it, and the `Task*` tools, for a fixed set ending at the
+Claude 4 family, or with `CLAUDE_CODE_ENABLE_TODO_TOOLS`. A Claude 5 session has neither, so
+Drakar's todo card and strip only show for 4.x models.
 
 **Agent** (the Task tool): the model picks the foreground or the background.
 
@@ -439,6 +451,30 @@ does: from when the request behind the newest main-thread message was sent (the 
 tool result before it, else the message's arrival), for an hour if that message wrote any
 hour-long tokens, five minutes if it wrote five-minute ones, the earlier TTL if it only read,
 and unknown if it neither read nor wrote. A compaction makes it cold until a newer message.
+
+## 2.1.296 (checked 2026-10-12)
+
+The same scenarios run on 2.1.288 and 2.1.296 with Drakar's arguments (a tool turn with a
+permission, Esc and Stop with a prompt queued, model and mode changes, context usage, rename,
+a subagent, plan mode) decode alike: no new message type, no field Drakar reads gone. What
+changed is additive and Drakar ignores it:
+
+- New `system` subtypes: `permission_check_status` (`checking` once a tool's permission check
+  has waited about four seconds, then `done`; marked internal) and `file_attachments_missing`
+  (for prompts sent with `file_attachments`, which Drakar does not use).
+- `task_*` and `background_tasks_changed` lines carry a `run_id`. A long foreground Bash
+  command now has `task_started` and `task_notification` lines too (`task_type: local_bash`,
+  `is_backgrounded: false`, `status: stopped` when interrupted); Drakar keeps them under the
+  call and draws them only on a subagent's card.
+- `result` gained `safety_stops`, `first_request_input_tokens` and `request_sent_wall_ms`;
+  stream events carry `api_message_id`; a thinking block says its `thinking_display`.
+- The `haiku` alias now resolves to `claude-haiku-5-5` (2.1.288: `claude-haiku-4-5`), and
+  `set_model` to it switches a session off the models `TodoWrite` is offered to.
+- A standalone `sleep N` in Bash is refused by the CLI ("Blocked: standalone sleep"); the
+  model may also choose to background it. Captures that need a long command use
+  `python3 -c 'import time; time.sleep(N)'` and ask for the foreground.
+- The extension now passes `--permission-prompt-tool=stdio` as one argument; Drakar's two
+  arguments are the same to the CLI.
 
 ## Raw captures
 
