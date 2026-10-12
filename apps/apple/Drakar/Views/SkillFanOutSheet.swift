@@ -31,7 +31,8 @@ struct SkillFanOutSheet: View {
   private func makeDraft(_ skill: SkillEntry) -> FanOutDraft {
     FanOutDraft(
       skill: skill, agent: project.skillsAgent, parent: project.folder,
-      account: AccountStore.shared.windowAccount(for: project.folder).directory)
+      account: AccountStore.shared.windowAccount(for: project.folder).directory,
+      source: project.folder)
   }
 }
 

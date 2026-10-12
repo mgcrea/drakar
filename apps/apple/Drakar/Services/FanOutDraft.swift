@@ -21,6 +21,8 @@ final class FanOutDraft {
   var limitText = ""
 
   @ObservationIgnored private let account: URL
+  /// The project the skill was listed for, which may not be the parent.
+  @ObservationIgnored private let source: URL?
   @ObservationIgnored private let codexSkills: (URL) -> CodexSkills
   /// Where Claude Code would not find the skill, read with the folders.
   private var claudeMissing: Set<URL> = []
@@ -28,13 +30,14 @@ final class FanOutDraft {
   private var overrides: [URL: Bool] = [:]
 
   init(
-    skill: SkillEntry, agent: AgentKind, parent: URL, account: URL,
+    skill: SkillEntry, agent: AgentKind, parent: URL, account: URL, source: URL? = nil,
     codexSkills: @escaping (URL) -> CodexSkills = { CodexSkillStore.shared.skills(for: $0) }
   ) {
     self.skill = skill
     self.agent = agent
     self.parent = parent
     self.account = account
+    self.source = source
     self.codexSkills = codexSkills
     read()
   }
@@ -95,7 +98,7 @@ final class FanOutDraft {
     case .claude:
       claudeMissing = SkillReach.claudeMissing(
         name: skill.name, isBuiltin: skill.isBuiltin, account: account, parent: parent,
-        folders: folders.map(\.url))
+        source: source, folders: folders.map(\.url))
     case .codex: askCodex()
     }
   }

@@ -69,4 +69,16 @@ struct SkillReachTests {
   @Test func anUnknownSkillIsReachableEverywhere() {
     #expect(missing("mystery").isEmpty)
   }
+
+  /// A parent picked with Change… may not hold the project's skill: the project the skill
+  /// came from counts too, so the folders without their own are still marked.
+  @Test func theSkillsOwnProjectCounts() throws {
+    let source = root.appending(path: "drakar", directoryHint: .isDirectory)
+    try skill("deploy", in: source.appending(path: ".claude"))
+    try skill("deploy", in: two.appending(path: ".claude"))
+    let missing = SkillReach.claudeMissing(
+      name: "deploy", isBuiltin: false, account: account, parent: parent, source: source,
+      folders: [one, two])
+    #expect(missing == [one])
+  }
 }

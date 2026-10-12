@@ -5,16 +5,18 @@ import Foundation
 /// `.claude`; not a parent folder's.
 public enum SkillReach {
   /// The folders among `folders` whose sessions would not find `name`. None when it is the
-  /// CLI's own, the account's or a plugin's, or when `parent` does not hold it either: a
-  /// skill from somewhere Drakar doesn't read is taken to be found.
+  /// CLI's own, the account's or a plugin's, or when neither `parent` nor `source` (the
+  /// project the skill was listed for) holds it: a skill from somewhere Drakar doesn't read
+  /// is taken to be found.
   public static func claudeMissing(
-    name: String, isBuiltin: Bool, account: URL, parent: URL, folders: [URL]
+    name: String, isBuiltin: Bool, account: URL, parent: URL, source: URL? = nil,
+    folders: [URL]
   ) -> Set<URL> {
     guard !isBuiltin,
       !ClaudeSkillScan.scan(account: account, project: nil).skills.contains(where: {
         $0.name == name
       }),
-      projectNames(parent).contains(name)
+      ([parent] + (source.map { [$0] } ?? [])).contains(where: { projectNames($0).contains(name) })
     else { return [] }
     return Set(folders.filter { !projectNames($0).contains(name) })
   }
