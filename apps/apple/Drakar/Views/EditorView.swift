@@ -60,6 +60,7 @@ struct EditorView: View {
 private struct TabStrip: View {
   let workspace: Workspace
   let close: (EditorDocument) -> Void
+  @AppStorage(PreferenceKey.editorLeads) private var editorLeads = false
 
   var body: some View {
     ScrollView(.horizontal, showsIndicators: false) {
@@ -74,6 +75,11 @@ private struct TabStrip: View {
     }
     .frame(height: 30)
     .background(.background.secondary)
+    .contextMenu {
+      Button(editorLeads ? "Move Editor to the Right" : "Move Editor to the Left") {
+        editorLeads.toggle()
+      }
+    }
   }
 }
 

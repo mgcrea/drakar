@@ -28,6 +28,7 @@ struct DrakarApp: App {
       CommandGroup(after: .sidebar) {
         FilesCommand()
         InspectorCommand()
+        EditorSideCommand()
       }
       // ⌘P, as in VS Code and Zed: Drakar prints nothing.
       CommandGroup(replacing: .printItem) { QuickOpenCommand() }
@@ -101,6 +102,19 @@ private struct FilesCommand: View {
     }
     .keyboardShortcut("e", modifiers: [.command, .shift])
     .disabled(filesCollapsed == nil)
+  }
+}
+
+/// View › Move Editor to the Left (⌥⌘E): the editor's side of the session, in every window,
+/// as Settings › General › Files open sets it.
+private struct EditorSideCommand: View {
+  @AppStorage(PreferenceKey.editorLeads) private var editorLeads = false
+
+  var body: some View {
+    Button(editorLeads ? "Move Editor to the Right" : "Move Editor to the Left") {
+      editorLeads.toggle()
+    }
+    .keyboardShortcut("e", modifiers: [.command, .option])
   }
 }
 

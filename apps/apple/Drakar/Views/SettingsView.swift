@@ -352,7 +352,9 @@ struct GeneralPane: View {
         }
         .accessibilityIdentifier("settings.editorLeads")
       } footer: {
-        Text("Where the editor sits: files from a link, the file tree or Quick Open.")
+        Text(
+          "Where the editor sits: files from a link, the file tree or Quick Open. View › Move Editor (⌥⌘E) switches it."
+        )
       }
       ClaudeSection()
       Section {
