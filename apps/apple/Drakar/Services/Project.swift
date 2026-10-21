@@ -247,9 +247,14 @@ struct StoredProject: Codable, Equatable {
   var focusedPane: FocusedPane?
   /// How the sidebar sorts; nil for `.opened`, and for a window stored before sorting.
   var sessionOrder: SessionOrder?
+  /// Next After Replying; nil for off.
+  var movesOnAfterReply: Bool?
 
-  /// Nothing worth bringing back: no session, no tab, and no sort chosen.
-  var isEmpty: Bool { sessions.isEmpty && documents?.isEmpty != false && sessionOrder == nil }
+  /// Nothing worth bringing back: no session, no tab, and no sort or switch chosen.
+  var isEmpty: Bool {
+    sessions.isEmpty && documents?.isEmpty != false && sessionOrder == nil
+      && movesOnAfterReply == nil
+  }
 }
 
 /// Each project's `StoredProject`, app-wide in `UserDefaults` by folder. A window's scene
@@ -291,6 +296,8 @@ final class Project {
   var selectedID: ProjectSession.ID?
   /// How the sidebar lists the window's own rows and Elsewhere's.
   var sessionOrder: SessionOrder = .opened
+  /// Next After Replying: a reply to the shown session shows the next one wanting the person.
+  var movesOnAfterReply = false
   /// Per session live elsewhere, the message id of the ask dismissed, kept with the window's
   /// own in `StoredProject.dismissedQuestions`.
   private(set) var dismissedElsewhere: [String: String] = [:]
@@ -330,6 +337,7 @@ final class Project {
       sessions.append(item)
     }
     sessionOrder = stored?.sessionOrder ?? .opened
+    movesOnAfterReply = stored?.movesOnAfterReply ?? false
     let own = Set(sessions.compactMap(\.sessionID))
     dismissedElsewhere = (stored?.dismissedQuestions ?? [:]).filter { !own.contains($0.key) }
     selectedID =
@@ -434,8 +442,9 @@ final class Project {
   func dismissSelected() {
     if let selected, selected.closingAsk != nil {
       dismissAsk(selected)
-    } else if let summary = watchedElsewhere {
+    } else if let summary = watchedElsewhere, let selected {
       dismissAsk(summary)
+      replied(selected)
     }
   }
 
@@ -837,15 +846,16 @@ final class Project {
     }
   }
 
-  /// The next row after the selected one that wants the person, in the list's order (the
-  /// window's own, then those elsewhere): the most urgent level that counts first, then
-  /// unread, wrapping. Never the selected row.
-  func nextNeedingAttention() -> Stop? {
+  /// The next row after the selected one that wants the person, in the list's order as
+  /// sorted (the window's own, then those elsewhere unless `ownRowsOnly`): the most urgent
+  /// level that counts first, then unread, wrapping. Never the selected row.
+  func nextNeedingAttention(ownRowsOnly: Bool = false) -> Stop? {
     let watched = selected.flatMap { $0.isWatching ? $0.sessionID : nil }
-    var rows: [(stop: Stop, level: Urgency?, isUnread: Bool, isSelected: Bool)] = held.map {
+    var rows: [(stop: Stop, level: Urgency?, isUnread: Bool, isSelected: Bool)] = listedHeld.map {
       (.row($0), $0.urgency, $0.isUnread, $0.id == selectedID)
     }
-    for summary in groups.elsewhere where summary.live != nil {
+    let elsewhere = ownRowsOnly ? [] : listedGroups.elsewhere
+    for summary in elsewhere where summary.live != nil {
       rows.append(
         (.elsewhere(summary), urgency(of: summary), false, summary.sessionID == watched))
     }
@@ -855,6 +865,21 @@ final class Project {
       if let row = ordered.first(where: { $0.level == level }) { return row.stop }
     }
     return ordered.first { $0.isUnread }?.stop
+  }
+
+  /// The shown session was answered: with Next After Replying on, the next of the window's
+  /// own rows that wants the person is shown, once what sent the reply has done (a composer
+  /// still clears its draft). Not while the session still wants something.
+  private func replied(_ item: ProjectSession) {
+    guard movesOnAfterReply, item.id == selectedID else { return }
+    Task { [weak self] in
+      guard let self, self.selectedID == item.id, item.urgency == nil,
+        let next = self.nextNeedingAttention(ownRowsOnly: true)?.item
+      else { return }
+      self.select(next)
+      // The row shown already keeps its composer, which only focuses itself on appearing.
+      next.focusRequest += 1
+    }
   }
 
   func show(_ stop: Stop) {
@@ -868,6 +893,7 @@ final class Project {
   func dismissAsk(_ item: ProjectSession) {
     item.dismissAsk()
     Attention.shared.refresh()
+    replied(item)
   }
 
   /// Stops the process; the row stays, and its next prompt resumes it. A stop asked for
@@ -927,7 +953,8 @@ final class Project {
       documents: workspace.documents.isEmpty ? nil : workspace.documents.map(\.path),
       activeDocument: workspace.active?.path,
       focusedPane: workspace.focusedPane,
-      sessionOrder: sessionOrder == .opened ? nil : sessionOrder)
+      sessionOrder: sessionOrder == .opened ? nil : sessionOrder,
+      movesOnAfterReply: movesOnAfterReply ? true : nil)
   }
 
   private func make(_ session: AgentSession) -> ProjectSession {
@@ -950,6 +977,10 @@ final class Project {
     }
     session.onPermissionsChanged = { [weak item] in Attention.shared.permissionsChanged(item) }
     session.onPromptSent = { Attention.shared.refresh() }
+    session.onReplied = { [weak self, weak item] in
+      guard let self, let item else { return }
+      self.replied(item)
+    }
     session.onStopped = { [weak self, weak item] in
       Attention.shared.refresh()
       guard let self, let item else { return }

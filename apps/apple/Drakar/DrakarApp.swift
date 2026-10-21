@@ -159,6 +159,14 @@ private struct SessionCommands: View {
     }
     .keyboardShortcut(.downArrow, modifiers: [.command, .option])
     .disabled(project?.nextNeedingAttention() == nil)
+    // A reply to the shown session goes on to the next one wanting the person.
+    Toggle(
+      "Next After Replying",
+      isOn: Binding(
+        get: { project?.movesOnAfterReply ?? false },
+        set: { project?.movesOnAfterReply = $0 })
+    )
+    .disabled(project == nil)
     Button("Dismiss") { project?.dismissSelected() }
       .keyboardShortcut("d", modifiers: [.command, .option])
       .disabled(project?.canDismissSelected != true)

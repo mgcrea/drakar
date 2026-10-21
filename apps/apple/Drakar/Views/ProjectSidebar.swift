@@ -77,6 +77,8 @@ struct SessionListView: View {
           }
         }
         .pickerStyle(.inline)
+        Divider()
+        Toggle("Next After Replying", isOn: Bindable(project).movesOnAfterReply)
       } label: {
         Image(systemName: "arrow.up.arrow.down")
       }

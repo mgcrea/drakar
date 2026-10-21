@@ -102,6 +102,9 @@ final class AgentSession {
   @ObservationIgnored var onPermissionsChanged: (() -> Void)?
   /// A prompt was sent: whatever the last turn asked is answered.
   @ObservationIgnored var onPromptSent: (() -> Void)?
+  /// The person answered what the session waited on: a permission request, or the turn
+  /// that ended with a prompt. Not a session's first prompt, nor one queued mid-turn.
+  @ObservationIgnored var onReplied: (() -> Void)?
   /// The process answered `initialize`: its reply, which lists the skills.
   @ObservationIgnored var onInitialized: ((JSONValue?) -> Void)?
   /// The commands and skills changed mid-session: the new list, as `initialize` lists them.
@@ -395,8 +398,10 @@ final class AgentSession {
       write(command)
       return
     }
+    let answersTurn = !transcript.entries.isEmpty
     transcript.addPrompt(text, context: label, attachments: previews)
     onPromptSent?()
+    if answersTurn { onReplied?() }
     if isLoadingHistory { promptsDuringLoad.append((text, label, previews)) }
     if process == nil {
       pendingPrompt = command
@@ -502,6 +507,7 @@ final class AgentSession {
   func answer(_ pending: Transcript.PendingPermission, _ decision: PermissionDecision) {
     write(.answer(requestID: pending.requestID, decision: decision))
     notingPermissions { transcript.resolvePermission(requestID: pending.requestID) }
+    onReplied?()
   }
 
   /// The question the conversation ends on, which its process ended before it was answered
