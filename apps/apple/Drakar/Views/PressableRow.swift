@@ -33,7 +33,8 @@ struct PressableRowChrome: ViewModifier {
           .fill(
             isPressed
               ? AnyShapeStyle(.quaternary)
-              : isMarked ? AnyShapeStyle(Theme.accent.opacity(0.15)) : AnyShapeStyle(.clear))
+              : isMarked ? AnyShapeStyle(Theme.accent.opacity(0.15)) : AnyShapeStyle(.clear)
+          )
           .strokeBorder(isSelected ? Theme.accent : .clear, lineWidth: 1.5)
           .padding(.horizontal, 8)
       )
