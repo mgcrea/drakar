@@ -1,12 +1,30 @@
 import DrakarKit
 import SwiftUI
 
+/// The question waiting on the person, answered in its card in the transcript: which call it
+/// is, and how the answers go back. Equal by call, as `OpenInEditorAction` is by workspace,
+/// so the closures made on each update do not redraw the card.
+struct AskedQuestion: Equatable {
+  let callID: String
+  let answer: ([String: String]) -> Void
+  let skip: () -> Void
+
+  static func == (a: Self, b: Self) -> Bool { a.callID == b.callID }
+}
+
+extension EnvironmentValues {
+  /// Set by the session; nil while no question waits, or where it cannot be answered.
+  @Entry var askedQuestion: AskedQuestion?
+}
+
 /// An `AskUserQuestion` in the transcript, as the extension draws it: what became of it, and
 /// each question with the options it offered, the picked ones marked and the rest faded.
-/// Open from the start, since what was answered is the point of it.
+/// Open from the start, since what was answered is the point of it. While it waits, the card
+/// is where it is answered: the question is read where it was asked, after what led to it.
 struct QuestionCallView: View {
   let call: Transcript.ToolCall
   @State private var isExpanded = true
+  @Environment(\.askedQuestion) private var asked
 
   private var questions: [UserQuestion] { UserQuestion.list(call.input) }
   private var outcome: Transcript.QuestionOutcome { call.questionOutcome ?? .other }
@@ -17,6 +35,18 @@ struct QuestionCallView: View {
   }
 
   var body: some View {
+    if let asked, asked.callID == call.id {
+      // Not collapsible: folded away, an unanswered question would stall the turn unseen.
+      QuestionPanel(questions: questions, answer: asked.answer, skip: asked.skip)
+        .id(call.id)
+        .background(.background.secondary, in: RoundedRectangle(cornerRadius: 8))
+        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(.tint.opacity(0.6)))
+    } else {
+      record
+    }
+  }
+
+  private var record: some View {
     DisclosureGroup(isExpanded: $isExpanded) {
       VStack(alignment: .leading, spacing: 12) {
         if case .declined(let reason?) = outcome {
