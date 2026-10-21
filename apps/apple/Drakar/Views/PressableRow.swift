@@ -2,9 +2,11 @@ import SwiftUI
 
 extension View {
   /// A row that acts on a click released over it, tinted while the mouse is down on it: the
-  /// sidebar's session rows and the inspector's skills.
-  func pressableRow(isSelected: Bool = false, action: @escaping () -> Void) -> some View {
-    modifier(PressableRowChrome(isSelected: isSelected, action: action))
+  /// sidebar's session rows and the inspector's skills. A marked row is faintly filled.
+  func pressableRow(
+    isSelected: Bool = false, isMarked: Bool = false, action: @escaping () -> Void
+  ) -> some View {
+    modifier(PressableRowChrome(isSelected: isSelected, isMarked: isMarked, action: action))
   }
 }
 
@@ -12,6 +14,7 @@ extension View {
 /// faint fill while the row is pressed, gone once the pointer leaves it as a button's is.
 struct PressableRowChrome: ViewModifier {
   let isSelected: Bool
+  var isMarked = false
   let action: () -> Void
   @GestureState private var isPressed = false
   @State private var size = CGSize.zero
@@ -27,11 +30,14 @@ struct PressableRowChrome: ViewModifier {
       )
       .listRowBackground(
         RoundedRectangle(cornerRadius: 5)
-          .fill(isPressed ? AnyShapeStyle(.quaternary) : AnyShapeStyle(.clear))
+          .fill(
+            isPressed
+              ? AnyShapeStyle(.quaternary)
+              : isMarked ? AnyShapeStyle(Theme.accent.opacity(0.15)) : AnyShapeStyle(.clear))
           .strokeBorder(isSelected ? Theme.accent : .clear, lineWidth: 1.5)
           .padding(.horizontal, 8)
       )
-      .accessibilityAddTraits(isSelected ? .isSelected : [])
+      .accessibilityAddTraits(isSelected || isMarked ? .isSelected : [])
   }
 
   private func contains(_ point: CGPoint) -> Bool {

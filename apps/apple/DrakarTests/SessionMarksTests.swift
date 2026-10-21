@@ -141,4 +141,20 @@ struct SessionMarksTests {
     #expect(project.sessions.map(\.id) == [items[2].id])
     #expect(project.marked.isEmpty)
   }
+
+  /// The composer's chip: how many the prompt goes to, then what the last one did; none for
+  /// fewer than two.
+  @Test func theChipSaysWhereThePromptGoes() async throws {
+    let (project, items) = try project(3)
+    defer { project.stopAll() }
+    #expect(project.broadcastLabel == nil)
+    project.markAll()
+    #expect(project.broadcastLabel == "To 3 sessions")
+    items[2].session.isReadOnly = true
+    project.broadcast("hi", context: [], attachments: [])
+    #expect(project.broadcastLabel == "Sent to 2 · 1 skipped")
+    items[2].session.isReadOnly = false
+    project.click(items[0], .toggle)
+    #expect(project.broadcastLabel == "To 2 sessions")
+  }
 }

@@ -666,6 +666,16 @@ final class Project {
   /// The composer sends to the marked rows rather than the shown one.
   var sendsToMarked: Bool { markedSessions.count >= 2 }
 
+  /// The composer's chip: where the prompt goes, or what the last one there did.
+  var broadcastLabel: String? {
+    guard sendsToMarked else { return nil }
+    guard let last = lastBroadcast else {
+      return String(localized: "To \(markedSessions.count) sessions")
+    }
+    let sent = String(localized: "Sent to \(last.sent)")
+    return last.skipped == 0 ? sent : sent + " · " + String(localized: "\(last.skipped) skipped")
+  }
+
   /// The prompt to each marked session: now where it could take one, queued in a turn that
   /// runs, skipped where it can't (open elsewhere, moving, starting). The marks stay.
   @discardableResult func broadcast(
