@@ -23,8 +23,9 @@ struct ProjectSidebar: View {
   }
 }
 
-/// The sessions this window holds. Rows keep their order whatever their state does, so a
-/// row never moves under the pointer.
+/// The sessions this window holds. Rows keep the order they came in unless the window sorts
+/// them (`SessionOrder`), when a row moves as soon as its state does: what wants the person
+/// rises.
 struct SessionListView: View {
   let project: Project
   @Binding var isCollapsed: Bool
@@ -41,7 +42,7 @@ struct SessionListView: View {
   @FocusState private var isFocused: Bool
   private var monitor: SessionMonitor { .shared }
 
-  private var groups: ProjectGroups { project.groups }
+  private var groups: ProjectGroups { project.listedGroups }
 
   var body: some View {
     let _ = (picks, settingsAccount)
@@ -69,6 +70,22 @@ struct SessionListView: View {
           .accessibilityLabel("\(project.waitingCount) waiting for you")
           .accessibilityIdentifier("sessions.waiting")
       }
+      Menu {
+        Picker("Sort Sessions", selection: Bindable(project).sessionOrder) {
+          ForEach(SessionOrder.allCases) { order in
+            Text(order.label).tag(order)
+          }
+        }
+        .pickerStyle(.inline)
+      } label: {
+        Image(systemName: "arrow.up.arrow.down")
+      }
+      .menuStyle(.borderlessButton)
+      .menuIndicator(.hidden)
+      .fixedSize()
+      .help("Sort sessions: \(project.sessionOrder.label)")
+      .accessibilityLabel("Sort Sessions")
+      .accessibilityIdentifier("sessions.order")
       Button("New Session", systemImage: "plus") {
         // ⌥-click starts the agent that is not the default.
         let other = NSEvent.modifierFlags.contains(.option)
@@ -89,12 +106,14 @@ struct SessionListView: View {
   }
 
   private var list: some View {
-    List {
+    let held = project.listedHeld
+    let groups = groups
+    return List {
       Section("This Window") {
         ForEach(project.fanOuts) { batch in
           FanOutBanner(batch: batch) { project.cancelFanOut(batch) }
         }
-        ForEach(project.held) { item in
+        ForEach(held) { item in
           SessionRow(
             item: item, isSelected: item.id == project.selectedID,
             windowAccount: AccountStore.shared.windowAccount(for: project.folder),
@@ -111,7 +130,6 @@ struct SessionListView: View {
           .accessibilityIdentifier("sessions.attached.\(item.sessionID ?? item.id.uuidString)")
         }
       }
-      let groups = groups
       if !groups.elsewhere.isEmpty {
         Section("Elsewhere") {
           ForEach(groups.elsewhere) { summary in
@@ -145,6 +163,9 @@ struct SessionListView: View {
       }
     }
     .listStyle(.sidebar)
+    // A row that moves slides to its place, where the eye can follow it.
+    .animation(.snappy, value: held.map(\.id))
+    .animation(.snappy, value: groups.elsewhere.map(\.sessionID))
     .focusable()
     .focused($isFocused)
     .focusEffectDisabled()
@@ -163,7 +184,7 @@ struct SessionListView: View {
   /// this one.
   private func move(_ step: Int) -> KeyPress.Result {
     let groups = groups
-    var rows: [(isSelected: Bool, show: () -> Void)] = project.held.map { item in
+    var rows: [(isSelected: Bool, show: () -> Void)] = project.listedHeld.map { item in
       (item.id == project.selectedID, { project.select(item, focusingComposer: false) })
     }
     for summary in groups.elsewhere where OpenSessions.shared.locate(summary.sessionID) == nil {
@@ -433,17 +454,7 @@ struct SummaryRow: View {
 
   private var state: RowState {
     guard host != nil else { return .idle }
-    // Another window's own child has no registry entry: its row knows.
-    if let (_, item) = OpenSessions.shared.locate(summary.sessionID) {
-      let state = RowState(item)
-      return state == .elsewhere ? .idle : state
-    }
-    if let urgency { return RowState(urgency) }
-    return switch summary.live?.status {
-    case "busy": summary.awaitsToolResult ? .runningTool : .working
-    case "waiting": .waiting
-    default: .idle
-    }
+    return RowState(elsewhere: summary, urgency: urgency)
   }
 
   private var detail: String {
@@ -503,6 +514,38 @@ enum RowState {
       self = .ended
     } else {
       self = .notStarted
+    }
+  }
+
+  /// What a session live elsewhere is doing, `urgency` being how much it wants the person.
+  init(elsewhere summary: SessionSummary, urgency: Urgency?) {
+    // Another window's own child has no registry entry: its row knows.
+    if let (_, item) = OpenSessions.shared.locate(summary.sessionID) {
+      let state = RowState(item)
+      self = state == .elsewhere ? .idle : state
+    } else if let urgency {
+      self.init(urgency)
+    } else {
+      self =
+        switch summary.live?.status {
+        case "busy": summary.awaitsToolResult ? .runningTool : .working
+        case "waiting": .waiting
+        default: .idle
+        }
+    }
+  }
+
+  /// How much a row in this state needs the person, most first: Needs Me First's levels.
+  var need: Int {
+    switch self {
+    case .waiting: 0
+    case .choosing: 1
+    case .asked: 2
+    case .offered: 3
+    case .idle: 4
+    case .stopped: 5
+    case .working, .runningTool: 6
+    case .notStarted, .ended, .elsewhere: 7
     }
   }
 
