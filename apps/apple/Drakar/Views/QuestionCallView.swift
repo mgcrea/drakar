@@ -2,14 +2,18 @@ import DrakarKit
 import SwiftUI
 
 /// The question waiting on the person, answered in its card in the transcript: which call it
-/// is, and how the answers go back. Equal by call, as `OpenInEditorAction` is by workspace,
-/// so the closures made on each update do not redraw the card.
+/// is, and how the answers go back. Equal by call and focus request, as `OpenInEditorAction`
+/// is by workspace, so the closures made on each update do not redraw the card.
 struct AskedQuestion: Equatable {
   let callID: String
+  /// Bumped by the session to give the card the keys: see `QuestionPanel.focusRequest`.
+  let focusRequest: Int
   let answer: ([String: String]) -> Void
   let skip: () -> Void
 
-  static func == (a: Self, b: Self) -> Bool { a.callID == b.callID }
+  static func == (a: Self, b: Self) -> Bool {
+    a.callID == b.callID && a.focusRequest == b.focusRequest
+  }
 }
 
 extension EnvironmentValues {
@@ -37,10 +41,13 @@ struct QuestionCallView: View {
   var body: some View {
     if let asked, asked.callID == call.id {
       // Not collapsible: folded away, an unanswered question would stall the turn unseen.
-      QuestionPanel(questions: questions, answer: asked.answer, skip: asked.skip)
-        .id(call.id)
-        .background(.background.secondary, in: RoundedRectangle(cornerRadius: 8))
-        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(.tint.opacity(0.6)))
+      QuestionPanel(
+        questions: questions, answer: asked.answer, skip: asked.skip,
+        focusRequest: asked.focusRequest
+      )
+      .id(call.id)
+      .background(.background.secondary, in: RoundedRectangle(cornerRadius: 8))
+      .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(.tint.opacity(0.6)))
     } else {
       record
     }

@@ -28,6 +28,11 @@ struct SessionView: View {
       cancelQueued: session.features.cancelsQueued ? { session.cancelQueued($0) } : nil
     )
     .environment(\.askedQuestion, askedQuestion)
+    // The card takes the keys when its question arrives or the session is shown, asked from
+    // here: run after the update that made the card, the request reaches a card already up.
+    .task(id: askedQuestion?.callID) {
+      if askedQuestion != nil { item.questionFocusRequest += 1 }
+    }
     // Below the transcript's end, not after it: the history scrolls on under the composer
     // to the window's edge, and the scroll view keeps room for it as it grows. An inset and
     // not a `safeAreaBar`, whose scroll edge effect on the Mac is a band across the pane,
@@ -269,7 +274,7 @@ struct SessionView: View {
       guard let id = choice.request.toolUseID, session.transcript.contains(entryID: id)
       else { return nil }
       return AskedQuestion(
-        callID: id,
+        callID: id, focusRequest: item.questionFocusRequest,
         answer: { answers in
           session.answer(
             choice,
@@ -279,7 +284,7 @@ struct SessionView: View {
     }
     guard let earlier = session.earlierQuestion else { return nil }
     return AskedQuestion(
-      callID: earlier.id,
+      callID: earlier.id, focusRequest: item.questionFocusRequest,
       answer: { answers in
         project.takeOver(item)
         session.answerEarlierQuestion(answers)
