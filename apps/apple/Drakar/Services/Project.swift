@@ -31,6 +31,12 @@ final class FanOutBatch: Identifiable {
   }
 }
 
+/// What one prompt to the marked sessions did: how many took it, and how many could not.
+struct BroadcastResult: Equatable {
+  var sent: Int
+  var skipped: Int
+}
+
 /// The Run in Each Subfolder sheet, on a skill, or with none yet to pick one.
 struct FanOutRequest: Identifiable {
   let id = UUID()
@@ -310,6 +316,12 @@ final class Project {
   private(set) var fanOuts: [FanOutBatch] = []
   /// The Run in Each Subfolder sheet, while shown.
   var fanOutRequest: FanOutRequest?
+  /// Rows marked with ⌘- or ⇧-click: the composer's prompt goes to each of them.
+  private(set) var marked: Set<ProjectSession.ID> = []
+  /// What the last prompt to the marked rows did, until the next click.
+  private(set) var lastBroadcast: BroadcastResult?
+  /// The last row clicked without ⇧: where a ⇧-click's range starts.
+  @ObservationIgnored private var markAnchor: ProjectSession.ID?
   /// The lists the inspector shows: this folder's under the window's account.
   private(set) var capabilities: Capabilities
   /// What the lists brought since the inspector was last seen.
@@ -622,6 +634,88 @@ final class Project {
     fanOuts.removeAll { $0.queue.isDone }
   }
 
+  /// How a row was clicked: plainly, with ⌘, or with ⇧.
+  enum RowClick {
+    case plain, toggle, extend
+  }
+
+  /// A click on a held row. Plain shows it and clears the marks; ⌘ marks or unmarks it
+  /// (the shown row is marked with the first); ⇧ marks the rows from the last clicked to it,
+  /// in the list's order. Neither ⌘ nor ⇧ changes the row shown.
+  func click(_ item: ProjectSession, _ kind: RowClick) {
+    lastBroadcast = nil
+    switch kind {
+    case .plain:
+      marked = []
+      markAnchor = item.id
+      select(item)
+    case .toggle:
+      if marked.isEmpty, let selectedID, selectedID != item.id { marked = [selectedID] }
+      if marked.remove(item.id) == nil { marked.insert(item.id) }
+      markAnchor = item.id
+    case .extend:
+      let rows = listedHeld.map(\.id)
+      guard let end = rows.firstIndex(of: item.id) else { return }
+      let start = (markAnchor ?? selectedID).flatMap { rows.firstIndex(of: $0) } ?? end
+      marked.formUnion(rows[min(start, end)...max(start, end)])
+    }
+  }
+
+  func markAll() {
+    lastBroadcast = nil
+    marked = Set(held.map(\.id))
+  }
+
+  func clearMarks() {
+    lastBroadcast = nil
+    marked = []
+  }
+
+  /// The marked rows still held, in the list's order.
+  var markedSessions: [ProjectSession] { listedHeld.filter { marked.contains($0.id) } }
+
+  /// The composer sends to the marked rows rather than the shown one.
+  var sendsToMarked: Bool { markedSessions.count >= 2 }
+
+  /// The composer's chip: where the prompt goes, or what the last one there did.
+  var broadcastLabel: String? {
+    guard sendsToMarked else { return nil }
+    guard let last = lastBroadcast else {
+      return String(localized: "To \(markedSessions.count) sessions")
+    }
+    let sent = String(localized: "Sent to \(last.sent)")
+    return last.skipped == 0 ? sent : sent + " · " + String(localized: "\(last.skipped) skipped")
+  }
+
+  /// The prompt to each marked session: now where it could take one, queued in a turn that
+  /// runs, skipped where it can't (open elsewhere, moving, starting). The marks stay.
+  @discardableResult func broadcast(
+    _ text: String, context: [EditorSelection], attachments: [Attachment]
+  ) -> BroadcastResult {
+    var result = BroadcastResult(sent: 0, skipped: 0)
+    for item in markedSessions {
+      guard item.session.canSend || item.session.canQueue else {
+        result.skipped += 1
+        continue
+      }
+      item.session.send(text, context: context, attachments: attachments)
+      result.sent += 1
+    }
+    lastBroadcast = result
+    return result
+  }
+
+  /// Ends each marked session's process; the rows stay.
+  func stopMarked() {
+    for item in markedSessions { end(item) }
+  }
+
+  /// Takes every marked session out of the window.
+  func removeMarked() {
+    for item in markedSessions { remove(item) }
+    marked = []
+  }
+
   /// `item` ended a turn or stopped: its slot goes to the next waiting session.
   private func fanOutFinished(_ item: ProjectSession) {
     for batch in fanOuts { send(batch.queue.finished(item.id), in: batch) }
@@ -913,6 +1007,7 @@ final class Project {
   func remove(_ item: ProjectSession) {
     item.session.stop()
     sessions.removeAll { $0.id == item.id }
+    marked.remove(item.id)
     fanOutFinished(item)
     if selectedID == item.id { selectedID = sessions.first?.id }
     if let selected { load(selected) }

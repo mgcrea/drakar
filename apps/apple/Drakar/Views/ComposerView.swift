@@ -46,6 +46,8 @@ struct ComposerView: View {
   var removeAttachment: (Attachment) -> Void = { _ in }
   /// Files or an image to attach: pasted, or picked with the +.
   var attach: ([AttachmentSource]) -> Void = { _ in }
+  /// Several sessions are marked: what the prompt goes to, and how to unmark them.
+  var broadcast: BroadcastChip? = nil
 
   @State private var leavesContextOut = false
   /// The menu's row under the keyboard.
@@ -58,6 +60,18 @@ struct ComposerView: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
       VStack(alignment: .leading, spacing: 6) {
+        if let broadcast {
+          Button(action: broadcast.clear) {
+            Label(broadcast.label, systemImage: "square.stack.3d.up")
+              .font(.caption)
+              .padding(.horizontal, 7)
+              .padding(.vertical, 3)
+              .background(Theme.accent.opacity(0.18), in: Capsule())
+          }
+          .buttonStyle(.plain)
+          .help("Sent to every marked session. Click to unmark them.")
+          .accessibilityIdentifier("composer.broadcast")
+        }
         if let hint {
           Label(hint, systemImage: "text.cursor")
             .font(.caption)
@@ -307,6 +321,12 @@ private struct ContextChip: View {
     )
     .accessibilityIdentifier("composer.context")
   }
+}
+
+/// The marked sessions a prompt goes to, or what the last one to them did.
+struct BroadcastChip {
+  let label: String
+  let clear: () -> Void
 }
 
 private struct PinnedChip: View {

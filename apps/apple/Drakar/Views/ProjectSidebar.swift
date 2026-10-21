@@ -123,12 +123,21 @@ struct SessionListView: View {
               of: item.session.folder.path(percentEncoded: false),
               below: project.folder.path(percentEncoded: false))
           )
-          .pressableRow(isSelected: item.id == project.selectedID) {
-            project.select(item)
+          .pressableRow(
+            isSelected: item.id == project.selectedID, isMarked: project.marked.contains(item.id)
+          ) {
+            let click = Self.rowClick(NSEvent.modifierFlags)
+            project.click(item, click)
             // The row shown already keeps its composer, which only focuses itself on appearing.
-            item.focusRequest += 1
+            if click == .plain { item.focusRequest += 1 }
           }
-          .contextMenu { menu(for: item) }
+          .contextMenu {
+            if project.sendsToMarked, project.marked.contains(item.id) {
+              markedMenu
+            } else {
+              menu(for: item)
+            }
+          }
           .accessibilityIdentifier("sessions.attached.\(item.sessionID ?? item.id.uuidString)")
         }
       }
@@ -175,6 +184,16 @@ struct SessionListView: View {
     .onAppear { if project.claimsRestoredFocus(.sessions) { isFocused = true } }
     .onChange(of: isFocused) { _, focused in
       if focused { project.workspace.focusedPane = .sessions }
+    }
+    .onKeyPress(.escape) {
+      guard !project.marked.isEmpty else { return .ignored }
+      project.clearMarks()
+      return .handled
+    }
+    .onKeyPress(characters: ["a"]) { press in
+      guard press.modifiers == .command else { return .ignored }
+      project.markAll()
+      return .handled
     }
     .onKeyPress(.downArrow) { move(1) }
     .onKeyPress(.upArrow) { move(-1) }
@@ -317,6 +336,41 @@ struct SessionListView: View {
   }
 
   /// Mid-turn, stopping loses the turn: ask first.
+  /// ⌘ marks one row more or less, ⇧ a range; a plain click shows the row.
+  static func rowClick(_ flags: NSEvent.ModifierFlags) -> Project.RowClick {
+    if flags.contains(.command) { return .toggle }
+    if flags.contains(.shift) { return .extend }
+    return .plain
+  }
+
+  /// What a right-click on one of several marked rows does to them all.
+  @ViewBuilder private var markedMenu: some View {
+    let marked = project.markedSessions
+    if marked.contains(where: \.session.isProcessRunning) {
+      Button("End \(marked.count) Sessions") { confirmIfRunning(marked) { project.stopMarked() } }
+    }
+    Button("Remove \(marked.count) Sessions from Window") {
+      confirmIfRunning(marked) { project.removeMarked() }
+    }
+    Divider()
+    Button("Unmark All") { project.clearMarks() }
+  }
+
+  /// As for one row, once for the marked rows still working.
+  private func confirmIfRunning(_ items: [ProjectSession], then action: @escaping () -> Void) {
+    let working = items.filter(\.session.transcript.isRunning).count
+    guard working > 0 else { return action() }
+    let alert = NSAlert()
+    alert.messageText =
+      working == 1
+      ? String(localized: "1 session is still working.")
+      : String(localized: "\(working) sessions are still working.")
+    alert.informativeText = String(localized: "Stopping them now ends their turns part-way.")
+    alert.addButton(withTitle: String(localized: "Stop"))
+    alert.addButton(withTitle: String(localized: "Cancel"))
+    if alert.runModal() == .alertFirstButtonReturn { action() }
+  }
+
   private func confirmIfRunning(_ item: ProjectSession, then action: @escaping () -> Void) {
     guard item.session.transcript.isRunning else { return action() }
     let alert = NSAlert()

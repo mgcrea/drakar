@@ -106,14 +106,22 @@ struct SessionView: View {
               .padding(.bottom, 6)
               .frame(maxWidth: .infinity)
           }
+          let toMarked = project.sendsToMarked
           ComposerView(
-            text: $item.draft, canSend: session.canSend || session.canQueue,
+            text: $item.draft,
+            canSend: toMarked
+              ? project.markedSessions.contains { $0.session.canSend || $0.session.canQueue }
+              : session.canSend || session.canQueue,
             isRunning: session.transcript.isRunning, agentName: session.agent.shortName,
             context: workspace.selection, pinned: workspace.pinned,
             unpin: { selection in workspace.pinned.removeAll { $0 == selection } },
             send: { text, context in
-              project.takeOver(item)
-              session.send(text, context: context, attachments: item.attachments)
+              if project.sendsToMarked {
+                project.broadcast(text, context: context, attachments: item.attachments)
+              } else {
+                project.takeOver(item)
+                session.send(text, context: context, attachments: item.attachments)
+              }
               workspace.pinned = []
               item.attachments = []
               item.attachmentNote = nil
@@ -135,7 +143,10 @@ struct SessionView: View {
             attachments: item.attachments, attachmentNote: item.attachmentNote,
             removeAttachment: { attachment in item.attachments.removeAll { $0.id == attachment.id }
             },
-            attach: item.attach
+            attach: item.attach,
+            broadcast: project.broadcastLabel.map { label in
+              BroadcastChip(label: label) { project.clearMarks() }
+            }
           )
           // The menu's list comes from a short probe, read once the first `/` is typed.
           .onChange(of: item.draft.hasPrefix("/")) { _, typed in
