@@ -13,6 +13,12 @@ struct QuestionPanel: View {
   let questions: [UserQuestion]
   let answer: ([String: String]) -> Void
   let skip: () -> Void
+  /// Nil in place of the composer, where the panel takes the keys on appearing and scrolls its
+  /// options itself. In a transcript card, the panel takes them each time this changes, and
+  /// grows with its options: a lazy stack puts a row back as it scrolls, and a row that
+  /// changed the focus on appearing, or sized a scroll view of its own, laid the transcript
+  /// out again without end until AppKit stopped the app.
+  var focusRequest: Int?
 
   @State private var current = 0
   @State private var picked: [String: Set<String>] = [:]
@@ -54,19 +60,24 @@ struct QuestionPanel: View {
   }
 
   var body: some View {
+    if let focusRequest {
+      panel.onChange(of: focusRequest) { focus = .panel }
+    } else {
+      panel.onAppear { focus = .panel }
+    }
+  }
+
+  private var panel: some View {
     VStack(alignment: .leading, spacing: 10) {
       tabs
       if let question {
-        ScrollView {
-          HStack(alignment: .top, spacing: 12) {
-            options(question)
-            if question.options.contains(where: { $0.preview != nil }) {
-              preview(question).frame(width: 320)
-            }
-          }
+        if focusRequest == nil {
+          ScrollView { choices(question) }
+            .frame(maxHeight: 360)
+            .fixedSize(horizontal: false, vertical: true)
+        } else {
+          choices(question)
         }
-        .frame(maxHeight: 360)
-        .fixedSize(horizontal: false, vertical: true)
       }
       footer
     }
@@ -74,7 +85,6 @@ struct QuestionPanel: View {
     .focusable()
     .focusEffectDisabled()
     .focused($focus, equals: .panel)
-    .onAppear { focus = .panel }
     .onKeyPress(.upArrow) { move(-1) }
     .onKeyPress(.downArrow) { move(1) }
     .onKeyPress(.leftArrow) { show(current - 1) }
@@ -93,6 +103,15 @@ struct QuestionPanel: View {
     .accessibilityElement(children: .contain)
     .accessibilityLabel("Claude is asking you a question")
     .accessibilityIdentifier("question.panel")
+  }
+
+  private func choices(_ question: UserQuestion) -> some View {
+    HStack(alignment: .top, spacing: 12) {
+      options(question)
+      if question.options.contains(where: { $0.preview != nil }) {
+        preview(question).frame(width: 320)
+      }
+    }
   }
 
   /// One tab per question when there are several, named by its header and checked once

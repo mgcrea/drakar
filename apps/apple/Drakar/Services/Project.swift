@@ -53,6 +53,8 @@ final class ProjectSession: Identifiable {
   var prefill: SkillPrefill?
   /// Bumped to ask the composer for the focus.
   var focusRequest = 0
+  /// Bumped to ask the question card in the transcript for the focus.
+  var questionFocusRequest = 0
 
   /// Reads `sources` into attachments, off the main thread, and says what could not be.
   func attach(_ sources: [AttachmentSource]) {
