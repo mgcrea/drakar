@@ -963,9 +963,10 @@ final class Project {
 
   /// The shown session was answered: with Next After Replying on, the next of the window's
   /// own rows that wants the person is shown, once what sent the reply has done (a composer
-  /// still clears its draft). Not while the session still wants something.
+  /// still clears its draft). Not while the session still wants something, nor for a prompt
+  /// sent to the marked rows, which the person is working through together.
   private func replied(_ item: ProjectSession) {
-    guard movesOnAfterReply, item.id == selectedID else { return }
+    guard movesOnAfterReply, item.id == selectedID, !sendsToMarked else { return }
     Task { [weak self] in
       guard let self, self.selectedID == item.id, item.urgency == nil,
         let next = self.nextNeedingAttention(ownRowsOnly: true)?.item

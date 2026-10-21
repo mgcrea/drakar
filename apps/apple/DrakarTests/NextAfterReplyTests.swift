@@ -90,6 +90,21 @@ struct NextAfterReplyTests {
     project.stopAll()
   }
 
+  @Test func aPromptToTheMarkedRowsStays() async throws {
+    let project = Project(folder: folder)
+    project.movesOnAfterReply = true
+    _ = try await row(in: project, "c", UrgencyTests.asking)
+    let b = try await row(in: project, "b", UrgencyTests.asking)
+    let a = try await row(in: project, "a", UrgencyTests.asking)
+    project.select(a)
+    project.click(b, .toggle)
+    #expect(project.sendsToMarked)
+    project.broadcast("Yes", context: [], attachments: [])
+    try await settle(project, from: a)
+    #expect(project.selectedID == a.id)
+    project.stopAll()
+  }
+
   @Test func offTheShownSessionStays() async throws {
     let project = Project(folder: folder)
     _ = try await row(in: project, "b", UrgencyTests.asking)
