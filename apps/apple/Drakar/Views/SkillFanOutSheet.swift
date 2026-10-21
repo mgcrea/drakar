@@ -119,9 +119,12 @@ private struct FanOutForm: View {
           .font(.caption).foregroundStyle(.secondary)
       }
       Form {
-        if draft.skill.takesArguments {
-          TextField("Arguments", text: $draft.arguments, prompt: Text(draft.skill.argumentHint))
-        }
+        // Shown for every skill: one that declares no hint can still take text after its name.
+        TextField(
+          "Arguments", text: $draft.arguments,
+          prompt: Text(draft.skill.takesArguments ? draft.skill.argumentHint : "Optional")
+        )
+        .accessibilityIdentifier("fanout.arguments")
         Picker("Mode", selection: $draft.mode) {
           Text("Default").tag(PermissionMode?.none)
           ForEach(draft.offeredModes, id: \.self) { mode in
