@@ -27,6 +27,7 @@ struct SessionView: View {
       transcript: session.transcript, anchor: $item.scrollAnchor,
       cancelQueued: session.features.cancelsQueued ? { session.cancelQueued($0) } : nil
     )
+    .environment(\.askedQuestion, askedQuestion)
     // Below the transcript's end, not after it: the history scrolls on under the composer
     // to the window's edge, and the scroll view keeps room for it as it grows. An inset and
     // not a `safeAreaBar`, whose scroll edge effect on the Mac is a band across the pane,
@@ -62,6 +63,8 @@ struct SessionView: View {
             )
             .id(plan.id)
           }
+        } else if askedQuestion != nil {
+          Docked { QuestionWaitingStrip() }
         } else if let choice = pendingChoice {
           Docked {
             QuestionPanel(
@@ -223,7 +226,8 @@ struct SessionView: View {
 
   /// The first request waiting for a permission; answering it shows the next. Never
   /// dismissed except by answering, because a request left unanswered stalls the turn
-  /// forever. A question is answered in `QuestionPanel` instead, below the transcript.
+  /// forever. A question is answered in `QuestionPanel` instead, in its card or below the
+  /// transcript.
   private var pendingPermission: Binding<Transcript.PendingPermission?> {
     Binding(
       get: {
@@ -251,9 +255,36 @@ struct SessionView: View {
     session.transcript.pendingPermissions.first { $0.request.isPlan }
   }
 
-  /// The first `AskUserQuestion` waiting, answered in place of the composer.
+  /// The first `AskUserQuestion` waiting: answered in its card when the transcript has it,
+  /// else in place of the composer.
   private var pendingChoice: Transcript.PendingPermission? {
     session.transcript.pendingPermissions.first { $0.request.isChoice }
+  }
+
+  /// The question answered in its card in the transcript: the one waiting, or the one the
+  /// conversation ended on before its process had an answer. Nil for a request whose call
+  /// the transcript lacks, which the composer's place answers instead.
+  private var askedQuestion: AskedQuestion? {
+    if let choice = pendingChoice {
+      guard let id = choice.request.toolUseID, session.transcript.contains(entryID: id)
+      else { return nil }
+      return AskedQuestion(
+        callID: id,
+        answer: { answers in
+          session.answer(
+            choice,
+            .allow(updatedInput: UserQuestion.answering(choice.request.input, with: answers)))
+        },
+        skip: { session.answer(choice, .deny(message: UserQuestion.declinedMessage)) })
+    }
+    guard let earlier = session.earlierQuestion else { return nil }
+    return AskedQuestion(
+      callID: earlier.id,
+      answer: { answers in
+        project.takeOver(item)
+        session.answerEarlierQuestion(answers)
+      },
+      skip: session.dismissEarlierQuestion)
   }
 
   private var problem: String? {
@@ -277,6 +308,21 @@ private struct Docked<Content: View>: View {
       Divider()
       content.background(.background)
     }
+  }
+}
+
+/// In place of the composer while a question is answered in its card above: a prompt sent
+/// now would not reach a turn held up by it. Scrolled away, Latest goes back to the card,
+/// the last thing in the transcript while it waits.
+private struct QuestionWaitingStrip: View {
+  var body: some View {
+    Label("Waiting for your answer above", systemImage: "questionmark.bubble")
+      .font(.callout)
+      .foregroundStyle(.secondary)
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .padding(.horizontal, 12)
+      .padding(.vertical, 8)
+      .accessibilityIdentifier("question.waiting")
   }
 }
 

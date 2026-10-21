@@ -1,7 +1,7 @@
 import DrakarKit
 import SwiftUI
 
-/// An `AskUserQuestion`, answered in place of the composer as the extension answers it: a
+/// An `AskUserQuestion`, answered in its transcript card or in place of the composer: a
 /// tab per question, its options as radio buttons (checkboxes when it takes several), an
 /// "Other" with its own field, and a preview beside the options when they carry one. The
 /// transcript stays in sight above it, since a question usually refers to what was just said.

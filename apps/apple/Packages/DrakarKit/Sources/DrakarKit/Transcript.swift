@@ -144,6 +144,8 @@ public struct Transcript: Sendable, Equatable {
   public var lastPrompt: Entry? {
     lastPromptID.flatMap { indexByID[$0] }.map { entries[$0] }
   }
+  /// Whether an entry with this id is in the transcript, a tool call's being its call's id.
+  public func contains(entryID id: String) -> Bool { indexByID[id] != nil }
   /// The text the newest turn ended on, once it ended normally with nothing waiting: the
   /// main thread's last entry is text, and it and the text blocks of the same message
   /// before it make the closing text. Nil when it ended on a tool call or a note.
