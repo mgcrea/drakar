@@ -498,6 +498,11 @@ final class WindowCloseGuard: NSObject, NSWindowDelegate {
   nonisolated(unsafe) private weak var original: NSWindowDelegate?
   private weak var workspace: Workspace?
   private var running: () -> Int
+  /// Shows the alert as a sheet on the window; a test swaps in one that answers without
+  /// putting anything on screen.
+  var present: (NSAlert, NSWindow, @escaping (NSApplication.ModalResponse) -> Void) -> Void = {
+    $0.beginSheetModal(for: $1, completionHandler: $2)
+  }
 
   /// Guards `window` for `workspace`. A window that went back to home and opened another
   /// project keeps its guard, which takes the new project's workspace.
@@ -535,7 +540,7 @@ final class WindowCloseGuard: NSObject, NSWindowDelegate {
       return original?.windowShouldClose?(window) ?? true
     }
     if unsaved.isEmpty {
-      RunningSessions.alert(count: runningCount).beginSheetModal(for: window) { response in
+      present(RunningSessions.alert(count: runningCount), window) { response in
         if response == .alertFirstButtonReturn { window.close() }
       }
       return false
@@ -544,7 +549,7 @@ final class WindowCloseGuard: NSObject, NSWindowDelegate {
     if runningCount > 0 {
       alert.informativeText += "\n\n" + RunningSessions.note(count: runningCount)
     }
-    alert.beginSheetModal(for: window) { response in
+    present(alert, window) { response in
       switch UnsavedChanges.choice(response) {
       case .save:
         workspace.saveAll()

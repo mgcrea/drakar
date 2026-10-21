@@ -195,13 +195,20 @@ struct WindowCloseGuardTests {
 
   @Test func holdsAWindowWithUnsavedTabsAndAsks() throws {
     let (window, original, workspace, file) = try setUp()
+    var asked: [String] = []
+    // Answered here, not shown: a real sheet would come up over whatever is on screen.
+    workspace.closeGuard?.present = { alert, _, answer in
+      asked.append(alert.messageText)
+      answer(.alertFirstButtonReturn)
+    }
     let document = try #require(workspace.open(file))
     document.storage.replaceCharacters(in: NSRange(location: 0, length: 0), with: "x")
     document.edited()
     #expect(window.delegate?.windowShouldClose?(window) == false)
-    // Held back, and SwiftUI never asked. The sheet itself needs the window on screen,
-    // which a test does not do.
+    #expect(asked == ["Do you want to save the changes you made to a.txt?"])
+    // Held back, and SwiftUI never asked; Save wrote the tab out.
     #expect(original.askedToClose == 0)
+    #expect(try String(contentsOf: file, encoding: .utf8) == "xone\n")
   }
 }
 
