@@ -772,3 +772,10 @@ ids and email. Scrubbed, hand-trimmed excerpts are in
 fold. To capture more, drive `codex app-server` the same way in a scratch folder, with
 `ephemeral: true` threads so nothing lands in the account's history, and scrub ids, emails,
 the installation id and paths before anything reaches a fixture.
+
+Checking a new release (done for 0.162.1 on 2026-10-12): diff the old and new
+`codex app-server generate-ts --out <dir>` with `diff -rq`, then run the same driver on both.
+To run a release without upgrading the Homebrew cask the person uses, `npm pack
+@openai/codex@<version>-darwin-arm64` into a scratch folder: the binary is
+`package/vendor/aarch64-apple-darwin/bin/codex`, signed by team `2DC432GLL2` like the cask
+(`codesign -dv`).

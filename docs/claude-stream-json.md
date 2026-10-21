@@ -481,3 +481,13 @@ changed is additive and Drakar ignores it:
 The captures this was written from are trimmed into
 `apps/apple/Packages/DrakarKit/Tests/DrakarKitTests/Fixtures/`. Signatures, the init
 payload's tool and server lists, and local paths were cut; the shapes were not.
+
+Checking a new release before raising `ClaudeVersion.tested` (done for 2.1.296 on
+2026-10-12): the installer keeps earlier versions in `~/.local/share/claude/versions/`, so
+`strings` the old and new binaries and diff their `subtype:"…"` and `type:"…"` literals for
+what is new. Then run the same scripted scenarios on both with `ClaudeCommand`'s arguments
+plus a pinned `--model claude-haiku-4-5-20251001` and `--setting-sources project`, in a
+scratch folder, and compare the key sets per message type; a throwaway test that feeds the
+lines through `StreamMessage` and `ClaudeTranslator` shows anything that lands as `.unknown`
+or `.other`. Pin the model by id: the `haiku` alias moves between releases and takes
+`TodoWrite` with it. Plan-mode runs leave a plan in `~/.claude/plans/`; delete it.
