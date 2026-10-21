@@ -243,9 +243,11 @@ struct StoredProject: Codable, Equatable {
   var documents: [String]?
   var activeDocument: String?
   var focusedPane: FocusedPane?
+  /// How the sidebar sorts; nil for `.opened`, and for a window stored before sorting.
+  var sessionOrder: SessionOrder?
 
-  /// Nothing worth bringing back: no session and no tab.
-  var isEmpty: Bool { sessions.isEmpty && documents?.isEmpty != false }
+  /// Nothing worth bringing back: no session, no tab, and no sort chosen.
+  var isEmpty: Bool { sessions.isEmpty && documents?.isEmpty != false && sessionOrder == nil }
 }
 
 /// Each project's `StoredProject`, app-wide in `UserDefaults` by folder. A window's scene
@@ -285,6 +287,8 @@ final class Project {
   let workspace: Workspace
   private(set) var sessions: [ProjectSession] = []
   var selectedID: ProjectSession.ID?
+  /// How the sidebar lists the window's own rows and Elsewhere's.
+  var sessionOrder: SessionOrder = .opened
   /// Per session live elsewhere, the message id of the ask dismissed, kept with the window's
   /// own in `StoredProject.dismissedQuestions`.
   private(set) var dismissedElsewhere: [String: String] = [:]
@@ -323,6 +327,7 @@ final class Project {
       item.dismissedAsk = stored?.dismissedQuestions?[target.sessionID]
       sessions.append(item)
     }
+    sessionOrder = stored?.sessionOrder ?? .opened
     let own = Set(sessions.compactMap(\.sessionID))
     dismissedElsewhere = (stored?.dismissedQuestions ?? [:]).filter { !own.contains($0.key) }
     selectedID =
@@ -366,6 +371,26 @@ final class Project {
     return ProjectSessions.group(
       monitor.summaries(under: folder), folder: folder, otherFolders: others,
       attached: attached, inOtherWindows: inOtherWindows, checkout: monitor.checkout(of:))
+  }
+
+  /// The window's own rows as the sidebar lists them.
+  var listedHeld: [ProjectSession] {
+    sessionOrder.sorted(held) { item in
+      SessionOrder.Key(
+        state: RowState(item), activity: item.lastActivity,
+        folder: item.session.folder.path(percentEncoded: false))
+    }
+  }
+
+  /// `groups`, Elsewhere as the sidebar lists it.
+  var listedGroups: ProjectGroups {
+    var groups = groups
+    groups.elsewhere = sessionOrder.sorted(groups.elsewhere) { summary in
+      SessionOrder.Key(
+        state: RowState(elsewhere: summary, urgency: urgency(of: summary)),
+        activity: summary.live?.updatedAt ?? summary.modified, folder: summary.cwd ?? "")
+    }
+    return groups
   }
 
   /// How much a session listed elsewhere wants the person.
@@ -899,7 +924,8 @@ final class Project {
         ? nil : Dictionary(dismissed, uniquingKeysWith: { first, _ in first }),
       documents: workspace.documents.isEmpty ? nil : workspace.documents.map(\.path),
       activeDocument: workspace.active?.path,
-      focusedPane: workspace.focusedPane)
+      focusedPane: workspace.focusedPane,
+      sessionOrder: sessionOrder == .opened ? nil : sessionOrder)
   }
 
   private func make(_ session: AgentSession) -> ProjectSession {
