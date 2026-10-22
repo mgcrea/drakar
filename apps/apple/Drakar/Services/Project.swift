@@ -381,7 +381,9 @@ final class Project {
     sessions.first { $0.sessionID == sessionID }
   }
 
-  /// The sessions below the window's own rows: live elsewhere, and ended.
+  /// The sessions below the window's own rows: live elsewhere, and ended. Kept until what
+  /// it is made from changes: the sidebar, its badge, the menus and the window's storage
+  /// each ask, and grouping looks at every session under the folder.
   var groups: ProjectGroups {
     let monitor = SessionMonitor.shared
     let folder = ProjectPath.normalize(self.folder.path(percentEncoded: false))
@@ -390,10 +392,28 @@ final class Project {
     let inOtherWindows = Set(
       OpenSessions.shared.projects.values.filter { $0 !== self }
         .flatMap { $0.held.compactMap(\.sessionID) })
-    return ProjectSessions.group(
-      monitor.summaries(under: folder), folder: folder, otherFolders: others,
+    // Asked even when the groups are kept, so that a view reading them redraws on a change.
+    let summaries = monitor.summaries(under: folder)
+    let key = GroupsKey(
+      generation: monitor.generation, others: others, attached: attached,
+      inOtherWindows: inOtherWindows)
+    if let keptGroups, keptGroups.key == key { return keptGroups.groups }
+    let groups = ProjectSessions.group(
+      summaries, folder: folder, otherFolders: others,
       attached: attached, inOtherWindows: inOtherWindows, checkout: monitor.checkout(of:))
+    keptGroups = (key, groups)
+    return groups
   }
+
+  /// What `groups` is made from.
+  private struct GroupsKey: Equatable {
+    var generation: Int
+    var others: [String]
+    var attached: Set<String>
+    var inOtherWindows: Set<String>
+  }
+
+  @ObservationIgnored private var keptGroups: (key: GroupsKey, groups: ProjectGroups)?
 
   /// The window's own rows as the sidebar lists them.
   var listedHeld: [ProjectSession] {
@@ -675,7 +695,7 @@ final class Project {
   var markedSessions: [ProjectSession] { listedHeld.filter { marked.contains($0.id) } }
 
   /// The composer sends to the marked rows rather than the shown one.
-  var sendsToMarked: Bool { markedSessions.count >= 2 }
+  var sendsToMarked: Bool { held.count { marked.contains($0.id) } >= 2 }
 
   /// The composer's chip: where the prompt goes, or what the last one there did.
   var broadcastLabel: String? {

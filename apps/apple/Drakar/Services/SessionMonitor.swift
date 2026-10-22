@@ -11,7 +11,9 @@ final class SessionMonitor {
 
   /// By transcript path, its folder resolved (`key(_:)`): one id can have a transcript per
   /// account.
-  private(set) var byFile: [String: SessionSummary] = [:]
+  private(set) var byFile: [String: SessionSummary] = [:] {
+    didSet { changedSummaries() }
+  }
   private(set) var isLoaded = false
   /// Every transcript folder, for home's counts: every session on disk, not only the newest
   /// listed in `byFile`.
@@ -31,7 +33,14 @@ final class SessionMonitor {
   /// `realpath` of each transcript folder seen, so a key costs one lookup.
   @ObservationIgnored private var resolvedFolders: [String: String] = [:]
   /// A linked worktree's `cwd` → the same folder in its main checkout, from `folders`.
-  @ObservationIgnored private var checkouts: [String: String] = [:]
+  @ObservationIgnored private var checkouts: [String: String] = [:] {
+    didSet { changedSummaries() }
+  }
+  /// Bumped whenever a summary or a checkout changes: what a reader keeping a result built
+  /// from them compares, since every window's sidebar asks several times per redraw.
+  @ObservationIgnored private(set) var generation = 0
+  /// `summaries(under:)` by folder, as of `generation`.
+  @ObservationIgnored private var underFolder: [String: [SessionSummary]] = [:]
   @ObservationIgnored private var folderScan: Task<Void, Never>?
   /// Whether the registries were read once: before that, no id is known to be live.
   @ObservationIgnored private(set) var hasReadRegistries = false
@@ -48,11 +57,22 @@ final class SessionMonitor {
 
   var all: [SessionSummary] { byFile.values.sorted { $0.modified > $1.modified } }
 
+  /// Kept until the next change: every transcript on disk is looked at.
   func summaries(under folder: String) -> [SessionSummary] {
+    // Read whether or not the result is kept, so that a view asking is redrawn on a change.
+    let byFile = byFile
+    if let kept = underFolder[folder] { return kept }
     let owners = ProjectPath.Owners([folder])
-    return byFile.values.filter { summary in
+    let found = byFile.values.filter { summary in
       summary.cwd.map { owners.owner(of: checkout(of: $0)) != nil } ?? false
     }
+    underFolder[folder] = found
+    return found
+  }
+
+  private func changedSummaries() {
+    generation += 1
+    underFolder = [:]
   }
 
   /// `cwd` as it sits in its main checkout: a linked worktree's sessions belong to their
@@ -200,7 +220,9 @@ final class SessionMonitor {
       }.value
       guard !Task.isCancelled else { return }
       for entry in scanned {
-        if let cwd = entry.cwd, let checkout = entry.checkout {
+        if let cwd = entry.cwd, let checkout = entry.checkout,
+          checkouts[ProjectPath.normalize(cwd)] != checkout
+        {
           checkouts[ProjectPath.normalize(cwd)] = checkout
         }
       }

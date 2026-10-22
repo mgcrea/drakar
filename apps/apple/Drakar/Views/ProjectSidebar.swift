@@ -52,20 +52,21 @@ struct SessionListView: View {
   }
 
   private var header: some View {
-    PaneHeader(
+    let waiting = project.waitingCount
+    return PaneHeader(
       title: String(localized: "Sessions"), systemImage: "bubble.left.and.bubble.right",
       isCollapsed: $isCollapsed,
       help: isCollapsed ? String(localized: "Show sessions") : String(localized: "Hide sessions"),
       identifier: "sessions.header", isFirst: true
     ) {
-      if project.waitingCount > 0 {
-        Text(project.waitingCount, format: .number)
+      if waiting > 0 {
+        Text(waiting, format: .number)
           .font(.caption.monospacedDigit())
           .foregroundStyle(.white)
           .padding(.horizontal, 5)
           .background(.blue, in: Capsule())
-          .help("Wants you: \(project.waitingCount)")
-          .accessibilityLabel("\(project.waitingCount) waiting for you")
+          .help("Wants you: \(waiting)")
+          .accessibilityLabel("\(waiting) waiting for you")
           .accessibilityIdentifier("sessions.waiting")
       }
       Menu {
