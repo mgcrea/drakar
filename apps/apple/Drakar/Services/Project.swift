@@ -930,7 +930,68 @@ final class Project {
     Attention.shared.refresh()
   }
 
-  /// A row ⌥⌘↓ can go to: one of the window's own, or a session listed elsewhere.
+  /// Whether the sidebar's Ended group is expanded, and lists all its rows rather than the
+  /// newest 20: what the arrow keys and Previous and Next Session pass through.
+  var showsEnded = false
+  var showsAllEnded = false
+
+  /// Ended's rows as the sidebar lists them, expanded or not.
+  func listedEnded(_ groups: ProjectGroups) -> [SessionSummary] {
+    showsAllEnded ? groups.ended : Array(groups.ended.prefix(20))
+  }
+
+  /// Whether the selected row is watching `summary` here, so the list shows it selected.
+  func isWatched(_ summary: SessionSummary) -> Bool {
+    guard let item = session(withID: summary.sessionID), item.isWatching else { return false }
+    return item.id == selectedID
+  }
+
+  /// An ended session, watched here.
+  func openEnded(_ summary: SessionSummary) {
+    if let target = ResumeTarget(summary) { attach(target, watching: true) }
+  }
+
+  /// Shows the row `offset` rows from the selected one, in the sidebar's order, as a click
+  /// shows it: the window's own rows, those elsewhere, then Ended's while it is expanded. A
+  /// session open in another Drakar window is passed over: showing it would leave this one.
+  /// `wrapping` goes round the ends (Previous and Next Session), else stops at them (the
+  /// list's arrow keys, which keep the keys). False when there is no row.
+  @discardableResult func step(
+    _ offset: Int, wrapping: Bool, focusingComposer: Bool = true
+  ) -> Bool {
+    let groups = listedGroups
+    var rows: [(isSelected: Bool, show: () -> Void)] = listedHeld.map { item in
+      (
+        item.id == selectedID,
+        { [unowned self] in
+          select(item, focusingComposer: focusingComposer)
+          // The row shown already keeps its composer, which only focuses itself on appearing.
+          if focusingComposer { item.focusRequest += 1 }
+        }
+      )
+    }
+    for summary in groups.elsewhere where OpenSessions.shared.locate(summary.sessionID) == nil {
+      rows.append((isWatched(summary), { [unowned self] in openElsewhere(summary) }))
+    }
+    if showsEnded {
+      for summary in listedEnded(groups) {
+        rows.append((isWatched(summary), { [unowned self] in openEnded(summary) }))
+      }
+    }
+    guard !rows.isEmpty else { return false }
+    let current = rows.firstIndex(where: \.isSelected)
+    let index =
+      switch (current, wrapping) {
+      case (nil, _): offset < 0 && wrapping ? rows.count - 1 : 0
+      case (let current?, true): ((current + offset) % rows.count + rows.count) % rows.count
+      case (let current?, false): min(max(current + offset, 0), rows.count - 1)
+      }
+    rows[index].show()
+    return true
+  }
+
+  /// A row Next Session Needing You can go to: one of the window's own, or a session listed
+  /// elsewhere.
   enum Stop {
     case row(ProjectSession)
     case elsewhere(SessionSummary)

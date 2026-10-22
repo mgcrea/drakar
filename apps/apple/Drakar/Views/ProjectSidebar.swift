@@ -29,8 +29,6 @@ struct ProjectSidebar: View {
 struct SessionListView: View {
   let project: Project
   @Binding var isCollapsed: Bool
-  @State private var showsEnded = false
-  @State private var showsAllEnded = false
   /// Read only to redraw the account badges when a pick or the Settings default changes.
   @AppStorage(PreferenceKey.accountForFolder) private var picks = ""
   @AppStorage(PreferenceKey.newSessionAccount) private var settingsAccount = ""
@@ -148,7 +146,7 @@ struct SessionListView: View {
               summary: summary, host: monitor.host(of: summary),
               urgency: project.urgency(of: summary), monitor: monitor
             )
-            .pressableRow(isSelected: isWatched(summary)) { openElsewhere(summary) }
+            .pressableRow(isSelected: project.isWatched(summary)) { project.openElsewhere(summary) }
             .contextMenu { menu(for: summary, ended: false) }
             .accessibilityAddTraits(.isButton)
             .accessibilityIdentifier("sessions.elsewhere.\(summary.sessionID)")
@@ -156,16 +154,16 @@ struct SessionListView: View {
         }
       }
       if !groups.ended.isEmpty {
-        Section(isExpanded: $showsEnded) {
-          ForEach(showsAllEnded ? groups.ended : Array(groups.ended.prefix(20))) { summary in
+        Section(isExpanded: Bindable(project).showsEnded) {
+          ForEach(project.listedEnded(groups)) { summary in
             SummaryRow(summary: summary, host: nil, urgency: nil, monitor: monitor)
-              .pressableRow(isSelected: isWatched(summary)) { openEnded(summary) }
+              .pressableRow(isSelected: project.isWatched(summary)) { project.openEnded(summary) }
               .contextMenu { menu(for: summary, ended: true) }
               .accessibilityAddTraits(.isButton)
               .accessibilityIdentifier("sessions.ended.\(summary.sessionID)")
           }
-          if groups.ended.count > 20, !showsAllEnded {
-            Button("Show All \(groups.ended.count)") { showsAllEnded = true }
+          if groups.ended.count > 20, !project.showsAllEnded {
+            Button("Show All \(groups.ended.count)") { project.showsAllEnded = true }
               .buttonStyle(.link)
           }
         } header: {
@@ -200,42 +198,8 @@ struct SessionListView: View {
     .accessibilityIdentifier("sessions")
   }
 
-  /// The row above or below the selected one, in the list's order, shown as a click shows
-  /// it. A session open in another Drakar window is passed over: showing it would leave
-  /// this one.
-  private func move(_ step: Int) -> KeyPress.Result {
-    let groups = groups
-    var rows: [(isSelected: Bool, show: () -> Void)] = project.listedHeld.map { item in
-      (item.id == project.selectedID, { project.select(item, focusingComposer: false) })
-    }
-    for summary in groups.elsewhere where OpenSessions.shared.locate(summary.sessionID) == nil {
-      rows.append((isWatched(summary), { openElsewhere(summary) }))
-    }
-    if showsEnded {
-      for summary in showsAllEnded ? groups.ended : Array(groups.ended.prefix(20)) {
-        rows.append((isWatched(summary), { openEnded(summary) }))
-      }
-    }
-    guard !rows.isEmpty else { return .ignored }
-    let index = rows.firstIndex(where: \.isSelected).map { $0 + step } ?? 0
-    rows[min(max(index, 0), rows.count - 1)].show()
-    return .handled
-  }
-
-  private func openEnded(_ summary: SessionSummary) {
-    if let target = ResumeTarget(summary) { project.attach(target, watching: true) }
-  }
-
-  private func openElsewhere(_ summary: SessionSummary) {
-    project.openElsewhere(summary)
-  }
-
-  /// Whether the selected row is watching `summary` here, so the list shows it selected.
-  private func isWatched(_ summary: SessionSummary) -> Bool {
-    guard let item = project.session(withID: summary.sessionID), item.isWatching else {
-      return false
-    }
-    return item.id == project.selectedID
+  private func move(_ offset: Int) -> KeyPress.Result {
+    project.step(offset, wrapping: false, focusingComposer: false) ? .handled : .ignored
   }
 
   @ViewBuilder private func menu(for item: ProjectSession) -> some View {

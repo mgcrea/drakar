@@ -214,7 +214,7 @@ enum ClaudeChoice {
 
 /// What each level of `Urgency` does, as the Attention pane set it.
 enum AttentionFeedback: String, CaseIterable {
-  /// In the group's header count and ⌥⌘↓.
+  /// In the group's header count and Next Session Needing You.
   case counts
   case badges
   case notifies
@@ -470,7 +470,7 @@ struct AttentionPane: View {
         }
       } footer: {
         Text(
-          "Counts puts the session in the sidebar's count and in Next Session Needing You (⌥⌘↓). Drakar notifies unless the session is the one you are looking at."
+          "Counts puts the session in the sidebar's count and in Next Session Needing You (⇧⌥⌘↓). Drakar notifies unless the session is the one you are looking at."
         )
       }
     }

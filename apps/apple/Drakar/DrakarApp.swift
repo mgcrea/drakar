@@ -154,10 +154,17 @@ private struct SessionCommands: View {
       if let selected = project?.selected { RenameSessionPrompt.run(for: selected) }
     }
     .disabled(project?.canRenameSelected != true)
+    // From anywhere in the window, the composer included, which keeps the arrow keys.
+    Button("Previous Session") { project?.step(-1, wrapping: true) }
+      .keyboardShortcut(.upArrow, modifiers: [.command, .option])
+      .disabled(project == nil)
+    Button("Next Session") { project?.step(1, wrapping: true) }
+      .keyboardShortcut(.downArrow, modifiers: [.command, .option])
+      .disabled(project == nil)
     Button("Next Session Needing You") {
       if let project, let next = project.nextNeedingAttention() { project.show(next) }
     }
-    .keyboardShortcut(.downArrow, modifiers: [.command, .option])
+    .keyboardShortcut(.downArrow, modifiers: [.command, .option, .shift])
     .disabled(project?.nextNeedingAttention() == nil)
     // A reply to the shown session goes on to the next one wanting the person.
     Toggle(
