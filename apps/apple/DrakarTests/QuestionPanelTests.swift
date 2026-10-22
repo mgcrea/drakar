@@ -39,4 +39,17 @@ struct QuestionPanelTests {
         for: [which], picked: ["Which?": ["a.txt"]], otherPicked: [], other: ["Which?": "c.txt"])
         == ["Which?": "a.txt"])
   }
+
+  /// A request withdrawn and asked again keeps its call, and the card holds on to an equal
+  /// value's closures: one that answered the first request would do nothing at all.
+  @MainActor @Test func aRequestAskedAgainIsANewQuestion() {
+    func asked(_ requestID: String?) -> AskedQuestion {
+      AskedQuestion(
+        callID: "toolu_1", requestID: requestID, focusRequest: 0, answer: { _ in }, skip: {})
+    }
+    #expect(asked("r1") == asked("r1"))
+    #expect(asked("r1") != asked("r2"))
+    // The same call asked live, and then as the question its process ended on.
+    #expect(asked("r1") != asked(nil))
+  }
 }

@@ -2,17 +2,22 @@ import DrakarKit
 import SwiftUI
 
 /// The question waiting on the person, answered in its card in the transcript: which call it
-/// is, and how the answers go back. Equal by call and focus request, as `OpenInEditorAction`
-/// is by workspace, so the closures made on each update do not redraw the card.
+/// is, and how the answers go back. Equal by what the closures answer, as `OpenInEditorAction`
+/// is by workspace, so the closures made on each update do not redraw the card. An equal value
+/// is never handed on, so the card keeps the closures it was first given: the request belongs
+/// in the comparison, or a request asked again for the same call is answered as the old one,
+/// which the CLI ignores.
 struct AskedQuestion: Equatable {
   let callID: String
+  /// The permission request it answers; nil for the question a process ended on.
+  let requestID: String?
   /// Bumped by the session to give the card the keys: see `QuestionPanel.focusRequest`.
   let focusRequest: Int
   let answer: ([String: String]) -> Void
   let skip: () -> Void
 
   static func == (a: Self, b: Self) -> Bool {
-    a.callID == b.callID && a.focusRequest == b.focusRequest
+    a.callID == b.callID && a.requestID == b.requestID && a.focusRequest == b.focusRequest
   }
 }
 

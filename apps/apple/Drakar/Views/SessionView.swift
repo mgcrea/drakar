@@ -274,7 +274,7 @@ struct SessionView: View {
       guard let id = choice.request.toolUseID, session.transcript.contains(entryID: id)
       else { return nil }
       return AskedQuestion(
-        callID: id, focusRequest: item.questionFocusRequest,
+        callID: id, requestID: choice.requestID, focusRequest: item.questionFocusRequest,
         answer: { answers in
           session.answer(
             choice,
@@ -284,7 +284,7 @@ struct SessionView: View {
     }
     guard let earlier = session.earlierQuestion else { return nil }
     return AskedQuestion(
-      callID: earlier.id, focusRequest: item.questionFocusRequest,
+      callID: earlier.id, requestID: nil, focusRequest: item.questionFocusRequest,
       answer: { answers in
         project.takeOver(item)
         session.answerEarlierQuestion(answers)
