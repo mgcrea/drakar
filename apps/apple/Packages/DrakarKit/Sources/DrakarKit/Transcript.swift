@@ -320,6 +320,9 @@ public struct Transcript: Sendable, Equatable {
         at: time)
     case .turnOutcome(let end):
       turnEnd = end
+    case .turnStarted:
+      isRunning = true
+      turnEnd = nil
     case .turnEnded(let summary):
       lastTurn = summary
       turnEnd = summary.outcome

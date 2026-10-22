@@ -33,7 +33,9 @@ public struct ClaudeTranslator: Sendable {
     }
     switch message {
     case .system(.initialized(let info)):
-      events.append(.sessionStarted(info))
+      // Every turn opens with one, including the turn a fork's notification starts with no
+      // prompt (2.1.308).
+      events += [.sessionStarted(info), .turnStarted]
     case .system(.apiRetry(let retry)):
       events.append(.retrying(retry))
     case .system(.status(let status, _)):

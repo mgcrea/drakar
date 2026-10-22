@@ -63,6 +63,13 @@ enum Fixture: String {
   /// Esc's (`eeeeeeee-…` starts and is answered "QUEUED"), then with `cancel_queued`, Stop's
   /// (`ffffffff-…` cancelled). Stream events, thinking and status lines dropped; paths cut.
   case interruptKeepsQueue = "interrupt-keeps-queue"
+  /// A `haiku` 4.5 turn on Claude Code 2.1.308 (2026-10-22) calling `Agent` with
+  /// `subagent_type: "fork"`: the fork starts in the background and the turn ends; its Bash
+  /// call, result and text follow under the call's id; then, with no prompt, the CLI starts a
+  /// turn of its own for the task's notification (`system/init`, the reply, a `result` whose
+  /// `origin.kind` is `task-notification`). Stream events, thinking and status lines dropped;
+  /// ids and paths scrubbed.
+  case forkSubagent = "fork-subagent"
   /// The transcript line Claude Code 2.1.288 wrote for a prompt sent with a 64×64 red PNG
   /// and a text document `notes.txt` (2026-10-06): blocks kept as sent, keys trimmed.
   case historyWithAttachments = "history-with-attachments"

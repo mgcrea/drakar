@@ -16,6 +16,9 @@ public enum AgentEvent: Sendable, Equatable {
   /// How the newest turn ended is known, without the end-of-turn bookkeeping: Claude's
   /// history marks `stop_reason: end_turn` and has no result line.
   case turnOutcome(Transcript.TurnEnd)
+  /// A turn begins, prompted or not: Claude Code answers a background task's notification
+  /// in a turn of its own, with no prompt to say the session is at work.
+  case turnStarted
   case turnEnded(TurnSummary)
   /// A text, a thinking block or a tool call begins: streaming follows.
   case itemStarted(Item)
