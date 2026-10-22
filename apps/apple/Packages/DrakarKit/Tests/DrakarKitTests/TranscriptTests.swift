@@ -167,6 +167,27 @@ struct TranscriptTests {
     }
   }
 
+  /// A skill's text comes back as a user turn of the CLI's own, marked synthetic on the
+  /// stream as the transcript file marks it `isMeta`: what the model reads, not a note. The
+  /// interrupt the CLI writes beside it is not marked, and stays one.
+  @Test func aSkillsTextIsNotANote() throws {
+    var transcript = ClaudeFeed()
+    transcript.addPrompt("Run the probe")
+    for line in [
+      #"{"type":"assistant","message":{"id":"m1","content":[{"type":"tool_use","id":"toolu_1","name":"Skill","input":{"skill":"probe"}}]}}"#,
+      #"{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_1","content":"Launching skill: probe"}]},"parent_tool_use_id":null}"#,
+      #"{"type":"user","message":{"role":"user","content":[{"type":"text","text":"Base directory for this skill: /tmp/probe\n\nPROBE BODY"}]},"parent_tool_use_id":null,"isSynthetic":true}"#,
+      #"{"type":"user","message":{"role":"user","content":[{"type":"text","text":"[Request interrupted by user]"}]},"parent_tool_use_id":null}"#,
+    ] {
+      transcript.apply(try message(line))
+    }
+    let notes = transcript.entries.filter {
+      if case .notice = $0.kind { return true }
+      return false
+    }
+    #expect(notes.map(\.kind) == [.notice("Request interrupted by user")])
+  }
+
   @Test func aPromptAfterItTakesItAway() throws {
     var transcript = ClaudeFeed()
     transcript.addPrompt("Build it")

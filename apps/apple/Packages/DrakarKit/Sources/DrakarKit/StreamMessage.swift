@@ -201,12 +201,16 @@ public struct UserMessage: Sendable, Equatable {
   public var agentReport: AgentReport?
   /// The images and documents sent with a prompt, as a transcript file keeps them.
   public var attachments: [AttachmentPreview]
+  /// Written by the CLI for the model, not by the person: a skill's text after its `Skill`
+  /// call. The stream's `isSynthetic` is the transcript file's `isMeta`.
+  public var isSynthetic: Bool
 
   init?(_ json: JSONValue) {
     guard let message = json["message"] else { return nil }
     content = ContentBlock.list(message["content"])
     attachments = (message["content"]?.arrayValue ?? []).compactMap(AttachmentPreview.init)
     parentToolUseID = json["parent_tool_use_id"]?.stringValue
+    isSynthetic = json["isSynthetic"]?.boolValue == true
     let structured = json["tool_use_result"] ?? json["toolUseResult"]
     agentReport = AgentReport(structured)
     if case .object(let answers)? = structured?["answers"] {

@@ -148,8 +148,9 @@ public struct ClaudeTranslator: Sendable {
     var events: [AgentEvent] = []
     if user.parentToolUseID == nil, let time { events.append(.requestSent(at: time)) }
     // Live, the CLI never echoes our prompts, so any text it writes as a user turn is a note
-    // of its own: an interrupt, a background task finishing.
-    for case .text(let text) in user.content {
+    // of its own: an interrupt, a background task finishing. Not the text it writes for the
+    // model, which the history leaves out too.
+    for case .text(let text) in user.content where !user.isSynthetic {
       switch UserText.classify(text) {
       // A subagent's prompt, forwarded from inside it: the card's, not a note.
       case .prompt(let prompt) where user.parentToolUseID != nil:
