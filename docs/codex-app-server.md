@@ -752,6 +752,45 @@ both with Drakar's request shapes, differs only in when a steer is taken (above,
 sent mid-turn"). Tested with the npm package `@openai/codex@0.162.1-darwin-arm64`, signed
 by the same team (`2DC432GLL2`) as the Homebrew cask.
 
+## 0.163.0 (checked 2026-10-22)
+
+Nothing Drakar reads or sends changed. The stable bindings (no `--experimental`) differ from
+0.162.1's in: `thread/readState/changed` (notification) and its `ThreadReadState` types;
+`thread/list` takes `excludedThreadIds`; a turn tool output may ask to be `retain`ed; raw
+response items gain `encrypted_content`, `status`, `annotations` and `logprobs`; more
+realtime voices. `thread/read`'s answer now carries a `readState` (`firstUnread`,
+`revision`) beside the `thread`, which Drakar does not read.
+
+The same scenarios, run on 0.162.1 and 0.163.0 with Drakar's request shapes, gave the same
+message sequence and the same key set for every message type: `initialize`, `account/read`,
+`model/list`, `account/rateLimits/read` and `skills/list` with a repo skill; a read-only
+turn; a command declined and a file change accepted under `untrusted`; a steer during a
+long command, then an interrupt (`turn/completed` `interrupted` at once on both, the
+command's own completion after it); a steer into an ended turn (`no active turn to steer`,
+the text Drakar's resend depends on, unchanged); a steer sent as the answer completed (taken
+into the same turn on both); a `/name` prompt with its `skill` item, `thread/name/set`, then
+from a fresh process `thread/read`, `thread/items/list`, `thread/resume` with
+`excludeTurns`, a turn, `thread/delete`; and a thread started `never` with
+`danger-full-access`, resumed under `untrusted` with `workspace-write`: the resume's answer
+says `untrusted`, and a command is asked for, on both.
+
+The release notes, read against Drakar:
+
+- Connection-bound reply handles (#53049) are internal routing: an approval answered by its
+  id on the same connection works as before.
+- Global config independent of the launch directory (#51872) affects requests with no
+  thread or `cwd`. Drakar starts `app-server` in the project folder and passes `cwd` to
+  `thread/start`, `thread/resume` and `skills/list` (`cwds`), so those keep the project's
+  config. `model/list` and `account/read` now read the global config only.
+- Resuming restores a thread's own permissions "while respecting explicit overrides"
+  (#53150, #53419): Drakar always passes `approvalPolicy` and `sandbox`, and they win (above).
+- Input admission closes while a turn finishes recording (#53452): it applies to injected
+  input, not to `turn/steer`, whose refusals are unchanged (`turn_processor.rs` at the tag).
+- A plugin mention no longer hides a skill of the same name (#51865): Drakar sends the
+  skill as an explicit `skill` item, which ran as before.
+
+Tested with `@openai/codex@0.163.0-darwin-arm64`, signed by team `2DC432GLL2`.
+
 ## Raw captures
 
 The claims marked verified come from eleven probes run on 2026-10-06 against codex-cli
@@ -773,9 +812,18 @@ fold. To capture more, drive `codex app-server` the same way in a scratch folder
 `ephemeral: true` threads so nothing lands in the account's history, and scrub ids, emails,
 the installation id and paths before anything reaches a fixture.
 
-Checking a new release (done for 0.162.1 on 2026-10-12): diff the old and new
-`codex app-server generate-ts --out <dir>` with `diff -rq`, then run the same driver on both.
+Checking a new release (done for 0.162.1 on 2026-10-12 and 0.163.0 on 2026-10-22): diff
+the old and new `codex app-server generate-ts --out <dir>` with `diff -rq`, then run the
+same driver on both.
 To run a release without upgrading the Homebrew cask the person uses, `npm pack
 @openai/codex@<version>-darwin-arm64` into a scratch folder: the binary is
 `package/vendor/aarch64-apple-darwin/bin/codex`, signed by team `2DC432GLL2` like the cask
 (`codesign -dv`).
+
+0.163.0 (released 2026-10-15) was checked on 2026-10-22 (above, "0.163.0"). The drivers
+were scratch files again; the scenarios are listed there. npm's `min-release-age` on this
+Mac refuses a package published less than a day ago, so the newest alpha may not install:
+on 2026-10-22, 0.164.0-alpha.12 was out and alpha.8 the newest installable. Its bindings
+add, against 0.163.0, MCP server statuses' `toolListMeta`, two hook events
+(`preModelRequest`, `postModelRequest`), image generation inputs and two plan types;
+nothing Drakar reads.
