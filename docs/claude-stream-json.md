@@ -289,6 +289,7 @@ Drakar's todo card and strip only show for 4.x models.
   `task_notification` (`status`, `summary`, `usage`, `output_file`). A background agent's
   end also arrives as a `<task-notification>` user text. `background_tasks_changed` lists
   what runs in the background.
+- A **fork** (`subagent_type: "fork"`, 2.1.302 and later) behaves differently: see "2.1.308".
 
 ## Prompts sent mid-turn, and the command list (verified 2026-10-06, 2.1.288)
 
@@ -476,6 +477,59 @@ changed is additive and Drakar ignores it:
 - The extension now passes `--permission-prompt-tool=stdio` as one argument; Drakar's two
   arguments are the same to the CLI.
 
+## 2.1.308 (checked 2026-10-22)
+
+The 2.1.296 scenarios were run again on 2.1.296 and 2.1.308 with Drakar's arguments, plus a
+fork subagent and two prompts queued as content blocks. Both versions decode with no new
+message type. Permission answers, Esc and Stop with a queued prompt (`aborted_tools`, the
+`still_queued` and `cancelled` lists), mode and model changes, `get_context_usage`,
+`rename_session`, a foreground `general-purpose` subagent and plan mode's `ExitPlanMode` all
+match 2.1.296 line for line. What changed:
+
+- **Fork subagents.** The model is now offered `subagent_type: "fork"`, and the CLI's system
+  prompt encourages it ("Reach for it when research or multi-step implementation work would
+  otherwise fill your context"); 2.1.296 refuses one ("Agent type 'fork' not found"). A fork
+  always runs in the background (`task_started` `is_backgrounded: true`,
+  `subagent_stats.requested.unset`): the `Agent` call's result is "Async agent launched…"
+  and the turn ends. Then, with `parent_tool_use_id` set to the call's id, the fork's lines
+  arrive between turns: its tool calls and results, and, unlike a foreground subagent, **its
+  thinking and text too**. No prompt line is forwarded (`task_started` carries `prompt`).
+  `task_progress`, `task_updated` and `task_notification` follow as for any subagent, and
+  `background_tasks_changed` lists the fork while it runs.
+- **A turn nobody prompted.** When the fork finishes, the CLI answers its notification at
+  once: a fresh `system/init`, the main thread's reply, and a `result` with
+  `origin: {kind: "task-notification", producer: "session-task", runId}`. No
+  `<task-notification>` user line reaches stdout; the transcript file has it (with an
+  `origin` key) and history shows it as a "Background task" note. Until 2026-10-22 Drakar
+  marked a session running only when it sent a prompt, so during this turn the row read idle
+  and Esc and Stop did nothing. Every turn opens with a `system/init`, and Drakar now takes
+  it as a turn starting (captured as the `fork-subagent` fixture). `CLAUDE_CODE_FORK_SUBAGENT=0`
+  would turn forks off; Drakar does not set it.
+- **Prompts queued as content blocks** (2.1.299). Two prompts sent mid-turn with `content`
+  arrays still run as one turn and one transcript line, but the first block now ends with a
+  newline, so the model reads them apart. Drakar shows each on its own `started` lifecycle,
+  as before.
+- **Larger transcripts** (2.1.300). The file now holds what each API request carried:
+  `api-request-shape` (the system prompt and tool schemas, about 120KB, written again
+  whenever the tool set changes, for example on entering plan mode), `api-request` (about
+  1-3KB per request), `api-request-blob` (the request's new content), plus `atis-latch` and
+  `cost-state` lines. The same short scenario's file grew from about 250KB to 400KB (plan
+  mode: 270KB to 540KB). History, `SessionIndex` and `TranscriptTail` skip these types. The
+  64KB tail still found the newest usage, closing text and unanswered calls in every capture,
+  because the request lines come before the reply they lead to. A tail read while a new
+  shape line is the last thing written sees no usage until the reply lands. Folding a whole
+  400KB file took about 20ms.
+- Additive fields, which Drakar ignores: `system/init` has `additional_directories`,
+  `original_cwd` and `user_message_uuids`; `result` has `origin` (above) and
+  `subagent_stats.by_type`; the `initialize` reply has `mcpInstructions`.
+- New literals in the binary, none of them seen on stdout in these runs: `system`
+  `checkpoint_done` (an ephemeral marker for uploaded client events) and `rewind_stand_in`
+  (a transcript line a rewind appends, empty `content`). Drakar reads a transcript in file
+  order and would skip either.
+- 2.1.304's `decider: "person"` concerns mods, the CLI's own UI extensions, not
+  `--permission-prompt-tool stdio`: `can_use_tool` requests and their answers (Bash, Write,
+  `ExitPlanMode`) are unchanged.
+
 ## Raw captures
 
 The captures this was written from are trimmed into
@@ -483,11 +537,23 @@ The captures this was written from are trimmed into
 payload's tool and server lists, and local paths were cut; the shapes were not.
 
 Checking a new release before raising `ClaudeVersion.tested` (done for 2.1.296 on
-2026-10-12): the installer keeps earlier versions in `~/.local/share/claude/versions/`, so
+2026-10-12 and 2.1.308 on 2026-10-22): the installer keeps earlier versions in `~/.local/share/claude/versions/`, so
 `strings` the old and new binaries and diff their `subtype:"…"` and `type:"…"` literals for
 what is new. Then run the same scripted scenarios on both with `ClaudeCommand`'s arguments
 plus a pinned `--model claude-haiku-4-5-20251001` and `--setting-sources project`, in a
 scratch folder, and compare the key sets per message type; a throwaway test that feeds the
 lines through `StreamMessage` and `ClaudeTranslator` shows anything that lands as `.unknown`
 or `.other`. Pin the model by id: the `haiku` alias moves between releases and takes
-`TodoWrite` with it. Plan-mode runs leave a plan in `~/.claude/plans/`; delete it.
+`TodoWrite` with it. Plan-mode runs leave a plan in `~/.claude/plans/`; delete it, and the
+scratch folders' transcripts under `~/.claude/projects/`. To interrupt during a command,
+wait for its `can_use_tool` and answer it first; interrupting while the request is pending
+is also a valid scenario, but a different one (`control_cancel_request`). The 2026-10-22
+driver also asked for a fork (`subagent_type: "fork"`) and waited past the first `result`
+for the notification turn.
+
+The changelog gives no dates; `npm view @anthropic-ai/claude-code time --json` does (publish
+times, UTC), and `dist-tags` separates `latest` from `stable`. The changelog items between
+2.1.296 and 2.1.308 that touch Drakar (2.1.299 queued content blocks, 2.1.300 larger
+transcripts, 2.1.302 fork subagents, 2.1.304 mods) were all observed on 2026-10-22: see
+"2.1.308". That day 2.1.308 was `latest`, `stable` and `next` at once; 2.1.297 and 2.1.298
+were never published.
