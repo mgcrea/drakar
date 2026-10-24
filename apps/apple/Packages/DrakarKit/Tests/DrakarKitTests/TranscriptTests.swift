@@ -247,7 +247,8 @@ struct TranscriptTests {
     var transcript = ClaudeFeed()
     transcript.addPrompt("Think")
     transcript.apply(
-      try message(#"{"type":"stream_event","event":{"type":"message_start","message":{"id":"m1"}}}"#),
+      try message(
+        #"{"type":"stream_event","event":{"type":"message_start","message":{"id":"m1"}}}"#),
       at: start)
     transcript.apply(
       try message(
@@ -287,7 +288,8 @@ struct TranscriptTests {
       var transcript = ClaudeFeed()
       transcript.addPrompt("Think")
       transcript.apply(
-        try message(#"{"type":"stream_event","event":{"type":"message_start","message":{"id":"m1"}}}"#))
+        try message(
+          #"{"type":"stream_event","event":{"type":"message_start","message":{"id":"m1"}}}"#))
       transcript.apply(
         try message(
           #"{"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":""}}}"#

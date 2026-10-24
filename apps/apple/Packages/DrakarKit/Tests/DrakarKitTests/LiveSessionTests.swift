@@ -64,10 +64,12 @@ struct SessionRegistryTests {
     var signalled: [Int32] = []
     let ending = LiveSession(pid: 41, sessionID: "s1")
     #expect(
-      LiveSession.end(ending, account: account, isAlive: { _ in true }) {
-        signalled.append($0)
-        return true
-      })
+      LiveSession.end(
+        ending, account: account, isAlive: { _ in true },
+        signal: {
+          signalled.append($0)
+          return true
+        }))
     #expect(signalled == [41])
   }
 

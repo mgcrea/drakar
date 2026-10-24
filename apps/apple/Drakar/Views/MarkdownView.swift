@@ -70,7 +70,8 @@ private struct InlineText: View {
       LinkText(text: text, isSecondary: isSecondary)
         .alignmentGuide(.firstTextBaseline) { _ in LinkText.firstBaseline }
     } else {
-      Text(text).foregroundStyle(isSecondary ? AnyShapeStyle(.secondary) : AnyShapeStyle(.foreground))
+      Text(text).foregroundStyle(
+        isSecondary ? AnyShapeStyle(.secondary) : AnyShapeStyle(.foreground))
     }
   }
 }

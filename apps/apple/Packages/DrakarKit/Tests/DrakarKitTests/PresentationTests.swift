@@ -31,7 +31,9 @@ struct PresentationTests {
         == "Add hello.txt")
     let todos: JSONValue = .array([
       .object(["content": .string("a"), "status": .string("completed")]),
-      .object(["content": .string("b"), "activeForm": .string("Doing b"), "status": .string("in_progress")]),
+      .object([
+        "content": .string("b"), "activeForm": .string("Doing b"), "status": .string("in_progress"),
+      ]),
     ])
     #expect(call("TodoWrite", ["todos": todos]).summary == "1/2 done · Doing b")
     #expect(call("TodoWrite", ["todos": .array([])]).summary == "0/0 done")

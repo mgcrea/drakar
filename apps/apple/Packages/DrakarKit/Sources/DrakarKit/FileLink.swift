@@ -68,9 +68,10 @@ public struct FileLink: Sendable, Equatable {
     }
     if remaining > 0 { return units.count }
     let start = units.distance(from: units.startIndex, to: index)
-    let lineEnd = units[index...].firstIndex(of: 0x0A).map {
-      units.distance(from: units.startIndex, to: $0)
-    } ?? units.count
+    let lineEnd =
+      units[index...].firstIndex(of: 0x0A).map {
+        units.distance(from: units.startIndex, to: $0)
+      } ?? units.count
     return min(start + max((column ?? 1) - 1, 0), lineEnd)
   }
 }

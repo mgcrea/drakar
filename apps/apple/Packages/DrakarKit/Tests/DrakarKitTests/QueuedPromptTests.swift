@@ -131,7 +131,8 @@ struct QueuedPromptTests {
     var transcript = ClaudeFeed()
     transcript.addPrompt("Sleep for 25 seconds")
     let messages = try Fixture.interruptKeepsQueue.messages
-    let firstEnd = try #require(messages.firstIndex { if case .result = $0 { true } else { false } })
+    let firstEnd = try #require(
+      messages.firstIndex { if case .result = $0 { true } else { false } })
     for message in messages[..<firstEnd] { transcript.apply(message) }
     transcript.queue(QueuedPrompt(uuid: esc, text: "Reply with the single word QUEUED."))
     for message in messages[firstEnd...].prefix(4) { transcript.apply(message) }
@@ -152,6 +153,7 @@ struct QueuedPromptTests {
     for message in messages[(secondTurn + 1)...] { transcript.apply(message) }
     #expect(transcript.queuedPrompts.isEmpty)
     #expect(transcript.turnEnd == .interrupted)
-    #expect(!transcript.entries.contains { $0.kind == .prompt("Reply with the single word DROPPED.") })
+    #expect(
+      !transcript.entries.contains { $0.kind == .prompt("Reply with the single word DROPPED.") })
   }
 }
