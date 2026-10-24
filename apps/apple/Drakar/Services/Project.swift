@@ -445,6 +445,8 @@ final class Project {
   /// Quiets the question or offer a session elsewhere ended on, until it asks another.
   func dismissAsk(_ summary: SessionSummary) {
     dismissedElsewhere[summary.sessionID] = summary.closingMessageID
+    // A row watching it here asks again once that process exits, unless it knows too.
+    session(withID: summary.sessionID)?.dismissedAsk = summary.closingMessageID
     Attention.shared.refresh()
   }
 
@@ -877,6 +879,7 @@ final class Project {
     if target.forks == true, let name = forkName(for: target) { session.rename(to: name) }
     let item = make(session)
     item.isWatching = watching
+    item.dismissedAsk = dismissedElsewhere[target.sessionID]
     sessions.insert(item, at: 0)
     select(item)
     return item

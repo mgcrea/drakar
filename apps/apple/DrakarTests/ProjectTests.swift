@@ -163,6 +163,26 @@ struct ProjectTests {
     return item
   }
 
+  /// A question dismissed while its session was live elsewhere stays dismissed once that
+  /// process exits and the watched row can send again: whether it was dismissed before the
+  /// row was opened here or while it was watched.
+  @Test func aQuestionDismissedElsewhereStaysDismissedOnceItsProcessExits() throws {
+    var elsewhere = SessionSummary(
+      sessionID: "a", account: ClaudeAccount(directory: folder, isDefault: false),
+      file: folder.appending(path: "a.jsonl"), modified: .now, size: 1)
+    elsewhere.closingAsk = ClosingAsk(kind: .question, text: "Want me to push?")
+    elsewhere.closingMessageID = "m1"
+    for dismissedFirst in [true, false] {
+      let project = Project(folder: folder)
+      if dismissedFirst { project.dismissAsk(elsewhere) }
+      let item = project.attach(target("a"), watching: true, readOnly: true)
+      item.preview = elsewhere
+      if !dismissedFirst { project.dismissAsk(elsewhere) }
+      item.session.isReadOnly = false
+      #expect(item.closingAsk == nil, "dismissed first: \(dismissedFirst)")
+    }
+  }
+
   @Test func yesAnswersAYesOrNoQuestion() throws {
     let project = Project(folder: folder)
     let item = try asking(
