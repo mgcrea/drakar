@@ -84,18 +84,6 @@ struct SessionView: View {
             )
             .id(choice.id)
           }
-        } else if let earlier = session.earlierQuestion {
-          Docked {
-            QuestionPanel(
-              questions: UserQuestion.list(earlier.input),
-              answer: { answers in
-                project.takeOver(item)
-                session.answerEarlierQuestion(answers)
-              },
-              skip: session.dismissEarlierQuestion
-            )
-            .id(earlier.id)
-          }
         } else {
           if let todos = runningTodos {
             // In the composer's column, floating as it does.
