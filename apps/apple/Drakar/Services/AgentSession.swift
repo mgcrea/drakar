@@ -629,6 +629,8 @@ final class AgentSession {
   func relocate(to target: ResumeTarget) {
     resuming = target
     savedTarget = target
+    // `SessionMover` moves the transcript whole, so a watched row reads on from there.
+    follower = follower?.moved(to: target.transcriptFile)
     // The process that ran under the old account is gone; until the next one starts, the
     // session is on the account its files are under.
     account = nil

@@ -3,7 +3,7 @@ import Foundation
 /// A transcript file read as it grows, for a session another process is writing: each
 /// catch-up folds in only the lines appended since the last one.
 public struct TranscriptFollower: Sendable {
-  public let file: URL
+  public private(set) var file: URL
   /// Bytes read so far.
   public private(set) var offset: UInt64 = 0
   private var buffer = LineBuffer()
@@ -11,6 +11,13 @@ public struct TranscriptFollower: Sendable {
 
   public init(file: URL) {
     self.file = file
+  }
+
+  /// The same reading, of the file this one was moved to whole: what was read stays read.
+  public func moved(to file: URL) -> TranscriptFollower {
+    var moved = self
+    moved.file = file
+    return moved
   }
 
   /// Folds what was appended since the last call into `transcript`. A line still being

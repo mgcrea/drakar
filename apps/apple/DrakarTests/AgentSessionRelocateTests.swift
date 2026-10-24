@@ -37,6 +37,35 @@ struct AgentSessionRelocateTests {
       accountIsDefault: false)
   }
 
+  /// A session watched read-only keeps following its transcript at the new place: the move
+  /// keeps the file whole, so what was read stays read.
+  @Test func aWatchedSessionFollowsItsTranscriptToTheNewAccount() async throws {
+    defer { try? FileManager.default.removeItem(at: root) }
+    let old = root.appending(path: ".claude-a", directoryHint: .isDirectory)
+    let new = root.appending(path: ".claude-b", directoryHint: .isDirectory)
+    let oldFile = try transcript(in: old)
+    let session = AgentSession(folder: root, resuming: target(oldFile, account: old))
+    await session.loadHistory()
+    let folder = new.appending(path: "projects/-p", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    let newFile = folder.appending(path: "s1.jsonl")
+    try FileManager.default.moveItem(at: oldFile, to: newFile)
+    session.relocate(to: target(newFile, account: new))
+
+    session.isReadOnly = true
+    let handle = try FileHandle(forWritingTo: newFile)
+    try handle.seekToEnd()
+    try handle.write(
+      contentsOf: Data(
+        (#"{"type":"user","message":{"role":"user","content":"And again"}}"# + "\n").utf8))
+    try handle.close()
+    session.catchUp()
+    let prompts = session.transcript.entries.compactMap {
+      if case .prompt(let text) = $0.kind { text } else { nil }
+    }
+    #expect(prompts == ["Make it so", "And again"])
+  }
+
   /// The window's stored project and the next process both follow the move.
   @Test func theNextStartResumesUnderTheNewAccount() async throws {
     defer { try? FileManager.default.removeItem(at: root) }
