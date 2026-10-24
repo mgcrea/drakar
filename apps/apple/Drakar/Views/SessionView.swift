@@ -97,9 +97,7 @@ struct SessionView: View {
           let toMarked = project.sendsToMarked
           ComposerView(
             text: $item.draft,
-            canSend: toMarked
-              ? project.markedSessions.contains { $0.session.canSend || $0.session.canQueue }
-              : session.canSend || session.canQueue,
+            canSend: toMarked ? project.canSendToMarked : session.canSend || session.canQueue,
             isRunning: session.transcript.isRunning, agentName: session.agent.shortName,
             context: workspace.selection, pinned: workspace.pinned,
             unpin: { selection in workspace.pinned.removeAll { $0 == selection } },

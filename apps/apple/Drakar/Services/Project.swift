@@ -701,14 +701,23 @@ final class Project {
   /// The marked rows still held, in the list's order.
   var markedSessions: [ProjectSession] { listedHeld.filter { marked.contains($0.id) } }
 
+  /// How many marked rows are still held. Counted without `markedSessions`, whose sort
+  /// reads every row's state and so redraws the composer on any row's delta.
+  private var markedCount: Int { held.count { marked.contains($0.id) } }
+
   /// The composer sends to the marked rows rather than the shown one.
-  var sendsToMarked: Bool { held.count { marked.contains($0.id) } >= 2 }
+  var sendsToMarked: Bool { markedCount >= 2 }
+
+  /// Whether a marked row could take the composer's prompt now, sent or queued.
+  var canSendToMarked: Bool {
+    held.contains { marked.contains($0.id) && ($0.session.canSend || $0.session.canQueue) }
+  }
 
   /// The composer's chip: where the prompt goes, or what the last one there did.
   var broadcastLabel: String? {
     guard sendsToMarked else { return nil }
     guard let last = lastBroadcast else {
-      return String(localized: "To \(markedSessions.count) sessions")
+      return String(localized: "To \(markedCount) sessions")
     }
     let sent = String(localized: "Sent to \(last.sent)")
     return last.skipped == 0 ? sent : sent + " · " + String(localized: "\(last.skipped) skipped")
