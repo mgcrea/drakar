@@ -128,11 +128,6 @@ final class Attention: NSObject, UNUserNotificationCenterDelegate {
       withIdentifiers: Array(answered))
   }
 
-  /// A session's waiting requests changed.
-  func permissionsChanged(_ item: ProjectSession?) {
-    refresh()
-  }
-
   func permissionRequested(_ item: ProjectSession, in project: Project) {
     refresh()
     guard let level = item.urgency, AttentionChoice.isOn(level, .notifies),

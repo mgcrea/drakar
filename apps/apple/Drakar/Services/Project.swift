@@ -1173,7 +1173,7 @@ final class Project {
       guard let self, let item else { return }
       Attention.shared.permissionRequested(item, in: self)
     }
-    session.onPermissionsChanged = { [weak item] in Attention.shared.permissionsChanged(item) }
+    session.onPermissionsChanged = { Attention.shared.refresh() }
     session.onPromptSent = { Attention.shared.refresh() }
     session.onReplied = { [weak self, weak item] in
       guard let self, let item else { return }
