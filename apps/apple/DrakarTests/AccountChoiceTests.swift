@@ -84,30 +84,57 @@ struct AccountChoiceTests {
     #expect(choosing { ClaudeChoice.pickedAccount(for: project) }?.name == "picked")
   }
 
-  /// The pick is read when the process starts, not when the row was made.
-  @Test func aSessionCreatedBeforeThePickStartsOnIt() async throws {
-    defer { cleanUp() }
+  /// A stand-in CLI that writes the `CLAUDE_CONFIG_DIR` it was started with.
+  private func accountWriter() throws -> URL {
     let fake = root.appending(path: "claude")
     try Data(
       "#!/bin/sh\nprintf '%s' \"$CLAUDE_CONFIG_DIR\" > \"$0.account\"\ncat > /dev/null\n".utf8
     ).write(to: fake)
     try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: fake.path)
+    return fake
+  }
 
+  /// What `accountWriter` wrote, once it has.
+  private func writtenAccount(_ fake: URL) async throws -> String? {
+    let written = fake.appendingPathExtension("account")
+    for _ in 0..<50 {
+      if let directory = try? String(contentsOf: written, encoding: .utf8) { return directory }
+      try await Task.sleep(for: .milliseconds(100))
+    }
+    return nil
+  }
+
+  /// The pick is read when the process starts, not when the row was made.
+  @Test func aSessionCreatedBeforeThePickStartsOnIt() async throws {
+    defer { cleanUp() }
+    let fake = try accountWriter()
     let session = AgentSession(folder: project)
     session.executableOverride = fake
     choosing { pickPicked(for: project) }
     await ClaudeChoice.$testSuite.withValue(suite) { await session.spawn() }
     defer { session.stop() }
 
-    let written = fake.appendingPathExtension("account")
-    var configDirectory: String?
-    for _ in 0..<50 {
-      configDirectory = try? String(contentsOf: written, encoding: .utf8)
-      if configDirectory != nil { break }
-      try await Task.sleep(for: .milliseconds(100))
-    }
-    #expect(configDirectory == String(picked.path(percentEncoded: false).dropLast()))
+    #expect(
+      try await writtenAccount(fake) == String(picked.path(percentEncoded: false).dropLast()))
     #expect(session.account?.name == "picked")
+  }
+
+  /// An account given to the session (Run in Each Subfolder's) beats the folder's pick, and
+  /// is named before the session starts.
+  @Test func aSessionGivenAnAccountStartsOnIt() async throws {
+    defer { cleanUp() }
+    let fake = try accountWriter()
+    let given = ClaudeChoice.account(at: settings.path(percentEncoded: false))
+    let session = AgentSession(folder: project, account: given)
+    session.executableOverride = fake
+    choosing { pickPicked(for: project) }
+    #expect(session.effectiveAccount?.name == "settings")
+    await ClaudeChoice.$testSuite.withValue(suite) { await session.spawn() }
+    defer { session.stop() }
+
+    #expect(
+      try await writtenAccount(fake) == String(settings.path(percentEncoded: false).dropLast()))
+    #expect(session.account?.name == "settings")
   }
 
   /// A resumed session not yet started is on the account that wrote it; a new one has none

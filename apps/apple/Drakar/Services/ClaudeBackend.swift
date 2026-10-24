@@ -26,8 +26,8 @@ final class ClaudeBackend: AgentBackend {
     }
     command.name = start.name
     let launch = ClaudeLaunch.make(
-      folder: start.folder, resuming: start.resuming, environment: start.environment,
-      executableOverride: start.executableOverride)
+      folder: start.folder, resuming: start.resuming, account: start.account,
+      environment: start.environment, executableOverride: start.executableOverride)
     return AgentLaunch(
       configuration: launch.executable.map {
         .init(

@@ -19,8 +19,11 @@ final class FanOutDraft {
   var mode: PermissionMode?
   /// How many run at once, as typed; empty for all.
   var limitText = ""
+  /// The account Claude Code's sessions start under, and whose skills reach every folder.
+  var account: ClaudeAccount {
+    didSet { if account.key != oldValue.key { readClaudeReach() } }
+  }
 
-  @ObservationIgnored private let account: URL
   /// The project the skill was listed for, which may not be the parent.
   @ObservationIgnored private let source: URL?
   @ObservationIgnored private let codexSkills: (URL) -> CodexSkills
@@ -30,7 +33,8 @@ final class FanOutDraft {
   private var overrides: [URL: Bool] = [:]
 
   init(
-    skill: SkillEntry, agent: AgentKind, parent: URL, account: URL, source: URL? = nil,
+    skill: SkillEntry, agent: AgentKind, parent: URL, account: ClaudeAccount,
+    source: URL? = nil,
     codexSkills: @escaping (URL) -> CodexSkills = { CodexSkillStore.shared.skills(for: $0) }
   ) {
     self.skill = skill
@@ -89,18 +93,23 @@ final class FanOutDraft {
 
   func start(in project: Project) {
     project.runInSubfolders(
-      skill, folders: chosen, arguments: arguments, mode: mode, limit: limit)
+      skill, folders: chosen, arguments: arguments, mode: mode, limit: limit,
+      account: agent == .claude ? account : nil)
   }
 
   private func read() {
     folders = SubfolderScan.children(of: parent)
     switch agent {
-    case .claude:
-      claudeMissing = SkillReach.claudeMissing(
-        name: skill.name, isBuiltin: skill.isBuiltin, account: account, parent: parent,
-        source: source, folders: folders.map(\.url))
+    case .claude: readClaudeReach()
     case .codex: askCodex()
     }
+  }
+
+  private func readClaudeReach() {
+    guard agent == .claude else { return }
+    claudeMissing = SkillReach.claudeMissing(
+      name: skill.name, isBuiltin: skill.isBuiltin, account: account.directory, parent: parent,
+      source: source, folders: folders.map(\.url))
   }
 
   /// One short-lived `codex app-server` per folder shown, not yet asked: the list is shared

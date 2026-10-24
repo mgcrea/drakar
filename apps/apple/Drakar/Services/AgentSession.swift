@@ -28,11 +28,14 @@ final class AgentSession {
   private(set) var executable: URL?
   /// The account it runs under, picked or the shell's; nil until it starts.
   private(set) var account: ClaudeAccount?
-  /// The account the session runs, or will resume, under; nil for a new session not yet
-  /// started, which takes the window's.
+  /// The account picked for this session alone (Run in Each Subfolder's), over its folder's;
+  /// it starts there, then resumes where it wrote.
+  let accountPick: ClaudeAccount?
+  /// The account the session runs, or will resume or start, under; nil for a new session
+  /// not yet started and given none, which takes the window's.
   /// Claude Code's only: a Codex target's account fields are placeholders.
   var effectiveAccount: ClaudeAccount? {
-    features.showsAccount ? account ?? resuming?.account : nil
+    features.showsAccount ? account ?? resuming?.account ?? accountPick : nil
   }
   /// The end of the CLI's stderr, shown when the process fails.
   private(set) var diagnostics = ""
@@ -135,10 +138,11 @@ final class AgentSession {
   /// `agent` nil takes the target's, else Claude Code. `backend` stands in for tests.
   init(
     folder: URL, resuming: ResumeTarget? = nil, agent: AgentKind? = nil,
-    backend: AgentBackend? = nil
+    account: ClaudeAccount? = nil, backend: AgentBackend? = nil
   ) {
     self.folder = folder
     self.resuming = resuming
+    accountPick = account
     self.backend = backend ?? (agent ?? resuming?.agentKind ?? .claude).makeBackend()
     savedTarget = resuming?.forks == true ? nil : resuming
     isLoadingHistory = resuming != nil
@@ -446,7 +450,8 @@ final class AgentSession {
     let start = AgentStart(
       folder: folder, resuming: resuming, environment: environment,
       executableOverride: executableOverride, model: modelPick, mode: modePick, effort: effort,
-      allowsBypass: allowsBypass, name: unsentName)
+      allowsBypass: allowsBypass, name: unsentName,
+      account: resuming == nil ? accountPick : nil)
     let launch = backend.launch(start)
     account = launch.account
     guard let configuration = launch.configuration else { return fail(backend.notFoundMessage) }

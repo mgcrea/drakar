@@ -18,7 +18,7 @@ struct ClaudeLaunch {
   /// `environment` is the login shell's (`AgentSession.environment`). A resume runs under
   /// the account that wrote it; a new session under its folder's pick, else the one in
   /// Settings, else the shell's. An explicit `account` wins over all of them: the probe runs
-  /// under the account its lists are kept for.
+  /// under the account its lists are kept for, and a new session under the one picked for it.
   static func make(
     folder: URL, resuming: ResumeTarget?, account explicit: ClaudeAccount? = nil,
     environment: [String: String], executableOverride: URL?

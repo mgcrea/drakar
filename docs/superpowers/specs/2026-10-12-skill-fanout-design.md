@@ -65,6 +65,10 @@ can still be ticked: the session then gets the prompt and says so itself.
   `takesArguments`.
 - Mode: the permission-mode picker the composer offers, defaulting to Settings'. Bypass only
   when allowed (`allowsBypass`), as today.
+- Account (Claude Code, when there is more than one): every account, defaulting to the
+  window's. Each session starts under it, over its subfolder's own pick and Settings', and
+  §2's check reads that account's skills. Without it a session would take its subfolder's
+  pick, not the window's.
 - Run at most: a number field, empty by default, placeholder "Unlimited".
 - Buttons: Cancel, and "Start N Sessions" (default), disabled at zero.
 
@@ -74,7 +78,8 @@ shown session's agent (the inspector's list), then the same content.
 ## §4 Starting the sessions
 
 `Project.runInSubfolders(_ skill: SkillEntry, folders: [URL], arguments: String, mode:
-PermissionMode?, limit: Int?)` (a nil mode leaves Settings' default):
+PermissionMode?, limit: Int?, account: ClaudeAccount?)` (a nil mode leaves Settings'
+default; a nil account, Codex's, the folder's):
 
 1. For each folder, a new session (`agent: skillsAgent, folder:`), named
    `"/<skill> · <folder name>"` with `rename(to:)` (a session with no process takes the

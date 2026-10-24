@@ -515,12 +515,16 @@ final class Project {
   }
 
   /// A new session in `folder` (the project's when nil), on top, running `agent` (Settings'
-  /// default when nil), and shown unless `shows` is false. No process until it is prompted.
+  /// default when nil) under `account` (the folder's when nil), and shown unless `shows` is
+  /// false. No process until it is prompted.
   @discardableResult func newSession(
-    agent: AgentKind? = nil, folder: URL? = nil, select shows: Bool = true
+    agent: AgentKind? = nil, folder: URL? = nil, account: ClaudeAccount? = nil,
+    select shows: Bool = true
   ) -> ProjectSession {
     let item = make(
-      AgentSession(folder: folder ?? self.folder, agent: agent ?? ClaudeChoice.defaultAgent))
+      AgentSession(
+        folder: folder ?? self.folder, agent: agent ?? ClaudeChoice.defaultAgent,
+        account: account))
     sessions.insert(item, at: 0)
     if shows { select(item) }
     return item
@@ -621,10 +625,11 @@ final class Project {
   }
 
   /// `skill` in a new session in each of `folders`, on top in their order, the first shown:
-  /// named after the skill and the folder, in `mode` when given, and sent the skill all at
-  /// once or `limit` at a time.
+  /// named after the skill and the folder, in `mode` and under `account` when given, and
+  /// sent the skill all at once or `limit` at a time.
   func runInSubfolders(
-    _ skill: SkillEntry, folders: [URL], arguments: String, mode: PermissionMode?, limit: Int?
+    _ skill: SkillEntry, folders: [URL], arguments: String, mode: PermissionMode?, limit: Int?,
+    account: ClaudeAccount? = nil
   ) {
     guard !folders.isEmpty else { return }
     let agent = skillsAgent
@@ -632,7 +637,7 @@ final class Project {
     // Each goes on top, so the last folder first leaves them in order.
     let items = Array(
       folders.reversed().map { folder in
-        let item = newSession(agent: agent, folder: folder, select: false)
+        let item = newSession(agent: agent, folder: folder, account: account, select: false)
         item.session.rename(to: "/\(skill.name) · \(folder.lastPathComponent)")
         if let mode { item.session.setMode(mode) }
         return item

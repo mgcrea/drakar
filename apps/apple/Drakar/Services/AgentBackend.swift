@@ -42,6 +42,8 @@ struct AgentStart {
   var allowsBypass: Bool
   /// A name not yet recorded.
   var name: String?
+  /// The account picked for this session alone, over the folder's; Claude Code's only.
+  var account: ClaudeAccount? = nil
 }
 
 struct AgentLaunch {

@@ -8,7 +8,7 @@ import Testing
 @Suite("The Run in Each Subfolder sheet")
 struct FanOutDraftTests {
   private let root: URL
-  private let account: URL
+  private let account: ClaudeAccount
   private let parent: URL
 
   init() throws {
@@ -17,9 +17,12 @@ struct FanOutDraftTests {
       directoryHint: .isDirectory
     ).appending(path: "drakar-draft-\(UUID().uuidString)", directoryHint: .isDirectory)
     self.root = root
-    account = root.appending(path: ".claude-test", directoryHint: .isDirectory)
+    account = ClaudeAccount(
+      directory: root.appending(path: ".claude-test", directoryHint: .isDirectory), isDefault: false
+    )
     parent = root.appending(path: "apps", directoryHint: .isDirectory)
-    try FileManager.default.createDirectory(at: account, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(
+      at: account.directory, withIntermediateDirectories: true)
     for (name, git) in [("alpha", true), ("beta", true), ("notes", false)] {
       let folder = parent.appending(path: name, directoryHint: .isDirectory)
       try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -80,6 +83,24 @@ struct FanOutDraftTests {
     #expect(draft.chosen.map(\.lastPathComponent) == ["alpha"])
   }
 
+  /// Another account is checked anew: a parent-only skill that account holds reaches every
+  /// folder.
+  @Test func changingTheAccountChecksTheSkillAgain() throws {
+    for folder in [parent, root.appending(path: ".claude-other", directoryHint: .isDirectory)] {
+      let skills = folder.appending(
+        path: folder == parent ? ".claude/skills/deploy" : "skills/deploy",
+        directoryHint: .isDirectory)
+      try FileManager.default.createDirectory(at: skills, withIntermediateDirectories: true)
+      try Data("---\nname: deploy\n---\n".utf8).write(to: skills.appending(path: "SKILL.md"))
+    }
+    let draft = draft(SkillEntry(name: "deploy"))
+    #expect(draft.chosen.isEmpty)
+    draft.account = ClaudeAccount(
+      directory: root.appending(path: ".claude-other", directoryHint: .isDirectory),
+      isDefault: false)
+    #expect(draft.chosen.map(\.lastPathComponent) == ["alpha", "beta"])
+  }
+
   /// The limit: a positive number, or unlimited.
   @Test func theLimit() {
     let draft = draft()
@@ -103,7 +124,7 @@ struct FanOutDraftTests {
     #expect(draft.chosen.map(\.lastPathComponent) == ["zeta"])
   }
 
-  /// Start hands the chosen folders, arguments, mode and limit to the project.
+  /// Start hands the chosen folders, arguments, mode, limit and account to the project.
   @Test func startRunsTheBatch() throws {
     let project = Project(folder: parent)
     project.executableOverride = try standIn()
@@ -117,6 +138,7 @@ struct FanOutDraftTests {
     #expect(project.fanOuts.first?.prompt == "/audit auth")
     #expect(project.fanOuts.first?.queue.limit == 1)
     #expect(project.sessions.first?.session.startingMode == .plan)
+    #expect(project.sessions.first?.session.accountPick == account)
   }
 
   private func loaded(_ skills: CodexSkills) async throws {

@@ -31,7 +31,7 @@ struct SkillFanOutSheet: View {
   private func makeDraft(_ skill: SkillEntry) -> FanOutDraft {
     FanOutDraft(
       skill: skill, agent: project.skillsAgent, parent: project.folder,
-      account: AccountStore.shared.windowAccount(for: project.folder).directory,
+      account: AccountStore.shared.windowAccount(for: project.folder),
       source: project.folder)
   }
 }
@@ -125,6 +125,14 @@ private struct FanOutForm: View {
           prompt: Text(draft.skill.takesArguments ? draft.skill.argumentHint : "Optional")
         )
         .accessibilityIdentifier("fanout.arguments")
+        if draft.agent == .claude, accounts.count > 1 {
+          Picker("Account", selection: accountKey) {
+            ForEach(accounts, id: \.key) { account in
+              Text(AccountStore.shared.profile(for: account).name).tag(account.key)
+            }
+          }
+          .accessibilityIdentifier("fanout.account")
+        }
         Picker("Mode", selection: $draft.mode) {
           Text("Default").tag(PermissionMode?.none)
           ForEach(draft.offeredModes, id: \.self) { mode in
@@ -147,6 +155,22 @@ private struct FanOutForm: View {
       }
     }
     .padding(20)
+  }
+
+  /// Every account, the window's first among them when discovery missed it.
+  private var accounts: [ClaudeAccount] {
+    let store = AccountStore.shared
+    let all = store.accounts.isEmpty ? [store.shellAccount] : store.accounts
+    return all.contains { $0.key == draft.account.key } ? all : [draft.account] + all
+  }
+
+  /// By key: the same directory with and without its trailing slash is one account.
+  private var accountKey: Binding<String> {
+    Binding(
+      get: { draft.account.key },
+      set: { key in
+        if let account = accounts.first(where: { $0.key == key }) { draft.account = account }
+      })
   }
 
   private func note(_ folder: Subfolder) -> String? {
