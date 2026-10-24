@@ -713,13 +713,17 @@ final class Project {
   }
 
   /// The prompt to each marked session: now where it could take one, queued in a turn that
-  /// runs, skipped where it can't (open elsewhere, moving, starting). The marks stay.
+  /// runs, skipped where it can't (open elsewhere, moving, starting, or a PDF its agent
+  /// can't read). The marks stay.
   @discardableResult func broadcast(
     _ text: String, context: [EditorSelection], attachments: [Attachment]
   ) -> BroadcastResult {
     var result = BroadcastResult(sent: 0, skipped: 0)
+    let hasPDF = attachments.contains { $0.kind == .pdf }
     for item in markedSessions {
-      guard item.session.canSend || item.session.canQueue else {
+      guard item.session.canSend || item.session.canQueue,
+        !hasPDF || item.session.features.acceptsPDF
+      else {
         result.skipped += 1
         continue
       }

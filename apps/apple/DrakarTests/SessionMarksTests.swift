@@ -115,6 +115,22 @@ struct SessionMarksTests {
     #expect(project.lastBroadcast == BroadcastResult(sent: 2, skipped: 1))
   }
 
+  /// A PDF goes only where the agent reads one: a marked Codex session is skipped rather than
+  /// sent a prompt whose document Codex never gets.
+  @Test func aPDFSkipsASessionWhoseAgentCannotReadIt() throws {
+    let (project, items) = try project(1)
+    let codex = project.newSession(agent: .codex)
+    defer { project.stopAll() }
+    let file = folder.appending(path: "brief.pdf")
+    try Data("%PDF-1.4\n%%EOF\n".utf8).write(to: file)
+    let pdf = try Attachment.file(at: file)
+    project.markAll()
+    let result = project.broadcast("Summarize this", context: [], attachments: [pdf])
+    #expect(result == BroadcastResult(sent: 1, skipped: 1))
+    #expect(prompts(items[0]) == ["Summarize this"])
+    #expect(prompts(codex).isEmpty)
+  }
+
   /// A new click forgets what the last broadcast said.
   @Test func aClickForgetsTheLastBroadcast() throws {
     let (project, items) = try project(2)
