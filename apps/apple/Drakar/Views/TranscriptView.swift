@@ -10,8 +10,8 @@ struct TranscriptView: View {
   let transcript: Transcript
   /// The entry at the top when this session was last shown; nil while following.
   @Binding var anchor: String?
-  /// Takes back a prompt queued behind the turn.
-  var cancelQueued: ((QueuedPrompt) -> Void)? = { _ in }
+  /// Takes back a prompt queued behind the turn; nil where the agent can't, so no Cancel.
+  var cancelQueued: ((QueuedPrompt) -> Void)? = nil
 
   @State private var position = ScrollPosition(edge: .bottom)
   /// Whether new output scrolls into view. Scrolling up to read stops it; scrolling back
