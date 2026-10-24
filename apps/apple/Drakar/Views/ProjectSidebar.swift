@@ -300,7 +300,6 @@ struct SessionListView: View {
     }
   }
 
-  /// Mid-turn, stopping loses the turn: ask first.
   /// ⌘ marks one row more or less, ⇧ a range; a plain click shows the row.
   static func rowClick(_ flags: NSEvent.ModifierFlags) -> Project.RowClick {
     if flags.contains(.command) { return .toggle }
@@ -336,6 +335,7 @@ struct SessionListView: View {
     if alert.runModal() == .alertFirstButtonReturn { action() }
   }
 
+  /// Mid-turn, stopping loses the turn: ask first.
   private func confirmIfRunning(_ item: ProjectSession, then action: @escaping () -> Void) {
     guard item.session.transcript.isRunning else { return action() }
     let alert = NSAlert()
