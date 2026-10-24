@@ -2,11 +2,46 @@ import AppKit
 import DrakarKit
 import SwiftUI
 
-/// The window's right-hand column: what the project's `claude` would load, its skills over
-/// its MCP servers, both filtered by one field; Codex's skills instead of Claude Code's while
-/// a Codex session is shown. The split and the folding are kept per window, as the
-/// sidebar's are.
+/// The inspector's tabs: the selected session, or what the project's agent would load.
+enum InspectorTab: String {
+  case session, capabilities
+}
+
+/// The window's right-hand column, in two tabs: the selected session's context and details,
+/// and the project's skills and MCP servers. The tab is kept per window; one opened while
+/// its lists changed shows them, since that is what the toolbar's dot pointed at.
 struct InspectorView: View {
+  let project: Project
+  @SceneStorage("drakar.inspectorTab") private var tab = InspectorTab.session
+
+  var body: some View {
+    VStack(spacing: 0) {
+      Picker("Inspector", selection: $tab) {
+        Text("Session").tag(InspectorTab.session)
+        Text("Skills & MCP").tag(InspectorTab.capabilities)
+      }
+      .pickerStyle(.segmented)
+      .labelsHidden()
+      .padding(.horizontal, 10)
+      .padding(.top, 8)
+      .padding(.bottom, 8)
+      .accessibilityIdentifier("inspector.tabs")
+      Divider()
+      switch tab {
+      case .session: SessionInspector(project: project)
+      case .capabilities: CapabilitiesInspector(project: project)
+      }
+    }
+    .onAppear {
+      if !project.capabilityMarks.isEmpty { tab = .capabilities }
+    }
+  }
+}
+
+/// What the project's `claude` would load, its skills over its MCP servers, both filtered by
+/// one field; Codex's skills instead of Claude Code's while a Codex session is shown. The
+/// split and the folding are kept per window, as the sidebar's are.
+private struct CapabilitiesInspector: View {
   let project: Project
   @SceneStorage("drakar.skillsFraction") private var fraction = 0.6
   @SceneStorage("drakar.skillsCollapsed") private var skillsCollapsed = false
@@ -18,8 +53,7 @@ struct InspectorView: View {
       TextField("Filter", text: $filter, prompt: Text("Filter skills and servers"))
         .textFieldStyle(.roundedBorder)
         .padding(.horizontal, 10)
-        .padding(.top, 8)
-        .padding(.bottom, 8)
+        .padding(.vertical, 8)
         .accessibilityIdentifier("inspector.filter")
       Divider()
       VerticalSplit(
@@ -460,8 +494,8 @@ struct InspectorToggle: View {
   private func help(_ marks: CapabilityMarks, showsDot: Bool) -> String {
     let action =
       isShown
-      ? String(localized: "Hide skills and MCP servers (⌥⌘0)")
-      : String(localized: "Show skills and MCP servers (⌥⌘0)")
+      ? String(localized: "Hide the inspector (⌥⌘0)")
+      : String(localized: "Show the session's context, skills and MCP servers (⌥⌘0)")
     guard showsDot else { return action }
     return marks.summary(servers: project.capabilities.lists.mcpServers ?? []) + "\n" + action
   }

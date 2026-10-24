@@ -18,7 +18,7 @@ struct ContentView: View {
   @AppStorage(PreferenceKey.editorLeads) private var editorLeads = false
   /// Whether this window floats above other apps' windows, kept per window.
   @SceneStorage("drakar.keepsOnTop") private var keepsOnTop = false
-  /// Whether the skills and MCP servers column is shown, kept per window.
+  /// Whether the inspector column is shown, kept per window.
   @SceneStorage("drakar.inspectorShown") private var inspectorShown = false
   /// The attached sessions and the one shown, as JSON (`StoredProject`).
   @SceneStorage("drakar.project") private var storedProject = ""

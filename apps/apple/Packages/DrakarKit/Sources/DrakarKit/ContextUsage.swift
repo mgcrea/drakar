@@ -215,11 +215,31 @@ public struct ContextUsageReply: Sendable, Equatable {
     public var tokens: Int
   }
 
+  /// A CLAUDE.md or other memory file the session loaded: its path, `User` or `Project`, and
+  /// its share of "Memory files".
+  public struct MemoryFile: Sendable, Equatable {
+    public var path: String
+    public var type: String?
+    public var tokens: Int
+
+    public init(path: String, type: String?, tokens: Int) {
+      self.path = path
+      self.type = type
+      self.tokens = tokens
+    }
+  }
+
   public var totalTokens: Int
   public var maxTokens: Int
   /// The categories that occupy the window, largest first: the remainder, the reserve and
   /// the deferred tools are left out, as Claude Code leaves them out of its own total.
   public var categories: [Category]
+  /// Largest first: a 20k CLAUDE.md is a thing to go and edit.
+  public var memoryFiles: [MemoryFile]
+  /// Where the session compacts itself; nil while auto-compact is off.
+  public var autoCompactThreshold: Int?
+  /// The model the process counted for, with its date suffix.
+  public var model: String?
 
   static let excluded: Set<String> = ["Free space", "Autocompact buffer", "Compact buffer"]
 
@@ -229,6 +249,17 @@ public struct ContextUsageReply: Sendable, Equatable {
     else { return nil }
     totalTokens = total
     maxTokens = max
+    model = response["model"]?.stringValue
+    autoCompactThreshold =
+      response["isAutoCompactEnabled"]?.boolValue == true
+      ? response["autoCompactThreshold"]?.intValue : nil
+    memoryFiles = (response["memoryFiles"]?.arrayValue ?? []).compactMap { entry in
+      guard let path = entry["path"]?.stringValue, let tokens = entry["tokens"]?.intValue,
+        tokens > 0
+      else { return nil }
+      return MemoryFile(path: path, type: entry["type"]?.stringValue, tokens: tokens)
+    }
+    .sorted { $0.tokens > $1.tokens }
     categories = (response["categories"]?.arrayValue ?? []).compactMap { entry in
       guard let name = entry["name"]?.stringValue, let tokens = entry["tokens"]?.intValue,
         tokens > 0, !Self.excluded.contains(name), entry["isDeferred"]?.boolValue != true,

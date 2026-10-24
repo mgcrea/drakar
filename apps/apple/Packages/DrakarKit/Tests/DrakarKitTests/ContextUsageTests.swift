@@ -190,6 +190,27 @@ struct ContextUsageTests {
     #expect(!reply.categories.contains { $0.name == "Autocompact buffer" })
     #expect(!reply.categories.contains { $0.name == "MCP tools (deferred)" })
     #expect(!reply.categories.contains { $0.name == "System tools (deferred)" })
+    #expect(reply.model == "claude-haiku-4-5-20251001")
+    #expect(reply.autoCompactThreshold == 167_000)
+    #expect(
+      reply.memoryFiles == [
+        .init(path: "/Users/drakar/.claude/CLAUDE.md", type: "User", tokens: 192)
+      ])
+  }
+
+  /// The files are the part someone can act on, so they come largest first; the threshold
+  /// means nothing while auto-compact is off.
+  @Test func readsMemoryFilesAndTheCompactThreshold() throws {
+    let reply = try #require(
+      ContextUsageReply(
+        try JSONValue.parse(
+          Data(
+            #"{"totalTokens":10,"maxTokens":200000,"categories":[],"autoCompactThreshold":167000,"isAutoCompactEnabled":false,"memoryFiles":[{"path":"/a/CLAUDE.md","type":"Project","tokens":40},{"path":"/b/CLAUDE.md","type":"User","tokens":900},{"path":"/c.md","tokens":0},{"tokens":5}]}"#
+              .utf8))))
+    #expect(reply.autoCompactThreshold == nil)
+    #expect(reply.model == nil)
+    #expect(reply.memoryFiles.map(\.path) == ["/b/CLAUDE.md", "/a/CLAUDE.md"])
+    #expect(reply.memoryFiles.first?.type == "User")
   }
 
   private let endedOnAQuestion = [

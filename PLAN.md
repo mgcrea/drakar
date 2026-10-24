@@ -18,8 +18,10 @@ permission sheet. Phase 3 made Drakar the editor of `claude` run in a terminal: 
 arrive as diffs to accept or reject. Phase 4 added a plain-text editor beside the session,
 whose selection goes with the next prompt, Drakar's or a terminal `claude`'s. Phase 5 made
 a window a project: its sessions in the sidebar with their state and context, switching in
-place, each started on its first prompt. The inspector (⌥⌘0) lists the skills and MCP
-servers a project's `claude` would load, from a short probe, and runs a skill in one click.
+place, each started on its first prompt. The inspector (⌥⌘0) shows the selected session's context
+(how full, what fills it as `/context` counts it, the newest request's tokens) and lists the
+skills and MCP servers a project's `claude` would load, from a short probe, and runs a skill in
+one click.
 What comes after is a proposal, and §7 lists what has to be decided before it stops being
 one.
 
