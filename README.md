@@ -39,7 +39,7 @@ token-gated, nothing outgoing), and `make audit-running` against the running app
 | Path         | What it is                                                                          |
 | ------------ | ----------------------------------------------------------------------------------- |
 | `apps/apple` | The app: one Xcode project, one macOS target, local SPM packages, driven by `make`. |
-| `docs/`      | The protocol spike and product documentation.                                       |
+| `docs/`      | Protocol spike, product documentation; dated competitive briefs in `marketing/`.    |
 | `design/`    | The brand marks: `drakar-icon.svg`, which `make icon` in `apps/apple` builds.       |
 
 `apps/website` (the marketing site) and `apps/api` (the licence Worker) arrive
