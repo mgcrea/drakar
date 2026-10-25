@@ -45,6 +45,27 @@ import Testing
     process.terminate()
   }
 
+  /// An app done with a process, quitting before its exit comes: the host forgets it itself.
+  @Test func aProcessEndedAndForgottenByAnAppThatLeftIsGone() async throws {
+    let host = try TestHost()
+    defer { host.close() }
+    let client = try await connected(host)
+    let process = HostedProcess(client: client, configuration: host.cat(), meta: Data())
+    _ = try process.start()
+    try await within {
+      while process.id == nil { try await Task.sleep(for: .milliseconds(10)) }
+    }
+    process.forgetWhenEnded()
+    process.terminate()
+    client.flush()
+    client.close()
+
+    let other = try await connected(host)
+    try await within {
+      while try await !other.list().isEmpty { try await Task.sleep(for: .milliseconds(10)) }
+    }
+  }
+
   @Test func reattachReplaysThenGoesLive() async throws {
     let host = try TestHost()
     defer { host.close() }

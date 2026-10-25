@@ -886,7 +886,8 @@ final class AgentSession {
   /// Ends the process: input closed so it can finish cleanly, then terminated, because a
   /// window that closed mid-turn must not leave a `claude` working on nobody's behalf. At a
   /// quit, one at work in the session host is let go instead: it carries on there, sent
-  /// nothing, for the next launch to pick up.
+  /// nothing, for the next launch to pick up. An idle one ends at a quit too, and the host
+  /// forgets it by itself once it has: the app may be gone by then.
   func stop() {
     let waiting = transcript.pendingPermissions.count
     defer { permissionsMayHaveChanged(from: waiting) }
@@ -902,8 +903,7 @@ final class AgentSession {
       } else {
         hosted.closeInput()
         // Done with it: the host forgets it once it ends, so no later launch shows it again.
-        // Not at a quit, where an ended one is the next launch's to show.
-        if !AppLifecycle.isTerminating { hosted.forgetWhenEnded() }
+        hosted.forgetWhenEnded()
         hosted.terminate()
       }
     } else {

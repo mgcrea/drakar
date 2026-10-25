@@ -13,7 +13,8 @@ import Testing
     let requests: [HostRequest] = [
       .hello(protocol: 1, appVersion: "2.0"), .list, .spawn(configuration, meta: bytes),
       .attach(id: "a", from: 42), .write(id: "a", bytes: bytes), .note(id: "a", bytes: bytes),
-      .closeInput(id: "a"), .terminate(id: "a"), .setMeta(id: "a", meta: bytes),
+      .closeInput(id: "a"), .terminate(id: "a"), .terminate(id: "a", forget: true),
+      .setMeta(id: "a", meta: bytes),
       .acknowledge(id: "a"),
       .detach(id: "a"),
     ]
@@ -35,6 +36,13 @@ import Testing
       let data = try JSONEncoder().encode(event)
       #expect(try JSONDecoder().decode(HostEvent.self, from: data) == event)
     }
+  }
+
+  /// An older app's `terminate` has no `forget`, and a plain one is sent as it would send it.
+  @Test func aTerminateWithoutForgetIsAnOlderAppsTerminate() throws {
+    let older = Data(#"{"terminate":{"id":"a"}}"#.utf8)
+    #expect(try JSONDecoder().decode(HostRequest.self, from: older) == .terminate(id: "a"))
+    #expect(try JSONEncoder().encode(HostRequest.terminate(id: "a")) == older)
   }
 
   @Test func socketPathIsUnderTheBundlesFolder() throws {

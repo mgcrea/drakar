@@ -325,6 +325,38 @@ import Testing
     #expect(!host.inbox.of(first).contains(.released(id: id)))
   }
 
+  /// A quitting app ends an idle process and is gone before its exit: the host forgets it by
+  /// itself once it ends, as an acknowledge would, and tells the other apps.
+  @Test func aTerminateThatForgetsLeavesNothingOnceEnded() async throws {
+    let host = try Host()
+    defer { host.close() }
+    let first = host.connect(pid: 1)
+    let second = host.connect(pid: 2)
+    let id = try host.spawn("/bin/cat", from: first)
+    #expect(host.core.handle(.terminate(id: id, forget: true), from: first).isEmpty)
+    host.core.disconnected(first)
+
+    #expect(await eventually { host.held(id) == nil })
+    #expect(!FileManager.default.fileExists(atPath: host.log(id).path))
+    #expect(await eventually { host.inbox.of(second) == [.released(id: id)] })
+  }
+
+  /// One that had ended already is forgotten at once; a plain terminate keeps what ended.
+  @Test func onlyATerminateThatForgetsForgets() async throws {
+    let host = try Host()
+    defer { host.close() }
+    let client = host.connect(pid: 1)
+    let kept = try host.spawn("/bin/cat", from: client)
+    let ended = try host.spawn("/bin/sh", ["-c", "exit 0"], from: client)
+    #expect(host.core.handle(.terminate(id: kept), from: client).isEmpty)
+    #expect(await eventually { host.hasExited(kept) && host.hasExited(ended) })
+
+    #expect(host.core.handle(.terminate(id: ended, forget: true), from: client).isEmpty)
+    #expect(host.held(ended) == nil)
+    #expect(!FileManager.default.fileExists(atPath: host.log(ended).path))
+    #expect(host.held(kept)?.running == false)
+  }
+
   @Test func detachingLetsAnotherAppHaveIt() async throws {
     let host = try Host()
     defer { host.close() }

@@ -35,6 +35,8 @@ public final class HostCore: @unchecked Sendable {
     /// in answer to a write is never logged before the write's `in`.
     var writes = 0
     var pending: [HostChild.Output] = []
+    /// A `terminate` asked for it to be forgotten once it ends (`store`).
+    var forgets = false
   }
 
   public init(
@@ -104,8 +106,8 @@ public final class HostCore: @unchecked Sendable {
       }
     case .closeInput(let id):
       return withChild(id, from: client) { $0.closeInput() }
-    case .terminate(let id):
-      return withChild(id, from: client) { $0.terminate() }
+    case .terminate(let id, let forget):
+      return terminate(id, forgetting: forget == true, from: client)
     case .setMeta(let id, let meta):
       return update(id, from: client) { held, _ in held.meta = meta }
     case .acknowledge(let id):
@@ -216,8 +218,8 @@ public final class HostCore: @unchecked Sendable {
     guard let child else { return refused }
     var failure: (any Error)?
     do { try child.write(bytes) } catch { failure = error }
-    withState { state, out in
-      guard var held = state.held[id] else { return }
+    let forgotten = withState { state, out -> HostLog? in
+      guard var held = state.held[id] else { return nil }
       held.writes -= 1
       if failure == nil { append(.in, bytes, to: id, &held, &out) }
       if held.writes == 0 {
@@ -225,9 +227,28 @@ public final class HostCore: @unchecked Sendable {
         held.pending = []
         for output in pending { take(output, from: id, &held, &out) }
       }
-      state.held[id] = held
+      return store(held, as: id, in: &state, &out)
     }
+    try? forgotten?.remove()
     return failure.map { [.refused(reason: "could not write to \(id): \($0)")] } ?? []
+  }
+
+  /// Off the lock, as `withChild` does. One that ended already and is to be forgotten is
+  /// forgotten now, and sent nothing.
+  private func terminate(_ id: String, forgetting: Bool, from client: Client) -> [HostEvent] {
+    var child: HostChild?
+    var forgotten: HostLog?
+    let refused = withState { state, out -> [HostEvent] in
+      guard var held = state.held[id] else { return [Self.unknown(id)] }
+      if let other = held.attached, other != client { return [Self.taken(id)] }
+      if held.exitStatus == nil { child = held.child }
+      if forgetting { held.forgets = true }
+      forgotten = store(held, as: id, in: &state, &out)
+      return []
+    }
+    try? forgotten?.remove()
+    child?.terminate()
+    return refused
   }
 
   /// The other apps are told it is `released`: nobody holds it any more, and it is gone.
@@ -284,15 +305,33 @@ public final class HostCore: @unchecked Sendable {
   // MARK: - The process's output
 
   private func received(_ output: HostChild.Output, from id: String) {
-    withState { state, out in
-      guard var held = state.held[id] else { return }
+    let forgotten = withState { state, out -> HostLog? in
+      guard var held = state.held[id] else { return nil }
       if held.writes > 0 {
         held.pending.append(output)
       } else {
         take(output, from: id, &held, &out)
       }
-      state.held[id] = held
+      return store(held, as: id, in: &state, &out)
     }
+    try? forgotten?.remove()
+  }
+
+  /// Puts `held` back, unless it has ended and is to be forgotten: then it goes as an
+  /// `acknowledge` takes it, the apps but the one attached told it is `released`, and its log
+  /// is returned to be removed off the lock.
+  private func store(
+    _ held: Held, as id: String, in state: inout State, _ out: inout Outgoing
+  ) -> HostLog? {
+    guard held.forgets, held.exitStatus != nil else {
+      state.held[id] = held
+      return nil
+    }
+    state.held[id] = nil
+    for other in state.clients.keys where other != held.attached {
+      out.send(other, .released(id: id))
+    }
+    return held.log
   }
 
   private func take(

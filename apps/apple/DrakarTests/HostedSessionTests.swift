@@ -109,8 +109,9 @@ struct HostedSessionTests {
     #expect(held.first?.attachedApp == nil)
   }
 
-  /// An idle session has nothing in flight: a quit ends its process, as it always did. The
-  /// ended process stays in the host, for the next launch to show.
+  /// An idle session has nothing in flight: a quit ends its process, as it always did, and
+  /// the host forgets it once it has ended, the app being gone by then. No later launch
+  /// shows it again.
   @Test func quittingStopsAnIdleSession() async throws {
     SessionHost.testDirectory = directory
     let host = SessionHost()
@@ -121,9 +122,10 @@ struct HostedSessionTests {
     #expect(session.isHosted)
     #expect(!session.isAtWork)
 
+    #expect(await eventually { await host.held().count == 1 })
     AppLifecycle.isTerminating = true
     session.stop()
-    #expect(await eventually { await host.held().first?.running == false })
+    #expect(await eventually { await host.held().isEmpty })
   }
 
   /// Closing a window is about the session, not the app: it ends the turn, host or not, and

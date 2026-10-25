@@ -248,7 +248,7 @@ extension HostRequest {
   fileprivate var process: String? {
     switch self {
     case .attach(let id, _), .write(let id, _), .note(let id, _), .closeInput(let id),
-      .terminate(let id), .setMeta(let id, _), .acknowledge(let id), .detach(let id):
+      .terminate(let id, _), .setMeta(let id, _), .acknowledge(let id), .detach(let id):
       id
     case .hello, .list, .spawn:
       nil

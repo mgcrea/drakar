@@ -127,7 +127,8 @@ public final class HostedProcess: ProcessTransport, @unchecked Sendable {
 
   /// Lets the host forget the process and its log once it has ended: now if its exit has
   /// come, else when it does, even with nobody reading `start()`'s events any more. For an
-  /// app done with the process, never one handing it over.
+  /// app done with the process, never one handing it over. A `terminate()` after it asks the
+  /// host to forget it by itself, for an app that may be gone by the exit.
   public func forgetWhenEnded() {
     let now = state.withLock { state in
       defer { state.forgets = true }
@@ -143,7 +144,8 @@ public final class HostedProcess: ProcessTransport, @unchecked Sendable {
 
   public func terminate() {
     guard isRunning else { return }
-    try? request { .terminate(id: $0) }
+    let forget = state.withLock { $0.forgets } ? true : nil
+    try? request { .terminate(id: $0, forget: forget) }
   }
 
   /// Lets go of the process, which runs on in the host for another app, or this one, to pick up.

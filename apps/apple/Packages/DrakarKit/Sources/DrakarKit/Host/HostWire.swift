@@ -3,7 +3,7 @@ import Foundation
 /// What the app and the session host say to each other (spec §2). Newline-delimited JSON, one
 /// request or event per line.
 public enum HostWire {
-  public static let major = 1, minor = 1
+  public static let major = 1, minor = 2
 
   /// The socket's path would not fit `sockaddr_un.sun_path`.
   public struct PathTooLong: Error, Equatable {
@@ -57,7 +57,10 @@ public enum HostRequest: Codable, Sendable, Equatable {
   /// Logged as a `note` and written to nothing: the app's own marks for its replay.
   case note(id: String, bytes: Data)
   case closeInput(id: String)
-  case terminate(id: String)
+  /// `forget`: the host forgets the process once it has ended, as an `acknowledge` would,
+  /// for an app that will not be there to say so. Added in minor 2; nil, as an older app
+  /// sends it, keeps what ended.
+  case terminate(id: String, forget: Bool? = nil)
   case setMeta(id: String, meta: Data)
   case acknowledge(id: String)
   /// The app lets go of the process, which carries on: nobody is attached, and the other

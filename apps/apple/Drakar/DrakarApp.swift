@@ -370,7 +370,8 @@ struct MentionTitle {
   }
 }
 
-/// The project windows of the processes the session host holds for no app, opened at launch
+/// The project windows of the processes the session host holds for no app (those a quit
+/// handed over at work, an idle one being forgotten once it ends), opened at launch
 /// whether or not windows reopen (spec §3 Relaunch): each window then takes its processes
 /// back (`Project.adoptHeld`). Opened once a first window is up, so that it is the one
 /// `ReopenedWindows` begins with, and none of those it reopens is opened twice.
