@@ -264,14 +264,12 @@ struct ContentView: View {
   }
 
   /// The project window for `next`: the one already open on that folder, brought forward
-  /// with the sessions attached, or with a new session when there are none to attach ("New
-  /// Session in…"), this picker window closing; or this window becoming it.
+  /// with the sessions attached, this picker window closing; or this window becoming it.
   private func show(_ next: WindowRoute, attaching targets: [ResumeTarget]) {
     guard case .project(let folder) = next else { return }
     if let owner = OpenSessions.shared.projects.values.first(where: {
       ProjectPath.normalize($0.folder.path(percentEncoded: false)) == folder
     }) {
-      if targets.isEmpty { owner.newSession() }
       for target in targets { owner.attach(target) }
       owner.workspace.window?.makeKeyAndOrderFront(nil)
       dismiss()  // this picker window, with or without a route
