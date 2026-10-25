@@ -526,7 +526,7 @@ extension Transcript.ToolCall {
 }
 
 /// A prompt sent while a turn ran, by the `uuid` it was sent with.
-public struct QueuedPrompt: Sendable, Equatable, Identifiable {
+public struct QueuedPrompt: Codable, Sendable, Equatable, Identifiable {
   public var uuid: String
   public var text: String
   /// What the editor attached, labelled as on a prompt.

@@ -150,7 +150,7 @@ public enum ClientMessage: Sendable, Equatable {
   }
 }
 
-public enum PermissionDecision: Sendable, Equatable {
+public enum PermissionDecision: Codable, Sendable, Equatable {
   /// Run the tool. `updatedInput` is the input to run it with: the request's own, or one
   /// the user edited. `updatedPermissions` carries any of the request's suggestions the
   /// user chose ("always allow"), passed back as they arrived.

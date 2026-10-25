@@ -279,10 +279,6 @@ extension ClaudeTranslator {
   }
 }
 
-extension AgentProcess {
-  public func send(_ message: ClientMessage) throws { try send(line: message.line()) }
-}
-
 extension StreamMessage {
   /// A line as stream-json; one that is not (no JSON, or no `type`) is kept, not dropped.
   public init(_ line: AgentProcess.Line) {

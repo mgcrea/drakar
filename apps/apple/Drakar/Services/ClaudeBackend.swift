@@ -37,14 +37,14 @@ final class ClaudeBackend: AgentBackend {
       executable: launch.executable, account: launch.account)
   }
 
-  func started(_ process: AgentProcess, then first: AgentCommand?) throws {
+  func started(_ process: any ProcessTransport, then first: AgentCommand?) throws {
     translator = ClaudeTranslator()
     try process.send(.initialize(requestID: nextRequestID("init")))
     askAppliedSettings(process)
     if let first { try send(first, to: process) }
   }
 
-  @discardableResult func send(_ command: AgentCommand, to process: AgentProcess) throws
+  @discardableResult func send(_ command: AgentCommand, to process: any ProcessTransport) throws
     -> String?
   {
     let (message, id) = encode(command)
@@ -82,7 +82,7 @@ final class ClaudeBackend: AgentBackend {
     }
   }
 
-  func receive(_ line: AgentProcess.Line, from process: AgentProcess, at time: Date)
+  func receive(_ line: AgentProcess.Line, from process: any ProcessTransport, at time: Date)
     -> BackendOutput
   {
     let message = StreamMessage(line)
@@ -173,7 +173,7 @@ final class ClaudeBackend: AgentBackend {
 
   /// What the process applies now: asked after its start and after each model or effort
   /// change, since a model without effort (Haiku) applies none.
-  private func askAppliedSettings(_ process: AgentProcess) {
+  private func askAppliedSettings(_ process: any ProcessTransport) {
     try? process.send(.getSettings(requestID: nextRequestID("settings")))
   }
 

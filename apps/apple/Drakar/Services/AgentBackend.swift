@@ -15,12 +15,12 @@ protocol AgentBackend: AnyObject {
   func launch(_ start: AgentStart) -> AgentLaunch
   /// Everything owed right after the process started, then `first`, the prompt typed before
   /// it existed.
-  func started(_ process: AgentProcess, then first: AgentCommand?) throws
+  func started(_ process: any ProcessTransport, then first: AgentCommand?) throws
   /// One line the process wrote. A reply the agent waits for is written here.
-  func receive(_ line: AgentProcess.Line, from process: AgentProcess, at time: Date)
+  func receive(_ line: AgentProcess.Line, from process: any ProcessTransport, at time: Date)
     -> BackendOutput
   /// Writes `command`; the request id, where an answer can come back (mode, model, effort).
-  @discardableResult func send(_ command: AgentCommand, to process: AgentProcess) throws
+  @discardableResult func send(_ command: AgentCommand, to process: any ProcessTransport) throws
     -> String?
   /// Where a session's own transcript is, once it has an id. Disk-side, Claude-typed until
   /// Codex history (slice 3).
@@ -29,7 +29,7 @@ protocol AgentBackend: AnyObject {
 
 /// What a session asks to start with: its folder, what it resumes, and its pills' picks,
 /// frozen for this process.
-struct AgentStart {
+struct AgentStart: Codable, Equatable {
   var folder: URL
   var resuming: ResumeTarget?
   /// The login shell's.
@@ -54,7 +54,7 @@ struct AgentLaunch {
 }
 
 /// What the person does, in no agent's words.
-enum AgentCommand {
+enum AgentCommand: Codable, Equatable {
   case prompt(text: String, context: [EditorSelection], uuid: String, attachments: [Attachment])
   case answer(requestID: String, decision: PermissionDecision)
   case interrupt(cancelQueued: Bool)

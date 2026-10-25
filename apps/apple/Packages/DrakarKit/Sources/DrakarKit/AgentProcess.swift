@@ -10,8 +10,8 @@ import Synchronization
 /// `@unchecked Sendable` because `Process` and `FileHandle` are not marked Sendable; the
 /// operations used across threads here (`write`, `terminate`, `isRunning`) are thread-safe,
 /// and the mutable state is behind a `Mutex`.
-public final class AgentProcess: @unchecked Sendable {
-  public struct Configuration: Sendable {
+public final class AgentProcess: ProcessTransport, @unchecked Sendable {
+  public struct Configuration: Codable, Sendable {
     public var executable: URL
     public var arguments: [String]
     public var environment: [String: String]
@@ -123,11 +123,6 @@ public final class AgentProcess: @unchecked Sendable {
     try input.fileHandleForWriting.write(contentsOf: line)
   }
 
-  /// `json` as one line, encoded as `ClientMessage` encodes its own (`JSONValue.line()`).
-  public func send(_ json: JSONValue) throws {
-    try send(line: json.line())
-  }
-
   /// Ends input; the CLI exits cleanly once its current turn is done.
   public func closeInput() {
     try? input.fileHandleForWriting.close()
@@ -176,7 +171,8 @@ public final class AgentProcess: @unchecked Sendable {
     continuation.finish()
   }
 
-  private static func parse(_ line: Data) -> Line {
+  /// A line of stdout without its terminator, as `events` parses each.
+  public static func parse(_ line: Data) -> Line {
     (try? JSONValue.parse(line)).map(Line.json) ?? .invalid(String(decoding: line, as: UTF8.self))
   }
 }

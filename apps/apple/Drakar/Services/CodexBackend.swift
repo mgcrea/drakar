@@ -31,7 +31,7 @@ final class CodexBackend: AgentBackend {
       executable: executable, account: nil)
   }
 
-  func started(_ process: AgentProcess, then first: AgentCommand?) throws {
+  func started(_ process: any ProcessTransport, then first: AgentCommand?) throws {
     guard var session else { return }
     var writes = session.start().writes
     if let first, let command = self.command(first) { writes += session.send(command).writes }
@@ -39,7 +39,7 @@ final class CodexBackend: AgentBackend {
     for line in writes { try process.send(line) }
   }
 
-  @discardableResult func send(_ command: AgentCommand, to process: AgentProcess) throws
+  @discardableResult func send(_ command: AgentCommand, to process: any ProcessTransport) throws
     -> String?
   {
     guard var session, let command = self.command(command) else { return nil }
@@ -50,7 +50,7 @@ final class CodexBackend: AgentBackend {
     return nil
   }
 
-  func receive(_ line: AgentProcess.Line, from process: AgentProcess, at time: Date)
+  func receive(_ line: AgentProcess.Line, from process: any ProcessTransport, at time: Date)
     -> BackendOutput
   {
     guard case .json(let json) = line, var session else { return BackendOutput() }

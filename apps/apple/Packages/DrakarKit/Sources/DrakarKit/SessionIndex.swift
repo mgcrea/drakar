@@ -3,7 +3,7 @@ import Foundation
 /// A Claude Code configuration directory: `~/.claude`, or another one selected with
 /// `CLAUDE_CONFIG_DIR` (`~/.claude-work`). Each holds its own login, settings and
 /// sessions, so a session has to be resumed under the directory that wrote it.
-public struct ClaudeAccount: Sendable, Hashable {
+public struct ClaudeAccount: Codable, Sendable, Hashable {
   public var directory: URL
   public var isDefault: Bool
 

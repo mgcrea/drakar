@@ -24,6 +24,12 @@ public struct TranscriptFollower: Sendable {
   /// written waits for its newline. A file that got shorter was rewritten, and is read
   /// again from the start into a fresh transcript.
   public mutating func catchUp(_ transcript: inout Transcript) throws {
+    try catchUp(&transcript, upTo: .max)
+  }
+
+  /// The same, reading no further than `length` bytes into the file: the history a process
+  /// started from, without what it appended since.
+  public mutating func catchUp(_ transcript: inout Transcript, upTo length: UInt64) throws {
     let handle = try FileHandle(forReadingFrom: file)
     defer { try? handle.close() }
     let size = try handle.seekToEnd()
@@ -33,9 +39,10 @@ public struct TranscriptFollower: Sendable {
       translator = ClaudeTranslator()
       transcript = Transcript()
     }
-    guard size > offset else { return }
+    let end = min(size, length)
+    guard end > offset else { return }
     try handle.seek(toOffset: offset)
-    let data = try handle.read(upToCount: Int(size - offset)) ?? Data()
+    let data = try handle.read(upToCount: Int(end - offset)) ?? Data()
     offset += UInt64(data.count)
     for line in buffer.append(data) {
       guard let json = try? JSONValue.parse(line) else { continue }

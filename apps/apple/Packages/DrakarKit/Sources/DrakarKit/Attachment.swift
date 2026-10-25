@@ -6,8 +6,8 @@ import UniformTypeIdentifiers
 /// A file or an image sent with a prompt, as the extension sends one (webview 2.1.289): an
 /// `image` block, or a `document` holding a PDF or a text file's text, ahead of the
 /// prompt's own text (docs/claude-stream-json.md, "Attachments").
-public struct Attachment: Sendable, Equatable, Identifiable {
-  public enum Kind: Sendable, Equatable, Hashable { case image, pdf, text }
+public struct Attachment: Codable, Sendable, Equatable, Identifiable {
+  public enum Kind: Codable, Sendable, Equatable, Hashable { case image, pdf, text }
 
   public let id = UUID()
   public var kind: Kind { preview.kind }
@@ -15,6 +15,9 @@ public struct Attachment: Sendable, Equatable, Identifiable {
   public let block: JSONValue
   /// What the composer and the transcript show of it.
   public let preview: AttachmentPreview
+
+  /// Without `id`: a decoded attachment is a new one in the composer's eyes.
+  private enum CodingKeys: CodingKey { case block, preview }
 
   /// The API's own limits, with room to spare: 2000 pixels on the long edge keeps a request
   /// of several images valid, and its 5 MB a base64 image takes leaves this much raw.
@@ -171,7 +174,7 @@ public struct Attachment: Sendable, Equatable, Identifiable {
 
 /// What is shown of an attachment, in the composer and on its prompt: a small PNG of an
 /// image, a document's name.
-public struct AttachmentPreview: Sendable, Equatable, Hashable {
+public struct AttachmentPreview: Codable, Sendable, Equatable, Hashable {
   public var kind: Attachment.Kind
   public var name: String?
   /// At most 256 pixels on the long edge; nil for a document.

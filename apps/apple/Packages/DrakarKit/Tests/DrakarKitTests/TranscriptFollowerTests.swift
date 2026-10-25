@@ -50,6 +50,20 @@ struct TranscriptFollowerTests {
     #expect(transcript.entries.map(\.kind) == [.prompt("only this")])
   }
 
+  /// The history a process started from: what the file held then, not what it wrote since.
+  @Test func catchUpStopsAtALength() throws {
+    let lines = [
+      #"{"type":"user","message":{"role":"user","content":"one"}}"#,
+      #"{"type":"user","message":{"role":"user","content":"two"}}"#,
+      #"{"type":"user","message":{"role":"user","content":"three"}}"#,
+    ].map { Data($0.utf8) }
+    try append(joined(lines))
+    var follower = TranscriptFollower(file: file)
+    var transcript = Transcript()
+    try follower.catchUp(&transcript, upTo: UInt64(joined(Array(lines.prefix(2))).count))
+    #expect(transcript.entries.map(\.kind) == [.prompt("one"), .prompt("two")])
+  }
+
   @Test func aMissingFileThrows() {
     var follower = TranscriptFollower(file: file.appending(path: "nope"))
     var transcript = Transcript()

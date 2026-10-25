@@ -10,7 +10,7 @@ import Testing
 private final class SkillsChangedBackend: AgentBackend {
   let notFoundMessage = "not found"
   var features: AgentFeatures { .codex }
-  private var process: AgentProcess?
+  private var process: (any ProcessTransport)?
 
   func launch(_ start: AgentStart) -> AgentLaunch {
     AgentLaunch(
@@ -20,17 +20,17 @@ private final class SkillsChangedBackend: AgentBackend {
       executable: URL(filePath: "/bin/cat"), account: nil)
   }
 
-  func started(_ process: AgentProcess, then first: AgentCommand?) throws {
+  func started(_ process: any ProcessTransport, then first: AgentCommand?) throws {
     self.process = process
   }
 
-  func receive(_ line: AgentProcess.Line, from process: AgentProcess, at time: Date)
+  func receive(_ line: AgentProcess.Line, from process: any ProcessTransport, at time: Date)
     -> BackendOutput
   {
     BackendOutput(signals: [.skillsChanged])
   }
 
-  func send(_ command: AgentCommand, to process: AgentProcess) throws -> String? { nil }
+  func send(_ command: AgentCommand, to process: any ProcessTransport) throws -> String? { nil }
 
   func locateTarget(sessionID: String, cwd: String, in accounts: [ClaudeAccount])
     -> ResumeTarget?

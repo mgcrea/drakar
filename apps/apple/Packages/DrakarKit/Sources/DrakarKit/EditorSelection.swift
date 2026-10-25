@@ -2,7 +2,7 @@ import Foundation
 
 /// A place in a file as VS Code counts it, which is what `claude` expects: lines and
 /// characters from 0, characters in UTF-16 code units (the unit of `NSString` ranges).
-public struct TextPosition: Sendable, Hashable {
+public struct TextPosition: Codable, Sendable, Hashable {
   public var line: Int
   public var character: Int
 
@@ -19,7 +19,7 @@ public struct TextPosition: Sendable, Hashable {
 /// What is selected in the editor, or where the caret is when nothing is: what the
 /// extension sends a terminal `claude` as `selection_changed`, and what its own chat puts
 /// ahead of a prompt as `<ide_selection>` or `<ide_opened_file>`.
-public struct EditorSelection: Sendable, Hashable {
+public struct EditorSelection: Codable, Sendable, Hashable {
   public var filePath: String
   public var text: String
   public var start: TextPosition

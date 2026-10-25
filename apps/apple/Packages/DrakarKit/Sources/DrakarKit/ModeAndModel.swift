@@ -3,7 +3,7 @@ import Foundation
 /// A permission mode the composer offers, in the order ⇧Tab goes through them
 /// (docs/superpowers/specs/2026-10-06-mode-and-model-pills-design.md). The CLI's `manual`
 /// (another name for `default`) and `dontAsk` are not offered.
-public enum PermissionMode: String, Sendable, CaseIterable {
+public enum PermissionMode: String, Codable, Sendable, CaseIterable {
   case ask = "default"
   case acceptEdits
   case plan

@@ -5,8 +5,10 @@ import Observation
 /// One session in a project window: its history from disk, and its agent's process from its
 /// first prompt on.
 ///
-/// Main-actor state over an `AgentProcess` and an `AgentBackend`: lines are parsed off the
+/// Main-actor state over a `ProcessTransport` and an `AgentBackend`: lines are parsed off the
 /// main thread, interpreted by the backend, and applied here, which is all the view observes.
+/// What it does to the process it notes there too (`SessionNote`), so that a log of the
+/// process rebuilds it (`init(replaying:meta:)`).
 @Observable
 final class AgentSession {
   enum Phase: Equatable {
@@ -116,7 +118,14 @@ final class AgentSession {
   /// whether one starts a turn or the queue empties without one.
   @ObservationIgnored private var turnEndDeferred = false
 
-  @ObservationIgnored private var process: AgentProcess?
+  /// The process, or after a replay the `ReplayTransport` it wrote to.
+  @ObservationIgnored private(set) var process: (any ProcessTransport)?
+  /// What a spawn runs on; `AgentProcess.init` until the session host comes first. Tests
+  /// give a recorder.
+  @ObservationIgnored var makeTransport: (AgentProcess.Configuration) async -> any ProcessTransport =
+    { AgentProcess($0) }
+  /// Rebuilding from a log: what happened was told when it happened, so no callback runs.
+  @ObservationIgnored private var isReplaying = false
   @ObservationIgnored private var events: Task<Void, Never>?
   @ObservationIgnored private var historyLoad: Task<Void, Never>?
   /// True from the start for a session with a transcript, until its history is read.
@@ -126,8 +135,10 @@ final class AgentSession {
   /// The history could not be read: the reason stays in `phase` and nothing is sent.
   @ObservationIgnored private var historyFailed = false
   @ObservationIgnored private var follower: TranscriptFollower?
-  /// A prompt sent before the process existed, written right after `initialize`.
+  /// A prompt sent before the process existed, written right after `initialize`, and what
+  /// the transcript showed of it.
   @ObservationIgnored private var pendingPrompt: AgentCommand?
+  @ObservationIgnored private var pendingEffect: NoteEffect = .none
   /// A name the CLI has not recorded yet: passed with `--name` to the next start, or sent
   /// once a running process has said which session it is.
   @ObservationIgnored private var unsentName: String?
@@ -146,6 +157,31 @@ final class AgentSession {
     self.backend = backend ?? (agent ?? resuming?.agentKind ?? .claude).makeBackend()
     savedTarget = resuming?.forks == true ? nil : resuming
     isLoadingHistory = resuming != nil
+  }
+
+  /// The session a process's log rebuilds: the history from before the process, then
+  /// `records` replayed. Its process stands in for the one the log came from, so nothing
+  /// reaches the CLI, and what the replay owes it waits in its `ReplayTransport`.
+  convenience init(
+    replaying records: [HostRecord], meta: SessionMeta, backend: AgentBackend? = nil
+  ) async {
+    self.init(
+      folder: meta.start.folder, resuming: meta.savedTarget ?? meta.start.resuming,
+      agent: meta.agent, account: meta.accountPick, backend: backend)
+    modePick = meta.modePick
+    modelPick = meta.modelPick
+    effortPick = meta.effortPick
+    name = meta.name
+    let started = records.first?.time ?? .now
+    historyLoad = Task { await self.readHistory(meta.history, at: started) }
+    await historyLoad?.value
+    let launch = self.backend.launch(meta.start)
+    account = launch.account
+    executable = launch.executable
+    launchedWithBypass = meta.start.allowsBypass
+    process = ReplayTransport()
+    if !historyFailed { phase = .ready }
+    replay(records)
   }
 
   /// What its sessions can do beyond a conversation, which the views ask.
@@ -230,7 +266,7 @@ final class AgentSession {
     }
     guard let process else { return }
     permissionMode = mode.rawValue
-    guard let id = try? backend.send(.setMode(mode.rawValue), to: process) else { return }
+    guard let id = try? sendNoted(.setMode(mode.rawValue), to: process) else { return }
     unansweredChanges.append(
       .init(id: id, pill: .mode) { [weak self] in
         self?.modePick = previousPick
@@ -247,7 +283,7 @@ final class AgentSession {
       pillNote = Self.fromNextTurn
     }
     guard let process else { return }
-    guard let id = try? backend.send(.setModel(value), to: process) else { return }
+    guard let id = try? sendNoted(.setModel(value), to: process) else { return }
     unansweredChanges.append(
       .init(id: id, pill: .model) { [weak self] in self?.modelPick = previous })
   }
@@ -262,7 +298,7 @@ final class AgentSession {
       pillNote = Self.fromNextTurn
     }
     guard let process else { return }
-    guard let id = try? backend.send(.setEffort(level), to: process) else { return }
+    guard let id = try? sendNoted(.setEffort(level), to: process) else { return }
     unansweredChanges.append(
       .init(id: id, pill: .effort) { [weak self] in self?.effortPick = previous })
   }
@@ -307,10 +343,26 @@ final class AgentSession {
       isLoadingHistory = false
       return
     }
+    await readHistory(file, upTo: .max, at: .now)
+  }
+
+  /// The history from before a replayed process, as `mark` says it stood. Codex's thread
+  /// is not read here: its replay alone shows.
+  private func readHistory(_ mark: HistoryMark, at time: Date) async {
+    guard case .claudeFile(let path, let length) = mark else {
+      isLoadingHistory = false
+      return
+    }
+    await readHistory(URL(filePath: path), upTo: length, at: time)
+  }
+
+  /// `file` up to `length` bytes; `time` is when the next message goes, which says whether
+  /// the cache went cold.
+  private func readHistory(_ file: URL, upTo length: UInt64, at time: Date) async {
     let loaded = await Task.detached { () -> (Transcript, TranscriptFollower)? in
       var follower = TranscriptFollower(file: file)
       var transcript = Transcript()
-      guard (try? follower.catchUp(&transcript)) != nil else { return nil }
+      guard (try? follower.catchUp(&transcript, upTo: length)) != nil else { return nil }
       return (transcript, follower)
     }.value
     isLoadingHistory = false
@@ -328,7 +380,7 @@ final class AgentSession {
     hasLoadedHistory = true
     // Said where the next message would be sent from: a session another process runs sends
     // nothing from here.
-    if !isReadOnly, features.showsPromptCache { self.transcript.noteColdCache() }
+    if !isReadOnly, features.showsPromptCache { self.transcript.noteColdCache(at: time) }
     // Prompts typed while the history was being read go after it.
     for prompt in promptsDuringLoad {
       self.transcript.addPrompt(
@@ -396,10 +448,10 @@ final class AgentSession {
     let command = AgentCommand.prompt(
       text: text, context: context, uuid: uuid, attachments: attachments)
     if canQueue {
-      transcript.queue(
-        QueuedPrompt(uuid: uuid, text: text, context: label, attachments: previews))
+      let queued = QueuedPrompt(uuid: uuid, text: text, context: label, attachments: previews)
+      transcript.queue(queued)
       onPromptSent?()
-      write(command)
+      write(command, effect: .queued(queued))
       return
     }
     let answersTurn = !transcript.entries.isEmpty
@@ -407,13 +459,15 @@ final class AgentSession {
     onPromptSent?()
     if answersTurn { onReplied?() }
     if isLoadingHistory { promptsDuringLoad.append((text, label, previews)) }
+    let effect = NoteEffect.prompt(text: text, context: label, attachments: previews)
     if process == nil {
       pendingPrompt = command
+      pendingEffect = effect
       // Counted now, not when the task runs: a `stop()` before then cancels it too.
       let stops = stopCount
       Task { await spawn(unlessStoppedSince: stops) }
     } else {
-      write(command)
+      write(command, effect: effect)
     }
   }
 
@@ -456,6 +510,8 @@ final class AgentSession {
     account = launch.account
     guard let configuration = launch.configuration else { return fail(backend.notFoundMessage) }
     executable = launch.executable
+    let process = await makeTransport(configuration)
+    guard stillWanted(since: stops) else { return }
     // The last word before the process starts, with no await after it: a session live in
     // another process now is followed, not written to. The monitor may not have read the
     // registries yet at launch, so the account's own registry is read here too.
@@ -464,7 +520,6 @@ final class AgentSession {
       _ = stillWanted(since: stops)
       return
     }
-    let process = AgentProcess(configuration)
     do {
       let stream = try process.start()
       self.process = process
@@ -472,8 +527,10 @@ final class AgentSession {
       unansweredChanges.removeAll()
       launchedWithBypass = start.allowsBypass
       unsentName = nil
+      note(.started(first: pendingPrompt, effect: pendingEffect), to: process)
       try backend.started(process, then: pendingPrompt)
       pendingPrompt = nil
+      pendingEffect = .none
       phase = .ready
       events = Task { [weak self] in
         for await event in stream { self?.handle(event) }
@@ -510,7 +567,9 @@ final class AgentSession {
   }
 
   func answer(_ pending: Transcript.PendingPermission, _ decision: PermissionDecision) {
-    write(.answer(requestID: pending.requestID, decision: decision))
+    write(
+      .answer(requestID: pending.requestID, decision: decision),
+      effect: .answered(requestID: pending.requestID))
     notingPermissions { transcript.resolvePermission(requestID: pending.requestID) }
     onReplied?()
   }
@@ -573,7 +632,7 @@ final class AgentSession {
     guard let title = unsentName, let process, let id = sessionID else { return }
     unsentName = nil
     // Not `write`: a name that did not take must not mark the session failed.
-    _ = try? backend.send(.rename(title: title, sessionID: id), to: process)
+    _ = try? sendNoted(.rename(title: title, sessionID: id), to: process)
   }
 
   /// Stops the turn, and drops what was queued behind it: stop means stop. Esc keeps the
@@ -586,7 +645,7 @@ final class AgentSession {
   /// Takes back a prompt sent while a turn ran, unless the CLI took it already; it leaves
   /// the queue on the CLI's `cancelled`.
   func cancelQueued(_ prompt: QueuedPrompt) {
-    if let process { _ = try? backend.send(.cancelQueued(uuid: prompt.uuid), to: process) }
+    if let process { _ = try? sendNoted(.cancelQueued(uuid: prompt.uuid), to: process) }
   }
 
   /// Ends the process: input closed so it can finish cleanly, then terminated, because a
@@ -596,6 +655,7 @@ final class AgentSession {
     defer { permissionsMayHaveChanged(from: waiting) }
     stopCount += 1
     pendingPrompt = nil
+    pendingEffect = .none
     process?.closeInput()
     process?.terminate()
     events?.cancel()
@@ -651,7 +711,7 @@ final class AgentSession {
   }
 
   private func permissionsMayHaveChanged(from waiting: Int) {
-    if transcript.pendingPermissions.count != waiting { onPermissionsChanged?() }
+    if !isReplaying, transcript.pendingPermissions.count != waiting { onPermissionsChanged?() }
   }
 
   private func handle(_ event: AgentProcess.Event) {
@@ -672,18 +732,18 @@ final class AgentSession {
     }
   }
 
-  private func receive(_ line: AgentProcess.Line) {
+  private func receive(_ line: AgentProcess.Line, at time: Date = .now) {
     guard let process else { return }
-    let output = backend.receive(line, from: process, at: .now)
+    let output = backend.receive(line, from: process, at: time)
     for signal in output.signals { handle(signal) }
     let waiting = transcript.pendingPermissions.count
     var turnEnded = false
     for event in output.events {
-      transcript.apply(event)
+      transcript.apply(event, at: time)
       if case .turnEnded = event { turnEnded = true }
     }
     if unsentName != nil { sendUnsentName() }
-    if transcript.pendingPermissions.count > waiting,
+    if !isReplaying, transcript.pendingPermissions.count > waiting,
       let pending = transcript.pendingPermissions.last
     {
       onPermissionRequested?(pending)
@@ -694,7 +754,7 @@ final class AgentSession {
         turnEndDeferred = false
       } else if transcript.queuedPrompts.isEmpty {
         turnEndDeferred = false
-        onTurnEnded?()
+        if !isReplaying { onTurnEnded?() }
       }
     }
     if turnEnded {
@@ -702,7 +762,63 @@ final class AgentSession {
       if savedTarget == nil { savedTarget = locateTarget() }
       // Not while a queued prompt is about to start the next one: said once the queue
       // empties without a turn, should it be cancelled or refused instead.
-      if transcript.queuedPrompts.isEmpty { onTurnEnded?() } else { turnEndDeferred = true }
+      if !transcript.queuedPrompts.isEmpty {
+        turnEndDeferred = true
+      } else if !isReplaying {
+        onTurnEnded?()
+      }
+    }
+  }
+
+  /// Takes `records` as the live session took them, with every write muted: a note down
+  /// the path its command took, a line the process wrote as it was received. A reply to a
+  /// line logged while no app was attached was never written, so it is owed instead.
+  func replay(_ records: [HostRecord]) {
+    guard let transport = process as? ReplayTransport else { return }
+    isReplaying = true
+    defer {
+      isReplaying = false
+      transport.mode = .muted
+    }
+    for record in records {
+      switch record.kind {
+      case .note:
+        guard let note = try? JSONDecoder().decode(SessionNote.self, from: record.bytes) else {
+          continue
+        }
+        transport.mode = .muted
+        replay(note, at: record.time, to: transport)
+      case .out:
+        transport.mode = record.attached ? .muted : .owed
+        receive(AgentProcess.parse(record.bytes), at: record.time)
+      case .in:
+        // What the backend wrote, which the notes replay.
+        continue
+      }
+    }
+  }
+
+  private func replay(_ note: SessionNote, at time: Date, to transport: ReplayTransport) {
+    switch note {
+    case .started(let first, let effect):
+      apply(effect, at: time)
+      try? backend.started(transport, then: first)
+    case .sent(let command, let effect):
+      apply(effect, at: time)
+      _ = try? backend.send(command, to: transport)
+    }
+  }
+
+  private func apply(_ effect: NoteEffect, at time: Date) {
+    switch effect {
+    case .prompt(let text, let context, let attachments):
+      transcript.addPrompt(text, context: context, attachments: attachments, at: time)
+    case .queued(let prompt):
+      transcript.queue(prompt)
+    case .answered(let id):
+      notingPermissions { transcript.resolvePermission(requestID: id) }
+    case .none:
+      break
     }
   }
 
@@ -719,9 +835,9 @@ final class AgentSession {
     case .modeAdopted(let mode):
       adopt(mode: mode)
     case .initialized(let reply):
-      onInitialized?(reply)
+      if !isReplaying { onInitialized?(reply) }
     case .commandsChanged(let commands):
-      onCommandsChanged?(commands)
+      if !isReplaying { onCommandsChanged?(commands) }
     case .settingsApplied(let effort, let model):
       appliedEffort = effort
       appliedModel = model
@@ -737,7 +853,7 @@ final class AgentSession {
       stop()
       phase = .failed(message)
       // As an exit says it: the window refreshes its attention and marks a background row.
-      onStopped?()
+      if !isReplaying { onStopped?() }
     }
   }
 
@@ -750,13 +866,30 @@ final class AgentSession {
       in: accounts())
   }
 
-  private func write(_ command: AgentCommand) {
+  private func write(_ command: AgentCommand, effect: NoteEffect = .none) {
     guard let process else { return }
     do {
-      try backend.send(command, to: process)
+      try sendNoted(command, effect: effect, to: process)
     } catch {
       phase = .failed(error.localizedDescription)
     }
+  }
+
+  /// `backend.send`, after the note a replay takes it from, with what the transcript showed
+  /// of it.
+  @discardableResult private func sendNoted(
+    _ command: AgentCommand, effect: NoteEffect = .none, to process: any ProcessTransport
+  ) throws -> String? {
+    note(.sent(command, effect: effect), to: process)
+    return try backend.send(command, to: process)
+  }
+
+  /// Only a transport that logs keeps notes (a session host's); a replay's keeps none.
+  private func note(_ note: SessionNote, to process: any ProcessTransport) {
+    guard let sink = process as? NoteSink, let bytes = try? JSONEncoder().encode(note) else {
+      return
+    }
+    sink.note(bytes)
   }
 
   /// The login shell's environment, read once per launch and shared by every window: a
