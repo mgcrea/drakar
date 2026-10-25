@@ -1325,7 +1325,8 @@ final class Project {
   /// app has come back as rows, live; those another app holds, and all an older host holds
   /// (`olderHosts`), as read-only rows, until that app lets them go. The row the window kept
   /// for the same session gives way to one, as does the blank row a window opens with when
-  /// it has nothing else.
+  /// it has nothing else. A window that closes meanwhile takes back nothing more, and leaves
+  /// the rest to the next launch.
   func adoptHeld(_ held: [HeldProcess], olderHosts: [HeldProcess] = []) async {
     let own = ProjectPath.normalize(folder.path(percentEncoded: false))
     let ours = { (process: HeldProcess) -> Bool in
@@ -1351,10 +1352,14 @@ final class Project {
     for process in free {
       await takeBack(process)
       adopting.remove(process.id)
+      if isStopped { return }
     }
     for process in elsewhere {
-      if let session = await AgentSession(heldElsewhere: process) { adopt(session) }
+      let session = await AgentSession(heldElsewhere: process)
       adopting.remove(process.id)
+      guard let session else { continue }
+      if isStopped { return session.stop() }
+      adopt(session)
     }
     let watched = Set(held.map(\.id)).intersection(elsewhere.map(\.id))
     guard !watched.isEmpty else { return }
@@ -1390,7 +1395,7 @@ final class Project {
   /// the session to resume here once the host no longer has it, as a session whose process
   /// elsewhere went away does; unless the row is being taken back already.
   private func settle(_ id: String, among held: [HeldProcess]) async {
-    guard isShownReadOnly(id), !adopting.contains(id) else { return }
+    guard !isStopped, isShownReadOnly(id), !adopting.contains(id) else { return }
     if let process = held.first(where: { $0.id == id }) {
       guard process.attachedApp == nil else { return }
       adopting.insert(id)
@@ -1410,12 +1415,15 @@ final class Project {
   }
 
   /// `process` attached and replayed, live, in place of its row. A row showing it read-only
-  /// stays as it was should the host refuse: another app took it first.
+  /// stays as it was should the host refuse: another app took it first. A window that closed
+  /// during the replay stops it as it stopped its rows: no process stays attached to this app
+  /// with no row to show it.
   private func takeBack(_ process: HeldProcess) async {
     // Asked each time: a replay before this one may have cost the connection.
-    guard let client = await sessionHost.client(),
+    guard let client = await sessionHost.client(), !isStopped,
       let session = await AgentSession(reattaching: process, client: client)
     else { return }
+    if isStopped { return session.stop() }
     if session.isOutOfReach, isShownReadOnly(process.id) { return }
     adopt(session, replacing: process.id)
   }

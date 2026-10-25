@@ -513,6 +513,52 @@ struct ReattachTests {
     #expect(ticker.longest < .milliseconds(500), "the main actor was held for \(ticker.longest)")
   }
 
+  /// The window closes while it takes a session back: no row comes of the replay, and its
+  /// process is ended and forgotten as a closed window's sessions are, not left attached to
+  /// this app with no row to show it.
+  @Test func aWindowClosedDuringATakeBackAdoptsNothing() async throws {
+    defer { cleanUp() }
+    let app = app()
+    let text = String(repeating: "All work and no play makes Jack a dull boy. ", count: 12)
+    var fixture = Data()
+    for index in 0..<20_000 {
+      fixture.append(
+        Data(
+          #"{"type":"assistant","message":{"id":"m-\#(index)","type":"message","role":"assistant","model":"m","content":[{"type":"text","text":"\#(text)"}],"stop_reason":null},"parent_tool_use_id":null,"session_id":"s-closed"}"#
+            .utf8))
+      fixture.append(0x0A)
+    }
+    let lines = bin.appending(path: "closed.jsonl")
+    try fixture.write(to: lines)
+    let size = UInt64(fixture.count)
+    let meta = SessionMeta(
+      start: AgentStart(
+        folder: folder, environment: [:], executableOverride: fake, allowsBypass: false),
+      windowFolder: folder.path(percentEncoded: false), history: .none)
+    let client = try #require(await app.client())
+    _ = try await client.spawn(
+      AgentProcess.Configuration(
+        executable: URL(filePath: "/bin/sh"),
+        arguments: ["-c", "cat \"$0\"; exec cat > /dev/null", lines.path(percentEncoded: false)],
+        environment: [:], currentDirectory: folder),
+      meta: try JSONEncoder().encode(meta))
+    var length: UInt64 = 0
+    #expect(
+      await eventually(within: .seconds(30)) {
+        let now = await app.held().first?.logLength ?? 0
+        defer { length = now }
+        return now > size && now == length
+      })
+
+    let closing = window(on: app)
+    let adoption = Task { await closing.adoptHeld(await app.held()) }
+    #expect(await eventually { await app.held().first?.attachedApp != nil })
+    closing.stopAll()
+    await adoption.value
+    #expect(!closing.sessions.contains { $0.session.isHosted })
+    #expect(await eventually { await app.held().isEmpty })
+  }
+
   /// The connection lost mid-turn: nothing is sent and the footer says so until a new one is
   /// up, then the session carries on from where it was, each entry once.
   @Test func aLostConnectionReattachesFromWhereItWas() async throws {
