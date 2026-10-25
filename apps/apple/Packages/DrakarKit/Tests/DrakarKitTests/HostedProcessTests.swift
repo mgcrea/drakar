@@ -138,6 +138,56 @@ import Testing
     #expect(seen == [.exited(status: 4, remainder: Data())])
   }
 
+  private func events(of process: HostedProcess) async throws -> [AgentProcess.Event] {
+    let events = try process.start()
+    return try await within {
+      var seen: [AgentProcess.Event] = []
+      for await event in events { seen.append(event) }
+      return seen
+    }
+  }
+
+  /// A spawn the host refuses ends the events at once, and says why as a start that threw.
+  @Test func aSpawnTheHostRefusesSaysWhy() async throws {
+    let host = try TestHost()
+    defer { host.close() }
+    let client = try await connected(host)
+    var missing = host.cat()
+    missing.executable = host.directory.appending(path: "missing")
+    let process = HostedProcess(client: client, configuration: missing, meta: Data())
+    #expect(try await events(of: process) == [.exited(status: -1, remainder: Data())])
+    #expect(!process.isRunning)
+    guard case .refused? = process.startFailure as? HostClient.Failure else {
+      Issue.record("startFailure is \(String(describing: process.startFailure))")
+      return
+    }
+  }
+
+  /// A host that takes the connection but never says it spawned the process fails the
+  /// start once the limit has gone by, rather than leaving it starting for good.
+  @Test func aSpawnNobodyAnswersFails() async throws {
+    let name = String(UUID().uuidString.prefix(6))
+    let directory = URL(fileURLWithPath: "/tmp/dh-\(name)", isDirectory: true)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    let socket = directory.appending(path: "s")
+    let listener = try UnixSocket.listening(at: socket)
+    let client = try HostClient.connect(socket: socket)
+    defer {
+      client.close()
+      close(listener)
+      try? FileManager.default.removeItem(at: directory)
+    }
+    let process = HostedProcess(
+      client: client,
+      configuration: AgentProcess.Configuration(
+        executable: URL(filePath: "/bin/cat"), arguments: [], environment: [:],
+        currentDirectory: directory),
+      meta: Data(), spawnLimit: .milliseconds(100))
+    #expect(try await events(of: process) == [.exited(status: -1, remainder: Data())])
+    #expect(process.startFailure as? HostedProcess.Failure == .noAnswer)
+    #expect(!process.isRunning)
+  }
+
   @Test func replayOfAProcessTheHostDoesNotKnowIsRefused() async throws {
     let host = try TestHost()
     defer { host.close() }

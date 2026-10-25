@@ -230,6 +230,12 @@ final class UnixConnection: @unchecked Sendable {
     }
   }
 
+  /// Writes what is queued before returning, as far as the socket takes it without waiting:
+  /// for a process about to exit, whose queue would not run again.
+  func flushNow() {
+    queue.sync { flush() }
+  }
+
   /// Sends nothing more and drops what is still queued.
   func close() {
     state.withLock {

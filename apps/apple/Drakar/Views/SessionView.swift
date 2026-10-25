@@ -491,6 +491,11 @@ private struct SessionFooter: View {
   var body: some View {
     HStack(spacing: 12) {
       status
+      // No session host took it (spec §5): it is the app's own child.
+      if elsewhere == nil, session.isProcessRunning, !session.isHosted {
+        Text("Stops when Drakar quits.")
+          .accessibilityIdentifier("stopsWithApp")
+      }
       Spacer()
       if elsewhere != nil {
         if let mode = session.transcript.historyPermissionMode {

@@ -171,6 +171,8 @@ final class OpenSessions {
     Attention.shared.refresh()
   }
 
-  /// Sessions mid-turn across every window, for the quit question.
-  var runningCount: Int { projects.values.reduce(0) { $0 + $1.runningCount } }
+  /// Sessions mid-turn across every window that quitting stops, for the quit question.
+  var stoppedByQuitting: Int {
+    RunningSessions.stoppedByQuitting(projects.values.flatMap { $0.sessions.map(\.session) })
+  }
 }

@@ -222,11 +222,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   }
 
   /// Every window's sessions are stopped, not left to the windows closing: a `claude` must
-  /// not outlive the app that was working with it.
+  /// not outlive the app that was working with it, unless the session host keeps it at work
+  /// for the next launch.
   func applicationWillTerminate(_ notification: Notification) {
+    AppLifecycle.isTerminating = true
     // Before the sessions stop: the windows on screen, for a launch macOS restores none.
     if ReopenedWindows.isEnabled { ReopenedWindows.shared.record() }
     for project in OpenSessions.shared.projects.values { project.stopAll() }
+    // What the stops asked of the host goes before the app does.
+    SessionHost.shared.flush()
     IDEBridge.shared.stop()
   }
 
@@ -238,7 +242,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       return .terminateNow
     }
     let workspaces = Workspace.all.filter { !$0.unsavedDocuments.isEmpty }
-    let running = OpenSessions.shared.runningCount
+    // The session host keeps its sessions working: only the app's own children stop.
+    let running = OpenSessions.shared.stoppedByQuitting
     if workspaces.isEmpty {
       guard running > 0 else { return .terminateNow }
       return RunningSessions.alert(count: running, action: .quit).runModal()

@@ -9,9 +9,12 @@ import Synchronization
 /// Off under tests unless a test names a directory, so no test reaches the person's host or
 /// leaves one running.
 @MainActor final class SessionHost {
-  static let shared = SessionHost()
+  /// Off under tests whatever `testDirectory` says: a suite running beside a test's host
+  /// must not reach it through its sessions, nor start one nobody stops.
+  static let shared = SessionHost(cooldown: .seconds(30), helper: helper, underTests: nil)
 
-  /// Tests only: a directory to use under XCTest instead of none.
+  /// Tests only: the directory a `SessionHost()` made under XCTest uses, read as it is made,
+  /// instead of none.
   static var testDirectory: URL?
 
   /// The helper in the bundle. Not `url(forAuxiliaryExecutable:)`, which looks only in
@@ -34,6 +37,8 @@ import Synchronization
 
   private let helper: URL
   private let cooldown: Duration
+  /// `testDirectory` when this one was made.
+  private let underTests: URL?
   private var connection: HostClient?
   private var connecting: Task<Outcome, Never>?
   private var quietUntil: ContinuousClock.Instant?
@@ -55,9 +60,14 @@ import Synchronization
 
   /// `cooldown`: how long after a host that did not answer `client()` gives nil at once, so
   /// a slow start costs one wait, not one per session. `helper` is for tests.
-  init(cooldown: Duration = .seconds(30), helper: URL = SessionHost.helper) {
+  convenience init(cooldown: Duration = .seconds(30), helper: URL = SessionHost.helper) {
+    self.init(cooldown: cooldown, helper: helper, underTests: Self.testDirectory)
+  }
+
+  private init(cooldown: Duration, helper: URL, underTests: URL?) {
     self.cooldown = cooldown
     self.helper = helper
+    self.underTests = underTests
   }
 
   /// The connection to the host, starting it when nothing answers. Nil when there is no host
@@ -66,7 +76,7 @@ import Synchronization
   func client() async -> HostClient? {
     if let connection { return connection }
     if let connecting { return Self.client(of: await connecting.value) }
-    guard !cannotStart, let directory = Self.directory else { return nil }
+    guard !cannotStart, let directory else { return nil }
     if let quietUntil, ContinuousClock.now < quietUntil { return nil }
     let task = Task { await connect(in: directory) }
     connecting = task
@@ -89,15 +99,20 @@ import Synchronization
     return nil
   }
 
+  /// Writes what was sent to the host before returning, for an app about to exit.
+  func flush() {
+    connection?.flush()
+  }
+
   /// What the host holds, or nothing when there is no host or it does not answer.
   func held() async -> [HeldProcess] {
     guard let client = await client() else { return [] }
     return await Self.within(Self.helloLimit) { try await client.list() } ?? []
   }
 
-  private static var directory: URL? {
+  private var directory: URL? {
     if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil {
-      return testDirectory
+      return underTests
     }
     return HostWire.directory(
       bundleID: Bundle.main.bundleIdentifier ?? "io.mgcrea.Drakar",

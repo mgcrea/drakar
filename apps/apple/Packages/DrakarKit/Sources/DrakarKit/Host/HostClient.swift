@@ -115,6 +115,12 @@ public final class HostClient: @unchecked Sendable {
     guard let id, write(.init(id: id, request: request)) else { throw Failure.disconnected }
   }
 
+  /// Hands the socket what `send` queued before returning: an app that is quitting would
+  /// otherwise exit with it unsent.
+  public func flush() {
+    connection.flushNow()
+  }
+
   public func close() {
     connection.close()
   }

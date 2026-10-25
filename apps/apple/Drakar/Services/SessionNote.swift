@@ -23,3 +23,6 @@ enum NoteEffect: Codable, Equatable {
 nonisolated protocol NoteSink: AnyObject {
   func note(_ bytes: Data)
 }
+
+/// The host logs a note with the process's own lines.
+extension HostedProcess: NoteSink {}

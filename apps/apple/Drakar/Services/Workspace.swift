@@ -441,6 +441,12 @@ enum RunningSessions {
     }
   }
 
+  /// Of `sessions`, those mid-turn that quitting stops: the session host keeps the others
+  /// working.
+  static func stoppedByQuitting(_ sessions: [AgentSession]) -> Int {
+    sessions.count { $0.transcript.isRunning && !$0.isHosted }
+  }
+
   static func alert(count: Int, action: Action = .close) -> NSAlert {
     let alert = NSAlert()
     alert.messageText =

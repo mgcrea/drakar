@@ -120,11 +120,20 @@ final class AgentSession {
 
   /// The process, or after a replay the `ReplayTransport` it wrote to.
   @ObservationIgnored private(set) var process: (any ProcessTransport)?
-  /// What a spawn runs on; `AgentProcess.init` until the session host comes first. Tests
-  /// give a recorder.
+  /// What a spawn runs on; nil for the session host's, or an `AgentProcess` when there is no
+  /// host to have. Tests give a recorder.
   @ObservationIgnored var makeTransport:
-    (AgentProcess.Configuration) async -> any ProcessTransport =
-      { AgentProcess($0) }
+    ((AgentProcess.Configuration) async -> any ProcessTransport)?
+  /// The host a spawn tries first; tests give their own.
+  @ObservationIgnored var sessionHost = SessionHost.shared
+  /// The project window the session belongs to, which its folder need not be (a subfolder,
+  /// a worktree): a relaunched app reopens it from the meta.
+  @ObservationIgnored var windowFolder: URL?
+  /// What the last process was launched with and where the history stood then: the parts of
+  /// `meta()` only a start sets.
+  @ObservationIgnored private var launched: (start: AgentStart, history: HistoryMark)?
+  /// The meta the host holds for the process, so that only a change is sent.
+  @ObservationIgnored private var sentMeta: SessionMeta?
   /// Rebuilding from a log: what happened was told when it happened, so no callback runs.
   @ObservationIgnored private var isReplaying = false
   /// The turns Codex's thread holds, as `throughTurns` counts them.
@@ -179,6 +188,8 @@ final class AgentSession {
     effortPick = meta.effortPick
     name = meta.name
     executableOverride = meta.start.executableOverride
+    windowFolder = URL(filePath: meta.windowFolder, directoryHint: .isDirectory)
+    launched = (meta.start, meta.history)
     let started = records.first?.time ?? .now
     historyLoad = Task { await self.readHistory(meta.history, at: started) }
     await historyLoad?.value
@@ -205,6 +216,35 @@ final class AgentSession {
   var title: String? { name ?? transcript.title }
 
   var isProcessRunning: Bool { process != nil }
+
+  /// Its process runs in the session host, so it can outlive the app.
+  var isHosted: Bool { process is HostedProcess }
+
+  /// Mid-turn, or waiting on the person: what a quit hands to the host rather than ends.
+  var isAtWork: Bool { transcript.isRunning || !transcript.pendingPermissions.isEmpty }
+
+  /// The record a relaunched app rebuilds the session from, for its last process; nil before
+  /// one was launched.
+  func meta() -> SessionMeta? {
+    launched.map { meta(start: $0.start, history: $0.history) }
+  }
+
+  private func meta(start: AgentStart, history: HistoryMark) -> SessionMeta {
+    SessionMeta(
+      start: start, windowFolder: (windowFolder ?? folder).path(percentEncoded: false),
+      name: name, modePick: modePick, modelPick: modelPick, effortPick: effortPick,
+      accountPick: accountPick, sessionID: sessionID, savedTarget: savedTarget,
+      history: history)
+  }
+
+  /// Hands the host the meta when it changed; only a hosted process keeps one.
+  private func sendMeta() {
+    guard let hosted = process as? HostedProcess, let meta = meta(), meta != sentMeta,
+      let bytes = try? JSONEncoder().encode(meta)
+    else { return }
+    sentMeta = meta
+    hosted.setMeta(bytes)
+  }
 
   var canSend: Bool {
     !isReadOnly && !isMoving && !historyFailed && !transcript.isRunning && phase != .starting
@@ -530,7 +570,9 @@ final class AgentSession {
     account = launch.account
     guard let configuration = launch.configuration else { return fail(backend.notFoundMessage) }
     executable = launch.executable
-    let process = await makeTransport(configuration)
+    let history = historyMark()
+    let meta = meta(start: start, history: history)
+    let process = await transport(for: configuration, meta: meta)
     guard stillWanted(since: stops) else { return }
     // The last word before the process starts, with no await after it: a session live in
     // another process now is followed, not written to. The monitor may not have read the
@@ -543,6 +585,8 @@ final class AgentSession {
     do {
       let stream = try process.start()
       self.process = process
+      launched = (start, history)
+      sentMeta = meta
       // A switch the previous process never answered never will be.
       unansweredChanges.removeAll()
       launchedWithBypass = start.allowsBypass
@@ -553,12 +597,38 @@ final class AgentSession {
       pendingPrompt = nil
       pendingEffect = .none
       phase = .ready
+      // What changed while the host was being reached.
+      sendMeta()
       events = Task { [weak self] in
         for await event in stream { self?.handle(event) }
       }
     } catch {
       fail(error.localizedDescription)
     }
+  }
+
+  /// The session host's process when there is a host, else the app's own child (spec §5).
+  /// Nothing spawns until `start()`: the session may still let it go unstarted.
+  private func transport(for configuration: AgentProcess.Configuration, meta: SessionMeta)
+    async -> any ProcessTransport
+  {
+    if let makeTransport { return await makeTransport(configuration) }
+    guard let client = await sessionHost.client(), let bytes = try? JSONEncoder().encode(meta)
+    else { return AgentProcess(configuration) }
+    return HostedProcess(client: client, configuration: configuration, meta: bytes)
+  }
+
+  /// Where the history stands as a process starts, the rest being in its log: Codex's
+  /// thread in turns, Claude Code's transcript file in bytes. A new Claude Code session has
+  /// none, and keeps none for that process's life: its file holds only what the log does.
+  private func historyMark() -> HistoryMark {
+    if agent == .codex { return .codexTurns(codexTurns) }
+    guard let resuming, resuming.agentKind == .claude else { return .none }
+    let file = resuming.transcriptFile
+    let size =
+      try? FileManager.default.attributesOfItem(
+        atPath: file.path(percentEncoded: false))[.size] as? UInt64
+    return .claudeFile(path: file.path(percentEncoded: false), length: size ?? 0)
   }
 
   /// False when a `stop()` came since `stops` (which already settled the phase), or when
@@ -637,6 +707,7 @@ final class AgentSession {
       unsentName = title
     }
     name = title
+    sendMeta()
     return true
   }
 
@@ -687,7 +758,9 @@ final class AgentSession {
   }
 
   /// Ends the process: input closed so it can finish cleanly, then terminated, because a
-  /// window that closed mid-turn must not leave a `claude` working on nobody's behalf.
+  /// window that closed mid-turn must not leave a `claude` working on nobody's behalf. At a
+  /// quit, one at work in the session host is let go instead: it carries on there, sent
+  /// nothing, for the next launch to pick up.
   func stop() {
     let waiting = transcript.pendingPermissions.count
     defer { permissionsMayHaveChanged(from: waiting) }
@@ -695,8 +768,12 @@ final class AgentSession {
     pendingPrompt = nil
     pendingEffect = .none
     let wasRunning = process != nil
-    process?.closeInput()
-    process?.terminate()
+    if AppLifecycle.isTerminating, isAtWork, let hosted = process as? HostedProcess {
+      hosted.detach()
+    } else {
+      process?.closeInput()
+      process?.terminate()
+    }
     events?.cancel()
     // The cancelled event task will not report the exit, so it is recorded here.
     process = nil
@@ -758,9 +835,14 @@ final class AgentSession {
     switch event {
     case .lines(let lines, let time):
       for line in lines { receive(line, at: time) }
+      sendMeta()
     case .stderr(let text):
       diagnostics = String((diagnostics + text).suffix(4000))
     case .exited(let status, _):
+      if let failure = (process as? HostedProcess)?.startFailure {
+        process = nil
+        return fail(Self.message(forHostFailure: failure))
+      }
       notingPermissions { transcript.processExited() }
       process = nil
       followFromHere()
@@ -922,7 +1004,23 @@ final class AgentSession {
     _ command: AgentCommand, effect: NoteEffect = .none, to process: any ProcessTransport
   ) throws -> String? {
     note(.sent(command, effect: effect), to: process)
+    defer { sendMeta() }
     return try backend.send(command, to: process)
+  }
+
+  /// A start the session host could not make, said as a child's failed start says it.
+  private static func message(forHostFailure error: any Error) -> String {
+    switch error {
+    case HostClient.Failure.refused(let reason):
+      String(localized: "The session host could not start the process: \(reason)")
+    case HostedProcess.Failure.noAnswer:
+      String(localized: "The session host did not start the process in time.")
+    case HostClient.Failure.disconnected:
+      String(localized: "The session host went away before the process started.")
+    default:
+      String(
+        localized: "The session host could not start the process: \(error.localizedDescription)")
+    }
   }
 
   /// Only a transport that logs keeps notes (a session host's); a replay's keeps none.

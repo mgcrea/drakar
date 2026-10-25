@@ -1180,6 +1180,7 @@ final class Project {
 
   private func make(_ session: AgentSession) -> ProjectSession {
     if let executableOverride { session.executableOverride = executableOverride }
+    session.windowFolder = folder
     let item = ProjectSession(session: session)
     session.onTurnEnded = { [weak self, weak item] in
       guard let self, let item else { return }

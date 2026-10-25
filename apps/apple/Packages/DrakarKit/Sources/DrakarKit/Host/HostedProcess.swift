@@ -10,9 +10,15 @@ import Synchronization
 /// one, as `AgentProcess` does for a pipe, and `.exited` has no `remainder`: the host logged
 /// it as a line of its own.
 public final class HostedProcess: ProcessTransport, @unchecked Sendable {
+  public enum Failure: Error, Equatable {
+    /// The host did not say it spawned the process within the spawn limit.
+    case noAnswer
+  }
+
   private let client: HostClient
   private let configuration: AgentProcess.Configuration?
   private let meta: Data
+  private let spawnLimit: Duration
   private let events: AsyncStream<AgentProcess.Event>
   private let sink: AsyncStream<AgentProcess.Event>.Continuation
   private let state: Mutex<State>
@@ -22,16 +28,22 @@ public final class HostedProcess: ProcessTransport, @unchecked Sendable {
     var started = false
     var running: Bool
     var detached = false
+    var startFailure: (any Error)?
     /// Requests made while the host is still spawning, sent in order once it has.
     var waiting: [@Sendable (String) -> HostRequest] = []
     var pump: Task<Void, Never>?
   }
 
-  /// A new process; `start()` spawns it.
-  public init(client: HostClient, configuration: AgentProcess.Configuration, meta: Data) {
+  /// A new process; `start()` spawns it, and gives up on a host that has not spawned it
+  /// within `spawnLimit`.
+  public init(
+    client: HostClient, configuration: AgentProcess.Configuration, meta: Data,
+    spawnLimit: Duration = .seconds(10)
+  ) {
     self.client = client
     self.configuration = configuration
     self.meta = meta
+    self.spawnLimit = spawnLimit
     (events, sink) = AsyncStream.makeStream()
     state = Mutex(State(running: false))
   }
@@ -41,6 +53,7 @@ public final class HostedProcess: ProcessTransport, @unchecked Sendable {
     self.client = client
     configuration = nil
     meta = held.meta
+    spawnLimit = .zero
     (events, sink) = AsyncStream.makeStream()
     state = Mutex(State(id: held.id, running: held.running))
   }
@@ -48,6 +61,10 @@ public final class HostedProcess: ProcessTransport, @unchecked Sendable {
   public var id: String? { state.withLock { $0.id } }
 
   public var isRunning: Bool { state.withLock { $0.running } }
+
+  /// Why the host never started the process, once its events have ended for that reason:
+  /// what `AgentProcess.start()` would have thrown, which no event says.
+  public var startFailure: (any Error)? { state.withLock { $0.startFailure } }
 
   /// Spawns the process and returns its events. Call once.
   public func start() throws -> AsyncStream<AgentProcess.Event> {
@@ -60,12 +77,12 @@ public final class HostedProcess: ProcessTransport, @unchecked Sendable {
     guard first else { return events }
     let task = Task {
       do {
-        let id = try await client.spawn(configuration, meta: meta)
+        let id = try await spawn(configuration)
         try spawned(id)
+        guard !state.withLock({ $0.detached }) else { return }
         pump(client.attach(id, from: 0), replaying: nil)
       } catch {
-        // Nothing to run: the session sees the CLI end, with why.
-        sink.yield(.stderr("The session host could not start the process: \(error)\n"))
+        state.withLock { $0.startFailure = error }
         ended(status: -1)
       }
     }
@@ -130,6 +147,33 @@ public final class HostedProcess: ProcessTransport, @unchecked Sendable {
   public func live() -> AsyncStream<AgentProcess.Event> { events }
 
   // MARK: -
+
+  /// The new process's id, or `Failure.noAnswer` once `spawnLimit` has gone by. A spawn the
+  /// host answers after that is ended at once, for nobody holds it.
+  private func spawn(_ configuration: AgentProcess.Configuration) async throws -> String {
+    let (client, meta, limit) = (client, meta, spawnLimit)
+    let once = Once()
+    return try await withCheckedThrowingContinuation { continuation in
+      let timer = Task {
+        guard (try? await Task.sleep(for: limit)) != nil, once.claim() else { return }
+        continuation.resume(throwing: Failure.noAnswer)
+      }
+      Task {
+        do {
+          let id = try await client.spawn(configuration, meta: meta)
+          timer.cancel()
+          if once.claim() {
+            continuation.resume(returning: id)
+          } else {
+            try? client.send(.terminate(id: id))
+          }
+        } catch {
+          timer.cancel()
+          if once.claim() { continuation.resume(throwing: error) }
+        }
+      }
+    }
+  }
 
   /// Sends the request for the process, or holds it until the host has spawned it.
   private func request(_ make: @escaping @Sendable (String) -> HostRequest) throws {
@@ -216,5 +260,17 @@ public final class HostedProcess: ProcessTransport, @unchecked Sendable {
     var bytes = record.bytes
     if bytes.last == 0x0A { bytes.removeLast() }
     return .lines([AgentProcess.parse(bytes)], at: record.time)
+  }
+}
+
+/// True for the first caller only.
+private final class Once: Sendable {
+  private let claimed = Mutex(false)
+
+  func claim() -> Bool {
+    claimed.withLock { claimed in
+      defer { claimed = true }
+      return !claimed
+    }
   }
 }
