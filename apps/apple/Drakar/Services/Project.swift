@@ -448,12 +448,15 @@ final class Project {
       dismissed: dismissedElsewhere[summary.sessionID])
   }
 
-  /// Quiets the question or offer a session elsewhere ended on, until it asks another.
+  /// Quiets the question or offer a session elsewhere ended on, until it asks another. On
+  /// the session the window shows, from Session › Dismiss or the row's menu, it is a reply.
   func dismissAsk(_ summary: SessionSummary) {
     dismissedElsewhere[summary.sessionID] = summary.closingMessageID
     // A row watching it here asks again once that process exits, unless it knows too.
-    session(withID: summary.sessionID)?.dismissedAsk = summary.closingMessageID
+    let watching = session(withID: summary.sessionID)
+    watching?.dismissedAsk = summary.closingMessageID
     Attention.shared.refresh()
+    if let watching, watching.id == selectedID { replied(watching) }
   }
 
   /// A session listed elsewhere, shown: in the Drakar window that holds it, or watched here.
@@ -482,9 +485,8 @@ final class Project {
   func dismissSelected() {
     if let selected, selected.closingAsk != nil {
       dismissAsk(selected)
-    } else if let summary = watchedElsewhere, let selected {
+    } else if let summary = watchedElsewhere {
       dismissAsk(summary)
-      replied(selected)
     }
   }
 

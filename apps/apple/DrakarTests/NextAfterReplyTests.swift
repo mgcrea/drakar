@@ -105,6 +105,34 @@ struct NextAfterReplyTests {
     project.stopAll()
   }
 
+  /// Dismiss from the right-click menu of the session elsewhere the window shows is a reply
+  /// to it, as Session › Dismiss is; on another row it stays.
+  @Test func dismissingTheShownSessionElsewhereFromItsMenuMovesOn() async throws {
+    let project = Project(folder: folder)
+    project.movesOnAfterReply = true
+    let b = try await row(in: project, "b", UrgencyTests.asking)
+    var elsewhere = SessionSummary(
+      sessionID: "w", account: ClaudeAccount(directory: folder, isDefault: false),
+      file: folder.appending(path: "w.jsonl"), modified: .now, size: 1)
+    elsewhere.closingAsk = ClosingAsk(kind: .question, text: "Want me to push?")
+    elsewhere.closingMessageID = "m1"
+    var other = elsewhere
+    other.sessionID = "v"
+    let watched = project.attach(
+      ResumeTarget(
+        sessionID: "w", cwd: folder.path(percentEncoded: false),
+        file: folder.appending(path: "w.jsonl").path(percentEncoded: false),
+        accountDirectory: folder.path(percentEncoded: false), accountIsDefault: false),
+      watching: true, readOnly: true)
+    project.dismissAsk(other)
+    try await settle(project, from: watched)
+    #expect(project.selectedID == watched.id)
+    project.dismissAsk(elsewhere)
+    try await settle(project, from: watched)
+    #expect(project.selectedID == b.id)
+    project.stopAll()
+  }
+
   /// Marks hold back only the prompt sent to them: answering the shown row's choice still
   /// moves on.
   @Test func withRowsMarkedAnAnswerStillMovesOn() async throws {
