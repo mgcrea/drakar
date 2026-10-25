@@ -1,5 +1,6 @@
 import DrakarKit
 import Foundation
+import SwiftUI
 import Testing
 
 @testable import Drakar
@@ -38,6 +39,39 @@ struct QuestionPanelTests {
       QuestionPanel.answers(
         for: [which], picked: ["Which?": ["a.txt"]], otherPicked: [], other: ["Which?": "c.txt"])
         == ["Which?": "a.txt"])
+  }
+
+  /// A digit picks its row, ⌘ with it answers too; typed into "Other", it is the field's.
+  @Test func digitsPickAndCommandAnswers() {
+    #expect(QuestionPanel.digitPick("3", modifiers: [], typing: false)! == (2, false))
+    #expect(QuestionPanel.digitPick("3", modifiers: .command, typing: false)! == (2, true))
+    #expect(QuestionPanel.digitPick("1", modifiers: .numericPad, typing: false)! == (0, false))
+    #expect(QuestionPanel.digitPick("3", modifiers: [], typing: true) == nil)
+    #expect(QuestionPanel.digitPick("3", modifiers: .command, typing: true) == nil)
+    #expect(QuestionPanel.digitPick("3", modifiers: .option, typing: false) == nil)
+    #expect(QuestionPanel.digitPick("0", modifiers: [], typing: false) == nil)
+  }
+
+  /// ⌘'s pick answers only once it leaves every question with one: the last one picked,
+  /// in whatever order, and never "Other", which waits for its text.
+  @Test func aPickCompletesTheAnswersOnlyWhenEveryQuestionHasOne() {
+    let questions = [which, also]
+    var picked: [String: Set<String>] = [:]
+    var otherPicked: Set<String> = []
+    func answers() -> [String: String]? {
+      QuestionPanel.answers(for: questions, picked: picked, otherPicked: otherPicked, other: [:])
+    }
+    QuestionPanel.pick(1, in: also, picked: &picked, otherPicked: &otherPicked)
+    #expect(answers() == nil)
+    QuestionPanel.pick(2, in: which, picked: &picked, otherPicked: &otherPicked)
+    #expect(otherPicked == ["Which?"])
+    #expect(answers() == nil)
+    QuestionPanel.pick(0, in: which, picked: &picked, otherPicked: &otherPicked)
+    #expect(otherPicked.isEmpty)
+    #expect(answers() == ["Which?": "a.txt", "Also?": "Docs"])
+    // A multiple choice's tick taken off again leaves it unanswered.
+    QuestionPanel.pick(1, in: also, picked: &picked, otherPicked: &otherPicked)
+    #expect(answers() == nil)
   }
 
   /// A request withdrawn and asked again keeps its call, and the card holds on to an equal

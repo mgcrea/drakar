@@ -148,6 +148,10 @@ buttons (checkboxes when `multiSelect`), each option's description under its lab
 question has an answer and sends `allow` with the input plus `answers`. **Skip** sends
 `deny` with "The user chose not to answer."
 
+The digits pick options, and ⌘ held with one (or with a click) answers at once when that
+pick leaves every question with an answer; otherwise it is a plain pick. While the "Other"
+field takes the typing, the digits, Space and the arrows are the field's.
+
 ## The Attention pane
 
 A new pane between General and About. The ended-turn toggle moves here from General; its key

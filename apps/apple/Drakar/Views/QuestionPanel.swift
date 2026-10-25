@@ -1,3 +1,4 @@
+import AppKit
 import DrakarKit
 import SwiftUI
 
@@ -47,6 +48,42 @@ struct QuestionPanel: View {
     return answers
   }
 
+  /// What a digit does: the row it picks, and whether ⌘ held with it answers too. Nil while
+  /// "Other"'s field takes the typing, and with any other modifier.
+  static func digitPick(_ characters: String, modifiers: EventModifiers, typing: Bool)
+    -> (row: Int, answers: Bool)?
+  {
+    guard !typing, let digit = Int(characters), digit >= 1 else { return nil }
+    switch modifiers.subtracting([.capsLock, .numericPad]) {
+    case []: return (digit - 1, false)
+    case .command: return (digit - 1, true)
+    default: return nil
+    }
+  }
+
+  /// Row `index` of `question` picked: a single choice replaces the pick, a multiple one
+  /// toggles it; "Other" (`options.count`) toggles, and keeps a single choice's pick off.
+  static func pick(
+    _ index: Int, in question: UserQuestion, picked: inout [String: Set<String>],
+    otherPicked: inout Set<String>
+  ) {
+    let key = question.question
+    if index == question.options.count {
+      if question.multiSelect || !otherPicked.contains(key) {
+        otherPicked.formSymmetricDifference([key])
+      }
+      if !question.multiSelect { picked[key] = [] }
+      return
+    }
+    let label = question.options[index].label
+    if question.multiSelect {
+      picked[key, default: []].formSymmetricDifference([label])
+    } else {
+      picked[key] = [label]
+      otherPicked.remove(key)
+    }
+  }
+
   private var answers: [String: String]? {
     Self.answers(for: questions, picked: picked, otherPicked: otherPicked, other: other)
   }
@@ -85,18 +122,22 @@ struct QuestionPanel: View {
     .focusable()
     .focusEffectDisabled()
     .focused($focus, equals: .panel)
-    .onKeyPress(.upArrow) { move(-1) }
-    .onKeyPress(.downArrow) { move(1) }
-    .onKeyPress(.leftArrow) { show(current - 1) }
-    .onKeyPress(.rightArrow) { show(current + 1) }
+    // The panel's keys are the field's while "Other" is typed in.
+    .onKeyPress(.upArrow) { isTyping ? .ignored : move(-1) }
+    .onKeyPress(.downArrow) { isTyping ? .ignored : move(1) }
+    .onKeyPress(.leftArrow) { isTyping ? .ignored : show(current - 1) }
+    .onKeyPress(.rightArrow) { isTyping ? .ignored : show(current + 1) }
     .onKeyPress(.space) {
-      guard let highlighted else { return .ignored }
+      guard !isTyping, let highlighted else { return .ignored }
       pick(highlighted)
       return .handled
     }
     .onKeyPress(characters: .decimalDigits, phases: .down) { press in
-      guard let digit = Int(press.characters), digit >= 1 else { return .ignored }
-      pick(digit - 1)
+      guard
+        let (row, answering) = Self.digitPick(
+          press.characters, modifiers: press.modifiers, typing: isTyping)
+      else { return .ignored }
+      pick(row, answering: answering)
       return .handled
     }
     .onDisappear { advance?.cancel() }
@@ -159,7 +200,8 @@ struct QuestionPanel: View {
           multiSelect: question.multiSelect,
           isSelected: picked[question.question]?.contains(option.label) == true,
           isHighlighted: highlighted == index, number: index + 1,
-          pick: { pick(index) }, hover: { highlighted = $0 ? index : nil }
+          pick: { pick(index, answering: NSEvent.modifierFlags.contains(.command)) },
+          hover: { highlighted = $0 ? index : nil }
         )
         .accessibilityIdentifier("question.option.\(option.label)")
       }
@@ -233,9 +275,12 @@ struct QuestionPanel: View {
   private var hint: String {
     let count = (question?.options.count ?? 0) + 1
     return questions.count > 1
-      ? String(localized: "1–\(count) to pick, ←→ between questions, ⏎ to go on")
-      : String(localized: "1–\(count) to pick, ⏎ to answer")
+      ? String(
+        localized: "1–\(count) to pick, with ⌘ to answer too, ←→ between questions, ⏎ to go on")
+      : String(localized: "1–\(count) to pick, with ⌘ to answer too, ⏎ to answer")
   }
+
+  private var isTyping: Bool { focus == .other }
 
   /// Answer once every question has one; until then, on to the next one without.
   private func primary() {
@@ -244,29 +289,23 @@ struct QuestionPanel: View {
     if let next = order.first(where: { !isAnswered(questions[$0]) }) { _ = show(next) }
   }
 
-  /// Picks row `index` of the current question. A single choice moves on to the next
-  /// question by itself, after a beat so the pick is seen; "Other" waits for its text.
-  private func pick(_ index: Int) {
+  /// Picks row `index` of the current question; `answering` (⌘ held) answers at once when
+  /// the pick leaves every question with an answer. Otherwise a single choice moves on to the
+  /// next question by itself, after a beat so the pick is seen; "Other" waits for its text.
+  private func pick(_ index: Int, answering: Bool = false) {
     guard let question, index >= 0, index <= question.options.count else { return }
-    let key = question.question
     highlighted = index
+    Self.pick(index, in: question, picked: &picked, otherPicked: &otherPicked)
     if index == question.options.count {
-      if question.multiSelect || !otherPicked.contains(key) {
-        otherPicked.formSymmetricDifference([key])
-      }
-      if !question.multiSelect { picked[key] = [] }
-      if otherPicked.contains(key) { focus = .other } else { focus = .panel }
+      focus = otherPicked.contains(question.question) ? .other : .panel
       return
     }
-    let label = question.options[index].label
-    if question.multiSelect {
-      picked[key, default: []].formSymmetricDifference([label])
-      return
-    }
-    picked[key] = [label]
-    otherPicked.remove(key)
     focus = .panel
-    guard current < questions.count - 1 else { return }
+    if answering, let answers {
+      advance?.cancel()
+      return answer(answers)
+    }
+    guard !question.multiSelect, current < questions.count - 1 else { return }
     advance?.cancel()
     let from = current
     advance = Task {
