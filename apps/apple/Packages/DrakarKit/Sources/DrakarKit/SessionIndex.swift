@@ -295,11 +295,12 @@ public struct LiveSession: Sendable, Hashable {
   }()
 
   /// Every live session in `account`'s registry, except Drakar's own (a window reads those
-  /// from memory) and spawns in the temporary folder.
+  /// from memory), what the session `hosts` run (Drakar's too, whichever app started the
+  /// host: a window reads those from the host), and spawns in the temporary folder.
   public static func read(
     account: ClaudeAccount, isAlive: (Int32) -> Bool = isAlive,
     parentOf: (Int32) -> Int32? = ProcessAncestry.parent,
-    ownPID: Int32 = getpid(),
+    ownPID: Int32 = getpid(), hosts: Set<Int32> = [],
     temporaryDirectories: Set<String> = defaultTemporaryDirectories
   ) -> [LiveSession] {
     let folder = account.directory.appending(path: "sessions", directoryHint: .isDirectory)
@@ -308,7 +309,7 @@ public struct LiveSession: Sendable, Hashable {
         at: folder, includingPropertiesForKeys: nil, options: .skipsHiddenFiles)) ?? []
     return files.filter { $0.pathExtension == "json" }.compactMap { file in
       guard let live = entry(at: file, isAlive: isAlive),
-        !descends(live.pid, from: ownPID, parentOf: parentOf)
+        !([ownPID] + hosts).contains(where: { descends(live.pid, from: $0, parentOf: parentOf) })
       else { return nil }
       if let cwd = live.cwd, temporaryDirectories.contains(ProjectPath.normalize(cwd)) {
         return nil

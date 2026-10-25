@@ -31,6 +31,14 @@ import Synchronization
   /// path is refused. A host that started but answered late is not this: it is tried again.
   private(set) var cannotStart = false
 
+  /// The hosts said hello to, ours and older ones: what they run is Drakar's, which the
+  /// registry of live sessions must not take for another app's (`LiveSession.read`).
+  var hostPIDs: Set<Int32> { olderHostPIDs.union(hostPID.map { [$0] } ?? []) }
+  private var hostPID: Int32? { didSet { if hostPID != oldValue { hostsChanged() } } }
+  private var olderHostPIDs: Set<Int32> = [] {
+    didSet { if olderHostPIDs != oldValue { hostsChanged() } }
+  }
+
   /// Tests only: the helper this instance started, if it started one.
   private(set) var started: pid_t?
 
@@ -52,7 +60,7 @@ import Synchronization
   }
 
   private enum Outcome {
-    case connected(HostClient)
+    case connected(HostClient, pid: Int32)
     /// Spawned, or a socket took the connection, but no hello came in time.
     case noAnswer
     case cannotStart
@@ -96,8 +104,9 @@ import Synchronization
     let outcome = await task.value
     connecting = nil
     switch outcome {
-    case .connected(let client):
+    case .connected(let client, let pid):
       quietUntil = nil
+      hostPID = pid
       adopt(client)
     case .noAnswer:
       quietUntil = .now + cooldown
@@ -108,7 +117,7 @@ import Synchronization
   }
 
   private static func client(of outcome: Outcome) -> HostClient? {
-    if case .connected(let client) = outcome { return client }
+    if case .connected(let client, _) = outcome { return client }
     return nil
   }
 
@@ -157,6 +166,8 @@ import Synchronization
     guard let directory else { return [] }
     let version = Self.appVersion
     var held: [HeldProcess] = []
+    var pids: Set<Int32> = []
+    defer { olderHostPIDs = pids }
     for socket in Self.olderSockets(in: directory) {
       guard let client = try? HostClient.connect(socket: socket) else { continue }
       defer { client.close() }
@@ -164,6 +175,7 @@ import Synchronization
         try await client.hello(appVersion: version)
       }
       guard let welcome, welcome.protocol < HostWire.major else { continue }
+      pids.insert(welcome.pid)
       held += await Self.within(Self.helloLimit) { try await client.list() } ?? []
     }
     return held
@@ -187,6 +199,12 @@ import Synchronization
   func watchReleases(for owner: AnyObject, _ takes: @escaping (String) -> Bool) {
     releaseWatchers.removeAll { $0.owner == nil || $0.owner === owner }
     releaseWatchers.append(ReleaseWatcher(owner: owner, takes: takes))
+  }
+
+  /// The windows' registry is read again without what the hosts run; only for the app's
+  /// own host, not a test's.
+  private func hostsChanged() {
+    if self === Self.shared { SessionMonitor.shared.hostsChanged() }
   }
 
   private func released(_ id: String) {
@@ -214,7 +232,9 @@ import Synchronization
     var wait = Self.firstWait
     var spawned = false
     while true {
-      if let client = await Self.answering(socket, until: deadline) { return .connected(client) }
+      if let (client, pid) = await Self.answering(socket, until: deadline) {
+        return .connected(client, pid: pid)
+      }
       if !spawned {
         // A socket a crashed host left is the new host's to remove, under its lock.
         guard let pid = Self.startHelper(helper, in: directory) else { return .cannotStart }
@@ -227,19 +247,19 @@ import Synchronization
     }
   }
 
-  /// A connection whose host says hello in our major in time, or nil.
+  /// A connection whose host says hello in our major in time, and the host's pid, or nil.
   private static func answering(_ socket: URL, until deadline: ContinuousClock.Instant) async
-    -> HostClient?
+    -> (HostClient, pid: Int32)?
   {
     guard let client = try? HostClient.connect(socket: socket) else { return nil }
     let limit = min(helloLimit, deadline - .now)
     let version = appVersion
     let welcome = await within(limit) { try await client.hello(appVersion: version) }
-    guard welcome?.protocol == HostWire.major else {
+    guard let welcome, welcome.protocol == HostWire.major else {
       client.close()
       return nil
     }
-    return client
+    return (client, welcome.pid)
   }
 
   private static var appVersion: String {

@@ -362,6 +362,8 @@ struct TwoAppsTests {
     #expect(!row.session.isProcessRunning)
     #expect(older.asked.allSatisfy { $0 == .hello || $0 == .list }, "\(older.asked)")
     #expect(older.asked.contains(.list))
+    // What it runs is Drakar's, not another app's live session.
+    #expect(b.hostPIDs == [getpid()])
   }
 }
 

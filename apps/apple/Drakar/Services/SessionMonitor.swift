@@ -291,10 +291,16 @@ final class SessionMonitor {
     byFile[key(URL(filePath: path))] = nil
   }
 
+  /// The session hosts said hello to changed: what they run is not another app's.
+  func hostsChanged() {
+    if hasReadRegistries { readRegistries() }
+  }
+
   private func readRegistries() {
+    let hosts = SessionHost.shared.hostPIDs
     for account in accounts {
       live[account.directory] = Dictionary(
-        LiveSession.read(account: account).map { ($0.sessionID, $0) },
+        LiveSession.read(account: account, hosts: hosts).map { ($0.sessionID, $0) },
         uniquingKeysWith: { first, _ in first })
     }
     for (key, summary) in byFile {

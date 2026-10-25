@@ -761,6 +761,8 @@ final class AgentSession {
     guard target.agentKind == .claude else { return false }
     let monitor = SessionMonitor.shared
     if monitor.hasReadRegistries, monitor.liveIDs.contains(target.sessionID) { return true }
+    // What a session host runs counts here: this session has no process yet, so one there is
+    // another app's.
     return LiveSession.read(account: target.account).contains { $0.sessionID == target.sessionID }
   }
 
