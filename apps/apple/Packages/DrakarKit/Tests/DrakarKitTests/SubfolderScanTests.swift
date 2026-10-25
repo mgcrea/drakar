@@ -69,4 +69,15 @@ struct SubfolderScanTests {
     #expect(ProjectPath.child(of: "/p/apps", below: "/p/apps") == nil)
     #expect(ProjectPath.child(of: "/p/apps/.claude/worktrees/x", below: "/p/apps") == nil)
   }
+
+  /// The toolbar's name for a session's folder: none for the project's own, the path down
+  /// from the project, a worktree's name, or the folder's name outside the project.
+  @Test func folderLabels() {
+    #expect(ProjectPath.label(of: "/p/apps/", in: "/p/apps") == nil)
+    #expect(ProjectPath.label(of: "/p/apps/alpha", in: "/p/apps") == "alpha")
+    #expect(ProjectPath.label(of: "/p/apps/web/alpha/", in: "/p/apps/") == "web/alpha")
+    #expect(ProjectPath.label(of: "/p/apps/.claude/worktrees/fix-x", in: "/p/apps") == "fix-x")
+    #expect(ProjectPath.label(of: "/p/apps/.claude/worktrees/fix-x/src", in: "/p/apps") == "fix-x")
+    #expect(ProjectPath.label(of: "/p/other/beta", in: "/p/apps") == "beta")
+  }
 }
