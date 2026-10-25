@@ -46,6 +46,16 @@ struct ProjectPathTests {
     #expect(ProjectPath.encodedPrefixes(for: "/Users/me/app") == ["-Users-me-app"])
   }
 
+  /// Claude Code cuts a name over 200 characters to 200 and adds a hash of the whole path:
+  /// the prefix is those 200, which the folder's sessions and its subfolders' all share.
+  @Test func aLongFoldersPrefixIsTheCLIsFirst200Characters() {
+    let folder = "/Users/me/" + String(repeating: "a", count: 250)
+    let encoded = "-Users-me-" + String(repeating: "a", count: 250)
+    #expect(ProjectPath.encodedPrefixes(for: folder) == [String(encoded.prefix(200))])
+    let subfolder = ProjectPath.encodedPrefixes(for: folder + "/sub")
+    #expect(subfolder == [String(encoded.prefix(200))])
+  }
+
   /// Claude Code keeps ASCII letters and digits only (`replace(/[^a-zA-Z0-9]/g,"-")`, in
   /// 2.1.308): an accented letter is a `-` too.
   @Test func anAccentedLetterIsADashLikeAnyOtherCharacter() {

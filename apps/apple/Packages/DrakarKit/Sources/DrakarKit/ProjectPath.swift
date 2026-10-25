@@ -91,11 +91,17 @@ public enum ProjectPath {
   /// How Claude Code names the transcript folder of `folder`, in the two encodings seen:
   /// every `/` a `-`, or every character but ASCII letters and digits a `-` (Claude Code
   /// 2.1.308: `replace(/[^a-zA-Z0-9]/g,"-")`). A subfolder's name
-  /// starts with its parent's, so these are prefixes to list, then confirm by `cwd`.
+  /// starts with its parent's, so these are prefixes to list, then confirm by `cwd`. A name
+  /// over 200 characters is cut there and given a hash of the whole path, so the prefix is
+  /// its first 200.
   public static func encodedPrefixes(for folder: String) -> [String] {
     let path = normalize(folder)
-    let slashes = path.replacingOccurrences(of: "/", with: "-")
-    let alphanumeric = String(path.map { $0.isASCII && ($0.isLetter || $0.isNumber) ? $0 : "-" })
+    let slashes = String(path.replacingOccurrences(of: "/", with: "-").prefix(nameLimit))
+    let alphanumeric = String(
+      path.map { $0.isASCII && ($0.isLetter || $0.isNumber) ? $0 : "-" }.prefix(nameLimit))
     return slashes == alphanumeric ? [slashes] : [slashes, alphanumeric]
   }
+
+  /// Where Claude Code cuts a transcript folder's name (`K_e`, in 2.1.308).
+  private static let nameLimit = 200
 }
