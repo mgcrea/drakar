@@ -348,4 +348,107 @@ struct ProjectFanOutTests {
       SessionMeta.self, from: JSONSerialization.data(withJSONObject: object))
     #expect(same.fanOut == meta.fanOut)
   }
+
+  /// A host with the stand-in held for `check` in `folders[1]`, marked as batch index 0 and
+  /// never sent a prompt: what a quit during the spawn leaves. The stored window names it
+  /// running, its host id not yet known.
+  private func spawnedUnsent(
+    on app: SessionHost, script: URL
+  ) async throws -> (mark: FanOutMark, stored: StoredProject) {
+    let before = Project(folder: parent)
+    before.executableOverride = script
+    before.sessionHost = app
+    let item = before.newSession(folder: folders[1], select: false)
+    let mark = FanOutMark(batch: UUID(), index: 0)
+    item.session.fanOut = mark
+    item.session.rename(to: "/check · beta")
+    await item.session.spawn()
+    try #require(await eventually { item.session.hostID != nil }, "phase \(item.session.phase)")
+    (item.session.process as? HostedProcess)?.detach()
+    let entry = StoredFanOut.Entry(
+      folder: folders[1].path, name: "/check · beta", state: .running)
+    let batch = StoredFanOut(
+      batch: mark.batch, skillName: "check", prompt: "/check", limit: nil, entries: [entry])
+    return (mark, StoredProject(fanOuts: [batch]))
+  }
+
+  /// A row the host holds that never took the batch's prompt (the quit came before the spawn
+  /// was answered) is sent it once: its transcript holds no prompt.
+  @Test func aFolderWhosePromptWasLostIsSentOnce() async throws {
+    let host = try LocalHost()
+    defer {
+      host.close()
+      SessionHost.testDirectory = nil
+    }
+    SessionHost.testDirectory = host.directory
+    let app = SessionHost(cooldown: .milliseconds(100), helper: URL(filePath: "/usr/bin/true"))
+    let script = try slowStandIn()
+    _ = await AgentSession.environment.value
+    let (_, stored) = try await spawnedUnsent(on: app, script: script)
+    #expect(sent("/check", by: script) == 0)
+
+    let after = Project(folder: parent, restoring: stored)
+    after.executableOverride = script
+    after.sessionHost = app
+    defer { after.stopAll() }
+    await after.takeBackHeld().value
+    let row = try #require(after.sessions.first)
+    #expect(after.sessions.count == 1 && row.session.isHosted)
+    #expect(await eventually { sent("/check", by: script) == 1 })
+    #expect(prompts(row) == ["/check"])
+    #expect(after.fanOuts.first?.queue.summary == "1 running")
+    try await Task.sleep(for: .milliseconds(300))
+    #expect(sent("/check", by: script) == 1)
+  }
+
+  /// A row that took the prompt and finished while away is done, not sent it again.
+  @Test func aFolderThatFinishedWhileAwayIsNotSentAgain() async throws {
+    let host = try LocalHost()
+    defer {
+      host.close()
+      SessionHost.testDirectory = nil
+    }
+    SessionHost.testDirectory = host.directory
+    let app = SessionHost(cooldown: .milliseconds(100), helper: URL(filePath: "/usr/bin/true"))
+    let script = try slowStandIn()
+    _ = await AgentSession.environment.value
+    let before = Project(folder: parent)
+    before.executableOverride = script
+    before.sessionHost = app
+    before.runInSubfolders(check, folders: [folders[0]], arguments: "", mode: nil, limit: 1)
+    let live = try #require(before.sessions.first)
+    #expect(await eventually { live.session.hostID != nil && sent("/check", by: script) == 1 })
+    let stored = before.stored
+    (live.session.process as? HostedProcess)?.detach()
+    try Data().write(to: script.appendingPathExtension("done"))
+    // The turn ends in the host, with nobody attached.
+    for _ in 0..<50 { try await Task.sleep(for: .milliseconds(20)) }
+
+    let after = Project(folder: parent, restoring: stored)
+    after.executableOverride = script
+    after.sessionHost = app
+    defer { after.stopAll() }
+    await after.takeBackHeld().value
+    #expect(after.sessions.count == 1)
+    #expect(after.fanOuts.isEmpty)
+    try await Task.sleep(for: .milliseconds(300))
+    #expect(sent("/check", by: script) == 1)
+  }
+
+  /// A window closed while it takes its sessions back starts nothing, and the batch stays as
+  /// stored for the next launch.
+  @Test func aWindowClosedMeanwhileRestoresNothing() async throws {
+    let script = try slowStandIn()
+    let batch = StoredFanOut(
+      batch: UUID(), skillName: "check", prompt: "/check", limit: 1,
+      entries: folders.map { .init(folder: $0.path, name: "n", state: .waiting) })
+    let project = Project(folder: parent, restoring: StoredProject(fanOuts: [batch]))
+    project.executableOverride = script
+    let taking = project.takeBackHeld()
+    project.stopAll()
+    await taking.value
+    #expect(project.sessions.isEmpty && project.fanOuts.isEmpty)
+    #expect(sent("/check", by: script) == 0)
+    #expect(project.stored.fanOuts == [batch])
+  }
 }

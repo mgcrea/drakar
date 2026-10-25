@@ -369,6 +369,8 @@ final class Project {
   @ObservationIgnored private var shownHeldElsewhere: Set<String> = []
   /// The batches still sending or running, one banner each.
   private(set) var fanOuts: [FanOutBatch] = []
+  /// The window closed or went home: nothing it takes back or restores starts after that.
+  @ObservationIgnored private var isStopped = false
   /// The batches the window was stored with, until `takeBackHeld` has the rows they need.
   @ObservationIgnored private var storedFanOuts: [StoredFanOut] = []
   /// The Run in Each Subfolder sheet, while shown.
@@ -856,12 +858,20 @@ final class Project {
       entries: entries, agent: batch.agent)
   }
 
+  /// A session of `folder` that has been started before, which the window kept a row for.
+  private func keptARow(in folder: String) -> Bool {
+    sessions.contains {
+      $0.session.resuming != nil && $0.session.folder.path(percentEncoded: false) == folder
+    }
+  }
+
   /// The batches stored with the window, carried on now that `adoptHeld` has brought back the
   /// rows the host held. An entry that was running takes its row, found by the host's id or
   /// else by the mark in the process's meta; when none came back its process is gone, so its
   /// slot goes to the next. A waiting entry becomes a new session in its folder, with its
   /// name, account and mode, sent when its turn comes. Entries done or cancelled only count.
   private func restoreFanOuts() {
+    guard !isStopped else { return }
     let stored = storedFanOuts
     storedFanOuts = []
     for stored in stored {
@@ -871,21 +881,35 @@ final class Project {
       for (index, entry) in stored.entries.enumerated() {
         var id = UUID()
         var state = entry.state
+        var reused = false
         if state == .running {
           let mark = FanOutMark(batch: stored.batch, index: index)
           let row =
             sessions.first {
               $0.session.isHosted && entry.hostID != nil && $0.session.hostID == entry.hostID
             } ?? sessions.first { $0.session.isHosted && $0.session.fanOut == mark }
-          // A turn that ended while away is done; a pending permission is still its turn.
-          if let row, row.session.isAtWork {
+          if let row {
             id = row.id
+            // A turn that ended while away is done; a pending permission is still its turn.
+            // A row whose transcript holds no prompt never took the batch's: the quit came
+            // while its spawn was unanswered, so the request was lost. It is sent again.
+            if !row.session.isAtWork {
+              let tookPrompt = row.session.transcript.entries.contains {
+                if case .prompt = $0.kind { true } else { false }
+              }
+              state = tookPrompt ? .finished : .waiting
+              reused = state == .waiting
+            }
+          } else if entry.hostID == nil, !keptARow(in: entry.folder) {
+            // Never reached a host and left no session behind: the prompt was lost with the
+            // quit, and a new session in the folder takes it.
+            state = .waiting
           } else {
             state = .finished
           }
         }
         ids.append(id)
-        if state == .waiting {
+        if state == .waiting && !reused {
           created.append((index, entry))
         } else {
           states[id] = state
@@ -1271,7 +1295,11 @@ final class Project {
     for item in waiting { item.session.waitsForHost = true }
     return Task {
       let held = await sessionHost.heldIfRunning()
-      await adoptHeld(held, olderHosts: await sessionHost.heldByOlderHosts())
+      // The window closed meanwhile: no row is made and nothing is sent, and the batches
+      // stay as stored for the next launch.
+      let olderHosts = await sessionHost.heldByOlderHosts()
+      guard !isStopped else { return }
+      await adoptHeld(held, olderHosts: olderHosts)
       restoreFanOuts()
       for item in waiting { item.session.waitsForHost = false }
     }
@@ -1437,6 +1465,7 @@ final class Project {
   }
 
   func stopAll() {
+    isStopped = true
     for item in sessions { item.session.stop() }
     releaseCapabilities()
   }
