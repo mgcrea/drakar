@@ -5,9 +5,9 @@ import Testing
 @testable import Drakar
 
 /// Sessions spawned through the bundled `DrakarHost`, started for real on a short directory of
-/// each test's own under `/tmp`, against a stand-in `claude` that logs what it is sent and
-/// ends a turn whose prompt says "quick". Every helper a test starts is killed by its pid,
-/// which ends the stand-ins it holds. Serialized: `SessionHost.testDirectory` and
+/// each test's own under `/tmp`, against a stand-in `claude` that logs what it is sent, ends
+/// a turn whose prompt says "quick" and exits on "bye". Every helper a test starts is killed
+/// by its pid, which ends the stand-ins it holds. Serialized: `SessionHost.testDirectory` and
 /// `AppLifecycle.isTerminating` are one for the whole app.
 @MainActor
 @Suite("Sessions run through the session host", .serialized)
@@ -30,7 +30,7 @@ struct HostedSessionTests {
       #!/bin/sh
       while read -r line; do
         printf '%s\\n' "$line" >> "$0.stdin"
-        case "$line" in *quick*) echo '\(Self.result)';; esac
+        case "$line" in *quick*) echo '\(Self.result)';; *bye*) exit 0;; esac
       done
 
       """
@@ -109,7 +109,8 @@ struct HostedSessionTests {
     #expect(held.first?.attachedApp == nil)
   }
 
-  /// An idle session has nothing in flight: a quit ends its process, as it always did.
+  /// An idle session has nothing in flight: a quit ends its process, as it always did. The
+  /// ended process stays in the host, for the next launch to show.
   @Test func quittingStopsAnIdleSession() async throws {
     SessionHost.testDirectory = directory
     let host = SessionHost()
@@ -125,7 +126,8 @@ struct HostedSessionTests {
     #expect(await eventually { await host.held().first?.running == false })
   }
 
-  /// Closing a window is about the session, not the app: it ends the turn, host or not.
+  /// Closing a window is about the session, not the app: it ends the turn, host or not, and
+  /// the host forgets the process once it has ended.
   @Test func closingTheWindowStillStops() async throws {
     SessionHost.testDirectory = directory
     let host = SessionHost()
@@ -134,9 +136,25 @@ struct HostedSessionTests {
     session.send("hi")
     #expect(await eventually { session.phase == .ready })
     #expect(session.isAtWork)
+    #expect(await eventually { await host.held().count == 1 })
 
     session.stop()
-    #expect(await eventually { await host.held().first?.running == false })
+    #expect(await eventually { await host.held().isEmpty })
+  }
+
+  /// A CLI that exits on its own while the app runs leaves the host nothing to keep.
+  @Test func anEndedSessionIsForgotten() async throws {
+    SessionHost.testDirectory = directory
+    let host = SessionHost()
+    defer { cleanUp(host) }
+    let session = session(on: host)
+    session.send("hi")
+    #expect(await eventually { await host.held().count == 1 })
+    #expect(session.isHosted)
+
+    session.send("bye")
+    #expect(await eventually { session.phase == .exited(status: 0) })
+    #expect(await eventually { await host.held().isEmpty })
   }
 
   /// No host to be had: the session is the app's own child, as before the host, and the quit

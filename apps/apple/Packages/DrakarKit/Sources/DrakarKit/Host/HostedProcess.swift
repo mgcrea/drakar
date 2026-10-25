@@ -29,6 +29,10 @@ public final class HostedProcess: ProcessTransport, @unchecked Sendable {
     var running: Bool
     var detached = false
     var startFailure: (any Error)?
+    /// The live stream brought the process's exit.
+    var exited = false
+    /// `forgetWhenEnded()` was asked: the exit is acknowledged as it comes.
+    var forgets = false
     /// Requests made while the host is still spawning, sent in order once it has.
     var waiting: [@Sendable (String) -> HostRequest] = []
     var pump: Task<Void, Never>?
@@ -109,6 +113,17 @@ public final class HostedProcess: ProcessTransport, @unchecked Sendable {
     try? request { .acknowledge(id: $0) }
   }
 
+  /// Lets the host forget the process and its log once it has ended: now if its exit has
+  /// come, else when it does, even with nobody reading `start()`'s events any more. For an
+  /// app done with the process, never one handing it over.
+  public func forgetWhenEnded() {
+    let now = state.withLock { state in
+      defer { state.forgets = true }
+      return state.exited && !state.forgets
+    }
+    if now { acknowledge() }
+  }
+
   public func closeInput() {
     guard isRunning else { return }
     try? request { .closeInput(id: $0) }
@@ -165,12 +180,25 @@ public final class HostedProcess: ProcessTransport, @unchecked Sendable {
           if once.claim() {
             continuation.resume(returning: id)
           } else {
-            try? client.send(.terminate(id: id))
+            Self.end(id, on: client)
           }
         } catch {
           timer.cancel()
           if once.claim() { continuation.resume(throwing: error) }
         }
+      }
+    }
+  }
+
+  /// A process nobody holds, ended and then forgotten once its exit has come.
+  private static func end(_ id: String, on client: HostClient) {
+    let events = client.attach(id, from: 0)
+    try? client.send(.terminate(id: id))
+    Task {
+      for await event in events {
+        guard case .exited = event else { continue }
+        try? client.send(.acknowledge(id: id))
+        return
       }
     }
   }
@@ -229,7 +257,12 @@ public final class HostedProcess: ProcessTransport, @unchecked Sendable {
           if let waiting = replaying {
             waiting.resume(throwing: HostClient.Failure.unexpected)
           }
+          let forgets = state.withLock { state in
+            state.exited = true
+            return state.forgets
+          }
           ended(status: status)
+          if forgets { acknowledge() }
           return
         case .refused(let reason):
           if let waiting = replaying {

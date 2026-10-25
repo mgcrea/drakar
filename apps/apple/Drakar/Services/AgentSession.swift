@@ -768,8 +768,16 @@ final class AgentSession {
     pendingPrompt = nil
     pendingEffect = .none
     let wasRunning = process != nil
-    if AppLifecycle.isTerminating, isAtWork, let hosted = process as? HostedProcess {
-      hosted.detach()
+    if let hosted = process as? HostedProcess {
+      if AppLifecycle.isTerminating, isAtWork {
+        hosted.detach()
+      } else {
+        hosted.closeInput()
+        // Done with it: the host forgets it once it ends, so no later launch shows it again.
+        // Not at a quit, where an ended one is the next launch's to show.
+        if !AppLifecycle.isTerminating { hosted.forgetWhenEnded() }
+        hosted.terminate()
+      }
     } else {
       process?.closeInput()
       process?.terminate()
@@ -839,9 +847,13 @@ final class AgentSession {
     case .stderr(let text):
       diagnostics = String((diagnostics + text).suffix(4000))
     case .exited(let status, _):
-      if let failure = (process as? HostedProcess)?.startFailure {
-        process = nil
-        return fail(Self.message(forHostFailure: failure))
+      if let hosted = process as? HostedProcess {
+        if let failure = hosted.startFailure {
+          process = nil
+          return fail(Self.message(forHostFailure: failure))
+        }
+        // Its exit is all the app needed of it.
+        hosted.forgetWhenEnded()
       }
       notingPermissions { transcript.processExited() }
       process = nil
