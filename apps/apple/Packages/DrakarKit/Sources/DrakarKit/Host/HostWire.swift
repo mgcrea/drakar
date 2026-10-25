@@ -74,3 +74,47 @@ public enum HostEvent: Codable, Sendable, Equatable {
   case released(id: String)
   case refused(reason: String)
 }
+
+/// The lines on the socket. The app numbers its requests, and the host answers each with
+/// one `Answer` naming it, holding the core's direct replies (often none). An `Answer` with
+/// no `to` carries one event the core delivered: an attach's stream, or a `released`.
+enum HostFrame {
+  struct Request: Codable {
+    var id: Int
+    var request: HostRequest
+  }
+
+  /// What the host reads of a request it does not know, to refuse it.
+  struct Head: Decodable {
+    var id: Int
+  }
+
+  struct Answer: Codable {
+    var to: Int?
+    var events: [HostEvent]
+
+    init(to: Int?, events: [HostEvent]) {
+      self.to = to
+      self.events = events
+    }
+
+    /// An event this app does not know (a newer minor's) is skipped, not the whole answer.
+    init(from decoder: any Decoder) throws {
+      let container = try decoder.container(keyedBy: CodingKeys.self)
+      to = try container.decodeIfPresent(Int.self, forKey: .to)
+      var list = try container.nestedUnkeyedContainer(forKey: .events)
+      events = []
+      while !list.isAtEnd {
+        if let event = try? list.decode(HostEvent.self) {
+          events.append(event)
+        } else {
+          _ = try list.decode(Skipped.self)
+        }
+      }
+    }
+
+    private struct Skipped: Decodable {
+      init(from decoder: any Decoder) throws {}
+    }
+  }
+}
