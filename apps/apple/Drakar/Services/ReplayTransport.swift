@@ -2,10 +2,13 @@ import DrakarKit
 import Foundation
 import Synchronization
 
-/// What a replayed session writes to: nothing reaches a process. A reply to a line the
-/// process wrote while no app was attached was never written, so it is kept, owed, for the
-/// caller to send once the replay ends.
+/// What a replayed session writes to: nothing reaches a process. The replies the backend
+/// writes to the process's own lines are kept until a logged write matches one, the reply
+/// having gone out then; what no logged write matched is owed, for the caller to send once
+/// the replay ends.
 nonisolated final class ReplayTransport: ProcessTransport {
+  /// `owed` keeps what is written; `muted` drops it, as for a note's writes, which went out
+  /// when the note was taken.
   enum Mode { case muted, owed }
 
   private struct State {
@@ -22,6 +25,13 @@ nonisolated final class ReplayTransport: ProcessTransport {
   }
 
   var owed: [Data] { state.withLock { $0.owed } }
+
+  /// A write the log holds: the first reply kept with the same bytes was sent.
+  func logged(_ line: Data) {
+    state.withLock { state in
+      if let index = state.owed.firstIndex(of: line) { state.owed.remove(at: index) }
+    }
+  }
 
   /// Running until terminated, as the process it stands for is.
   var isRunning: Bool { state.withLock { $0.isRunning } }

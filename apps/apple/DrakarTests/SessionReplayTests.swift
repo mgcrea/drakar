@@ -234,21 +234,47 @@ struct SessionReplayTests {
     #expect(replayed.transcript.turnEnd == .completed)
   }
 
+  private static let elicitation =
+    #"{"type":"control_request","request_id":"el-1","request":{"subtype":"elicitation","mcp_server_name":"srv","message":"Pick one"}}"#
+
+  private static func decline() throws -> Data {
+    try ClientMessage.declineElicitation(requestID: "el-1").line()
+  }
+
+  /// A reply is owed for each request the CLI wrote, and a logged write answers one: two
+  /// copies of a request with one decline logged after them still owe the other.
   @Test func owedRepliesAreSentOnce() async throws {
-    let elicitation =
-      #"{"type":"control_request","request_id":"el-1","request":{"subtype":"elicitation","mcp_server_name":"srv","message":"Pick one"}}"#
     var log = Log()
     log.out(Self.initLine, attached: false)
-    log.out(elicitation, attached: false)
+    log.out(Self.elicitation, attached: false)
     let replayed = await AgentSession(replaying: log.records, meta: meta)
     let transport = try #require(replayed.process as? ReplayTransport)
-    #expect(transport.owed.count == 1)
+    #expect(transport.owed == [try Self.decline()])
     let reply = try JSONValue.parse(try #require(transport.owed.first))
     #expect(reply["response"]?["request_id"]?.stringValue == "el-1")
 
-    log.out(elicitation, attached: true)
+    log.out(Self.elicitation, attached: false)
+    log.in(try Self.decline())
     let again = await AgentSession(replaying: log.records, meta: meta)
-    #expect((again.process as? ReplayTransport)?.owed.count == 1)
+    #expect((again.process as? ReplayTransport)?.owed == [try Self.decline()])
+  }
+
+  /// Sent after an earlier replay, and logged: the next replay does not decline it again.
+  @Test func anOwedReplyAlreadySentIsNotOwed() async throws {
+    var log = Log()
+    log.out(Self.elicitation, attached: false)
+    log.in(try Self.decline())
+    let replayed = await AgentSession(replaying: log.records, meta: meta)
+    #expect((replayed.process as? ReplayTransport)?.owed.isEmpty == true)
+  }
+
+  /// Logged while an app was attached, which quit before it handled the line: nothing
+  /// answered it, so it is owed all the same.
+  @Test func aReplyNeverWrittenIsOwedThoughAttached() async throws {
+    var log = Log()
+    log.out(Self.elicitation, attached: true)
+    let replayed = await AgentSession(replaying: log.records, meta: meta)
+    #expect((replayed.process as? ReplayTransport)?.owed == [try Self.decline()])
   }
 }
 
@@ -259,6 +285,10 @@ private struct Log {
 
   mutating func out(_ line: String, attached: Bool = true) {
     append(.out, Data(line.utf8), attached: attached)
+  }
+
+  mutating func `in`(_ bytes: Data) {
+    append(.in, bytes, attached: true)
   }
 
   mutating func note(_ note: SessionNote) {

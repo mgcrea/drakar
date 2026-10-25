@@ -10,7 +10,8 @@ public struct HostRecord: Codable, Sendable, Equatable {
   public var offset: UInt64
   public var kind: Kind
   public var time: Date
-  /// An app was attached when the host logged it: a reply owed to an `out` was written then.
+  /// An app was attached when the host logged it. Says nothing of a reply: only a logged
+  /// `in` says one was written.
   public var attached: Bool
   public var bytes: Data
 

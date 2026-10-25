@@ -770,9 +770,9 @@ final class AgentSession {
     }
   }
 
-  /// Takes `records` as the live session took them, with every write muted: a note down
-  /// the path its command took, a line the process wrote as it was received. A reply to a
-  /// line logged while no app was attached was never written, so it is owed instead.
+  /// Takes `records` as the live session took them, writing nothing: a note down the path
+  /// its command took, a line the process wrote as it was received. A reply to such a line
+  /// that no later logged write matches never reached the CLI, so it is owed.
   func replay(_ records: [HostRecord]) {
     guard let transport = process as? ReplayTransport else { return }
     isReplaying = true
@@ -789,11 +789,10 @@ final class AgentSession {
         transport.mode = .muted
         replay(note, at: record.time, to: transport)
       case .out:
-        transport.mode = record.attached ? .muted : .owed
+        transport.mode = .owed
         receive(AgentProcess.parse(record.bytes), at: record.time)
       case .in:
-        // What the backend wrote, which the notes replay.
-        continue
+        transport.logged(record.bytes)
       }
     }
   }
