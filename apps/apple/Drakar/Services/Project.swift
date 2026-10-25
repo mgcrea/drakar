@@ -461,12 +461,12 @@ final class Project {
   }
 
   /// A session listed elsewhere, shown: in the Drakar window that holds it, or watched here.
-  func openElsewhere(_ summary: SessionSummary) {
+  func openElsewhere(_ summary: SessionSummary, focusingComposer: Bool = true) {
     if let (owner, item) = OpenSessions.shared.locate(summary.sessionID) {
       owner.select(item)
       owner.workspace.window?.makeKeyAndOrderFront(nil)
     } else if let target = ResumeTarget(summary) {
-      attach(target, watching: true, readOnly: true)
+      attach(target, watching: true, readOnly: true, focusingComposer: focusingComposer)
     }
   }
 
@@ -886,11 +886,12 @@ final class Project {
   /// `target` on top and shown, or the row already holding it, taken over unless
   /// `watching`. `readOnly` while another process has it open.
   @discardableResult func attach(
-    _ target: ResumeTarget, watching: Bool = false, readOnly: Bool = false
+    _ target: ResumeTarget, watching: Bool = false, readOnly: Bool = false,
+    focusingComposer: Bool = true
   ) -> ProjectSession {
     if target.forks != true, let existing = session(withID: target.sessionID) {
       if !watching { takeOver(existing) }
-      select(existing)
+      select(existing, focusingComposer: focusingComposer)
       return existing
     }
     let session = AgentSession(
@@ -901,7 +902,7 @@ final class Project {
     item.isWatching = watching
     item.dismissedAsk = dismissedElsewhere[target.sessionID]
     sessions.insert(item, at: 0)
-    select(item)
+    select(item, focusingComposer: focusingComposer)
     return item
   }
 
@@ -999,8 +1000,10 @@ final class Project {
   }
 
   /// An ended session, watched here.
-  func openEnded(_ summary: SessionSummary) {
-    if let target = ResumeTarget(summary) { attach(target, watching: true) }
+  func openEnded(_ summary: SessionSummary, focusingComposer: Bool = true) {
+    if let target = ResumeTarget(summary) {
+      attach(target, watching: true, focusingComposer: focusingComposer)
+    }
   }
 
   /// Shows the row `offset` rows from the selected one, in the sidebar's order, as a click
@@ -1023,11 +1026,19 @@ final class Project {
       )
     }
     for summary in groups.elsewhere where OpenSessions.shared.locate(summary.sessionID) == nil {
-      rows.append((isWatched(summary), { [unowned self] in openElsewhere(summary) }))
+      rows.append(
+        (
+          isWatched(summary),
+          { [unowned self] in openElsewhere(summary, focusingComposer: focusingComposer) }
+        ))
     }
     if showsEnded {
       for summary in listedEnded(groups) {
-        rows.append((isWatched(summary), { [unowned self] in openEnded(summary) }))
+        rows.append(
+          (
+            isWatched(summary),
+            { [unowned self] in openEnded(summary, focusingComposer: focusingComposer) }
+          ))
       }
     }
     guard !rows.isEmpty else { return false }
