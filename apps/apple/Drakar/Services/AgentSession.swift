@@ -85,6 +85,8 @@ final class AgentSession {
   @ObservationIgnored private var unansweredChanges: [UnansweredChange] = []
   /// The name given here, by a rename or to a fork: shown at once, ahead of the history's.
   private(set) var name: String?
+  /// The place in a batch this session was started for, kept in its meta.
+  var fanOut: FanOutMark?
   /// The earlier question the person closed without answering, so it is not offered again.
   private(set) var dismissedQuestionID: String?
   /// Stands in for the located binary, in tests.
@@ -207,6 +209,7 @@ final class AgentSession {
     modelPick = meta.modelPick
     effortPick = meta.effortPick
     name = meta.name
+    fanOut = meta.fanOut
     executableOverride = meta.start.executableOverride
     windowFolder = URL(filePath: meta.windowFolder, directoryHint: .isDirectory)
     launched = (meta.start, meta.history)
@@ -347,7 +350,7 @@ final class AgentSession {
       start: start, windowFolder: (windowFolder ?? folder).path(percentEncoded: false),
       name: name, modePick: modePick, modelPick: modelPick, effortPick: effortPick,
       accountPick: accountPick, sessionID: sessionID, savedTarget: savedTarget,
-      history: history)
+      fanOut: fanOut, history: history)
   }
 
   /// Hands the host the meta when it changed; only a hosted process keeps one.

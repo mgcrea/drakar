@@ -4,7 +4,7 @@ import Foundation
 /// (docs/superpowers/specs/2026-10-12-skill-fanout-design.md §4). Pure: the caller sends the
 /// prompts this returns and says when a session is done with its turn.
 public struct FanOut<ID: Hashable & Sendable>: Sendable {
-  public enum State: Sendable, Equatable { case waiting, running, finished, cancelled }
+  public enum State: Sendable, Equatable, Codable { case waiting, running, finished, cancelled }
 
   /// In the order they start.
   public let ids: [ID]
@@ -16,6 +16,12 @@ public struct FanOut<ID: Hashable & Sendable>: Sendable {
     self.ids = ids
     self.limit = limit.flatMap { $0 > 0 ? $0 : nil }
     states = Dictionary(ids.map { ($0, State.waiting) }, uniquingKeysWith: { first, _ in first })
+  }
+
+  /// A batch as it stood: `states` for the ids it knows, waiting for the rest.
+  public init(ids: [ID], limit: Int?, states: [ID: State]) {
+    self.init(ids: ids, limit: limit)
+    for id in ids { self.states[id] = states[id] ?? .waiting }
   }
 
   public func state(of id: ID) -> State? { states[id] }

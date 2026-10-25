@@ -1,4 +1,5 @@
 import DrakarKit
+import Foundation
 import Testing
 
 @Suite("A skill's batch of sessions")
@@ -68,5 +69,25 @@ struct FanOutTests {
     #expect(batch.summary == "2 running · 1 waiting · 1 done")
     _ = batch.cancel()
     #expect(batch.summary == "2 running · 1 done")
+  }
+
+  /// A batch rebuilt from the states it was stored with carries on from them: the running
+  /// one's end sends the next waiting one, the finished one stays done, and an id the states
+  /// do not name waits.
+  @Test func restoredStatesCarryOn() throws {
+    var batch = FanOut(ids: ["a", "b", "c"], limit: 1, states: ["a": .running, "b": .waiting])
+    #expect(batch.state(of: "c") == .waiting)
+    #expect(batch.finished("a") == ["b"])
+    var done = FanOut(ids: [1, 2], limit: nil, states: [1: .finished, 2: .cancelled])
+    #expect(done.isDone && done.summary == "1 done")
+    #expect(done.finished(1) == [])
+  }
+
+  /// The states are stored, so each reads back as it was written.
+  @Test func statesRoundTrip() throws {
+    let states: [FanOut<Int>.State] = [.waiting, .running, .finished, .cancelled]
+    let back = try JSONDecoder().decode(
+      [FanOut<Int>.State].self, from: JSONEncoder().encode(states))
+    #expect(back == states)
   }
 }

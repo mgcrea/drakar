@@ -5,7 +5,7 @@ import Testing
 @testable import Drakar
 
 @MainActor
-@Suite("Running a skill in each subfolder")
+@Suite("Running a skill in each subfolder", .serialized)
 struct ProjectFanOutTests {
   private let parent: URL
   private let folders: [URL]
@@ -172,5 +172,180 @@ struct ProjectFanOutTests {
     project.stopAll()
     #expect(prompts(items[1]).isEmpty)
     #expect(prompts(items[2]).isEmpty)
+  }
+
+  // MARK: After a relaunch
+
+  /// A stand-in CLI that works on a prompt until the test writes `.done`, ends its turn, and
+  /// logs every line it is sent.
+  private func slowStandIn() throws -> URL {
+    let script = parent.appending(path: "claude-slow")
+    let source = """
+      #!/bin/sh
+      sid="s-$$"
+      log() { printf '%s\\n' "$1" >> "$0.stdin"; }
+      while read -r line; do
+        log "$line"
+        case "$line" in *'"type":"user"'*) break;; esac
+      done
+      printf '%s\\n' '{"type":"system","subtype":"init","cwd":"/tmp","session_id":"'"$sid"'","model":"m","permissionMode":"default"}'
+      printf '%s\\n' '{"type":"assistant","message":{"id":"m-1","type":"message","role":"assistant","model":"m","content":[{"type":"text","text":"working"}],"stop_reason":null},"parent_tool_use_id":null,"session_id":"'"$sid"'"}'
+      while [ ! -f "$0.done" ]; do sleep 0.02; done
+      rm -f "$0.done"
+      printf '%s\\n' '{"type":"result","subtype":"success","is_error":false,"result":"Done.","stop_reason":"end_turn","session_id":"'"$sid"'"}'
+      while read -r line; do log "$line"; done
+
+      """
+    try Data(source.utf8).write(to: script)
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script.path)
+    return script
+  }
+
+  private func eventually(
+    within limit: Duration = .seconds(60), _ condition: () -> Bool
+  ) async -> Bool {
+    let deadline = ContinuousClock.now + limit
+    while ContinuousClock.now < deadline {
+      if condition() { return true }
+      try? await Task.sleep(for: .milliseconds(20))
+    }
+    return condition()
+  }
+
+  /// How many prompts the stand-in was sent.
+  private func sent(_ text: String, by script: URL) -> Int {
+    let log = (try? String(contentsOf: script.appendingPathExtension("stdin"), encoding: .utf8))
+    return (log ?? "").split(separator: "\n").count { $0.contains(text) }
+  }
+
+  /// A batch over a relaunch: the stored window says one running and two waiting; the host
+  /// still holds the running one, which comes back live, while the others come back as new
+  /// sessions in their folders, unsent until the running turn ends. Then the next is sent.
+  @Test func aBatchSurvivesARelaunch() async throws {
+    let host = try LocalHost()
+    defer {
+      host.close()
+      SessionHost.testDirectory = nil
+    }
+    SessionHost.testDirectory = host.directory
+    let app = SessionHost(cooldown: .milliseconds(100), helper: URL(filePath: "/usr/bin/true"))
+    let script = try slowStandIn()
+    _ = await AgentSession.environment.value
+
+    let before = Project(folder: parent)
+    before.executableOverride = script
+    before.sessionHost = app
+    before.runInSubfolders(check, folders: folders, arguments: "", mode: .plan, limit: 1)
+    let live = try #require(before.sessions.first)
+    #expect(await eventually { live.session.hostID != nil && sent("/check", by: script) == 1 })
+    #expect(await eventually { live.session.transcript.isRunning })
+
+    // What the window wrote down, as `UserDefaults` hands it back.
+    let stored = try JSONDecoder().decode(
+      StoredProject.self, from: JSONEncoder().encode(before.stored))
+    let batch = try #require(stored.fanOuts?.first)
+    #expect(batch.entries.map(\.state) == [.running, .waiting, .waiting])
+    #expect(
+      batch.entries.map { URL(filePath: $0.folder).lastPathComponent } == [
+        "alpha", "beta", "gamma",
+      ])
+    #expect(batch.entries[0].hostID == live.session.hostID)
+    // The running one's pick follows what its process reported.
+    #expect(batch.entries.dropFirst().map(\.mode) == [.plan, .plan])
+    (live.session.process as? HostedProcess)?.detach()
+
+    let after = Project(folder: parent, restoring: stored)
+    after.executableOverride = script
+    after.sessionHost = app
+    defer { after.stopAll() }
+    await after.takeBackHeld().value
+    #expect(after.sessions.count == 3)
+    let rows = after.sessions.sorted { $0.displayTitle < $1.displayTitle }
+    #expect(rows.map(\.displayTitle) == ["/check · alpha", "/check · beta", "/check · gamma"])
+    #expect(rows[0].session.isHosted && rows[0].session.transcript.isRunning)
+    #expect(rows[0].session.hostID == live.session.hostID)
+    for row in rows.dropFirst() {
+      #expect(!row.session.isProcessRunning)
+      #expect(prompts(row).isEmpty)
+      #expect(row.session.startingMode == .plan)
+    }
+    #expect(after.fanOuts.count == 1)
+    #expect(after.fanOuts.first?.queue.summary == "1 running · 2 waiting")
+    #expect(sent("/check", by: script) == 1)
+
+    try Data().write(to: script.appendingPathExtension("done"))
+    #expect(await eventually { prompts(rows[1]) == ["/check"] })
+    #expect(prompts(rows[2]).isEmpty)
+    #expect(after.fanOuts.first?.queue.summary == "1 running · 1 waiting · 1 done")
+    #expect(await eventually { sent("/check", by: script) == 2 })
+  }
+
+  /// A running entry whose process the host no longer holds has finished: its slot goes on.
+  /// The waiting ones are new sessions that keep their account and mode, and Cancel works on
+  /// the restored batch as it does on a new one.
+  @Test func aRestoredBatchKeepsPicksAndCancels() async throws {
+    let project = Project(
+      folder: parent,
+      restoring: StoredProject(fanOuts: [
+        StoredFanOut(
+          batch: UUID(), skillName: "check", prompt: "/check", limit: 1,
+          entries: [
+            .init(
+              folder: folders[0].path, name: "/check · alpha", state: .running, hostID: "gone"),
+            .init(
+              folder: folders[1].path, name: "/check · beta", accountDirectory: "/tmp/acct",
+              accountIsDefault: false, mode: .plan, state: .waiting),
+            .init(
+              folder: folders[2].path, name: "/check · gamma", accountDirectory: "/tmp/acct",
+              accountIsDefault: false, mode: .plan, state: .waiting),
+          ])
+      ]))
+    project.executableOverride = try standIn()
+    defer { project.stopAll() }
+    await project.takeBackHeld().value
+    let rows = project.sessions.sorted { $0.displayTitle < $1.displayTitle }
+    #expect(rows.map(\.displayTitle) == ["/check · beta", "/check · gamma"])
+    // The first waiting one took the slot the missing process left; the other still waits.
+    #expect(prompts(rows[0]) == ["/check"])
+    #expect(prompts(rows[1]).isEmpty)
+    for row in rows {
+      #expect(
+        row.session.accountPick
+          == ClaudeAccount(
+            directory: URL(filePath: "/tmp/acct", directoryHint: .isDirectory), isDefault: false))
+      #expect(row.session.startingMode == .plan)
+    }
+    #expect(project.fanOuts.first?.queue.summary == "1 running · 1 waiting · 1 done")
+    project.cancelFanOut(try #require(project.fanOuts.first))
+    rows[0].session.onTurnEnded?()
+    #expect(prompts(rows[1]).isEmpty)
+    #expect(project.fanOuts.isEmpty)
+  }
+
+  /// A window stored before batches were kept still decodes.
+  @Test func aWindowStoredBeforeBatchesStillDecodes() throws {
+    let old = Data(#"{"sessions":[],"selected":"abc"}"#.utf8)
+    let stored = try JSONDecoder().decode(StoredProject.self, from: old)
+    #expect(stored.fanOuts == nil && stored.selected == "abc")
+  }
+
+  /// A meta written before a session knew its batch still decodes.
+  @Test func aMetaWrittenBeforeBatchesStillDecodes() throws {
+    var meta = SessionMeta(
+      start: AgentStart(
+        folder: parent, environment: [:], executableOverride: nil, allowsBypass: false),
+      windowFolder: parent.path, history: .none)
+    meta.fanOut = FanOutMark(batch: UUID(), index: 2)
+    let object = try #require(
+      try JSONSerialization.jsonObject(with: JSONEncoder().encode(meta)) as? [String: Any])
+    #expect(object["fanOut"] != nil)
+    var old = object
+    old["fanOut"] = nil
+    let back = try JSONDecoder().decode(
+      SessionMeta.self, from: JSONSerialization.data(withJSONObject: old))
+    #expect(back.fanOut == nil && back.windowFolder == parent.path)
+    let same = try JSONDecoder().decode(
+      SessionMeta.self, from: JSONSerialization.data(withJSONObject: object))
+    #expect(same.fanOut == meta.fanOut)
   }
 }

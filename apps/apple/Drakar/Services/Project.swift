@@ -19,16 +19,53 @@ enum SkillTarget {
 /// (docs/superpowers/specs/2026-10-12-skill-fanout-design.md).
 @Observable
 final class FanOutBatch: Identifiable {
-  let id = UUID()
+  /// What its sessions' metas name it by, and what a stored window names it by.
+  let id: UUID
   let skillName: String
   let prompt: String
+  let agent: AgentKind
+  let limit: Int?
   var queue: FanOut<UUID>
+  /// What each of `queue.ids` was started with, in their order: what a window stored later
+  /// rebuilds a session that never started from, and names one closed since by.
+  let plan: [StoredFanOut.Entry]
 
-  init(skillName: String, prompt: String, queue: FanOut<UUID>) {
+  init(
+    id: UUID = UUID(), skillName: String, prompt: String, agent: AgentKind = .claude,
+    limit: Int?, plan: [StoredFanOut.Entry], queue: FanOut<UUID>
+  ) {
+    self.id = id
     self.skillName = skillName
     self.prompt = prompt
+    self.agent = agent
+    self.limit = limit
+    self.plan = plan
     self.queue = queue
   }
+}
+
+/// A batch as a window stores it (spec §3 Fan-out batches): enough to carry on sending after
+/// a relaunch, to the rows the session host still holds and to the sessions that never
+/// started.
+struct StoredFanOut: Codable, Equatable {
+  struct Entry: Codable, Equatable {
+    var folder: String
+    var name: String
+    var accountDirectory: String?
+    var accountIsDefault: Bool?
+    var mode: PermissionMode?
+    var state: FanOut<UUID>.State
+    /// The session host's id for its process, once the spawn was answered; the entry's mark
+    /// in the process's meta finds it before.
+    var hostID: String?
+  }
+  var batch: UUID
+  var skillName: String
+  var prompt: String
+  var limit: Int?
+  var entries: [Entry]
+  /// Nil for Claude Code's, which older stored batches never named.
+  var agent: AgentKind?
 }
 
 /// What one prompt to the marked sessions did: how many took it, and how many could not.
@@ -259,11 +296,14 @@ struct StoredProject: Codable, Equatable {
   var sessionOrder: SessionOrder?
   /// Next After Replying; nil for off.
   var movesOnAfterReply: Bool?
+  /// The batches still sending or running. Optional so that a window stored before they were
+  /// kept still decodes.
+  var fanOuts: [StoredFanOut]?
 
-  /// Nothing worth bringing back: no session, no tab, and no sort or switch chosen.
+  /// Nothing worth bringing back: no session, no tab, no batch, and no sort or switch chosen.
   var isEmpty: Bool {
     sessions.isEmpty && documents?.isEmpty != false && sessionOrder == nil
-      && movesOnAfterReply == nil
+      && movesOnAfterReply == nil && fanOuts?.isEmpty != false
   }
 }
 
@@ -327,8 +367,10 @@ final class Project {
   /// The session host's ids for the processes another app holds that rows here showed
   /// read-only, which `released` or a new connection settles.
   @ObservationIgnored private var shownHeldElsewhere: Set<String> = []
-  /// The batches still sending or running, one banner each; not saved with the window.
+  /// The batches still sending or running, one banner each.
   private(set) var fanOuts: [FanOutBatch] = []
+  /// The batches the window was stored with, until `takeBackHeld` has the rows they need.
+  @ObservationIgnored private var storedFanOuts: [StoredFanOut] = []
   /// The Run in Each Subfolder sheet, while shown.
   var fanOutRequest: FanOutRequest?
   /// Rows marked with ⌘- or ⇧-click: the composer's prompt goes to each of them.
@@ -363,6 +405,7 @@ final class Project {
       item.dismissedAsk = stored?.dismissedQuestions?[target.sessionID]
       sessions.append(item)
     }
+    storedFanOuts = stored?.fanOuts ?? []
     sessionOrder = stored?.sessionOrder ?? .opened
     movesOnAfterReply = stored?.movesOnAfterReply ?? false
     let own = Set(sessions.compactMap(\.sessionID))
@@ -652,19 +695,23 @@ final class Project {
     guard !folders.isEmpty else { return }
     let agent = skillsAgent
     if agent == .claude { capabilityMarks.skills.remove(skill.name) }
+    let id = UUID()
     // Each goes on top, so the last folder first leaves them in order.
     let items = Array(
-      folders.reversed().map { folder in
+      folders.enumerated().reversed().map { index, folder in
         let item = newSession(agent: agent, folder: folder, account: account, select: false)
         item.session.rename(to: "/\(skill.name) · \(folder.lastPathComponent)")
         if let mode { item.session.setMode(mode) }
+        item.session.fanOut = FanOutMark(batch: id, index: index)
         return item
       }.reversed())
     if let first = items.first { select(first) }
     let arguments = arguments.trimmingCharacters(in: .whitespacesAndNewlines)
     let batch = FanOutBatch(
-      skillName: skill.name,
+      id: id, skillName: skill.name,
       prompt: arguments.isEmpty ? "/\(skill.name)" : "/\(skill.name) \(arguments)",
+      agent: agent, limit: limit,
+      plan: items.map { storedEntry(of: $0.session, state: .waiting) },
       queue: FanOut(ids: items.map(\.id), limit: limit))
     fanOuts.append(batch)
     send(batch.queue.start(), in: batch)
@@ -777,6 +824,98 @@ final class Project {
   /// `item` ended a turn or stopped: its slot goes to the next waiting session.
   private func fanOutFinished(_ item: ProjectSession) {
     for batch in fanOuts { send(batch.queue.finished(item.id), in: batch) }
+    fanOuts.removeAll { $0.queue.isDone }
+  }
+
+  /// What `session` was started with, as a batch stores it.
+  private func storedEntry(
+    of session: AgentSession, state: FanOut<UUID>.State
+  ) -> StoredFanOut.Entry {
+    StoredFanOut.Entry(
+      folder: session.folder.path(percentEncoded: false), name: session.name ?? "",
+      accountDirectory: session.accountPick?.directory.path(percentEncoded: false),
+      accountIsDefault: session.accountPick?.isDefault, mode: session.modePick, state: state,
+      hostID: session.hostID)
+  }
+
+  private func storedFanOut(_ batch: FanOutBatch) -> StoredFanOut {
+    let entries = zip(batch.queue.ids, batch.plan).map { id, planned in
+      let state = batch.queue.state(of: id) ?? .finished
+      // A row closed since keeps what it was started with.
+      guard let session = sessions.first(where: { $0.id == id })?.session else {
+        var entry = planned
+        entry.state = state
+        return entry
+      }
+      var entry = storedEntry(of: session, state: state)
+      if entry.name.isEmpty { entry.name = planned.name }
+      return entry
+    }
+    return StoredFanOut(
+      batch: batch.id, skillName: batch.skillName, prompt: batch.prompt, limit: batch.limit,
+      entries: entries, agent: batch.agent)
+  }
+
+  /// The batches stored with the window, carried on now that `adoptHeld` has brought back the
+  /// rows the host held. An entry that was running takes its row, found by the host's id or
+  /// else by the mark in the process's meta; when none came back its process is gone, so its
+  /// slot goes to the next. A waiting entry becomes a new session in its folder, with its
+  /// name, account and mode, sent when its turn comes. Entries done or cancelled only count.
+  private func restoreFanOuts() {
+    let stored = storedFanOuts
+    storedFanOuts = []
+    for stored in stored {
+      var ids: [UUID] = []
+      var states: [UUID: FanOut<UUID>.State] = [:]
+      var created: [(index: Int, entry: StoredFanOut.Entry)] = []
+      for (index, entry) in stored.entries.enumerated() {
+        var id = UUID()
+        var state = entry.state
+        if state == .running {
+          let mark = FanOutMark(batch: stored.batch, index: index)
+          let row =
+            sessions.first {
+              $0.session.isHosted && entry.hostID != nil && $0.session.hostID == entry.hostID
+            } ?? sessions.first { $0.session.isHosted && $0.session.fanOut == mark }
+          // A turn that ended while away is done; a pending permission is still its turn.
+          if let row, row.session.isAtWork {
+            id = row.id
+          } else {
+            state = .finished
+          }
+        }
+        ids.append(id)
+        if state == .waiting {
+          created.append((index, entry))
+        } else {
+          states[id] = state
+        }
+      }
+      // Each goes on top, so the last first leaves them in order.
+      for (index, entry) in created.reversed() {
+        let account = entry.accountDirectory.map {
+          ClaudeAccount(
+            directory: URL(filePath: $0, directoryHint: .isDirectory),
+            isDefault: entry.accountIsDefault ?? false)
+        }
+        let item = newSession(
+          agent: stored.agent ?? .claude,
+          folder: URL(filePath: entry.folder, directoryHint: .isDirectory),
+          account: account, select: false)
+        item.session.rename(to: entry.name)
+        if let mode = entry.mode { item.session.setMode(mode) }
+        item.session.fanOut = FanOutMark(batch: stored.batch, index: index)
+        ids[index] = item.id
+        states[item.id] = .waiting
+      }
+      let batch = FanOutBatch(
+        id: stored.batch, skillName: stored.skillName, prompt: stored.prompt,
+        agent: stored.agent ?? .claude, limit: stored.limit, plan: stored.entries,
+        queue: FanOut(ids: ids, limit: stored.limit, states: states))
+      fanOuts.append(batch)
+      // Slots the missing processes left go to the waiting ones.
+      send(batch.queue.start(), in: batch)
+    }
     fanOuts.removeAll { $0.queue.isDone }
   }
 
@@ -1133,6 +1272,7 @@ final class Project {
     return Task {
       let held = await sessionHost.heldIfRunning()
       await adoptHeld(held, olderHosts: await sessionHost.heldByOlderHosts())
+      restoreFanOuts()
       for item in waiting { item.session.waitsForHost = false }
     }
   }
@@ -1322,6 +1462,8 @@ final class Project {
         guard let id = item.sessionID, let message = item.dismissedAsk else { return nil }
         return (id, message)
       } + dismissedElsewhere.filter { !ended.contains($0.key) }.map { ($0.key, $0.value) }
+    // Batches not yet restored are kept as they were stored.
+    let batches = fanOuts.map(storedFanOut) + storedFanOuts
     return StoredProject(
       sessions: held.compactMap(\.session.savedTarget),
       selected: selected.flatMap { $0.isWatching ? nil : $0.session.savedTarget?.sessionID },
@@ -1331,7 +1473,8 @@ final class Project {
       activeDocument: workspace.active?.path,
       focusedPane: workspace.focusedPane,
       sessionOrder: sessionOrder == .opened ? nil : sessionOrder,
-      movesOnAfterReply: movesOnAfterReply ? true : nil)
+      movesOnAfterReply: movesOnAfterReply ? true : nil,
+      fanOuts: batches.isEmpty ? nil : batches)
   }
 
   private func make(_ session: AgentSession) -> ProjectSession {

@@ -15,6 +15,9 @@ struct SessionMeta: Codable, Equatable {
   /// Once `system/init` said it.
   var sessionID: String?
   var savedTarget: ResumeTarget?
+  /// The batch this session was started for. Optional so that a meta written before it
+  /// existed still decodes.
+  var fanOut: FanOutMark?
   /// Where the history stood when the process started: the rest is in the log.
   var history: HistoryMark
 
@@ -24,6 +27,14 @@ struct SessionMeta: Codable, Equatable {
     if case .codexTurns = history { return .codex }
     return start.resuming?.agentKind ?? .claude
   }
+}
+
+/// Which place in a skill run in each subfolder a session was started for: kept in its meta
+/// so that a relaunched window can tell it from the batch's other rows even when the
+/// window never learned the host's id for it.
+struct FanOutMark: Codable, Equatable {
+  var batch: UUID
+  var index: Int
 }
 
 /// How much of a session's history came before its process.
