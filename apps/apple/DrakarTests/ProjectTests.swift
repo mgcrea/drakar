@@ -460,6 +460,38 @@ struct ProjectTests {
     return Project(folder: folder, restoring: stored)
   }
 
+  /// A Codex row's last activity is its rollout file's date, as a Claude row's is its
+  /// transcript's: read when the window comes back, and again when a turn ends.
+  @Test func aCodexRowsLastActivityIsItsRolloutsDate() async throws {
+    let rollout = folder.appending(path: "rollout-t1.jsonl")
+    try Data("{}\n".utf8).write(to: rollout)
+    func written(_ date: Date) throws {
+      try FileManager.default.setAttributes(
+        [.modificationDate: date], ofItemAtPath: rollout.path(percentEncoded: false))
+    }
+    func activity(becomes date: Date, of item: ProjectSession) async throws {
+      for _ in 0..<100 where item.lastActivity != date {
+        try await Task.sleep(for: .milliseconds(20))
+      }
+      #expect(item.lastActivity == date)
+    }
+    let earlier = Date(timeIntervalSince1970: 1_800_000_000)
+    let later = earlier.addingTimeInterval(600)
+    try written(earlier)
+    let project = Project(folder: folder)
+    project.attach(
+      ResumeTarget(
+        sessionID: "t1", cwd: folder.path(percentEncoded: false),
+        file: rollout.path(percentEncoded: false), accountDirectory: "/home/.codex",
+        accountIsDefault: true, agent: .codex))
+    let restored = try relaunched(project)
+    let item = try #require(restored.sessions.first)
+    try await activity(becomes: earlier, of: item)
+    try written(later)
+    item.session.onTurnEnded?()
+    try await activity(becomes: later, of: item)
+  }
+
   /// The pane the keys were in comes back with the window: the editor's restored tab does
   /// not take them from the composer, and takes them when it had them.
   @Test func theFocusedPaneSurvivesARelaunch() throws {

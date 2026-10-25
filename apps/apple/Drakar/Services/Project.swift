@@ -213,8 +213,12 @@ final class ProjectSession: Identifiable {
       accountModelID: accountModel, messageModelID: transcript.contextModelID)
   }
 
+  /// When a Codex session's rollout file was last written, as of the last read: a Codex
+  /// row has no `preview`, which only Claude's transcripts give.
+  var rolloutModified: Date?
+
   /// When the transcript was last written: the session's last activity, from the file.
-  var lastActivity: Date? { preview?.modified }
+  var lastActivity: Date? { preview?.modified ?? rolloutModified }
 
   /// Why the row stopped, for its second line: the failure, or "Stopped, exit 1".
   var stopReason: String? {
@@ -310,8 +314,12 @@ final class Project {
   /// Whether the shown session's composer takes the focus when it appears: not when the
   /// sidebar's arrow keys chose it, so the keys keep moving in the list.
   @ObservationIgnored private(set) var focusesComposer = true
+  /// While `broadcast` sends: a prompt to the marked rows doesn't move on.
+  @ObservationIgnored private var isBroadcasting = false
   /// Stands in for the located binary in every session this window makes, in tests.
   @ObservationIgnored var executableOverride: URL?
+  /// Where the sessions this window doesn't hold are listed from; tests give it their own.
+  @ObservationIgnored var monitor = SessionMonitor.shared
   /// The batches still sending or running, one banner each; not saved with the window.
   private(set) var fanOuts: [FanOutBatch] = []
   /// The Run in Each Subfolder sheet, while shown.
@@ -385,7 +393,6 @@ final class Project {
   /// it is made from changes: the sidebar, its badge, the menus and the window's storage
   /// each ask, and grouping looks at every session under the folder.
   var groups: ProjectGroups {
-    let monitor = SessionMonitor.shared
     let folder = ProjectPath.normalize(self.folder.path(percentEncoded: false))
     let others = OpenSessions.shared.folders.filter { $0 != folder }
     let attached = Set(held.compactMap(\.sessionID))
@@ -442,21 +449,24 @@ final class Project {
       dismissed: dismissedElsewhere[summary.sessionID])
   }
 
-  /// Quiets the question or offer a session elsewhere ended on, until it asks another.
+  /// Quiets the question or offer a session elsewhere ended on, until it asks another. On
+  /// the session the window shows, from Session › Dismiss or the row's menu, it is a reply.
   func dismissAsk(_ summary: SessionSummary) {
     dismissedElsewhere[summary.sessionID] = summary.closingMessageID
     // A row watching it here asks again once that process exits, unless it knows too.
-    session(withID: summary.sessionID)?.dismissedAsk = summary.closingMessageID
+    let watching = session(withID: summary.sessionID)
+    watching?.dismissedAsk = summary.closingMessageID
     Attention.shared.refresh()
+    if let watching, watching.id == selectedID { replied(watching) }
   }
 
   /// A session listed elsewhere, shown: in the Drakar window that holds it, or watched here.
-  func openElsewhere(_ summary: SessionSummary) {
+  func openElsewhere(_ summary: SessionSummary, focusingComposer: Bool = true) {
     if let (owner, item) = OpenSessions.shared.locate(summary.sessionID) {
       owner.select(item)
       owner.workspace.window?.makeKeyAndOrderFront(nil)
     } else if let target = ResumeTarget(summary) {
-      attach(target, watching: true, readOnly: true)
+      attach(target, watching: true, readOnly: true, focusingComposer: focusingComposer)
     }
   }
 
@@ -476,9 +486,8 @@ final class Project {
   func dismissSelected() {
     if let selected, selected.closingAsk != nil {
       dismissAsk(selected)
-    } else if let summary = watchedElsewhere, let selected {
+    } else if let summary = watchedElsewhere {
       dismissAsk(summary)
-      replied(selected)
     }
   }
 
@@ -730,6 +739,8 @@ final class Project {
     _ text: String, context: [EditorSelection], attachments: [Attachment]
   ) -> BroadcastResult {
     var result = BroadcastResult(sent: 0, skipped: 0)
+    isBroadcasting = true
+    defer { isBroadcasting = false }
     let hasPDF = attachments.contains { $0.kind == .pdf }
     for item in markedSessions {
       guard item.session.canSend || item.session.canQueue,
@@ -875,11 +886,12 @@ final class Project {
   /// `target` on top and shown, or the row already holding it, taken over unless
   /// `watching`. `readOnly` while another process has it open.
   @discardableResult func attach(
-    _ target: ResumeTarget, watching: Bool = false, readOnly: Bool = false
+    _ target: ResumeTarget, watching: Bool = false, readOnly: Bool = false,
+    focusingComposer: Bool = true
   ) -> ProjectSession {
     if target.forks != true, let existing = session(withID: target.sessionID) {
       if !watching { takeOver(existing) }
-      select(existing)
+      select(existing, focusingComposer: focusingComposer)
       return existing
     }
     let session = AgentSession(
@@ -890,14 +902,14 @@ final class Project {
     item.isWatching = watching
     item.dismissedAsk = dismissedElsewhere[target.sessionID]
     sessions.insert(item, at: 0)
-    select(item)
+    select(item, focusingComposer: focusingComposer)
     return item
   }
 
   /// "Pineapple (fork #2)" for a copy of `target`: its title, numbered after every fork of
   /// it the folder lists, in the window's rows and on disk. Nil when it has no title yet.
   private func forkName(for target: ResumeTarget) -> String? {
-    let listed = SessionMonitor.shared.summaries(
+    let listed = monitor.summaries(
       under: ProjectPath.normalize(folder.path(percentEncoded: false)))
     let original =
       session(withID: target.sessionID)?.knownTitle
@@ -988,8 +1000,10 @@ final class Project {
   }
 
   /// An ended session, watched here.
-  func openEnded(_ summary: SessionSummary) {
-    if let target = ResumeTarget(summary) { attach(target, watching: true) }
+  func openEnded(_ summary: SessionSummary, focusingComposer: Bool = true) {
+    if let target = ResumeTarget(summary) {
+      attach(target, watching: true, focusingComposer: focusingComposer)
+    }
   }
 
   /// Shows the row `offset` rows from the selected one, in the sidebar's order, as a click
@@ -1012,11 +1026,19 @@ final class Project {
       )
     }
     for summary in groups.elsewhere where OpenSessions.shared.locate(summary.sessionID) == nil {
-      rows.append((isWatched(summary), { [unowned self] in openElsewhere(summary) }))
+      rows.append(
+        (
+          isWatched(summary),
+          { [unowned self] in openElsewhere(summary, focusingComposer: focusingComposer) }
+        ))
     }
     if showsEnded {
       for summary in listedEnded(groups) {
-        rows.append((isWatched(summary), { [unowned self] in openEnded(summary) }))
+        rows.append(
+          (
+            isWatched(summary),
+            { [unowned self] in openEnded(summary, focusingComposer: focusingComposer) }
+          ))
       }
     }
     guard !rows.isEmpty else { return false }
@@ -1066,9 +1088,10 @@ final class Project {
   /// The shown session was answered: with Next After Replying on, the next of the window's
   /// own rows that wants the person is shown, once what sent the reply has done (a composer
   /// still clears its draft). Not while the session still wants something, nor for a prompt
-  /// sent to the marked rows, which the person is working through together.
+  /// sent to the marked rows, which the person is working through together; an answer or a
+  /// Dismiss on the shown row moves on with rows marked too.
   private func replied(_ item: ProjectSession) {
-    guard movesOnAfterReply, item.id == selectedID, !sendsToMarked else { return }
+    guard movesOnAfterReply, item.id == selectedID, !isBroadcasting else { return }
     Task { [weak self] in
       guard let self, self.selectedID == item.id, item.urgency == nil,
         let next = self.nextNeedingAttention(ownRowsOnly: true)?.item
@@ -1162,6 +1185,7 @@ final class Project {
       guard let self, let item else { return }
       self.fanOutFinished(item)
       if item.id != self.selectedID { item.isUnread = true }
+      self.readRolloutDate(item)
       Attention.shared.turnEnded(item, in: self)
     }
     // A start that failed reports no stop: its slot in a batch is freed all the same.
@@ -1210,12 +1234,29 @@ final class Project {
   /// The title and context from the transcript's end, off the main thread: every restored
   /// row shows them, while only the selected one reads its history.
   private func readPreview(_ item: ProjectSession) {
-    guard let target = item.session.resuming, target.agentKind == .claude else { return }
+    guard let target = item.session.resuming else { return }
+    guard target.agentKind == .claude else { return readRolloutDate(item) }
     let (file, account) = (target.transcriptFile, target.account)
     Task { [weak item] in
       let summary = await Task.detached { SessionIndex.summary(of: file, account: account) }.value
       item?.preview = summary
       Attention.shared.refresh()
+    }
+  }
+
+  /// A Codex row's last activity, off the main thread: its rollout file's date, as a Claude
+  /// row's comes with its transcript's summary. Nothing watches Codex's files, so it is read
+  /// again when a turn ends, by which point Codex has written the turn.
+  private func readRolloutDate(_ item: ProjectSession) {
+    guard let target = item.session.savedTarget ?? item.session.resuming,
+      target.agentKind == .codex, !target.file.isEmpty
+    else { return }
+    let file = target.transcriptFile
+    Task { [weak item] in
+      let date = await Task.detached {
+        try? file.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
+      }.value
+      item?.rolloutModified = date
     }
   }
 }

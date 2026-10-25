@@ -119,7 +119,8 @@ public enum SessionIndex {
   /// The `limit` most recently written sessions across `accounts`, newest first; with
   /// `folder`, only sessions whose `cwd` is that folder or below it.
   ///
-  /// Ordered by file date before any file is opened, so only the sessions shown are read.
+  /// Ordered by file date before any file is opened, so only the sessions shown are read,
+  /// and with `folder`, the newer ones a sibling folder's encoded name also matched.
   /// A session that was never prompted has no file and is not listed.
   public static func list(
     accounts: [ClaudeAccount], limit: Int = 200, under folder: String? = nil,
@@ -163,16 +164,20 @@ public enum SessionIndex {
         }
       }
     }
-    return found.sorted { $0.2 > $1.2 }.prefix(limit).compactMap { file, account, modified, size in
+    // Newest first until `limit` are listed: the folder's encoded prefix also matches a
+    // sibling's (`-app` and `-app-website`), whose sessions are dropped here, so they must
+    // not take the places of the folder's own.
+    var listed: [SessionSummary] = []
+    for (file, account, modified, size) in found.sorted(by: { $0.2 > $1.2 }) {
+      guard listed.count < limit else { break }
       var summary = summarize(file: file, account: account, modified: modified, size: size)
       if let owners {
-        guard let cwd = summary.cwd, owners.owner(of: cwd) != nil else {
-          return nil
-        }
+        guard let cwd = summary.cwd, owners.owner(of: cwd) != nil else { continue }
       }
       summary.live = live[account]?[summary.sessionID]
-      return summary
+      listed.append(summary)
     }
+    return listed
   }
 
   /// One transcript, summarized: what the monitor re-reads when a file changes.
@@ -196,7 +201,9 @@ public enum SessionIndex {
       lastValue(of: "customTitle", inLineOfType: "custom-title", in: data)
       ?? lastValue(of: "aiTitle", inLineOfType: "ai-title", in: data)
     summary.lastPrompt = lastValue(of: "lastPrompt", inLineOfType: "last-prompt", in: data)
-    summary.cwd = lastValue(of: "cwd", inLineOfType: nil, in: data)
+    // Where it started, which the transcript's folder is named after, not where the agent
+    // last worked: a worktree it moved into can be gone by the time it is resumed.
+    summary.cwd = firstValue(of: "cwd", in: data)
     let tail = TranscriptTail(suffixOf: data)
     summary.context = tail.newestReading
     summary.modelID = tail.newestModelID
@@ -226,6 +233,25 @@ public enum SessionIndex {
         return value
       }
       end = lineStart
+    }
+    return nil
+  }
+
+  /// The string at `key` in the first line that has it, searching forwards from the start:
+  /// what a transcript said before anything moved.
+  static func firstValue(of key: String, in data: Data) -> String? {
+    let needle = Data("\"\(key)\":\"".utf8)
+    var start = data.startIndex
+    while let match = data.range(of: needle, in: start..<data.endIndex) {
+      let lineStart =
+        data[..<match.lowerBound].lastIndex(of: 0x0A).map { $0 + 1 } ?? data.startIndex
+      let lineEnd = data[match.upperBound...].firstIndex(of: 0x0A) ?? data.endIndex
+      if let json = try? JSONValue.parse(data[lineStart..<lineEnd]),
+        let value = json[key]?.stringValue, !value.isEmpty
+      {
+        return value
+      }
+      start = lineEnd
     }
     return nil
   }

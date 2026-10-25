@@ -137,6 +137,26 @@ struct CodexSessionTests {
     #expect(turn["params"]?["input"] == input("two"))
   }
 
+  /// The old turn's completion, late behind a steer that started the next: once that one
+  /// runs, it ends nothing, so the new turn keeps what it waits on. While the next turn is
+  /// still starting, the old one's end still shows.
+  @Test func aLateCompletionOfTheOldTurnEndsOnlyItself() throws {
+    let late = json(
+      #"{"method":"turn/completed","params":{"threadId":"t-1","turn":{"id":"turn-1","status":"completed"}}}"#
+    )
+    func ends(_ step: CodexSession.Step) -> Bool {
+      step.events.contains { if case .turnEnded = $0 { true } else { false } }
+    }
+    for startedFirst in [true, false] {
+      var session = try running()
+      let steer = try write(
+        "turn/steer", in: session.send(.prompt(input: input("two"), uuid: "p-2")))
+      let start = try write("turn/start", in: fail(&session, steer, "no active turn to steer"))
+      if startedFirst { _ = answer(&session, start, #"{"turn":{"id":"turn-2"}}"#) }
+      #expect(ends(session.receive(late, at: nil)) == !startedFirst, "started: \(startedFirst)")
+    }
+  }
+
   @Test func aSteerAnInterruptCutShortIsDropped() throws {
     var session = try running()
     _ = session.send(.prompt(input: input("two"), uuid: "p-2"))

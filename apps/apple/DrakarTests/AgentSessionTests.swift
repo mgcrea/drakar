@@ -388,6 +388,46 @@ struct AgentSessionTests {
     #expect(runs.last?.contains("--fork-session") == false)
   }
 
+  /// A session started here and resumed by another process follows what that one writes,
+  /// from where this window's process stopped: its own turns, already shown, aren't read
+  /// again.
+  @Test func aSessionStartedHereFollowsTheProcessThatResumedIt() async throws {
+    let script = folder.appending(path: "claude-init")
+    let initLine =
+      #"{"type":"system","subtype":"init","cwd":"/tmp","session_id":"s-new","model":"m"}"#
+    try Data("#!/bin/sh\nprintf '%s\\n' '\(initLine)'\ncat > /dev/null\n".utf8).write(to: script)
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script.path)
+    let account = folder.appending(path: ".claude-new", directoryHint: .isDirectory)
+    let project = account.appending(path: "projects/-tmp", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+    let file = project.appending(path: "s-new.jsonl")
+    try Data(
+      #"{"type":"user","message":{"role":"user","content":"one"}}"#.appending("\n").utf8
+    ).write(to: file)
+
+    let session = AgentSession(folder: folder)
+    session.executableOverride = script
+    session.accounts = { [ClaudeAccount(directory: account, isDefault: false)] }
+    session.send("one")
+    for _ in 0..<50 where session.sessionID != "s-new" {
+      try await Task.sleep(for: .milliseconds(100))
+    }
+    session.stop()
+    session.isReadOnly = true
+    let handle = try FileHandle(forWritingTo: file)
+    try handle.seekToEnd()
+    try handle.write(
+      contentsOf: Data(
+        (#"{"type":"user","message":{"role":"user","content":"from the terminal"}}"# + "\n").utf8)
+    )
+    try handle.close()
+    session.catchUp()
+    let prompts = session.transcript.entries.compactMap {
+      if case .prompt(let text) = $0.kind { text } else { nil }
+    }
+    #expect(prompts == ["one", "from the terminal"])
+  }
+
   /// With no process, the name goes into the transcript, where every list reads it.
   @Test func renamingAnIdleSessionWritesItsTranscript() async throws {
     let file = folder.appending(path: "s1.jsonl")

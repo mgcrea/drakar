@@ -98,6 +98,46 @@ struct ProjectSessionsTests {
     #expect(listed.allSatisfy { !$0.awaitsToolResult })
   }
 
+  /// The limit counts the folder's own sessions: a sibling whose encoded name starts the
+  /// same (`-w-app-old` beside `-w-app`) and is busier takes none of their places.
+  @Test func aBusySiblingFolderLeavesTheLimitToTheFoldersOwn() throws {
+    let home = FileManager.default.temporaryDirectory.appending(path: "index-\(UUID())")
+    let account = ClaudeAccount(directory: home.appending(path: ".claude"), isDefault: true)
+    defer { try? FileManager.default.removeItem(at: home) }
+    func write(_ folder: String, _ id: String, cwd: String, at age: TimeInterval) throws {
+      let dir = account.directory.appending(path: "projects/\(folder)")
+      try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+      let file = dir.appending(path: "\(id).jsonl")
+      try Data(#"{"type":"user","cwd":"\#(cwd)","message":{"role":"user","content":"go"}}"#.utf8)
+        .write(to: file)
+      try FileManager.default.setAttributes(
+        [.modificationDate: Date(timeIntervalSinceNow: -age)],
+        ofItemAtPath: file.path(percentEncoded: false))
+    }
+    try write("-w-app", "own", cwd: "/w/app", at: 400)
+    for (index, id) in ["x", "y", "z"].enumerated() {
+      try write("-w-app-old", id, cwd: "/w/app-old", at: TimeInterval(100 + index))
+    }
+    let listed = SessionIndex.list(
+      accounts: [account], limit: 2, under: "/w/app", isAlive: { _ in false })
+    #expect(listed.map(\.sessionID) == ["own"])
+  }
+
+  /// A session's folder is where it started, which its transcript's folder is named after:
+  /// an agent that moved into a worktree or a subfolder takes the session with it nowhere.
+  @Test func aSessionsFolderIsWhereItStarted() throws {
+    let file = FileManager.default.temporaryDirectory.appending(path: "cwd-\(UUID()).jsonl")
+    defer { try? FileManager.default.removeItem(at: file) }
+    let lines = [
+      #"{"type":"file-history-snapshot","messageId":"m0"}"#,
+      #"{"type":"user","cwd":"/w/app","message":{"role":"user","content":"go"}}"#,
+      #"{"type":"assistant","cwd":"/w/app/.claude/worktrees/x","message":{"id":"m"}}"#,
+    ]
+    try Data(lines.joined(separator: "\n").utf8).write(to: file)
+    let account = ClaudeAccount(directory: FileManager.default.temporaryDirectory, isDefault: true)
+    #expect(SessionIndex.summary(of: file, account: account)?.cwd == "/w/app")
+  }
+
   /// Whether the newest turn waits on a tool is read with the summary, once.
   @Test func aSummaryKnowsAnUnansweredToolCall() throws {
     let file = FileManager.default.temporaryDirectory.appending(path: "tool-\(UUID()).jsonl")

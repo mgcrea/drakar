@@ -175,7 +175,7 @@ private struct SessionCommands: View {
     )
     .disabled(project == nil)
     Button("Dismiss") { project?.dismissSelected() }
-      .keyboardShortcut("d", modifiers: [.command, .option])
+      .keyboardShortcut("d", modifiers: [.command, .option, .shift])
       .disabled(project?.canDismissSelected != true)
     AnswerCommands(project: project)
   }
