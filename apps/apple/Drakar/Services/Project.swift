@@ -686,7 +686,10 @@ final class Project {
       markAnchor = item.id
       select(item)
     case .toggle:
-      if marked.isEmpty, let selectedID, selectedID != item.id { marked = [selectedID] }
+      // The shown row, if it is one of the window's own: a watched one can't be marked.
+      if marked.isEmpty, let selected, !selected.isWatching, selected.id != item.id {
+        marked = [selected.id]
+      }
       if marked.remove(item.id) == nil { marked.insert(item.id) }
       markAnchor = item.id
     case .extend:
