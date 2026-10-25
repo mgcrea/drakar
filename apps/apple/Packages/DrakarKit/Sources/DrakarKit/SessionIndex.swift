@@ -119,7 +119,8 @@ public enum SessionIndex {
   /// The `limit` most recently written sessions across `accounts`, newest first; with
   /// `folder`, only sessions whose `cwd` is that folder or below it.
   ///
-  /// Ordered by file date before any file is opened, so only the sessions shown are read.
+  /// Ordered by file date before any file is opened, so only the sessions shown are read,
+  /// and with `folder`, the newer ones a sibling folder's encoded name also matched.
   /// A session that was never prompted has no file and is not listed.
   public static func list(
     accounts: [ClaudeAccount], limit: Int = 200, under folder: String? = nil,
@@ -163,16 +164,20 @@ public enum SessionIndex {
         }
       }
     }
-    return found.sorted { $0.2 > $1.2 }.prefix(limit).compactMap { file, account, modified, size in
+    // Newest first until `limit` are listed: the folder's encoded prefix also matches a
+    // sibling's (`-app` and `-app-website`), whose sessions are dropped here, so they must
+    // not take the places of the folder's own.
+    var listed: [SessionSummary] = []
+    for (file, account, modified, size) in found.sorted(by: { $0.2 > $1.2 }) {
+      guard listed.count < limit else { break }
       var summary = summarize(file: file, account: account, modified: modified, size: size)
       if let owners {
-        guard let cwd = summary.cwd, owners.owner(of: cwd) != nil else {
-          return nil
-        }
+        guard let cwd = summary.cwd, owners.owner(of: cwd) != nil else { continue }
       }
       summary.live = live[account]?[summary.sessionID]
-      return summary
+      listed.append(summary)
     }
+    return listed
   }
 
   /// One transcript, summarized: what the monitor re-reads when a file changes.
