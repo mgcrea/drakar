@@ -122,8 +122,9 @@ final class AgentSession {
   @ObservationIgnored private(set) var process: (any ProcessTransport)?
   /// What a spawn runs on; `AgentProcess.init` until the session host comes first. Tests
   /// give a recorder.
-  @ObservationIgnored var makeTransport: (AgentProcess.Configuration) async -> any ProcessTransport =
-    { AgentProcess($0) }
+  @ObservationIgnored var makeTransport:
+    (AgentProcess.Configuration) async -> any ProcessTransport =
+      { AgentProcess($0) }
   /// Rebuilding from a log: what happened was told when it happened, so no callback runs.
   @ObservationIgnored private var isReplaying = false
   /// The turns Codex's thread holds, as `throughTurns` counts them.

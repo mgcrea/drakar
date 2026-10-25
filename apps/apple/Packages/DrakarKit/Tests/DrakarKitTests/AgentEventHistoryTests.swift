@@ -8,8 +8,12 @@ import Testing
 struct AgentEventHistoryTests {
   private let events: [AgentEvent] = [
     .sessionStarted(SessionInfo(sessionID: "t-1")),
-    .turnStarted, .prompt(.init(text: "one"), running: false), .turnEnded(TurnSummary(outcome: .completed)),
-    .turnStarted, .prompt(.init(text: "two"), running: false), .turnEnded(TurnSummary(outcome: .completed)),
+    .turnStarted,
+    .prompt(.init(text: "one"), running: false),
+    .turnEnded(TurnSummary(outcome: .completed)),
+    .turnStarted,
+    .prompt(.init(text: "two"), running: false),
+    .turnEnded(TurnSummary(outcome: .completed)),
   ]
 
   @Test func cutsAtTheNthTurnEnd() {
