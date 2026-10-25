@@ -11,7 +11,7 @@ import Synchronization
 /// operations used across threads here (`write`, `terminate`, `isRunning`) are thread-safe,
 /// and the mutable state is behind a `Mutex`.
 public final class AgentProcess: ProcessTransport, @unchecked Sendable {
-  public struct Configuration: Codable, Sendable {
+  public struct Configuration: Codable, Sendable, Equatable {
     public var executable: URL
     public var arguments: [String]
     public var environment: [String: String]

@@ -108,12 +108,17 @@ CLI travel base64-encoded so a line the CLI wrote is never split or re-encoded.
 - `spawn {configuration, meta}` → `{id}`; the host starts the process and begins logging.
 - `attach {id, from}`: send the log from offset `from`, then stream new records, stderr and
   the exit as they come. Refused while another app is attached (§4).
-- `write {id, bytes}`: written to the CLI's stdin and logged as `in`. `closeInput {id}`,
-  `terminate {id}`: what `AgentProcess.closeInput` and `terminate` do today.
+- `write {id, bytes}`: written to the CLI's stdin and logged as `in`. `note {id, bytes}`:
+  logged as `note` and written to nothing, the app's own marks for its replay.
+  `closeInput {id}`, `terminate {id}`: what `AgentProcess.closeInput` and `terminate` do
+  today.
 - `setMeta {id, meta}`: replace the blob.
 - `acknowledge {id}`: the app has the process's end; the host forgets it and its log.
-- Events: `record {id, offset, direction, bytes}` (an `in` echoes the attached app's own
-  write, so its offset is known), `stderr {id, text}`, `exited {id, status}`, and, to every
+- Events: `record {id, offset, kind, time, attached, bytes}` (`kind` is `out`, `in` or
+  `note`; an `in` echoes the attached app's own write, so its offset is known; `time` is when
+  the host logged it and `attached` whether an app was attached then, which says nothing of
+  a reply), `caughtUp {id, offset}` (the attach's backlog is sent and what follows is live,
+  `offset` being the log's end), `stderr {id, text}`, `exited {id, status}`, and, to every
   connected app, `released {id}` when the app attached to a process disconnects.
 
 **Who may connect:** the peer's uid must be the host's (`getpeereid`), and the peer's code

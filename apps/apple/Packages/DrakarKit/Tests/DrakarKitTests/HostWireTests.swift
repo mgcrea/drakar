@@ -1,0 +1,51 @@
+import Foundation
+import Testing
+
+@testable import DrakarKit
+
+@Suite struct HostWireTests {
+  private let configuration = AgentProcess.Configuration(
+    executable: URL(fileURLWithPath: "/usr/bin/true"), arguments: ["-a"], environment: ["K": "V"],
+    currentDirectory: URL(fileURLWithPath: "/tmp"))
+  private let bytes = Data([0, 10, 0xFF])
+
+  @Test func requestsAndEventsRoundTrip() throws {
+    let requests: [HostRequest] = [
+      .hello(protocol: 1, appVersion: "2.0"), .list, .spawn(configuration, meta: bytes),
+      .attach(id: "a", from: 42), .write(id: "a", bytes: bytes), .note(id: "a", bytes: bytes),
+      .closeInput(id: "a"), .terminate(id: "a"), .setMeta(id: "a", meta: bytes),
+      .acknowledge(id: "a"),
+    ]
+    for request in requests {
+      let data = try JSONEncoder().encode(request)
+      #expect(try JSONDecoder().decode(HostRequest.self, from: data) == request)
+    }
+    let record = HostRecord(
+      offset: 7, kind: .in, time: Date(timeIntervalSince1970: 1_000), attached: true, bytes: bytes)
+    let held = HeldProcess(
+      id: "a", meta: bytes, running: false, exitStatus: 3, logLength: 9, attachedApp: 123)
+    let events: [HostEvent] = [
+      .welcome(protocol: 1, hostVersion: "1.0", pid: 5), .listed([held]), .listed([]),
+      .spawned(id: "a"), .record(id: "a", record), .caughtUp(id: "a", offset: 99),
+      .stderr(id: "a", text: "oops"), .exited(id: "a", status: -1), .released(id: "a"),
+      .refused(reason: "busy"),
+    ]
+    for event in events {
+      let data = try JSONEncoder().encode(event)
+      #expect(try JSONDecoder().decode(HostEvent.self, from: data) == event)
+    }
+  }
+
+  @Test func socketPathIsUnderTheBundlesFolder() throws {
+    let home = URL(fileURLWithPath: "/Users/me")
+    let directory = HostWire.directory(bundleID: "io.mgcrea.Drakar", home: home)
+    #expect(
+      try HostWire.socket(in: directory).path
+        == "/Users/me/Library/Application Support/io.mgcrea.Drakar/host/host-v1.sock")
+  }
+
+  @Test func aPathTooLongThrows() {
+    let directory = URL(fileURLWithPath: "/" + String(repeating: "a", count: 119))
+    #expect(throws: HostWire.PathTooLong.self) { try HostWire.socket(in: directory) }
+  }
+}
