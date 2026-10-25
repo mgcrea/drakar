@@ -460,6 +460,35 @@ struct ProjectTests {
     return Project(folder: folder, restoring: stored)
   }
 
+  /// Removing the marked rows reads no transcript of a row about to go: only the row shown
+  /// once they are gone loads its history.
+  @Test func removingTheMarkedRowsLoadsOnlyTheRowLeft() async throws {
+    let project = Project(folder: folder)
+    for id in ["d", "c", "b", "a"] {
+      try Data(#"{"type":"user","message":{"role":"user","content":"go"}}"#.appending("\n").utf8)
+        .write(to: folder.appending(path: "\(id).jsonl"))
+      project.attach(target(id))
+    }
+    let restored = try relaunched(project)
+    let rows = Dictionary(
+      uniqueKeysWithValues: restored.sessions.compactMap { item in
+        item.sessionID.map { ($0, item) }
+      })
+    let (a, b, c, d) = (rows["a"]!, rows["b"]!, rows["c"]!, rows["d"]!)
+    restored.select(a)
+    restored.click(b, .toggle)
+    restored.click(c, .toggle)
+    try #require(restored.marked == [a.id, b.id, c.id])
+    restored.removeMarked()
+    #expect(restored.selectedID == d.id)
+    for _ in 0..<50 where !d.session.hasLoadedHistory {
+      try await Task.sleep(for: .milliseconds(20))
+    }
+    #expect(d.session.hasLoadedHistory)
+    #expect(!b.session.hasLoadedHistory)
+    #expect(!c.session.hasLoadedHistory)
+  }
+
   /// A Codex row's last activity is its rollout file's date, as a Claude row's is its
   /// transcript's: read when the window comes back, and again when a turn ends.
   @Test func aCodexRowsLastActivityIsItsRolloutsDate() async throws {

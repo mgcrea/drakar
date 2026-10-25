@@ -767,10 +767,20 @@ final class Project {
     for item in markedSessions { end(item) }
   }
 
-  /// Takes every marked session out of the window.
+  /// Takes every marked session out of the window, each as `remove` does, then shows and
+  /// loads the first row left once: a row about to go never reads its transcript.
   func removeMarked() {
-    for item in markedSessions { remove(item) }
+    for item in markedSessions {
+      item.session.stop()
+      sessions.removeAll { $0.id == item.id }
+      fanOutFinished(item)
+    }
     marked = []
+    if let selectedID, !sessions.contains(where: { $0.id == selectedID }) {
+      self.selectedID = sessions.first?.id
+    }
+    if let selected { load(selected) }
+    Attention.shared.refresh()
   }
 
   /// `item` ended a turn or stopped: its slot goes to the next waiting session.
