@@ -756,6 +756,7 @@ final class AgentSession {
     guard isReadOnly else { return true }
     phase = .idle
     pendingPrompt = nil
+    pendingEffect = .none
     notingPermissions { transcript.processExited() }
     return false
   }
@@ -966,6 +967,7 @@ final class AgentSession {
   private func fail(_ message: String?) {
     if let message { phase = .failed(message) }
     pendingPrompt = nil
+    pendingEffect = .none
     notingPermissions { transcript.processExited() }
     onFailed?()
   }
