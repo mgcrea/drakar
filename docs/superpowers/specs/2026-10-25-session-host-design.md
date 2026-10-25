@@ -257,3 +257,44 @@ defaults stand, each the builder's call until the person says otherwise:
   hands sessions to the host.
 - Quitting says nothing when sessions keep running: the confirmation for running sessions
   simply goes.
+
+## Departures in the build
+
+The protocol as built is in `docs/session-host.md`. Where the build differs from the text
+above, the build stands:
+
+- **Owed replies (§3)** are decided by the log's `in` records, not by the `attached` flag:
+  an automatic write the replay produced while taking an `out` record, which no later
+  byte-equal `in` matches. The flag stays on records and says nothing of a reply; the
+  flag rule double-replied after a second relaunch and dropped replies at the quit boundary.
+- **`note` and `caughtUp` (§2)** are in the protocol from the start: the app's own marks
+  for its replay, and the end of an attach's backlog.
+- **`detach {id}` (§2)** was added (minor 1): the app lets go of a process that carries on.
+  `released` follows from it, from a disconnect, and also from `acknowledge`, since a
+  process an app watches read-only is gone once it is forgotten. A new connection relists
+  what rows show read-only and settles them the same way, since a `released` sent while
+  disconnected is lost.
+- **Lanes (§2)** are per connection and process, not per process: a detach never overtakes
+  the same connection's later attach, and a stuck write on one connection delays no other.
+  `terminate` runs inline.
+- **Who may connect (§2)** adds the app's identifier to the team check (read from the
+  host's own signature, `<id>.DrakarHost` minus the suffix): a team-signed tool without the
+  hardened runtime could carry an injected library.
+- **One clock (§3):** `AgentProcess` stamps each batch it reads with the time it was read,
+  and a replayed record is timed by the host's `time`, so a live session and its replay
+  time entries alike.
+- **The replay's bound (§5)** is silence, not time: a host that sends nothing of the log for
+  10 seconds is let go of (`Failure.quiet`), as a long log takes seconds.
+- **Spawn limit:** a host that does not answer a `spawn` within 10 seconds is given up on,
+  and a late `spawned` is ended and acknowledged at once.
+- **A process that ends while the app runs** (window closed, End Session, row removed, its
+  own exit) is acknowledged as its exit arrives; only processes stopped during quit stay
+  unacknowledged for the next launch to show. Otherwise the idle exit never comes.
+- **Rows another app holds (§4):** the live-session filter excludes a host's descendant
+  only when its session is one this app's own rows host, so another Drakar's sessions still
+  read as live elsewhere.
+- **A window taking back its held sessions** (`takeBackHeld`) gates the rows it kept for the
+  same sessions (`waitsForHost`): they send nothing until the host's processes are adopted,
+  so none starts a second process.
+- **The slowest peer** is dropped once 512 MiB waits unread for it; it reattaches from its
+  offset.
