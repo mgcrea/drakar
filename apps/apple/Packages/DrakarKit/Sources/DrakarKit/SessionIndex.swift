@@ -295,12 +295,13 @@ public struct LiveSession: Sendable, Hashable {
   }()
 
   /// Every live session in `account`'s registry, except Drakar's own (a window reads those
-  /// from memory), what the session `hosts` run (Drakar's too, whichever app started the
-  /// host: a window reads those from the host), and spawns in the temporary folder.
+  /// from memory) and spawns in the temporary folder. Under one of the session `hosts`, a
+  /// session is Drakar's own when it is one of `hostedHere`, whichever app started the host:
+  /// any other there is another Drakar's, and listed.
   public static func read(
     account: ClaudeAccount, isAlive: (Int32) -> Bool = isAlive,
     parentOf: (Int32) -> Int32? = ProcessAncestry.parent,
-    ownPID: Int32 = getpid(), hosts: Set<Int32> = [],
+    ownPID: Int32 = getpid(), hosts: Set<Int32> = [], hostedHere: Set<String> = [],
     temporaryDirectories: Set<String> = defaultTemporaryDirectories
   ) -> [LiveSession] {
     let folder = account.directory.appending(path: "sessions", directoryHint: .isDirectory)
@@ -309,8 +310,13 @@ public struct LiveSession: Sendable, Hashable {
         at: folder, includingPropertiesForKeys: nil, options: .skipsHiddenFiles)) ?? []
     return files.filter { $0.pathExtension == "json" }.compactMap { file in
       guard let live = entry(at: file, isAlive: isAlive),
-        !([ownPID] + hosts).contains(where: { descends(live.pid, from: $0, parentOf: parentOf) })
+        !descends(live.pid, from: ownPID, parentOf: parentOf)
       else { return nil }
+      if hostedHere.contains(live.sessionID),
+        hosts.contains(where: { descends(live.pid, from: $0, parentOf: parentOf) })
+      {
+        return nil
+      }
       if let cwd = live.cwd, temporaryDirectories.contains(ProjectPath.normalize(cwd)) {
         return nil
       }

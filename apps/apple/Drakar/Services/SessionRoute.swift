@@ -172,6 +172,12 @@ final class OpenSessions {
     Attention.shared.refresh()
   }
 
+  /// The sessions this app's own rows run in the session host: under the host, those are
+  /// this app's, where every other process there is another Drakar's.
+  var hostedHere: Set<String> {
+    Set(projects.values.flatMap(\.sessions).filter(\.session.isHosted).compactMap(\.sessionID))
+  }
+
   /// Sessions mid-turn across every window that quitting stops, for the quit question.
   var stoppedByQuitting: Int {
     RunningSessions.stoppedByQuitting(projects.values.flatMap { $0.sessions.map(\.session) })

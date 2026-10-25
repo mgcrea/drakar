@@ -230,13 +230,15 @@ public final class HostCore: @unchecked Sendable {
     return failure.map { [.refused(reason: "could not write to \(id): \($0)")] } ?? []
   }
 
+  /// The other apps are told it is `released`: nobody holds it any more, and it is gone.
   private func acknowledge(_ id: String, from client: Client) -> [HostEvent] {
     var ended: Held?
-    let refused = withState { state, _ -> [HostEvent] in
+    let refused = withState { state, out -> [HostEvent] in
       guard let held = state.held[id] else { return [Self.unknown(id)] }
       if let other = held.attached, other != client { return [Self.taken(id)] }
       guard held.exitStatus != nil else { return [.refused(reason: "\(id) is still running")] }
       ended = state.held.removeValue(forKey: id)
+      for other in state.clients.keys where other != client { out.send(other, .released(id: id)) }
       return []
     }
     try? ended?.log.remove()

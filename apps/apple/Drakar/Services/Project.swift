@@ -324,6 +324,9 @@ final class Project {
   @ObservationIgnored var sessionHost = SessionHost.shared
   /// The session host's processes being taken back, so that two calls take each once.
   @ObservationIgnored private var adopting: Set<String> = []
+  /// The session host's ids for the processes another app holds that rows here showed
+  /// read-only, which `released` or a new connection settles.
+  @ObservationIgnored private var shownHeldElsewhere: Set<String> = []
   /// The batches still sending or running, one banner each; not saved with the window.
   private(set) var fanOuts: [FanOutBatch] = []
   /// The Run in Each Subfolder sheet, while shown.
@@ -1171,34 +1174,51 @@ final class Project {
     }
     let watched = Set(held.map(\.id)).intersection(elsewhere.map(\.id))
     guard !watched.isEmpty else { return }
-    sessionHost.watchReleases(for: self) { [weak self] id in self?.released(id) ?? false }
+    shownHeldElsewhere.formUnion(watched)
+    sessionHost.watchReleases(
+      for: self, takes: { [weak self] id in self?.released(id) ?? false },
+      connected: { [weak self] in Task { await self?.settleShown() } })
     // Let go of while its row was being made: no `released` says so again.
-    for process in await sessionHost.held()
-    where watched.contains(process.id) && process.attachedApp == nil {
-      await takeBackShown(process)
-    }
+    await settleShown()
   }
 
   /// Another app let go of a process one of the window's rows shows read-only (`released`):
-  /// the row takes it back. False when none shows it, or it is being taken back already, so
-  /// that of the windows told, one attaches, once.
+  /// the row takes it back, or the session if the process is gone. False when none shows
+  /// it, or it is being taken back already, so that of the windows told, one attaches, once.
   private func released(_ id: String) -> Bool {
     guard isShownReadOnly(id), !adopting.contains(id) else { return false }
     Task {
-      guard let process = await sessionHost.held().first(where: { $0.id == id }),
-        process.attachedApp == nil
-      else { return }
-      await takeBackShown(process)
+      guard let held = await sessionHost.listed() else { return }
+      await settle(id, among: held)
     }
     return true
   }
 
-  /// The row showing `process` read-only takes it back, unless one is already.
-  private func takeBackShown(_ process: HeldProcess) async {
-    guard isShownReadOnly(process.id), !adopting.contains(process.id) else { return }
-    adopting.insert(process.id)
-    defer { adopting.remove(process.id) }
-    await takeBack(process)
+  /// What the host holds now, for each row showing one of its processes read-only: on a new
+  /// connection, which no `released` sent while there was none reached.
+  private func settleShown() async {
+    shownHeldElsewhere = shownHeldElsewhere.filter(isShownReadOnly)
+    guard !shownHeldElsewhere.isEmpty, let held = await sessionHost.listed() else { return }
+    for id in shownHeldElsewhere { await settle(id, among: held) }
+  }
+
+  /// The row showing `id` read-only takes its process back once no app holds it, or becomes
+  /// the session to resume here once the host no longer has it, as a session whose process
+  /// elsewhere went away does; unless the row is being taken back already.
+  private func settle(_ id: String, among held: [HeldProcess]) async {
+    guard isShownReadOnly(id), !adopting.contains(id) else { return }
+    if let process = held.first(where: { $0.id == id }) {
+      guard process.attachedApp == nil else { return }
+      adopting.insert(id)
+      defer { adopting.remove(id) }
+      await takeBack(process)
+    } else if let shown = sessions.first(where: { $0.session.heldElsewhere == id })?.session {
+      let session = AgentSession(
+        folder: shown.folder, resuming: shown.resuming, agent: shown.agent,
+        account: shown.accountPick)
+      adopt(session, replacing: id)
+      await session.loadHistory()
+    }
   }
 
   private func isShownReadOnly(_ hostID: String) -> Bool {
@@ -1240,6 +1260,8 @@ final class Project {
     }
     if selectedID == nil { selectedID = item.id }
     session.reportReplayedCommands()
+    // Its process, under the host, is this app's own now, not another app's live session.
+    if session.isHosted { SessionMonitor.shared.hostedChanged() }
     Attention.shared.refresh()
   }
 

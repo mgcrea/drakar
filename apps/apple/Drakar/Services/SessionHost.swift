@@ -31,13 +31,9 @@ import Synchronization
   /// path is refused. A host that started but answered late is not this: it is tried again.
   private(set) var cannotStart = false
 
-  /// The hosts said hello to, ours and older ones: what they run is Drakar's, which the
-  /// registry of live sessions must not take for another app's (`LiveSession.read`).
-  var hostPIDs: Set<Int32> { olderHostPIDs.union(hostPID.map { [$0] } ?? []) }
-  private var hostPID: Int32? { didSet { if hostPID != oldValue { hostsChanged() } } }
-  private var olderHostPIDs: Set<Int32> = [] {
-    didSet { if olderHostPIDs != oldValue { hostsChanged() } }
-  }
+  /// Our host's, from its hello: what it runs for this app's own rows the registry of live
+  /// sessions must not take for another app's (`LiveSession.read`).
+  private(set) var hostPID: Int32? { didSet { if hostPID != oldValue { hostedChanged() } } }
 
   /// Tests only: the helper this instance started, if it started one.
   private(set) var started: pid_t?
@@ -50,13 +46,15 @@ import Synchronization
   private var connecting: Task<Outcome, Never>?
   private var reconnecting: Task<HostClient?, Never>?
   private var quietUntil: ContinuousClock.Instant?
-  /// Told when an app lets a process go (`released`): the windows showing one read-only,
-  /// asked in the order they began watching until one takes it, so that one attaches.
+  /// The windows showing processes another app holds read-only. Told when an app lets one
+  /// go (`released`), asked in the order they began watching until one takes it, so that one
+  /// attaches; and told of each new connection, which no `released` sent meanwhile reached.
   private var releaseWatchers: [ReleaseWatcher] = []
 
   private struct ReleaseWatcher {
     weak var owner: AnyObject?
     var takes: (String) -> Bool
+    var connected: () -> Void
   }
 
   private enum Outcome {
@@ -148,8 +146,14 @@ import Synchronization
 
   /// What the host holds, or nothing when there is no host or it does not answer.
   func held() async -> [HeldProcess] {
-    guard let client = await client() else { return [] }
-    return await Self.within(Self.helloLimit) { try await client.list() } ?? []
+    await listed() ?? []
+  }
+
+  /// What the host holds; nil when there is no host or it does not answer, which says
+  /// nothing of what it holds.
+  func listed() async -> [HeldProcess]? {
+    guard let client = await client() else { return nil }
+    return await Self.within(Self.helloLimit) { try await client.list() }
   }
 
   /// What the host holds, without starting one: with no socket there is no host, and nothing
@@ -166,8 +170,6 @@ import Synchronization
     guard let directory else { return [] }
     let version = Self.appVersion
     var held: [HeldProcess] = []
-    var pids: Set<Int32> = []
-    defer { olderHostPIDs = pids }
     for socket in Self.olderSockets(in: directory) {
       guard let client = try? HostClient.connect(socket: socket) else { continue }
       defer { client.close() }
@@ -175,7 +177,6 @@ import Synchronization
         try await client.hello(appVersion: version)
       }
       guard let welcome, welcome.protocol < HostWire.major else { continue }
-      pids.insert(welcome.pid)
       held += await Self.within(Self.helloLimit) { try await client.list() } ?? []
     }
     return held
@@ -194,17 +195,20 @@ import Synchronization
     }
   }
 
-  /// `takes` is asked for each process an app lets go, until a watcher takes it; it lasts
-  /// as long as `owner`, once for each.
-  func watchReleases(for owner: AnyObject, _ takes: @escaping (String) -> Bool) {
+  /// `takes` is asked for each process an app lets go, until a watcher takes it, and
+  /// `connected` runs on each new connection; for as long as `owner`, once for each.
+  func watchReleases(
+    for owner: AnyObject, takes: @escaping (String) -> Bool,
+    connected: @escaping () -> Void
+  ) {
     releaseWatchers.removeAll { $0.owner == nil || $0.owner === owner }
-    releaseWatchers.append(ReleaseWatcher(owner: owner, takes: takes))
+    releaseWatchers.append(ReleaseWatcher(owner: owner, takes: takes, connected: connected))
   }
 
-  /// The windows' registry is read again without what the hosts run; only for the app's
+  /// The registry is read again without what our host runs for this app; only for the app's
   /// own host, not a test's.
-  private func hostsChanged() {
-    if self === Self.shared { SessionMonitor.shared.hostsChanged() }
+  private func hostedChanged() {
+    if self === Self.shared { SessionMonitor.shared.hostedChanged() }
   }
 
   private func released(_ id: String) {
@@ -269,6 +273,8 @@ import Synchronization
   private func adopt(_ client: HostClient) {
     connection = client
     isAvailable = true
+    releaseWatchers.removeAll { $0.owner == nil }
+    for watcher in releaseWatchers { watcher.connected() }
     Task { [weak self] in
       for await id in client.released { self?.released(id) }
     }

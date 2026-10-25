@@ -41,6 +41,7 @@ struct TwoAppsTests {
     previous=""
     for argument in "$@"; do
       [ "$previous" = "--resume" ] && sid="$argument"
+      case "$argument" in --resume=*) sid="${argument#--resume=}";; esac
       previous="$argument"
     done
     log() { printf '%s\\n' "$1" >> "$0.stdin"; }
@@ -336,6 +337,141 @@ struct TwoAppsTests {
     #expect(relay.asked.allSatisfy { $0 == .hello || $0 == .list }, "\(relay.asked)")
   }
 
+  /// The other app ends the session as it would any: the host forgets the process and says
+  /// so, and the row here becomes the session to resume, which sends, its draft kept.
+  @Test func aSessionTheOtherAppEndsCanBeResumedHere() async throws {
+    defer { cleanUp() }
+    let a = app(in: host.directory)
+    let first = window(on: a)
+    defer { first.stopAll() }
+    let live = await resume(try transcript("t-5"), "go-stream", in: first)
+    #expect(await eventually { says(live, "one") })
+
+    let b = app(in: host.directory)
+    let second = window(on: b)
+    defer { second.stopAll() }
+    await second.takeBackHeld().value
+    let row = try #require(second.sessions.first)
+    expectLeftAlone(row.session)
+    row.draft = "half typed"
+
+    live.stop()
+    #expect(await eventually { second.sessions.first?.session.heldElsewhere == nil })
+    #expect(await eventually { await a.held().isEmpty })
+    #expect(second.sessions.count == 1)
+    let back = try #require(second.sessions.first)
+    let session = back.session
+    #expect(back.draft == "half typed")
+    #expect(!session.isReadOnly && !session.isOutOfReach)
+    #expect(!session.isProcessRunning)
+    #expect(session.resuming?.sessionID == "t-5")
+    #expect(prompts(session) == ["before"])
+    #expect(session.canSend)
+    session.send("go-after")
+    #expect(await eventually { sent("go-after") == 1 })
+  }
+
+  /// The same for Codex, whose row then shows its thread as resuming it would.
+  @Test func aCodexSessionTheOtherAppEndsCanBeResumedHere() async throws {
+    defer { cleanUp() }
+    let thread = ResumeTarget(
+      sessionID: "thr-1", cwd: folder.path(percentEncoded: false), file: "",
+      accountDirectory: bin.path(percentEncoded: false), accountIsDefault: true, agent: .codex)
+    let (owner, id) = try await held(meta(history: .codexTurns(0), savedTarget: thread))
+    defer { owner.close() }
+    let b = app(in: host.directory)
+    let second = window(on: b)
+    // Its history is read from a CLI that fails at once.
+    second.executableOverride = URL(filePath: "/usr/bin/false")
+    defer { second.stopAll() }
+    await second.takeBackHeld().value
+    let row = try #require(second.sessions.first)
+    expectLeftAlone(row.session)
+
+    let events = owner.attach(id, from: 0)
+    try owner.send(.terminate(id: id))
+    for await event in events {
+      if case .exited = event { break }
+    }
+    try owner.send(.acknowledge(id: id))
+    #expect(await eventually { second.sessions.first?.session.heldElsewhere == nil })
+    let session = try #require(second.sessions.first?.session)
+    #expect(session.agent == .codex)
+    #expect(session.resuming?.sessionID == "thr-1")
+    #expect(!session.isReadOnly)
+    #expect(await eventually { session.canSend })
+  }
+
+  /// A `released` sent while this app had no connection is not lost: the next connection
+  /// settles the row, here by taking the process back.
+  @Test func aReleaseMissedWhileAwayIsNotLost() async throws {
+    defer { cleanUp() }
+    let a = app(in: host.directory)
+    let first = window(on: a)
+    defer { first.stopAll() }
+    let live = await resume(try transcript("t-6"), "go-stream", in: first)
+    #expect(await eventually { says(live, "one") })
+
+    let relay = try Relay(to: host.directory)
+    defer { relay.close() }
+    let b = app(in: relay.directory)
+    let second = window(on: b)
+    defer { second.stopAll() }
+    await second.takeBackHeld().value
+    let row = try #require(second.sessions.first)
+    expectLeftAlone(row.session)
+
+    relay.dropConnections()
+    #expect(await eventually { !b.isAvailable })
+    (live.process as? HostedProcess)?.detach()
+    #expect(await eventually { await a.held().first?.attachedApp == nil })
+    try await Task.sleep(for: .milliseconds(200))
+    expectLeftAlone(row.session)
+
+    _ = await b.client()
+    #expect(await eventually { second.sessions.first?.session.isHosted == true })
+    let session = try #require(second.sessions.first?.session)
+    #expect(says(session, "one"))
+    #expect(second.sessions.count == 1)
+  }
+
+  /// Only the sessions this app's own rows run in the host are its own: another Drakar's,
+  /// started there after this window opened, is live elsewhere here, and the row this window
+  /// kept for it goes read-only, while the window's own hosted session runs on.
+  @Test func onlyThisAppsOwnHostedSessionsAreItsOwn() async throws {
+    defer { cleanUp() }
+    let b = app(in: host.directory)
+    let target = try transcript("t-7")
+    let second = Project(folder: folder, restoring: StoredProject(sessions: [target]))
+    second.executableOverride = fake
+    second.sessionHost = b
+    let windowID = UUID()
+    OpenSessions.shared.register(second, window: windowID)
+    defer {
+      OpenSessions.shared.unregister(window: windowID)
+      second.stopAll()
+    }
+    await second.takeBackHeld().value
+    let kept = try #require(second.session(withID: "t-7"))
+    let own = await resume(try transcript("t-8"), "go-stream", in: second)
+    #expect(await eventually { says(own, "one") })
+    #expect(own.isHosted)
+
+    let a = app(in: host.directory)
+    let first = window(on: a)
+    defer { first.stopAll() }
+    let theirs = await resume(target, "go-stream", in: first)
+    #expect(await eventually { says(theirs, "one") })
+
+    #expect(OpenSessions.shared.hostedHere.contains("t-8"))
+    #expect(!OpenSessions.shared.hostedHere.contains("t-7"))
+    // What the registry read then gives: theirs, not ours.
+    let registry: Set<String> = ["t-7", "t-8"]
+    OpenSessions.shared.liveChanged(registry.subtracting(OpenSessions.shared.hostedHere))
+    #expect(kept.session.isReadOnly)
+    #expect(!own.isReadOnly && own.isHosted && own.isProcessRunning)
+  }
+
   /// A host of an older protocol is only said hello to and listed: what it holds is shown
   /// read-only, though no app is attached to it, and never attached.
   @Test func anOlderHostIsReadOnly() async throws {
@@ -362,8 +498,8 @@ struct TwoAppsTests {
     #expect(!row.session.isProcessRunning)
     #expect(older.asked.allSatisfy { $0 == .hello || $0 == .list }, "\(older.asked)")
     #expect(older.asked.contains(.list))
-    // What it runs is Drakar's, not another app's live session.
-    #expect(b.hostPIDs == [getpid()])
+    // An older host's pid is never one whose processes are this app's own.
+    #expect(b.hostPID == nil)
   }
 }
 
@@ -438,6 +574,11 @@ private final class Relay: Sendable {
 
   var asked: [Asked] { notes.all }
 
+  /// Ends every connection carried so far, as a host lost would; new ones are taken.
+  func dropConnections() {
+    server.dropConnections()
+  }
+
   func close() {
     server.close()
     try? FileManager.default.removeItem(at: directory)
@@ -505,11 +646,15 @@ private final class Descriptors: Sendable {
     }
   }
 
-  func stop() {
+  func shutDownAll() {
     state.withLock { state in
-      state.stopped = true
       for fd in state.open { shutdown(fd, SHUT_RDWR) }
     }
+  }
+
+  func stop() {
+    state.withLock { $0.stopped = true }
+    shutDownAll()
   }
 }
 
@@ -555,6 +700,10 @@ private final class LineServer: Sendable {
       }
       Darwin.close(listener)
     }
+  }
+
+  func dropConnections() {
+    open.shutDownAll()
   }
 
   func close() {

@@ -58,17 +58,20 @@ struct SessionRegistryTests {
     #expect(live.isEmpty)
   }
 
-  /// What a session host runs is Drakar's too, whichever app started the host: a window
-  /// reads those from the host. Another app's own are still listed.
-  @Test func skipsWhatTheSessionHostsRun() throws {
-    try write(41, #"{"pid":41,"sessionId":"hosted","cwd":"/work/drakar"}"#)
-    try write(42, #"{"pid":42,"sessionId":"older","cwd":"/work/drakar"}"#)
-    try write(43, #"{"pid":43,"sessionId":"theirs","cwd":"/work/drakar"}"#)
-    let parents: [Int32: Int32] = [41: 70, 70: 1, 42: 80, 80: 1, 43: 90, 90: 1]
+  /// Under the session host, what this app's own rows run is its own, whichever app
+  /// started the host; another Drakar's there, and the same session open in a terminal, are
+  /// still listed.
+  @Test func skipsOnlyWhatThisAppRunsInTheSessionHost() throws {
+    try write(41, #"{"pid":41,"sessionId":"mine","cwd":"/work/drakar"}"#)
+    try write(42, #"{"pid":42,"sessionId":"anotherDrakars","cwd":"/work/drakar"}"#)
+    try write(43, #"{"pid":43,"sessionId":"mine","cwd":"/work/drakar"}"#)
+    try write(44, #"{"pid":44,"sessionId":"theirs","cwd":"/work/drakar"}"#)
+    let parents: [Int32: Int32] = [41: 70, 42: 70, 70: 1, 43: 90, 44: 90, 90: 1]
     let live = LiveSession.read(
       account: account, isAlive: { _ in true }, parentOf: { parents[$0] }, ownPID: 99,
-      hosts: [70, 80], temporaryDirectories: [])
-    #expect(live.map(\.sessionID) == ["theirs"])
+      hosts: [70], hostedHere: ["mine"], temporaryDirectories: [])
+    #expect(live.map(\.sessionID) == ["anotherDrakars", "mine", "theirs"])
+    #expect(live.map(\.pid) == [42, 43, 44])
   }
 
   /// A move signals the process the registry still lists for that session, between turns.

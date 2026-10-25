@@ -226,7 +226,8 @@ import Testing
       return
     }
     try? await Task.sleep(for: .milliseconds(50))
-    #expect(host.inbox.of(first).isEmpty)
+    // Nothing of the attach; only that another app let it go.
+    #expect(host.inbox.of(first) == [.released(id: id)])
   }
 
   @Test func aRecordWhileNobodyIsAttachedSaysSo() async throws {
@@ -308,6 +309,20 @@ import Testing
     #expect(host.held(id)?.attachedApp == nil)
     #expect(host.core.handle(.attach(id: id, from: 0), from: second).isEmpty)
     #expect(host.held(id)?.attachedApp == 2)
+  }
+
+  /// A process forgotten is released too: the other apps showing it learn it is gone.
+  @Test func acknowledgingTellsTheOtherApps() async throws {
+    let host = try Host()
+    defer { host.close() }
+    let first = host.connect(pid: 1)
+    let second = host.connect(pid: 2)
+    let id = try host.spawn("/bin/sh", ["-c", "exit 0"], from: first)
+    #expect(host.core.handle(.attach(id: id, from: 0), from: first).isEmpty)
+    #expect(await eventually { host.hasExited(id) })
+    #expect(host.core.handle(.acknowledge(id: id), from: first).isEmpty)
+    #expect(await eventually { host.inbox.of(second) == [.released(id: id)] })
+    #expect(!host.inbox.of(first).contains(.released(id: id)))
   }
 
   @Test func detachingLetsAnotherAppHaveIt() async throws {
