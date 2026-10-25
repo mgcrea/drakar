@@ -19,7 +19,7 @@ struct SessionMeta: Codable, Equatable {
   var history: HistoryMark
 
   /// The meta says it only through what it resumes and the history it marks: a Codex
-  /// session's is always counted in turns.
+  /// session's is always counted in turns, a new thread's as 0.
   var agent: AgentKind {
     if case .codexTurns = history { return .codex }
     return start.resuming?.agentKind ?? .claude
@@ -32,6 +32,7 @@ enum HistoryMark: Codable, Equatable {
   case none
   /// Claude Code's transcript file, up to `length` bytes.
   case claudeFile(path: String, length: UInt64)
-  /// The number of turns Codex's thread held.
+  /// The number of turns Codex's thread held (`AgentSession.codexTurnsBeforeProcess`):
+  /// always a Codex session's mark, for it also says the agent.
   case codexTurns(Int)
 }

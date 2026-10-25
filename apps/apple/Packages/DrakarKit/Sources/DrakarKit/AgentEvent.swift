@@ -151,6 +151,41 @@ public enum AgentEvent: Sendable, Equatable {
   }
 }
 
+/// A history counted in turns, as a Codex thread is: a turn opens with `turnStarted`, or in a
+/// stored thread with its prompt, and ends once, with `turnEnded` live or `turnOutcome`
+/// stored. Claude Code's live turns end with both, so they are not counted this way.
+extension Array where Element == AgentEvent {
+  /// The events up to and including the `count`th turn's end; for 0, those before the first
+  /// turn opens.
+  public func throughTurns(_ count: Int) -> [AgentEvent] {
+    guard count > 0 else { return Array(prefix { !$0.opensTurn }) }
+    var ended = 0
+    for (index, event) in enumerated() where event.endsTurn {
+      ended += 1
+      if ended == count { return Array(self[...index]) }
+    }
+    return self
+  }
+
+  public var turnsEnded: Int { count { $0.endsTurn } }
+}
+
+extension AgentEvent {
+  fileprivate var opensTurn: Bool {
+    switch self {
+    case .turnStarted, .prompt: true
+    default: false
+    }
+  }
+
+  fileprivate var endsTurn: Bool {
+    switch self {
+    case .turnEnded, .turnOutcome: true
+    default: false
+    }
+  }
+}
+
 /// How a turn ended, as far as its agent said.
 public struct TurnSummary: Sendable, Equatable {
   public var outcome: Transcript.TurnEnd

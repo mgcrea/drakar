@@ -126,6 +126,11 @@ final class AgentSession {
     { AgentProcess($0) }
   /// Rebuilding from a log: what happened was told when it happened, so no callback runs.
   @ObservationIgnored private var isReplaying = false
+  /// The turns Codex's thread holds, as `throughTurns` counts them.
+  @ObservationIgnored private var codexTurns = 0
+  /// Those its process found there: where a replay cuts the thread's history
+  /// (`HistoryMark.codexTurns`), the rest being in the process's log.
+  @ObservationIgnored private(set) var codexTurnsBeforeProcess = 0
   @ObservationIgnored private var events: Task<Void, Never>?
   @ObservationIgnored private var historyLoad: Task<Void, Never>?
   /// True from the start for a session with a transcript, until its history is read.
@@ -172,6 +177,7 @@ final class AgentSession {
     modelPick = meta.modelPick
     effortPick = meta.effortPick
     name = meta.name
+    executableOverride = meta.start.executableOverride
     let started = records.first?.time ?? .now
     historyLoad = Task { await self.readHistory(meta.history, at: started) }
     await historyLoad?.value
@@ -347,13 +353,23 @@ final class AgentSession {
   }
 
   /// The history from before a replayed process, as `mark` says it stood. Codex's thread
-  /// is not read here: its replay alone shows.
+  /// holds the process's turns too, so it is cut where the process found it; with none
+  /// there, it has nothing the log does not.
   private func readHistory(_ mark: HistoryMark, at time: Date) async {
-    guard case .claudeFile(let path, let length) = mark else {
+    switch mark {
+    case .claudeFile(let path, let length):
+      await readHistory(URL(filePath: path), upTo: length, at: time)
+    case .codexTurns(let count):
+      codexTurnsBeforeProcess = count
+      if count > 0, let resuming, resuming.agentKind == .codex {
+        await readCodexHistory(resuming, throughTurns: count)
+      } else {
+        isLoadingHistory = false
+      }
+      codexTurns = count
+    case .none:
       isLoadingHistory = false
-      return
     }
-    await readHistory(URL(filePath: path), upTo: length, at: time)
   }
 
   /// `file` up to `length` bytes; `time` is when the next message goes, which says whether
@@ -389,9 +405,10 @@ final class AgentSession {
     promptsDuringLoad = []
   }
 
-  /// A Codex session's history, from a short-lived `codex app-server`. Unreadable, the session
-  /// opens empty with a note and still resumes its thread on the next prompt.
-  private func readCodexHistory(_ target: ResumeTarget) async {
+  /// A Codex session's history, from a short-lived `codex app-server`, through its `count`th
+  /// turn when one is given. Unreadable, the session opens empty with a note and still
+  /// resumes its thread on the next prompt.
+  private func readCodexHistory(_ target: ResumeTarget, throughTurns count: Int? = nil) async {
     let environment = await Self.environment.value
     var loaded: [AgentEvent] = []
     var problem: String?
@@ -408,6 +425,8 @@ final class AgentSession {
       problem = CodexLaunch.notFound
     }
     isLoadingHistory = false
+    if let count { loaded = loaded.throughTurns(count) }
+    codexTurns = loaded.turnsEnded
     var transcript = Transcript()
     for event in loaded { transcript.apply(event) }
     if let problem {
@@ -527,6 +546,7 @@ final class AgentSession {
       unansweredChanges.removeAll()
       launchedWithBypass = start.allowsBypass
       unsentName = nil
+      codexTurnsBeforeProcess = codexTurns
       note(.started(first: pendingPrompt, effect: pendingEffect), to: process)
       try backend.started(process, then: pendingPrompt)
       pendingPrompt = nil
@@ -742,6 +762,7 @@ final class AgentSession {
       transcript.apply(event, at: time)
       if case .turnEnded = event { turnEnded = true }
     }
+    if agent == .codex { codexTurns += output.events.turnsEnded }
     if unsentName != nil { sendUnsentName() }
     if !isReplaying, transcript.pendingPermissions.count > waiting,
       let pending = transcript.pendingPermissions.last

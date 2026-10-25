@@ -276,6 +276,134 @@ struct SessionReplayTests {
     let replayed = await AgentSession(replaying: log.records, meta: meta)
     #expect((replayed.process as? ReplayTransport)?.owed == [try Self.decline()])
   }
+
+  // MARK: Codex
+
+  /// A stand-in `codex app-server`. It answers `initialize`, `thread/start` and `turn/start`,
+  /// streams turn `turn-1` up to part of its answer, and ends it, interrupted, on
+  /// `turn/interrupt`. `thread/items/list` reads thread `thr-1` back as two turns: one before
+  /// the process, and the one it ran.
+  private func codexStandIn() throws -> URL {
+    let script = folder.appending(path: "codex")
+    func reply(_ result: String) -> String { #"echo '{"id":'"$id"',"result":\#(result)}'"# }
+    func notify(_ method: String, _ params: String) -> String {
+      #"echo '{"method":"\#(method)","params":\#(params)}'"#
+    }
+    let turn = #""threadId":"thr-1","turnId":"turn-1""#
+    let message = #"{"type":"agentMessage","id":"msg-1","text":"Looking"}"#
+    let items =
+      #"{"data":[{"turnId":"turn-0","item":{"type":"userMessage","id":"u0","content":[{"type":"text","text":"earlier"}]}},{"turnId":"turn-1","item":{"type":"userMessage","id":"u1","content":[{"type":"text","text":"hi"}]}}],"nextCursor":null}"#
+    try Data(
+      """
+      #!/bin/sh
+      while read -r line; do
+        id=$(printf '%s' "$line" | /usr/bin/sed -n 's/.*"id":\\([0-9.]*\\).*/\\1/p')
+        case "$line" in
+          *'"initialize"'*) \(reply("{}")) ;;
+          *'"thread/start"'*) \(reply(#"{"thread":{"id":"thr-1","cwd":"/tmp","cliVersion":"0.160.1"},"model":"m"}"#)) ;;
+          *'"turn/start"'*)
+            \(reply(#"{"turn":{"id":"turn-1","items":[],"status":"inProgress","error":null}}"#))
+            \(notify("turn/started", #"{"threadId":"thr-1","turn":{"id":"turn-1","items":[],"status":"inProgress","error":null}}"#))
+            \(notify("item/started", #"{"item":{"type":"userMessage","id":"u1","clientId":null,"content":[{"type":"text","text":"hi"}]},\#(turn)}"#))
+            \(notify("item/started", #"{"item":{"type":"agentMessage","id":"msg-1","text":""},\#(turn)}"#))
+            \(notify("item/agentMessage/delta", #"{\#(turn),"itemId":"msg-1","delta":"Looking"}"#)) ;;
+          *'"turn/interrupt"'*)
+            \(reply("{}"))
+            \(notify("item/completed", #"{"item":\#(message),\#(turn)}"#))
+            \(notify("turn/completed", #"{"threadId":"thr-1","turn":{"id":"turn-1","items":[],"status":"interrupted","error":null}}"#)) ;;
+          *'"thread/read"'*) \(reply(#"{"thread":{"id":"thr-1"}}"#)) ;;
+          *'"thread/items/list"'*) \(reply(items)) ;;
+        esac
+      done
+
+      """.utf8
+    ).write(to: script)
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script.path)
+    return script
+  }
+
+  /// `mode` as the live process was launched with it: Codex writes it with each turn.
+  private func codexMeta(
+    _ codex: URL, mode: PermissionMode = .ask, resuming: ResumeTarget? = nil, turns: Int = 0
+  ) -> SessionMeta {
+    SessionMeta(
+      start: AgentStart(
+        folder: folder, resuming: resuming, environment: [:], executableOverride: codex,
+        mode: mode, allowsBypass: false),
+      windowFolder: folder.path(percentEncoded: false), modePick: mode, savedTarget: resuming,
+      history: .codexTurns(turns))
+  }
+
+  private var codexThread: ResumeTarget {
+    ResumeTarget(
+      sessionID: "thr-1", cwd: folder.path(percentEncoded: false), file: "",
+      accountDirectory: "/h", accountIsDefault: true, agent: .codex)
+  }
+
+  /// A new thread, its turn interrupted: replayed whole, the same conversation; cut mid-turn,
+  /// a session whose own interrupt is the one the live session wrote, ids and all.
+  @Test func codexReplayRebuildsTheThread() async throws {
+    let codex = try codexStandIn()
+    let live = AgentSession(folder: folder, agent: .codex)
+    defer { live.stop() }
+    live.executableOverride = codex
+    live.accounts = { [] }
+    live.makeTransport = { RecordingTransport($0) }
+    live.setMode(.ask)
+    live.send("hi")
+    try await waitFor { live.transcript.entries.contains { $0.kind == .text("Looking") } }
+    let recorder = try #require(live.process as? RecordingTransport)
+    let midTurn = recorder.records
+    live.interrupt()
+    try await waitFor { live.transcript.turnEnd != nil }
+    #expect(live.transcript.turnEnd == .interrupted)
+    #expect(live.codexTurnsBeforeProcess == 0)
+
+    let meta = codexMeta(codex)
+    let replayed = await AgentSession(replaying: recorder.records, meta: meta)
+    #expect(replayed.agent == .codex)
+    #expect(replayed.transcript.entries == live.transcript.entries)
+    #expect(replayed.sessionID == "thr-1")
+    #expect((replayed.process as? ReplayTransport)?.owed.isEmpty == true)
+
+    let cut = await AgentSession(replaying: midTurn, meta: meta)
+    #expect(cut.transcript.isRunning)
+    let transport = try #require(cut.process as? ReplayTransport)
+    #expect(transport.owed.isEmpty)
+    transport.mode = .owed
+    cut.interrupt()
+    let written = try #require(
+      recorder.records.last {
+        $0.kind == .in && String(decoding: $0.bytes, as: UTF8.self).contains("turn/interrupt")
+      })
+    #expect(transport.owed == [written.bytes])
+    let interrupt = try JSONValue.parse(try #require(transport.owed.first))
+    #expect(interrupt["method"]?.stringValue == "turn/interrupt")
+    #expect(interrupt["params"]?["turnId"]?.stringValue == "turn-1")
+  }
+
+  /// A resumed thread's history holds the turns its process ran too: the replay shows only
+  /// those before it, the rest being in the log.
+  @Test func aResumedThreadShowsOnlyTheTurnsBeforeItsProcess() async throws {
+    let codex = try codexStandIn()
+    let replayed = await AgentSession(
+      replaying: [], meta: codexMeta(codex, resuming: codexThread, turns: 1))
+    #expect(replayed.transcript.entries.contains { $0.kind == .prompt("earlier") })
+    #expect(!replayed.transcript.entries.contains { $0.kind == .prompt("hi") })
+    #expect(replayed.codexTurnsBeforeProcess == 1)
+  }
+
+  /// What a resumed thread held when its process started, for the process's meta.
+  @Test func aCodexProcessCountsTheTurnsBeforeIt() async throws {
+    let codex = try codexStandIn()
+    let session = AgentSession(folder: folder, resuming: codexThread)
+    defer { session.stop() }
+    session.executableOverride = codex
+    session.accounts = { [] }
+    session.send("again")
+    try await waitFor { session.isProcessRunning }
+    #expect(session.codexTurnsBeforeProcess == 2)
+  }
 }
 
 /// A host's log written by hand.
