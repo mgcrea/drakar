@@ -225,6 +225,13 @@ public struct CodexSession: Sendable {
               ))))
       }
     case .notification(let method, let params):
+      // A completion for a turn the running one replaced: its end would end the new turn
+      // in the transcript, clearing the approvals that one waits on.
+      if method == "turn/completed", case .running(let current) = turn,
+        let id = params["turn"]?["id"]?.stringValue, id != current
+      {
+        return step
+      }
       let endsTurn = notified(method, params: params, into: &step)
       step.events += translator.translate(message, at: time)
       if endsTurn {
