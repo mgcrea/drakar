@@ -123,6 +123,21 @@ struct ProjectSessionsTests {
     #expect(listed.map(\.sessionID) == ["own"])
   }
 
+  /// A session's folder is where it started, which its transcript's folder is named after:
+  /// an agent that moved into a worktree or a subfolder takes the session with it nowhere.
+  @Test func aSessionsFolderIsWhereItStarted() throws {
+    let file = FileManager.default.temporaryDirectory.appending(path: "cwd-\(UUID()).jsonl")
+    defer { try? FileManager.default.removeItem(at: file) }
+    let lines = [
+      #"{"type":"file-history-snapshot","messageId":"m0"}"#,
+      #"{"type":"user","cwd":"/w/app","message":{"role":"user","content":"go"}}"#,
+      #"{"type":"assistant","cwd":"/w/app/.claude/worktrees/x","message":{"id":"m"}}"#,
+    ]
+    try Data(lines.joined(separator: "\n").utf8).write(to: file)
+    let account = ClaudeAccount(directory: FileManager.default.temporaryDirectory, isDefault: true)
+    #expect(SessionIndex.summary(of: file, account: account)?.cwd == "/w/app")
+  }
+
   /// Whether the newest turn waits on a tool is read with the summary, once.
   @Test func aSummaryKnowsAnUnansweredToolCall() throws {
     let file = FileManager.default.temporaryDirectory.appending(path: "tool-\(UUID()).jsonl")

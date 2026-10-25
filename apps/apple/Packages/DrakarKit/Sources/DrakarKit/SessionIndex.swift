@@ -201,7 +201,9 @@ public enum SessionIndex {
       lastValue(of: "customTitle", inLineOfType: "custom-title", in: data)
       ?? lastValue(of: "aiTitle", inLineOfType: "ai-title", in: data)
     summary.lastPrompt = lastValue(of: "lastPrompt", inLineOfType: "last-prompt", in: data)
-    summary.cwd = lastValue(of: "cwd", inLineOfType: nil, in: data)
+    // Where it started, which the transcript's folder is named after, not where the agent
+    // last worked: a worktree it moved into can be gone by the time it is resumed.
+    summary.cwd = firstValue(of: "cwd", in: data)
     let tail = TranscriptTail(suffixOf: data)
     summary.context = tail.newestReading
     summary.modelID = tail.newestModelID
@@ -231,6 +233,25 @@ public enum SessionIndex {
         return value
       }
       end = lineStart
+    }
+    return nil
+  }
+
+  /// The string at `key` in the first line that has it, searching forwards from the start:
+  /// what a transcript said before anything moved.
+  static func firstValue(of key: String, in data: Data) -> String? {
+    let needle = Data("\"\(key)\":\"".utf8)
+    var start = data.startIndex
+    while let match = data.range(of: needle, in: start..<data.endIndex) {
+      let lineStart =
+        data[..<match.lowerBound].lastIndex(of: 0x0A).map { $0 + 1 } ?? data.startIndex
+      let lineEnd = data[match.upperBound...].firstIndex(of: 0x0A) ?? data.endIndex
+      if let json = try? JSONValue.parse(data[lineStart..<lineEnd]),
+        let value = json[key]?.stringValue, !value.isEmpty
+      {
+        return value
+      }
+      start = lineEnd
     }
     return nil
   }
