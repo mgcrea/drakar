@@ -24,6 +24,17 @@ import Testing
     #expect(try log.records(from: log.length).isEmpty)
   }
 
+  @Test func readsUpToAnOffset() throws {
+    let (log, url) = try makeLog()
+    defer { try? FileManager.default.removeItem(at: url) }
+    let first = try log.append(.out, bytes: Data("one".utf8), time: time, attached: false)
+    let second = try log.append(.out, bytes: Data("two".utf8), time: time, attached: false)
+    let third = try log.append(.out, bytes: Data("three".utf8), time: time, attached: false)
+    #expect(try log.records(from: 0, to: third.offset) == [first, second])
+    #expect(try log.records(from: second.offset, to: log.length + 100) == [second, third])
+    #expect(try log.records(from: third.offset, to: second.offset).isEmpty)
+  }
+
   @Test func aTornLastLineIsIgnored() throws {
     let (log, url) = try makeLog()
     defer { try? FileManager.default.removeItem(at: url) }

@@ -157,6 +157,78 @@ import Testing
     #expect(host.inbox.records(client).contains { $0.attached })
   }
 
+  /// The backlog is read off the core's lock: another request is answered meanwhile, and
+  /// what is logged then comes before `caughtUp`, once.
+  @Test func anAttachReadsItsBacklogWithoutHoldingTheHost() async throws {
+    let host = try Host()
+    defer { host.close() }
+    let client = host.connect(pid: 42)
+    let id = try host.spawn("/bin/cat", from: client)
+    _ = host.core.handle(.write(id: id, bytes: bytes("a\n")), from: client)
+    #expect(await eventually { host.logged(id).count == 2 })
+    let core = host.core
+    let answered = Mutex(false)
+    core.readingBacklog = {
+      let listed = DispatchSemaphore(value: 0)
+      DispatchQueue.global().async {
+        _ = core.handle(.list, from: client)
+        listed.signal()
+      }
+      answered.withLock { $0 = listed.wait(timeout: .now() + 2) == .success }
+      _ = core.handle(.write(id: id, bytes: Data("b\n".utf8)), from: client)
+    }
+    #expect(core.handle(.attach(id: id, from: 0), from: client).isEmpty)
+    core.readingBacklog = nil
+    #expect(answered.withLock { $0 })
+
+    #expect(await eventually { host.inbox.records(client).count == 4 })
+    let records = host.inbox.records(client)
+    #expect(records == host.logged(id))
+    #expect(records.map(\.bytes) == [bytes("a\n"), bytes("a\n"), bytes("b\n"), bytes("b\n")])
+    let events = host.inbox.of(client)
+    #expect(events[2] == .record(id: id, records[2]))
+  }
+
+  @Test func anAttachTakenMeanwhileIsRefused() async throws {
+    let host = try Host()
+    defer { host.close() }
+    let first = host.connect(pid: 1)
+    let second = host.connect(pid: 2)
+    let id = try host.spawn("/bin/cat", from: first)
+    let core = host.core
+    core.readingBacklog = {
+      core.readingBacklog = nil
+      _ = core.handle(.attach(id: id, from: 0), from: second)
+    }
+    let refused = core.handle(.attach(id: id, from: 0), from: first)
+    guard case .refused = refused.first else {
+      Issue.record("got \(refused)")
+      return
+    }
+    #expect(host.held(id)?.attachedApp == 2)
+    try? await Task.sleep(for: .milliseconds(50))
+    #expect(host.inbox.of(first).isEmpty)
+    #expect(host.inbox.of(second) == [.caughtUp(id: id, offset: 0)])
+  }
+
+  @Test func anAttachToAProcessAcknowledgedMeanwhileIsRefused() async throws {
+    let host = try Host()
+    defer { host.close() }
+    let first = host.connect(pid: 1)
+    let second = host.connect(pid: 2)
+    let id = try host.spawn("/bin/sh", ["-c", "echo out"], from: first)
+    #expect(await eventually { host.hasExited(id) })
+    let core = host.core
+    core.readingBacklog = { _ = core.handle(.acknowledge(id: id), from: second) }
+    let refused = core.handle(.attach(id: id, from: 0), from: first)
+    guard case .refused = refused.first else {
+      Issue.record("got \(refused)")
+      return
+    }
+    try? await Task.sleep(for: .milliseconds(50))
+    #expect(host.inbox.of(first).isEmpty)
+  }
+
   @Test func aRecordWhileNobodyIsAttachedSaysSo() async throws {
     let host = try Host()
     defer { host.close() }

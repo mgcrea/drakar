@@ -22,6 +22,7 @@ public final class HostCore: @unchecked Sendable {
     var clients: [Client: Int32] = [:]
     var nextClient: Client = 1
     var held: [String: Held] = [:]
+    var readingBacklog: (@Sendable () -> Void)?
   }
 
   private struct Held {
@@ -49,6 +50,13 @@ public final class HostCore: @unchecked Sendable {
   public var deliver: @Sendable (Client, HostEvent) -> Void {
     get { state.withLock { $0.deliver } }
     set { state.withLock { $0.deliver = newValue } }
+  }
+
+  /// Tests only: runs during an attach, once its backlog is read and before the catch-up,
+  /// with the lock free, to show the read holds nothing up.
+  var readingBacklog: (@Sendable () -> Void)? {
+    get { state.withLock { $0.readingBacklog } }
+    set { state.withLock { $0.readingBacklog = newValue } }
   }
 
   public func connected(pid: Int32) -> Client {
@@ -135,19 +143,38 @@ public final class HostCore: @unchecked Sendable {
     }
   }
 
+  /// The backlog up to where the log ended is read off the lock, so a long log stalls no
+  /// other process. Under it, the records logged meanwhile are read, and the app becomes the
+  /// live receiver: a record is in the backlog, in that catch-up, or live, exactly once.
   private func attach(_ id: String, from offset: UInt64, client: Client) -> [HostEvent] {
-    withState { state, out in
-      guard state.clients[client] != nil else { return [.refused(reason: "not connected")] }
+    var found: (log: HostLog, hook: (@Sendable () -> Void)?)?
+    let refused = state.withLock { state -> [HostEvent] in
+      if let refusal = Self.refusal(attaching: id, by: client, in: state) { return [refusal] }
+      found = state.held[id].map { ($0.log, state.readingBacklog) }
+      return []
+    }
+    guard let found else { return refused }
+    let snapshot = found.log.length
+    let backlog: [HostRecord]
+    do {
+      backlog = try found.log.records(from: offset, to: snapshot)
+    } catch {
+      return [Self.unreadable(id, from: offset, error)]
+    }
+    found.hook?()
+
+    return withState { state, out in
+      // Taken by another app or acknowledged meanwhile: this app was sent nothing yet.
+      if let refusal = Self.refusal(attaching: id, by: client, in: state) { return [refusal] }
       guard var held = state.held[id] else { return [Self.unknown(id)] }
-      if let other = held.attached, other != client { return [Self.taken(id)] }
-      let backlog: [HostRecord]
+      let meanwhile: [HostRecord]
       do {
-        backlog = try held.log.records(from: offset)
+        meanwhile = try held.log.records(from: max(offset, snapshot))
       } catch {
-        return [.refused(reason: "could not read \(id)'s log from \(offset): \(error)")]
+        return [Self.unreadable(id, from: offset, error)]
       }
       held.attached = client
-      for record in backlog { out.send(client, .record(id: id, record)) }
+      for record in backlog + meanwhile { out.send(client, .record(id: id, record)) }
       out.send(client, .caughtUp(id: id, offset: held.log.length))
       if let status = held.exitStatus {
         let tail = held.child.stderrTail
@@ -159,6 +186,21 @@ public final class HostCore: @unchecked Sendable {
       state.held[id] = held
       return []
     }
+  }
+
+  private static func refusal(attaching id: String, by client: Client, in state: State)
+    -> HostEvent?
+  {
+    guard state.clients[client] != nil else { return .refused(reason: "not connected") }
+    guard let held = state.held[id] else { return unknown(id) }
+    if let other = held.attached, other != client { return taken(id) }
+    return nil
+  }
+
+  private static func unreadable(_ id: String, from offset: UInt64, _ error: any Error)
+    -> HostEvent
+  {
+    .refused(reason: "could not read \(id)'s log from \(offset): \(error)")
   }
 
   /// Written to stdin first, off the lock (a CLI that reads slowly must not stall every

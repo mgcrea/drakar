@@ -43,12 +43,14 @@ public final class HostLog: @unchecked Sendable {
     }
   }
 
-  /// Every whole record at or after `offset`, which must be where a record starts.
-  public func records(from offset: UInt64) throws -> [HostRecord] {
+  /// Every whole record from `offset` up to `limit` (the end when nil), each of which must be
+  /// where a record starts or the end. Appends past `limit` meanwhile change nothing read.
+  public func records(from offset: UInt64, to limit: UInt64? = nil) throws -> [HostRecord] {
     try lock.withLock {
-      guard offset < end else { return [] }
+      let stop = min(limit ?? end, end)
+      guard offset < stop else { return [] }
       try handle.seek(toOffset: offset)
-      let data = try handle.read(upToCount: Int(end - offset)) ?? Data()
+      let data = try handle.read(upToCount: Int(stop - offset)) ?? Data()
       let decoder = JSONDecoder()
       return try data.split(separator: 0x0A).map {
         try decoder.decode(HostRecord.self, from: Data($0))
