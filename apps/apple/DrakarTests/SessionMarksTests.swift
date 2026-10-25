@@ -146,6 +146,17 @@ struct SessionMarksTests {
     #expect(project.marked == [items[1].id])
   }
 
+  /// A ⇧-click whose last clicked row was removed since starts from the row shown.
+  @Test func shiftClickAfterTheAnchorWentStartsFromTheShownRow() throws {
+    let (project, items) = try project(4)
+    defer { project.stopAll() }
+    project.click(items[0], .plain)
+    project.remove(items[0])
+    project.select(items[1])  // the arrow keys show a row without clicking it
+    project.click(items[3], .extend)
+    #expect(project.marked == [items[1].id, items[2].id, items[3].id])
+  }
+
   /// A new click forgets what the last broadcast said.
   @Test func aClickForgetsTheLastBroadcast() throws {
     let (project, items) = try project(2)

@@ -695,7 +695,10 @@ final class Project {
     case .extend:
       let rows = listedHeld.map(\.id)
       guard let end = rows.firstIndex(of: item.id) else { return }
-      let start = (markAnchor ?? selectedID).flatMap { rows.firstIndex(of: $0) } ?? end
+      // The last clicked row, else the one shown when that one was removed since.
+      let start =
+        markAnchor.flatMap { rows.firstIndex(of: $0) }
+        ?? selectedID.flatMap { rows.firstIndex(of: $0) } ?? end
       marked.formUnion(rows[min(start, end)...max(start, end)])
     }
   }
