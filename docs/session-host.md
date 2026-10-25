@@ -4,7 +4,7 @@
 and `codex app-server` processes Drakar's sessions run, so they outlive the app: a quit, a
 crash, a Sparkle update or a `make run` leaves them working, and the next launch attaches
 again and replays what they did meanwhile. This is the protocol as built (HostWire major 1,
-minor 1). The design and its reasons are in
+minor 2). The design and its reasons are in
 `docs/superpowers/specs/2026-10-25-session-host-design.md`, which lists where the build
 departed from it.
 
@@ -29,7 +29,7 @@ the Release build and every Debug build, so they share one host):
 | --- | --- |
 | `host-v1.sock` | The Unix socket, mode 0600. The `1` is the protocol major. |
 | `host.lock` | `flock`ed (exclusive, non-blocking) by the running host, close-on-exec so no CLI it spawns keeps it. A second host that cannot take it exits 0. |
-| `<id>.log` | One process's log, mode 0600; `<id>` is the UUID `spawned` returned. Removed on `acknowledge`. |
+| `<id>.log` | One process's log, mode 0600; `<id>` is the UUID `spawned` returned. Removed when the host forgets the process (`acknowledge`, or a `terminate` with `forget` once it ends). |
 
 The socket path must fit `sockaddr_un.sun_path` (103 bytes and a NUL); a longer one is
 refused with an error, never truncated.
@@ -38,6 +38,8 @@ The app starts the helper on demand: `posix_spawn` with `POSIX_SPAWN_SETSID`, st
 `/dev/null`, `--directory <dir>`. It is not a launchd agent. The host raises its descriptor
 limit (about four descriptors per process held), ignores `SIGPIPE`, and holds `host.lock`
 for its life. Whoever starts it first runs its copy; hosts of one major are interchangeable.
+A host that takes `host.lock` removes every `*.log` in the directory before it serves: it
+holds nothing yet, so they are what a host killed by a logout, a reboot or a crash left.
 
 **Idle exit.** The host leaves when it holds no process, running or ended and
 unacknowledged, and no app has been connected, for 30 seconds in a row (checked every 5).
@@ -96,7 +98,7 @@ event it does not know, not the whole answer.
 | `write {id, bytes}` | none | Written to stdin, then logged as `in`. Returns once the CLI has taken the bytes. |
 | `note {id, bytes}` | none | Logged as `note`, written to nothing: the app's own marks for its replay. |
 | `closeInput {id}` | none | Closes stdin. |
-| `terminate {id}` | none | Ends the process. |
+| `terminate {id, forget?}` | none | Ends the process. `forget: true` (minor 2) has the host forget it once it has ended, as `acknowledge` would, for an app that may be gone by then; at once if it has ended already. Omitted, as an older app sends it, what ended is kept. |
 | `setMeta {id, meta}` | none | Replaces the blob. |
 | `acknowledge {id}` | none | The app has the process's end: the host forgets it and deletes its log. Refused while it still runs. |
 | `detach {id}` | none | Minor 1. The app lets go: the process carries on with nobody attached. A no-op when nobody is. |
@@ -121,8 +123,8 @@ fire-and-forget ones, in the process's attach stream.
 | `refused` | answers | `reason`, free text |
 
 `released` goes to every other connected app when (a) the app attached to a process
-disconnects or sends `detach`, and (b) a process is acknowledged (forgotten). An app that
-holds nothing ignores it.
+disconnects or sends `detach`, and (b) a process is forgotten: acknowledged, or ended after a
+`terminate` with `forget`. An app that holds nothing ignores it.
 
 ## The log and its records
 
@@ -146,8 +148,9 @@ One JSON line per record, in the order the host saw them. A record:
 **Order.** A line the CLI writes in answer to a write is never logged before the write's
 `in`: output read while a write is under way waits and is logged after it. Everything is
 appended under one lock together with becoming the attached app's live receiver, so an
-attach reads its backlog (off the lock; a long log stalls no other process), then the
-records logged meanwhile, then goes live: each record reaches the app once, as backlog,
+attach reads its backlog (off that lock: the log's own lock is held only to read the bytes,
+not to decode them, so a long log holds up the process's appends for the read alone), then
+the records logged meanwhile, then goes live: each record reaches the app once, as backlog,
 catch-up or live.
 
 **Crash safety.** A last line the host died halfway through writing is not a record: the log
@@ -180,7 +183,7 @@ app; it reattaches from its offset.
   (`host-v<n>.sock`, `n` below its major), says `hello`, `list`s, and shows what it finds as
   sessions held elsewhere (read-only). It never attaches to them.
 - **Minor versions only add** fields, requests and events, and both sides ignore what they
-  do not know. Minor 0 → 1 added `detach`. `HostWire.major` / `HostWire.minor` are the
+  do not know. Minor 0 → 1 added `detach`; 1 → 2 added `terminate`'s `forget`. `HostWire.major` / `HostWire.minor` are the
   constants.
 - A Sparkle update replaces the bundle while the old host runs from its open inode; the new
   app then speaks to an older-built host of the same major, hence the rules above.
@@ -199,10 +202,13 @@ start). The host reads none of it.
 
 **Quitting.** Sessions at work (mid-turn, or waiting for a permission or a question) are
 handed over: the CLI is sent nothing, but the app sends the host a `detach`, which clears
-`attachedApp` and tells the other apps `released`. An idle session's process is terminated. The
-connection is flushed at will-terminate. A window closed, End Session or a removed row still
-stops its process, and the app acknowledges it when its exit arrives; only processes stopped
-during quit stay unacknowledged for the next launch to show.
+`attachedApp` and tells the other apps `released`. An idle session's process is terminated
+with `forget`: the host forgets it once it ends, the app being gone by then. The connection is
+flushed at will-terminate. A window closed, End Session or a removed row stops its process
+the same way, and the app also acknowledges it when its exit arrives (an older host ignores
+`forget`). So what the next launch finds is only what a quit handed over at work. A window
+that closes while it takes a process back stops the session it rebuilt as it stops its rows,
+rather than leave the process attached to the app with no row.
 
 **Relaunch.** The app connects, `list`s, and for each process no app is attached to whose
 `meta` names a window, opens the window and rebuilds the session from `meta` (history from

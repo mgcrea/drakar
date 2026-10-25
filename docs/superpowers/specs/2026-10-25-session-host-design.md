@@ -116,6 +116,8 @@ CLI travel base64-encoded so a line the CLI wrote is never split or re-encoded.
 - `acknowledge {id}`: the app has the process's end; the host forgets it and its log.
 - `detach {id}` (minor 1): the app lets go; the process carries on with nobody attached, and
   the other apps get `released`.
+- `terminate {id, forget}` (minor 2, `forget` optional): with `forget`, the host forgets the
+  process once it has ended, as `acknowledge` would, for an app that may be gone by then.
 - Events: `record {id, offset, kind, time, attached, bytes}` (`kind` is `out`, `in` or
   `note`; an `in` echoes the attached app's own write, so its offset is known; `time` is when
   the host logged it and `attached` whether an app was attached then, which says nothing of
@@ -288,11 +290,18 @@ above, the build stands:
 - **Spawn limit:** a host that does not answer a `spawn` within 10 seconds is given up on,
   and a late `spawned` is ended and acknowledged at once.
 - **A process that ends while the app runs** (window closed, End Session, row removed, its
-  own exit) is acknowledged as its exit arrives; only processes stopped during quit stay
-  unacknowledged for the next launch to show. Otherwise the idle exit never comes.
+  own exit) is acknowledged as its exit arrives. One the app stops is also terminated with
+  `forget` (minor 2), and an idle session stopped at a quit is ended that way too: the host
+  forgets it once it ends, the app being gone by then. Only what a quit handed over at work
+  is left for the next launch. Otherwise the idle exit never comes.
+- **Orphaned logs:** a host that takes the lock removes every log in the directory before it
+  serves, as it holds nothing yet: a host killed by a logout, a reboot or a crash left them.
 - **Rows another app holds (§4):** the live-session filter excludes a host's descendant
   only when its session is one this app's own rows host, so another Drakar's sessions still
-  read as live elsewhere.
+  read as live elsewhere. The host is asked before the app's own descendants, since the app
+  that started the host is its parent; a session's own start asks the same.
+- **A window closed while it takes a process back** stops the session the replay rebuilt,
+  as it stopped its rows, and takes back nothing more.
 - **A window taking back its held sessions** (`takeBackHeld`) gates the rows it kept for the
   same sessions (`waitsForHost`): they send nothing until the host's processes are adopted,
   so none starts a second process.
