@@ -13,6 +13,13 @@ public struct TranscriptFollower: Sendable {
     self.file = file
   }
 
+  /// Reads `file` from `offset` on, the bytes before it taken as read: they must end on a
+  /// line.
+  public init(file: URL, from offset: UInt64) {
+    self.file = file
+    self.offset = offset
+  }
+
   /// The same reading, of the file this one was moved to whole: what was read stays read.
   public func moved(to file: URL) -> TranscriptFollower {
     var moved = self

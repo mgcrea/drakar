@@ -560,6 +560,23 @@ final class AgentSession {
     return true
   }
 
+  /// This window's process is done writing the transcript: once another process has the
+  /// session (`catchUp()`), it is read on from here, so the turns run here, already in
+  /// memory, aren't read again, and a session started here, which read no history, has a
+  /// follower at all.
+  private func followFromHere() {
+    // As `ownTarget()` finds it, without saving it: a first turn that never finished keeps
+    // no saved target.
+    let own = savedTarget ?? (resuming?.forks == true ? nil : resuming) ?? locateTarget()
+    guard let target = own, target.agentKind == .claude else { return }
+    let file = target.transcriptFile
+    guard
+      let size = try? FileManager.default.attributesOfItem(
+        atPath: file.path(percentEncoded: false))[.size] as? UInt64
+    else { return }
+    follower = TranscriptFollower(file: file, from: size)
+  }
+
   /// The transcript this session writes to, once it has one: never a fork's original.
   private func ownTarget() -> ResumeTarget? {
     if let savedTarget { return savedTarget }
@@ -596,11 +613,13 @@ final class AgentSession {
     defer { permissionsMayHaveChanged(from: waiting) }
     stopCount += 1
     pendingPrompt = nil
+    let wasRunning = process != nil
     process?.closeInput()
     process?.terminate()
     events?.cancel()
     // The cancelled event task will not report the exit, so it is recorded here.
     process = nil
+    if wasRunning { followFromHere() }
     permissionMode = nil
     appliedEffort = nil
     appliedModel = nil
@@ -663,6 +682,7 @@ final class AgentSession {
     case .exited(let status, _):
       notingPermissions { transcript.processExited() }
       process = nil
+      followFromHere()
       permissionMode = nil
       appliedEffort = nil
       appliedModel = nil
