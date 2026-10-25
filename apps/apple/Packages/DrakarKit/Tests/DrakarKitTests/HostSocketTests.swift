@@ -106,6 +106,55 @@ import Testing
     #expect(try await client.hello(appVersion: "1").hostVersion == "test")
   }
 
+  /// A host that died (logout, reboot, a crash) left its logs, and the new one holds nothing:
+  /// they are removed as it takes the lock, and a host that does not get it touches none.
+  @Test func aDeadHostsLogsAreRemoved() async throws {
+    let name = String(UUID().uuidString.prefix(6))
+    let directory = URL(fileURLWithPath: "/tmp/dh-\(name)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    let stray = directory.appendingPathComponent("x.log")
+    let other = directory.appendingPathComponent("notes.txt")
+    try Data("{}\n".utf8).write(to: stray)
+    try Data("kept".utf8).write(to: other)
+
+    let core = HostCore(directory: directory, hostVersion: "test")
+    let server = try #require(
+      try HostServer.start(directory: directory, core: core, peerCheck: { _ in true }))
+    defer { server.stop() }
+    #expect(!FileManager.default.fileExists(atPath: stray.path))
+    #expect(FileManager.default.fileExists(atPath: other.path))
+
+    let client = try HostClient.connect(socket: try HostWire.socket(in: directory))
+    defer { client.close() }
+    let id = try await within {
+      try await client.spawn(
+        AgentProcess.Configuration(
+          executable: URL(fileURLWithPath: "/bin/cat"), arguments: [], environment: [:],
+          currentDirectory: directory), meta: Data())
+    }
+    defer { _ = core.handle(.terminate(id: id), from: core.connected(pid: 0)) }
+    let log = directory.appendingPathComponent("\(id).log")
+    #expect(FileManager.default.fileExists(atPath: log.path))
+    let second = try HostServer.start(
+      directory: directory, core: HostCore(directory: directory, hostVersion: "2"),
+      peerCheck: { _ in true })
+    #expect(second == nil)
+    #expect(FileManager.default.fileExists(atPath: log.path))
+  }
+
+  /// Started again on the same core, the server keeps the logs of what that core holds.
+  @Test func aRestartKeepsTheLogsOfWhatIsHeld() async throws {
+    let host = try TestHost()
+    defer { host.close() }
+    let client = try host.connect()
+    let cat = host.cat()
+    let id = try await within { try await client.spawn(cat, meta: Data()) }
+    try host.restart()
+    let log = host.directory.appendingPathComponent("\(id).log")
+    #expect(FileManager.default.fileExists(atPath: log.path))
+  }
+
   @Test func aStaleSocketIsReplaced() async throws {
     let name = String(UUID().uuidString.prefix(6))
     let directory = URL(fileURLWithPath: "/tmp/dh-\(name)", isDirectory: true)

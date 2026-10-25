@@ -45,16 +45,18 @@ public final class HostLog: @unchecked Sendable {
 
   /// Every whole record from `offset` up to `limit` (the end when nil), each of which must be
   /// where a record starts or the end. Appends past `limit` meanwhile change nothing read.
+  /// Decoded once the lock is let go: an append, which the host makes under its own lock,
+  /// waits only for the read.
   public func records(from offset: UInt64, to limit: UInt64? = nil) throws -> [HostRecord] {
-    try lock.withLock {
+    let data = try lock.withLock { () throws -> Data in
       let stop = min(limit ?? end, end)
-      guard offset < stop else { return [] }
+      guard offset < stop else { return Data() }
       try handle.seek(toOffset: offset)
-      let data = try handle.read(upToCount: Int(stop - offset)) ?? Data()
-      let decoder = JSONDecoder()
-      return try data.split(separator: 0x0A).map {
-        try decoder.decode(HostRecord.self, from: Data($0))
-      }
+      return try handle.read(upToCount: Int(stop - offset)) ?? Data()
+    }
+    let decoder = JSONDecoder()
+    return try data.split(separator: 0x0A).map {
+      try decoder.decode(HostRecord.self, from: Data($0))
     }
   }
 

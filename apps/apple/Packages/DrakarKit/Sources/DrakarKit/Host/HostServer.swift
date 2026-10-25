@@ -60,8 +60,10 @@ public final class HostServer: @unchecked Sendable {
       if error == EWOULDBLOCK { return nil }
       throw POSIXError(POSIXErrorCode(rawValue: error) ?? .EIO)
     }
-    // Under the lock no other host runs, so a socket here is one a dead host left.
+    // Under the lock no other host runs, so a socket here is one a dead host left, and so
+    // is every log the core does not hold.
     unlink(socket.path)
+    core.removeLogsNotHeld(in: directory)
     let listener: Int32
     do {
       listener = try UnixSocket.listening(at: socket)

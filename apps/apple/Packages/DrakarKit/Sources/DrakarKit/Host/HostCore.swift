@@ -81,6 +81,16 @@ public final class HostCore: @unchecked Sendable {
     }
   }
 
+  /// Removes every log in `directory` but those of what the core holds: a host killed
+  /// (logout, reboot, a crash) leaves all of its own, which no host holds any more.
+  func removeLogsNotHeld(in directory: URL) {
+    let held = state.withLock { Set($0.held.keys.map { "\($0).log" }) }
+    let names = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
+    for name in names where name.hasSuffix(".log") && !held.contains(name) {
+      try? FileManager.default.removeItem(at: directory.appendingPathComponent(name))
+    }
+  }
+
   /// No process held, running or ended and unacknowledged, and no app connected.
   public var isIdle: Bool { state.withLock { $0.held.isEmpty && $0.clients.isEmpty } }
 
