@@ -8,28 +8,35 @@ enum InspectorTab: String {
 }
 
 /// The window's right-hand column, in two tabs: the selected session's context and details,
-/// and the project's skills and MCP servers. The tab is kept per window; one opened while
-/// its lists changed shows them, since that is what the toolbar's dot pointed at.
+/// and the project's skills and MCP servers. The tabs sit in the toolbar over the column,
+/// so they never scroll with it. The tab is kept per window; one opened while its lists
+/// changed shows them, since that is what the toolbar's dot pointed at.
 struct InspectorView: View {
   let project: Project
+  /// SwiftUI keeps a hidden inspector's toolbar items, so the tabs leave with the column here.
+  let isShown: Bool
   @SceneStorage("drakar.inspectorTab") private var tab = InspectorTab.session
 
   var body: some View {
-    VStack(spacing: 0) {
-      Picker("Inspector", selection: $tab) {
-        Text("Session").tag(InspectorTab.session)
-        Text("Skills & MCP").tag(InspectorTab.capabilities)
-      }
-      .pickerStyle(.segmented)
-      .labelsHidden()
-      .padding(.horizontal, 10)
-      .padding(.top, 8)
-      .padding(.bottom, 8)
-      .accessibilityIdentifier("inspector.tabs")
-      Divider()
+    Group {
       switch tab {
       case .session: SessionInspector(project: project)
       case .capabilities: CapabilitiesInspector(project: project)
+      }
+    }
+    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    .toolbar {
+      // Declared inside the inspector, so it lands over the inspector's column.
+      if isShown {
+        ToolbarItem {
+          Picker("Inspector", selection: $tab) {
+            Text("Session").tag(InspectorTab.session)
+            Text("Skills & MCP").tag(InspectorTab.capabilities)
+          }
+          .pickerStyle(.segmented)
+          .labelsHidden()
+          .accessibilityIdentifier("inspector.tabs")
+        }
       }
     }
     .onAppear {

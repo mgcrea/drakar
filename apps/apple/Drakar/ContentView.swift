@@ -43,7 +43,7 @@ struct ContentView: View {
           }
         }
         .inspector(isPresented: $inspectorShown) {
-          InspectorView(project: project)
+          InspectorView(project: project, isShown: inspectorShown)
             .inspectorColumnWidth(min: 220, ideal: 280, max: 420)
             .background(ColumnSash(edge: .leading))
         }
@@ -105,6 +105,13 @@ struct ContentView: View {
         }
         ToolbarItem(placement: .primaryAction) {
           ForkToolbarButton(project: project)
+        }
+        if let session = project.selected?.session,
+          let label = FolderToolbarItem.label(for: session, in: project.folder)
+        {
+          ToolbarItem(placement: .primaryAction) {
+            FolderToolbarItem(folder: session.folder, label: label)
+          }
         }
         ToolbarItem(placement: .primaryAction) {
           AccountToolbarItem(folder: project.folder)
