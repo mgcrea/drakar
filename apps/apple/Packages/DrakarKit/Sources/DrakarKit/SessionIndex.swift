@@ -296,8 +296,9 @@ public struct LiveSession: Sendable, Hashable {
 
   /// Every live session in `account`'s registry, except Drakar's own (a window reads those
   /// from memory) and spawns in the temporary folder. Under one of the session `hosts`, a
-  /// session is Drakar's own when it is one of `hostedHere`, whichever app started the host:
-  /// any other there is another Drakar's, and listed.
+  /// session is Drakar's own when it is one of `hostedHere`: any other there is another
+  /// Drakar's, and listed. The host is asked first, since the app that started it is its
+  /// parent, and so every CLI it holds descends from that app.
   public static func read(
     account: ClaudeAccount, isAlive: (Int32) -> Bool = isAlive,
     parentOf: (Int32) -> Int32? = ProcessAncestry.parent,
@@ -309,12 +310,10 @@ public struct LiveSession: Sendable, Hashable {
       (try? FileManager.default.contentsOfDirectory(
         at: folder, includingPropertiesForKeys: nil, options: .skipsHiddenFiles)) ?? []
     return files.filter { $0.pathExtension == "json" }.compactMap { file in
-      guard let live = entry(at: file, isAlive: isAlive),
-        !descends(live.pid, from: ownPID, parentOf: parentOf)
-      else { return nil }
-      if hostedHere.contains(live.sessionID),
-        hosts.contains(where: { descends(live.pid, from: $0, parentOf: parentOf) })
-      {
+      guard let live = entry(at: file, isAlive: isAlive) else { return nil }
+      if hosts.contains(where: { descends(live.pid, from: $0, parentOf: parentOf) }) {
+        if hostedHere.contains(live.sessionID) { return nil }
+      } else if descends(live.pid, from: ownPID, parentOf: parentOf) {
         return nil
       }
       if let cwd = live.cwd, temporaryDirectories.contains(ProjectPath.normalize(cwd)) {

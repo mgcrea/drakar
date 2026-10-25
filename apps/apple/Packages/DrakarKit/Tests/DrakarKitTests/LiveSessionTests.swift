@@ -74,6 +74,20 @@ struct SessionRegistryTests {
     #expect(live.map(\.pid) == [42, 43, 44])
   }
 
+  /// The app that started the host is its parent, so everything the host runs descends from
+  /// it: there, only what this app's rows run is its own. A child of the app outside the host
+  /// still is.
+  @Test func theAppThatStartedTheHostStillSeesAnotherDrakarsSessions() throws {
+    try write(41, #"{"pid":41,"sessionId":"mine","cwd":"/work/drakar"}"#)
+    try write(42, #"{"pid":42,"sessionId":"anotherDrakars","cwd":"/work/drakar"}"#)
+    try write(43, #"{"pid":43,"sessionId":"child","cwd":"/work/drakar"}"#)
+    let parents: [Int32: Int32] = [41: 70, 42: 70, 43: 99, 70: 99, 99: 1]
+    let live = LiveSession.read(
+      account: account, isAlive: { _ in true }, parentOf: { parents[$0] }, ownPID: 99,
+      hosts: [70], hostedHere: ["mine"], temporaryDirectories: [])
+    #expect(live.map(\.sessionID) == ["anotherDrakars"])
+  }
+
   /// A move signals the process the registry still lists for that session, between turns.
   @Test func endsOnlyTheProcessStillHoldingTheSession() throws {
     try write(41, #"{"pid":41,"sessionId":"s1","status":"idle"}"#)
