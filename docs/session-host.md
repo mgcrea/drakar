@@ -16,7 +16,7 @@ departed from it.
   `\n` and nothing else: it never parses a line, a note or `meta`, and does not know Claude
   Code from Codex. Every rule about sessions stays in the app.
 - **No host is a fallback, not a mode.** With no host (helper missing, spawn failing), the
-  app runs sessions as its own children and says so; the footer reads "stops with Drakar".
+  app runs sessions as its own children and says so; the footer reads "Stops when Drakar quits.".
 - **Tests never reach the real one.** Under XCTest (`XCTestConfigurationFilePath`) the app's
   `SessionHost` is off unless a test gives it a directory.
 
@@ -198,7 +198,8 @@ change, and `note`s for what a replay needs to redo its own actions (a command's
 start). The host reads none of it.
 
 **Quitting.** Sessions at work (mid-turn, or waiting for a permission or a question) are
-handed over: the app sends them nothing. An idle session's process is terminated. The
+handed over: the CLI is sent nothing, but the app sends the host a `detach`, which clears
+`attachedApp` and tells the other apps `released`. An idle session's process is terminated. The
 connection is flushed at will-terminate. A window closed, End Session or a removed row still
 stops its process, and the app acknowledges it when its exit arrives; only processes stopped
 during quit stay unacknowledged for the next launch to show.

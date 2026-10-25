@@ -298,3 +298,9 @@ above, the build stands:
   so none starts a second process.
 - **The slowest peer** is dropped once 512 MiB waits unread for it; it reattaches from its
   offset.
+- **Quitting (§3)** sends the host a `detach` for each session handed over: the CLI is sent
+  nothing, but the host clears the attachment and tells the other apps `released`, so a
+  second Drakar can take the session without waiting for the socket to close.
+- **`hello` (§2, §5)** never ends the connection: the host always answers `welcome` with its
+  own major, and the app decides. It skips a host whose protocol is not lower than its own
+  for older-host listing, and reads an older one list-only.
