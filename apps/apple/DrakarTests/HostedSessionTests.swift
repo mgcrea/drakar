@@ -10,7 +10,7 @@ import Testing
 /// by its pid, which ends the stand-ins it holds. Serialized: `SessionHost.testDirectory` and
 /// `AppLifecycle.isTerminating` are one for the whole app.
 @MainActor
-@Suite("Sessions run through the session host", .serialized)
+@Suite("Sessions run through the session host", .serialized, .timeLimit(.minutes(1)))
 struct HostedSessionTests {
   private let directory: URL
   private let folder: URL

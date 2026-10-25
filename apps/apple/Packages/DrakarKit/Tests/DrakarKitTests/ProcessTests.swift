@@ -113,7 +113,7 @@ enum Transport: String, CaseIterable, CustomTestStringConvertible, Sendable {
 
 /// A transport against stand-in agents: `cat` replays a capture or echoes what it is sent,
 /// `sh` misbehaves on purpose. Real pipes, and for a hosted one a real socket.
-@Suite("Supervising the process")
+@Suite("Supervising the process", .timeLimit(.minutes(1)))
 struct AgentProcessTests {
 
   private func configuration(_ executable: String, _ arguments: [String])

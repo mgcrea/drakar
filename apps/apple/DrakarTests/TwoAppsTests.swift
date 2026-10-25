@@ -11,7 +11,7 @@ import Testing
 /// asks, so that what it never sends can be checked. Serialized: `SessionHost.testDirectory`
 /// is one for the app.
 @MainActor
-@Suite("Two apps on one host", .serialized)
+@Suite("Two apps on one host", .serialized, .timeLimit(.minutes(2)))
 struct TwoAppsTests {
   private let host: LocalHost
   private let folder: URL

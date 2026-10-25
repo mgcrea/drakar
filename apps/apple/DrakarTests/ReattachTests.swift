@@ -51,7 +51,7 @@ final class LocalHost {
 /// `claude` streams a turn a step at a time, each step waiting for a file the test writes,
 /// and logs what it is sent. Serialized: `SessionHost.testDirectory` is one for the app.
 @MainActor
-@Suite("Coming back after a relaunch", .serialized)
+@Suite("Coming back after a relaunch", .serialized, .timeLimit(.minutes(2)))
 struct ReattachTests {
   private let host: LocalHost
   private let folder: URL

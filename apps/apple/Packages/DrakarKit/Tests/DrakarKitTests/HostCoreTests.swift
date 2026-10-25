@@ -6,7 +6,7 @@ import Testing
 
 /// `HostCore` against stand-in agents, as `AgentProcessTests` runs them: `cat` echoes what it
 /// is sent, `sh` prints on its own. Real pipes, a log directory of its own, no socket.
-@Suite struct HostCoreTests {
+@Suite(.timeLimit(.minutes(1))) struct HostCoreTests {
   /// What `deliver` handed each client, in order.
   private final class Inbox: Sendable {
     private let events = Mutex<[HostCore.Client: [HostEvent]]>([:])

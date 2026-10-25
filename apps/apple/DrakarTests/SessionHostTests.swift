@@ -10,7 +10,7 @@ import Testing
 /// `/tmp` (`sun_path` holds 104 bytes). Every helper a test starts is killed by its pid.
 /// Serialized: `SessionHost.testDirectory` is one for the whole app.
 @MainActor
-@Suite("The session host the app bundles and starts", .serialized)
+@Suite("The session host the app bundles and starts", .serialized, .timeLimit(.minutes(1)))
 struct SessionHostTests {
   private let directory: URL
 
@@ -89,7 +89,7 @@ struct SessionHostTests {
   /// Started at the 256 an app launched from the Finder has (these tests inherit more), it
   /// still takes 300 apps: each process held takes about four descriptors, and 256 would run
   /// out near sixty sessions.
-  @Test(.timeLimit(.minutes(1))) func theHelperRaisesItsDescriptorLimit() async throws {
+  @Test func theHelperRaisesItsDescriptorLimit() async throws {
     let helper = Process()
     helper.executableURL = URL(fileURLWithPath: "/bin/sh")
     helper.arguments = [
@@ -210,7 +210,7 @@ struct SessionHostTests {
     #expect(!(try answer(to: drakar, on: socket).isEmpty))
   }
 
-  @Test(.timeLimit(.minutes(1))) func theHelperLeavesWhenIdle() async throws {
+  @Test func theHelperLeavesWhenIdle() async throws {
     SessionHost.testDirectory = directory
     let host = SessionHost()
     defer { stop([host.started]) }
@@ -232,7 +232,7 @@ struct SessionHostTests {
   /// A host that takes the connection and never says hello (here: one stuck admitting it)
   /// holds the app up for the bounded wait, not for good: `client()` gives nil at once while
   /// cooling down, then reaches the host once it answers.
-  @Test(.timeLimit(.minutes(1))) func aSlowHostIsTriedAgainAfterACooldown() async throws {
+  @Test func aSlowHostIsTriedAgainAfterACooldown() async throws {
     let core = HostCore(directory: directory, hostVersion: "slow")
     let release = DispatchSemaphore(value: 0)
     let server = try #require(

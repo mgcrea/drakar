@@ -6,7 +6,7 @@ import Testing
 
 /// What `HostedProcess` adds to the behaviours `AgentProcessTests` runs over both transports:
 /// nothing spawned until `start()`, and a process found again by a new one.
-@Suite struct HostedProcessTests {
+@Suite(.timeLimit(.minutes(1))) struct HostedProcessTests {
   private struct TimedOut: Error {}
 
   private func within<T: Sendable>(_ body: @escaping @Sendable () async throws -> T)

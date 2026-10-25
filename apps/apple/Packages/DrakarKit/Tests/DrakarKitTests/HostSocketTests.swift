@@ -6,7 +6,7 @@ import Testing
 
 /// `HostServer` and `HostClient` over a real Unix socket, with the stand-in agents
 /// `HostCoreTests` runs.
-@Suite struct HostSocketTests {
+@Suite(.timeLimit(.minutes(1))) struct HostSocketTests {
   private struct TimedOut: Error {}
 
   /// `body`'s result, or a throw after 5 s: a broken host fails the test, never hangs it.
