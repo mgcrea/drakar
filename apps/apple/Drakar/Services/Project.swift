@@ -1128,38 +1128,100 @@ final class Project {
     let waiting = sessions.filter { $0.session.resuming != nil && !$0.session.isProcessRunning }
     for item in waiting { item.session.waitsForHost = true }
     return Task {
-      await adoptHeld(await sessionHost.heldIfRunning())
+      let held = await sessionHost.heldIfRunning()
+      await adoptHeld(held, olderHosts: await sessionHost.heldByOlderHosts())
       for item in waiting { item.session.waitsForHost = false }
     }
   }
 
-  /// The processes the session host holds for this window and no app has (spec §3
-  /// Relaunch), back as rows, live. The row the window kept for the same session gives way
-  /// to one, as does the blank row a window opens with when it has nothing else.
-  func adoptHeld(_ held: [HeldProcess]) async {
+  /// The processes the session host holds for this window (spec §3 Relaunch, §4): those no
+  /// app has come back as rows, live; those another app holds, and all an older host holds
+  /// (`olderHosts`), as read-only rows, until that app lets them go. The row the window kept
+  /// for the same session gives way to one, as does the blank row a window opens with when
+  /// it has nothing else.
+  func adoptHeld(_ held: [HeldProcess], olderHosts: [HeldProcess] = []) async {
     let own = ProjectPath.normalize(folder.path(percentEncoded: false))
-    let ids = held.compactMap { process -> String? in
-      guard process.attachedApp == nil, !adopting.contains(process.id),
-        !sessions.contains(where: { $0.session.hostID == process.id }),
-        let meta = try? JSONDecoder().decode(SessionMeta.self, from: process.meta),
-        ProjectPath.normalize(meta.windowFolder) == own
-      else { return nil }
-      return process.id
+    let ours = { (process: HeldProcess) -> Bool in
+      guard !self.adopting.contains(process.id),
+        !self.sessions.contains(where: { $0.session.hostID == process.id }),
+        let meta = try? JSONDecoder().decode(SessionMeta.self, from: process.meta)
+      else { return false }
+      return ProjectPath.normalize(meta.windowFolder) == own
     }
+    // Another window of this app's is not another app.
+    let isHeldHere = { (process: HeldProcess) in
+      OpenSessions.shared.projects.values.contains { project in
+        project.sessions.contains { $0.session.hostID == process.id }
+      }
+    }
+    let free = held.filter { $0.attachedApp == nil && ours($0) }
+    let elsewhere =
+      (held.filter { $0.attachedApp != nil && !isHeldHere($0) } + olderHosts).filter {
+        ours($0) && !isShownReadOnly($0.id)
+      }
+    let ids = (free + elsewhere).map(\.id)
     adopting.formUnion(ids)
-    defer { adopting.subtract(ids) }
-    for process in held where ids.contains(process.id) {
-      // Asked each time: a replay before this one may have cost the connection.
-      guard let client = await sessionHost.client(),
-        let session = await AgentSession(reattaching: process, client: client)
-      else { continue }
-      adopt(session)
+    for process in free {
+      await takeBack(process)
+      adopting.remove(process.id)
+    }
+    for process in elsewhere {
+      if let session = await AgentSession(heldElsewhere: process) { adopt(session) }
+      adopting.remove(process.id)
+    }
+    let watched = Set(held.map(\.id)).intersection(elsewhere.map(\.id))
+    guard !watched.isEmpty else { return }
+    sessionHost.watchReleases(for: self) { [weak self] id in self?.released(id) ?? false }
+    // Let go of while its row was being made: no `released` says so again.
+    for process in await sessionHost.held()
+    where watched.contains(process.id) && process.attachedApp == nil {
+      await takeBackShown(process)
     }
   }
 
-  private func adopt(_ session: AgentSession) {
+  /// Another app let go of a process one of the window's rows shows read-only (`released`):
+  /// the row takes it back. False when none shows it, or it is being taken back already, so
+  /// that of the windows told, one attaches, once.
+  private func released(_ id: String) -> Bool {
+    guard isShownReadOnly(id), !adopting.contains(id) else { return false }
+    Task {
+      guard let process = await sessionHost.held().first(where: { $0.id == id }),
+        process.attachedApp == nil
+      else { return }
+      await takeBackShown(process)
+    }
+    return true
+  }
+
+  /// The row showing `process` read-only takes it back, unless one is already.
+  private func takeBackShown(_ process: HeldProcess) async {
+    guard isShownReadOnly(process.id), !adopting.contains(process.id) else { return }
+    adopting.insert(process.id)
+    defer { adopting.remove(process.id) }
+    await takeBack(process)
+  }
+
+  private func isShownReadOnly(_ hostID: String) -> Bool {
+    sessions.contains { $0.session.heldElsewhere == hostID }
+  }
+
+  /// `process` attached and replayed, live, in place of its row. A row showing it read-only
+  /// stays as it was should the host refuse: another app took it first.
+  private func takeBack(_ process: HeldProcess) async {
+    // Asked each time: a replay before this one may have cost the connection.
+    guard let client = await sessionHost.client(),
+      let session = await AgentSession(reattaching: process, client: client)
+    else { return }
+    if session.isOutOfReach, isShownReadOnly(process.id) { return }
+    adopt(session, replacing: process.id)
+  }
+
+  /// `replacing`: the host's id for the process a read-only row shows, which the session
+  /// takes the place of.
+  private func adopt(_ session: AgentSession, replacing hostID: String? = nil) {
     let item = make(session)
     let replaced = sessions.firstIndex { row in
+      if let hostID, row.session.heldElsewhere == hostID { return true }
       guard !row.session.isProcessRunning else { return false }
       if let id = session.sessionID, row.sessionID == id { return true }
       return sessions.count == 1 && isBlank(row)

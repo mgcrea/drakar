@@ -7,7 +7,7 @@ import Testing
 /// A session host in this process, on a short directory of its own under `/tmp`
 /// (`sun_path` holds 104 bytes): its core holds the stand-ins. `stop()` drops every app's
 /// connection, as a host that lost them would, and `start()` takes new ones on the same core.
-private final class LocalHost {
+final class LocalHost {
   let directory: URL
   let core: HostCore
   private var server: HostServer?

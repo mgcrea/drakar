@@ -45,9 +45,11 @@ struct SessionView: View {
         if session.isReadOnly {
           Docked {
             ReadOnlyBanner(
-              host: host, fork: { project.fork(item) },
+              text: readOnlyText, host: host,
+              fork: session.features.forks ? { project.fork(item) } : nil,
+              // Another Drakar's process is never taken from it.
               moveHere: elsewhereSummary.flatMap { summary in
-                summary.live == nil
+                summary.live == nil || session.heldElsewhere != nil
                   ? nil
                   : (Project.canMoveHere(summary), { MoveHere.confirm(summary, into: project) })
               })
@@ -207,12 +209,20 @@ struct SessionView: View {
   /// Where the session is open, from the registry, for the banner.
   private var host: String { elsewhere.host }
 
+  /// What the banner says: a Codex session another Drakar runs has no file to follow here.
+  private var readOnlyText: String {
+    session.heldElsewhere != nil && session.agent == .codex
+      ? AgentSession.runsInAnotherWindow
+      : String(localized: "Live in \(host). Its transcript follows here.")
+  }
+
   /// The process that has the session open, from its own record, and where it runs.
   private var elsewhere: (status: ElsewhereStatus, host: String) {
-    guard let summary = elsewhereSummary else { return (.open, String(localized: "another app")) }
-    return (
-      ElsewhereStatus(summary.live), SessionMonitor.shared.host(of: summary, excluding: project)
-    )
+    let summary = elsewhereSummary
+    let status = ElsewhereStatus(summary?.live)
+    if session.heldElsewhere != nil { return (status, String(localized: "another Drakar window")) }
+    guard let summary else { return (.open, String(localized: "another app")) }
+    return (status, SessionMonitor.shared.host(of: summary, excluding: project))
   }
 
   /// The first request waiting for a permission; answering it shows the next. Never
@@ -343,18 +353,22 @@ private struct ProblemBanner: View {
 /// transcript would interleave its history. Another app's session can move here between
 /// turns (`moveHere`: whether it can now, and the move).
 private struct ReadOnlyBanner: View {
+  let text: String
   let host: String
-  let fork: () -> Void
+  let fork: (() -> Void)?
   let moveHere: (enabled: Bool, move: () -> Void)?
 
   var body: some View {
     HStack {
-      Label("Live in \(host). Its transcript follows here.", systemImage: "eye")
+      Label(text, systemImage: "eye")
         .foregroundStyle(.secondary)
+        .accessibilityIdentifier("session.readOnly")
       Spacer()
-      Button("Fork a Copy", action: fork)
-        .help("Continue a copy under a new id, leaving the original where it is.")
-        .accessibilityIdentifier("session.fork")
+      if let fork {
+        Button("Fork a Copy", action: fork)
+          .help("Continue a copy under a new id, leaving the original where it is.")
+          .accessibilityIdentifier("session.fork")
+      }
       if let moveHere {
         Button("Move Here…", action: moveHere.move)
           .disabled(!moveHere.enabled)

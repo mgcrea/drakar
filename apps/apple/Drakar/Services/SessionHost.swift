@@ -30,7 +30,6 @@ import Synchronization
   /// No host can be had (spec §5): the helper is missing or will not spawn, or the socket's
   /// path is refused. A host that started but answered late is not this: it is tried again.
   private(set) var cannotStart = false
-  var onReleased: ((String) -> Void)?
 
   /// Tests only: the helper this instance started, if it started one.
   private(set) var started: pid_t?
@@ -43,6 +42,14 @@ import Synchronization
   private var connecting: Task<Outcome, Never>?
   private var reconnecting: Task<HostClient?, Never>?
   private var quietUntil: ContinuousClock.Instant?
+  /// Told when an app lets a process go (`released`): the windows showing one read-only,
+  /// asked in the order they began watching until one takes it, so that one attaches.
+  private var releaseWatchers: [ReleaseWatcher] = []
+
+  private struct ReleaseWatcher {
+    weak var owner: AnyObject?
+    var takes: (String) -> Bool
+  }
 
   private enum Outcome {
     case connected(HostClient)
@@ -143,6 +150,50 @@ import Synchronization
     return await held()
   }
 
+  /// What hosts of an older protocol hold (spec §5): each socket of a lower major in the
+  /// directory is said hello to and listed, and nothing more is ever asked of it. All of it
+  /// is held elsewhere for this app, attached to an app or not.
+  func heldByOlderHosts() async -> [HeldProcess] {
+    guard let directory else { return [] }
+    let version = Self.appVersion
+    var held: [HeldProcess] = []
+    for socket in Self.olderSockets(in: directory) {
+      guard let client = try? HostClient.connect(socket: socket) else { continue }
+      defer { client.close() }
+      let welcome = await Self.within(Self.helloLimit) {
+        try await client.hello(appVersion: version)
+      }
+      guard let welcome, welcome.protocol < HostWire.major else { continue }
+      held += await Self.within(Self.helloLimit) { try await client.list() } ?? []
+    }
+    return held
+  }
+
+  /// `host-v<n>.sock` for each `n` below ours.
+  private static func olderSockets(in directory: URL) -> [URL] {
+    let names =
+      (try? FileManager.default.contentsOfDirectory(
+        atPath: directory.path(percentEncoded: false))) ?? []
+    return (0..<HostWire.major).compactMap { major in
+      guard let socket = try? HostWire.socket(in: directory, major: major),
+        names.contains(socket.lastPathComponent)
+      else { return nil }
+      return socket
+    }
+  }
+
+  /// `takes` is asked for each process an app lets go, until a watcher takes it; it lasts
+  /// as long as `owner`, once for each.
+  func watchReleases(for owner: AnyObject, _ takes: @escaping (String) -> Bool) {
+    releaseWatchers.removeAll { $0.owner == nil || $0.owner === owner }
+    releaseWatchers.append(ReleaseWatcher(owner: owner, takes: takes))
+  }
+
+  private func released(_ id: String) {
+    releaseWatchers.removeAll { $0.owner == nil }
+    _ = releaseWatchers.first { $0.takes(id) }
+  }
+
   private var hasSocket: Bool {
     guard let directory, let socket = try? HostWire.socket(in: directory) else { return false }
     return FileManager.default.fileExists(atPath: socket.path(percentEncoded: false))
@@ -182,9 +233,8 @@ import Synchronization
   {
     guard let client = try? HostClient.connect(socket: socket) else { return nil }
     let limit = min(helloLimit, deadline - .now)
-    let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString")
-    let appVersion = version as? String ?? "0"
-    let welcome = await within(limit) { try await client.hello(appVersion: appVersion) }
+    let version = appVersion
+    let welcome = await within(limit) { try await client.hello(appVersion: version) }
     guard welcome?.protocol == HostWire.major else {
       client.close()
       return nil
@@ -192,11 +242,15 @@ import Synchronization
     return client
   }
 
+  private static var appVersion: String {
+    Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
+  }
+
   private func adopt(_ client: HostClient) {
     connection = client
     isAvailable = true
     Task { [weak self] in
-      for await id in client.released { self?.onReleased?(id) }
+      for await id in client.released { self?.released(id) }
     }
     Task { [weak self] in
       for await _ in client.disconnected {}

@@ -154,11 +154,12 @@ final class OpenSessions {
   /// open is read-only: two writers on one transcript must never happen. One running here
   /// gives way, since someone took it up there, typically in an editor's panel after a move,
   /// which resumes the same id without a word. One whose process went away catches up and
-  /// can be resumed here.
+  /// can be resumed here. One whose process another Drakar holds stays read-only whatever
+  /// the registry says, until that app lets it go.
   func liveChanged(_ live: Set<String>) {
     for project in projects.values {
       for item in project.sessions {
-        guard let id = item.sessionID else { continue }
+        guard let id = item.sessionID, item.session.heldElsewhere == nil else { continue }
         if live.contains(id) {
           if item.session.isProcessRunning { project.gaveWay(item) }
           item.session.isReadOnly = true

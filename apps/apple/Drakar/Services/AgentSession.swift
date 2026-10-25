@@ -146,10 +146,14 @@ final class AgentSession {
   /// The session host may hold this session's process, which the window is taking back:
   /// nothing is sent and no process starts until it has, or one would run beside it.
   var waitsForHost = false
-  /// Its process runs on in the session host, but could not be taken back: nothing is sent
-  /// and no process starts, which would run the session twice, until the next launch takes
-  /// it back.
+  /// Its process runs on in the session host out of this app's reach: another Drakar holds
+  /// it (`heldElsewhere`), or it could not be taken back. Nothing is sent and no process
+  /// starts, which would run the session twice, until it is taken back.
   private(set) var isOutOfReach = false
+  /// The session host's id for the process another Drakar holds (spec §4), or a host of an
+  /// older protocol: the session is shown read-only, and its row takes the process back once
+  /// that app lets it go (`released`).
+  private(set) var heldElsewhere: String?
   /// The longest a replay held the main actor between two of its waits; for tests.
   @ObservationIgnored private(set) var longestReplayHold = Duration.zero
   /// The turns Codex's thread holds, as `throughTurns` counts them.
@@ -246,6 +250,48 @@ final class AgentSession {
       phase = .failed(Self.message(forReattachFailure: error))
     }
   }
+
+  /// A process another Drakar holds, or an older host (spec §4, §5), shown as a session live
+  /// elsewhere is: read-only, Claude Code's transcript file followed. Codex has no file to
+  /// follow, so its thread is read up to the process, and a line says where the rest runs.
+  /// Nil for a meta this app cannot read.
+  convenience init?(heldElsewhere held: HeldProcess) async {
+    guard let meta = try? JSONDecoder().decode(SessionMeta.self, from: held.meta) else {
+      return nil
+    }
+    let resumed = meta.start.resuming?.forks == true ? nil : meta.start.resuming
+    self.init(
+      folder: meta.start.folder, resuming: meta.savedTarget ?? resumed, agent: meta.agent,
+      account: meta.accountPick)
+    name = meta.name
+    modePick = meta.modePick
+    modelPick = meta.modelPick
+    effortPick = meta.effortPick
+    executableOverride = meta.start.executableOverride
+    windowFolder = URL(filePath: meta.windowFolder, directoryHint: .isDirectory)
+    heldElsewhere = held.id
+    isOutOfReach = true
+    isReadOnly = true
+    if agent == .codex {
+      historyLoad = Task { await self.readHistory(meta.history, at: .now) }
+      await historyLoad?.value
+      transcript.apply(.note(.init(text: Self.runsInAnotherWindow)))
+    } else {
+      // A first turn not yet finished has no saved target, but has its file.
+      if resuming == nil, let id = meta.sessionID,
+        let target = backend.locateTarget(
+          sessionID: id, cwd: meta.start.folder.path(percentEncoded: false), in: accounts())
+      {
+        resuming = target
+        savedTarget = target
+        isLoadingHistory = true
+      }
+      await loadHistory()
+    }
+  }
+
+  /// What a Codex row whose process another Drakar holds ends on: nothing of it is live here.
+  static let runsInAnotherWindow = String(localized: "Running in another Drakar window.")
 
   /// From the replay to the process it stood for: the replies it owes go first, once, then
   /// what the process does next is taken as it comes.
