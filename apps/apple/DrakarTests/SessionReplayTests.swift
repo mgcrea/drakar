@@ -228,7 +228,7 @@ struct SessionReplayTests {
     replayed.onPermissionRequested = { _ in calls.append("permission requested") }
     replayed.onPermissionsChanged = { calls.append("permissions changed") }
     replayed.onPromptSent = { calls.append("prompt sent") }
-    replayed.replay(log.records)
+    await replayed.replay(log.records)
     #expect(calls.isEmpty)
     #expect(replayed.transcript.entries.filter { $0.headline != nil }.count == 3)
     #expect(replayed.transcript.turnEnd == .completed)
@@ -266,6 +266,18 @@ struct SessionReplayTests {
     log.in(try Self.decline())
     let replayed = await AgentSession(replaying: log.records, meta: meta)
     #expect((replayed.process as? ReplayTransport)?.owed.isEmpty == true)
+  }
+
+  /// A session host keeps each line's `\n`, which a pipe's reader takes off: a replayed
+  /// line is the line the live session read, a line that is not JSON included.
+  @Test func aLoggedLineIsReadWithoutItsNewline() async {
+    let records = [
+      HostRecord(offset: 0, kind: .out, time: .now, attached: true, bytes: Data("text\n".utf8)),
+      HostRecord(offset: 10, kind: .out, time: .now, attached: true, bytes: Data("{}\n".utf8)),
+      HostRecord(offset: 20, kind: .in, time: .now, attached: true, bytes: Data("{}\n".utf8)),
+    ]
+    let lines = await AgentSession.lines(of: records, from: 0, count: 3).value
+    #expect(lines == [.invalid("text"), .json(.object([:])), nil])
   }
 
   /// Logged while an app was attached, which quit before it handled the line: nothing
@@ -504,7 +516,7 @@ struct SessionReplayTests {
         modelPick: live.modelPick, effortPick: live.effortPick, history: history))
     replayed.catalog = ModelCatalog()
     replayed.accountStore = AccountStore()
-    replayed.replay(records)
+    await replayed.replay(records)
 
     let transport = try #require(replayed.process as? ReplayTransport)
     #expect(transport.mode == .muted)

@@ -219,6 +219,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     UNUserNotificationCenter.current().delegate = Attention.shared
     Task { await SessionMonitor.shared.start() }
     Task { await AccountStore.shared.start() }
+    Task { await HeldWindows.shared.list(from: .shared) }
   }
 
   /// Every window's sessions are stopped, not left to the windows closing: a `claude` must
@@ -366,5 +367,56 @@ struct MentionTitle {
       return String(localized: "Mention in Terminal Session")
     }
     return String(localized: "Mention in \u{201C}\(session.displayTitle)\u{201D}")
+  }
+}
+
+/// The project windows of the processes the session host holds for no app, opened at launch
+/// whether or not windows reopen (spec §3 Relaunch): each window then takes its processes
+/// back (`Project.adoptHeld`). Opened once a first window is up, so that it is the one
+/// `ReopenedWindows` begins with, and none of those it reopens is opened twice.
+@MainActor final class HeldWindows {
+  static let shared = HeldWindows()
+  private let open: (WindowRoute) -> Void
+  /// Listed, and not opened yet.
+  private var folders: [String]?
+  private var hasWindow = false
+  private var isDone = false
+
+  init(open: @escaping (WindowRoute) -> Void = { WindowTabs.open($0, asTab: false) }) {
+    self.open = open
+  }
+
+  /// Asks the host what it holds, once at launch, without starting one.
+  func list(from host: SessionHost) async {
+    folders = Self.folders(of: await host.heldIfRunning())
+    openIfReady()
+  }
+
+  /// A window is up, and has asked for the windows to reopen.
+  func windowAppeared() {
+    hasWindow = true
+    openIfReady()
+  }
+
+  private func openIfReady() {
+    guard hasWindow, !isDone, let folders else { return }
+    isDone = true
+    let shown = OpenSessions.shared.folders
+    for folder in folders
+    where !shown.contains(folder) && !ReopenedWindows.shared.willReopen(folder) {
+      open(.project(folder: folder))
+    }
+  }
+
+  /// The windows the processes no app is attached to belong to, each once.
+  static func folders(of held: [HeldProcess]) -> [String] {
+    var seen: Set<String> = []
+    return held.compactMap { process in
+      guard process.attachedApp == nil,
+        let meta = try? JSONDecoder().decode(SessionMeta.self, from: process.meta)
+      else { return nil }
+      let folder = ProjectPath.normalize(meta.windowFolder)
+      return seen.insert(folder).inserted ? folder : nil
+    }
   }
 }

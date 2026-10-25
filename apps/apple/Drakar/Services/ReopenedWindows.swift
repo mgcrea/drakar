@@ -73,6 +73,11 @@ final class ReopenedWindows {
     return queue.first.map { .project(folder: $0.folder) }
   }
 
+  /// Whether `folder`, as `ProjectPath.normalize` writes it, is one still to reopen.
+  func willReopen(_ folder: String) -> Bool {
+    queue.contains { $0.folder == folder }
+  }
+
   /// A project window is on screen: when it is the next one saved, it gets its frame and its
   /// tab group, and the one after it is returned to open.
   func arrived(_ window: NSWindow, folder: URL) -> WindowRoute? {

@@ -320,6 +320,10 @@ final class Project {
   @ObservationIgnored var executableOverride: URL?
   /// Where the sessions this window doesn't hold are listed from; tests give it their own.
   @ObservationIgnored var monitor = SessionMonitor.shared
+  /// Where the window's sessions run and come back from; tests give their own.
+  @ObservationIgnored var sessionHost = SessionHost.shared
+  /// The session host's processes being taken back, so that two calls take each once.
+  @ObservationIgnored private var adopting: Set<String> = []
   /// The batches still sending or running, one banner each; not saved with the window.
   private(set) var fanOuts: [FanOutBatch] = []
   /// The Run in Each Subfolder sheet, while shown.
@@ -1116,6 +1120,61 @@ final class Project {
     replied(item)
   }
 
+  /// The processes the session host holds for this window and no app has (spec §3
+  /// Relaunch), back as rows, live. The row the window kept for the same session gives way
+  /// to one, as does the blank row a window opens with when it has nothing else.
+  func adoptHeld(_ held: [HeldProcess]) async {
+    let own = ProjectPath.normalize(folder.path(percentEncoded: false))
+    let ids = held.compactMap { process -> String? in
+      guard process.attachedApp == nil, !adopting.contains(process.id),
+        !sessions.contains(where: { $0.session.hostID == process.id }),
+        let meta = try? JSONDecoder().decode(SessionMeta.self, from: process.meta),
+        ProjectPath.normalize(meta.windowFolder) == own
+      else { return nil }
+      return process.id
+    }
+    adopting.formUnion(ids)
+    defer { adopting.subtract(ids) }
+    for process in held where ids.contains(process.id) {
+      // Asked each time: a replay before this one may have cost the connection.
+      guard let client = await sessionHost.client(),
+        let session = await AgentSession(reattaching: process, client: client)
+      else { continue }
+      adopt(session)
+    }
+  }
+
+  private func adopt(_ session: AgentSession) {
+    let item = make(session)
+    let replaced = sessions.firstIndex { row in
+      guard !row.session.isProcessRunning else { return false }
+      if let id = session.sessionID, row.sessionID == id { return true }
+      return sessions.count == 1 && isBlank(row)
+    }
+    if let replaced {
+      let row = sessions[replaced]
+      item.draft = row.draft
+      item.attachments = row.attachments
+      item.dismissedAsk = row.dismissedAsk
+      item.preview = row.preview
+      sessions[replaced] = item
+      marked.remove(row.id)
+      if selectedID == row.id { selectedID = item.id }
+    } else {
+      sessions.insert(item, at: 0)
+    }
+    if selectedID == nil { selectedID = item.id }
+    session.reportReplayedCommands()
+    Attention.shared.refresh()
+  }
+
+  /// A new session never started, nothing typed in it.
+  private func isBlank(_ item: ProjectSession) -> Bool {
+    item.session.phase == .idle && item.session.resuming == nil
+      && item.session.transcript.entries.isEmpty && item.draft.isEmpty
+      && item.attachments.isEmpty
+  }
+
   /// Stops the process; the row stays, and its next prompt resumes it. A stop asked for
   /// reports no exit, so its slot in a batch is freed here.
   func end(_ item: ProjectSession) {
@@ -1181,6 +1240,7 @@ final class Project {
   private func make(_ session: AgentSession) -> ProjectSession {
     if let executableOverride { session.executableOverride = executableOverride }
     session.windowFolder = folder
+    session.sessionHost = sessionHost
     let item = ProjectSession(session: session)
     session.onTurnEnded = { [weak self, weak item] in
       guard let self, let item else { return }

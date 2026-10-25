@@ -496,6 +496,10 @@ private struct SessionFooter: View {
         Text("Stops when Drakar quits.")
           .accessibilityIdentifier("stopsWithApp")
       }
+      if session.isReconnecting {
+        Text("Reconnecting to the session host…")
+          .accessibilityIdentifier("reconnecting")
+      }
       Spacer()
       if elsewhere != nil {
         if let mode = session.transcript.historyPermissionMode {

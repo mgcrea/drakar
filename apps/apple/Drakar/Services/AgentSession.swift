@@ -136,6 +136,15 @@ final class AgentSession {
   @ObservationIgnored private var sentMeta: SessionMeta?
   /// Rebuilding from a log: what happened was told when it happened, so no callback runs.
   @ObservationIgnored private var isReplaying = false
+  /// The skills and commands the replayed process listed, which no callback said: for
+  /// `reportReplayedCommands()`.
+  @ObservationIgnored private var replayedInitialize: JSONValue??
+  @ObservationIgnored private var replayedCommands: JSONValue?
+  /// The connection to the session host ended under the running process: nothing is sent
+  /// until a new one is up and the process attached again (spec §5).
+  private(set) var isReconnecting = false
+  /// The longest a replay held the main actor between two of its waits; for tests.
+  @ObservationIgnored private(set) var longestReplayHold = Duration.zero
   /// The turns Codex's thread holds, as `throughTurns` counts them.
   @ObservationIgnored private var codexTurns = 0
   /// Those its process found there: where a replay cuts the thread's history
@@ -199,7 +208,54 @@ final class AgentSession {
     launchedWithBypass = meta.start.allowsBypass
     process = ReplayTransport()
     if !historyFailed { phase = .ready }
-    replay(records)
+    await replay(records)
+  }
+
+  /// A process the session host holds, after a relaunch (spec §3): rebuilt from its meta and
+  /// its log as `init(replaying:meta:)` rebuilds one, then live on it, what the replay owes
+  /// it sent first. One that ended meanwhile shows its end as it would live, and lets the
+  /// host forget it. Nil for a meta this app cannot read.
+  convenience init?(reattaching held: HeldProcess, client: HostClient) async {
+    guard let meta = try? JSONDecoder().decode(SessionMeta.self, from: held.meta) else {
+      return nil
+    }
+    let hosted = HostedProcess(client: client, held: held)
+    let replayed: Result<[HostRecord], any Error>
+    do {
+      replayed = .success(try await hosted.replay().records)
+    } catch {
+      replayed = .failure(error)
+    }
+    await self.init(replaying: (try? replayed.get()) ?? [], meta: meta)
+    sentMeta = meta
+    switch replayed {
+    case .success:
+      goLive(on: hosted)
+    case .failure(let error):
+      // Its process carries on in the host, out of reach: not shown alive and silent.
+      process = nil
+      notingPermissions { transcript.processExited() }
+      phase = .failed(Self.message(forReattachFailure: error))
+    }
+  }
+
+  /// From the replay to the process it stood for: the replies it owes go first, once, then
+  /// what the process does next is taken as it comes.
+  private func goLive(on hosted: HostedProcess) {
+    let owed = (process as? ReplayTransport)?.owed ?? []
+    process = hosted
+    for line in owed { try? hosted.send(line: line) }
+    sendMeta()
+    follow(hosted.live(), of: hosted)
+  }
+
+  /// The skills and commands a replayed process listed, which the replay told nobody: said
+  /// once the window holds the session, as a live start says them.
+  func reportReplayedCommands() {
+    if let reply = replayedInitialize { onInitialized?(reply) }
+    if let commands = replayedCommands { onCommandsChanged?(commands) }
+    replayedInitialize = nil
+    replayedCommands = nil
   }
 
   /// What its sessions can do beyond a conversation, which the views ask.
@@ -219,6 +275,9 @@ final class AgentSession {
 
   /// Its process runs in the session host, so it can outlive the app.
   var isHosted: Bool { process is HostedProcess }
+
+  /// The session host's id for the process, while it has one there.
+  var hostID: String? { (process as? HostedProcess)?.id }
 
   /// Mid-turn, or waiting on the person: what a quit hands to the host rather than ends.
   var isAtWork: Bool { transcript.isRunning || !transcript.pendingPermissions.isEmpty }
@@ -247,13 +306,15 @@ final class AgentSession {
   }
 
   var canSend: Bool {
-    !isReadOnly && !isMoving && !historyFailed && !transcript.isRunning && phase != .starting
+    !isReadOnly && !isMoving && !historyFailed && !isReconnecting && !transcript.isRunning
+      && phase != .starting
   }
 
   /// A prompt typed while a turn runs goes now, and waits in the CLI until it can be taken:
   /// at the next tool boundary, or once the turn ends.
   var canQueue: Bool {
-    !isReadOnly && !isMoving && !historyFailed && transcript.isRunning && process != nil
+    !isReadOnly && !isMoving && !historyFailed && !isReconnecting && transcript.isRunning
+      && process != nil
   }
 
   /// The mode the pill shows: the process's while it runs, else what the next start takes.
@@ -599,9 +660,7 @@ final class AgentSession {
       phase = .ready
       // What changed while the host was being reached.
       sendMeta()
-      events = Task { [weak self] in
-        for await event in stream { self?.handle(event) }
-      }
+      follow(stream, of: process)
     } catch {
       fail(error.localizedDescription)
     }
@@ -658,6 +717,8 @@ final class AgentSession {
   }
 
   func answer(_ pending: Transcript.PendingPermission, _ decision: PermissionDecision) {
+    // Kept waiting: an answer now would reach nobody.
+    guard !isReconnecting else { return }
     write(
       .answer(requestID: pending.requestID, decision: decision),
       effect: .answered(requestID: pending.requestID))
@@ -771,6 +832,8 @@ final class AgentSession {
     if let hosted = process as? HostedProcess {
       if AppLifecycle.isTerminating, isAtWork {
         hosted.detach()
+      } else if isReconnecting {
+        end(hosted, onceReconnected: sessionHost)
       } else {
         hosted.closeInput()
         // Done with it: the host forgets it once it ends, so no later launch shows it again.
@@ -783,6 +846,7 @@ final class AgentSession {
       process?.terminate()
     }
     events?.cancel()
+    isReconnecting = false
     // The cancelled event task will not report the exit, so it is recorded here.
     process = nil
     if wasRunning { followFromHere() }
@@ -792,6 +856,18 @@ final class AgentSession {
     transcript.processExited()
     if case .failed = phase { return }
     if phase == .ready || phase == .starting { phase = .exited(status: 0) }
+  }
+
+  /// A stop asked while the host was out of reach goes once it is back: no process is left
+  /// working for nobody.
+  private func end(_ hosted: HostedProcess, onceReconnected host: SessionHost) {
+    Task {
+      guard let client = await host.reconnect() else { return }
+      _ = hosted.reattach(on: client)
+      hosted.forgetWhenEnded()
+      hosted.closeInput()
+      hosted.terminate()
+    }
   }
 
   /// `stop()`, then the process's own exit, which can take a moment: a `claude` that is
@@ -867,6 +943,36 @@ final class AgentSession {
     }
   }
 
+  /// Takes `stream`'s events. A hosted process's that end with no exit lost their
+  /// connection, the process running on in the host.
+  private func follow(_ stream: AsyncStream<AgentProcess.Event>, of transport: any ProcessTransport)
+  {
+    events = Task { [weak self] in
+      for await event in stream { self?.handle(event) }
+      guard !Task.isCancelled, let hosted = transport as? HostedProcess else { return }
+      self?.connectionLost(hosted)
+    }
+  }
+
+  /// Nothing is sent until a connection is back, then the process is attached again from
+  /// where its log was read (spec §5).
+  private func connectionLost(_ hosted: HostedProcess) {
+    guard process === hosted, hosted.isRunning else { return }
+    isReconnecting = true
+    let stops = stopCount
+    Task { [weak self, sessionHost] in
+      let client = await sessionHost.reconnect()
+      guard let self, self.stopCount == stops, self.process === hosted else { return }
+      self.isReconnecting = false
+      guard let client else {
+        self.process = nil
+        return self.fail(
+          String(localized: "Drakar lost the session host, and this session's process with it."))
+      }
+      self.follow(hosted.reattach(on: client), of: hosted)
+    }
+  }
+
   private func receive(_ line: AgentProcess.Line, at time: Date) {
     guard let process else { return }
     let output = backend.receive(line, from: process, at: time)
@@ -909,27 +1015,79 @@ final class AgentSession {
   /// Takes `records` as the live session took them, writing nothing: a note down the path
   /// its command took, a line the process wrote as it was received. A reply to such a line
   /// that no later logged write matches never reached the CLI, so it is owed.
-  func replay(_ records: [HostRecord]) {
+  ///
+  /// A long log is megabytes of JSON: its lines are parsed off the main actor, a few
+  /// batches at once ahead of the one being taken, and the main actor is let go between
+  /// slices of the taking.
+  func replay(_ records: [HostRecord]) async {
     guard let transport = process as? ReplayTransport else { return }
     isReplaying = true
     defer {
       isReplaying = false
       transport.mode = .muted
     }
-    for record in records {
-      switch record.kind {
-      case .note:
-        guard let note = try? JSONDecoder().decode(SessionNote.self, from: record.bytes) else {
-          continue
-        }
-        transport.mode = .muted
-        replay(note, at: record.time, to: transport)
-      case .out:
-        transport.mode = .owed
-        receive(AgentProcess.parse(record.bytes), at: record.time)
-      case .in:
-        transport.logged(record.bytes)
+    let batch = 1_000
+    var parsing: [Task<[AgentProcess.Line?], Never>] = []
+    var handed = 0
+    var start = 0
+    var slice = ContinuousClock.now
+    while true {
+      while parsing.count < 4, handed < records.count {
+        parsing.append(Self.lines(of: records, from: handed, count: batch))
+        handed += batch
       }
+      let held = ContinuousClock.now - slice
+      longestReplayHold = max(longestReplayHold, held)
+      guard !parsing.isEmpty else { return }
+      let lines = await parsing.removeFirst().value
+      slice = .now
+      let end = start + lines.count
+      for (record, line) in zip(records[start..<end], lines) {
+        take(record, line, to: transport)
+        let held = ContinuousClock.now - slice
+        if held > Self.replaySlice {
+          longestReplayHold = max(longestReplayHold, held)
+          await Task.yield()
+          slice = .now
+        }
+      }
+      start = end
+    }
+  }
+
+  /// How long the replay holds the main actor before letting it go.
+  private static let replaySlice = Duration.milliseconds(20)
+
+  /// The lines of `count` records from `start`, parsed off the main actor; nil for a record
+  /// that is not one the CLI wrote.
+  nonisolated static func lines(of records: [HostRecord], from start: Int, count: Int)
+    -> Task<[AgentProcess.Line?], Never>
+  {
+    Task.detached {
+      records[start..<min(start + count, records.count)].map { record in
+        guard record.kind == .out else { return nil }
+        // The host keeps each line's `\n`, which a pipe's reader takes off.
+        let bytes = record.bytes.last == 0x0A ? record.bytes.dropLast() : record.bytes
+        return AgentProcess.parse(bytes)
+      }
+    }
+  }
+
+  private func take(_ record: HostRecord, _ line: AgentProcess.Line?, to transport: ReplayTransport)
+  {
+    switch record.kind {
+    case .note:
+      guard let note = try? JSONDecoder().decode(SessionNote.self, from: record.bytes) else {
+        return
+      }
+      transport.mode = .muted
+      replay(note, at: record.time, to: transport)
+    case .out:
+      guard let line else { return }
+      transport.mode = .owed
+      receive(line, at: record.time)
+    case .in:
+      transport.logged(record.bytes)
     }
   }
 
@@ -970,9 +1128,14 @@ final class AgentSession {
     case .modeAdopted(let mode):
       adopt(mode: mode)
     case .initialized(let reply):
-      if !isReplaying { onInitialized?(reply) }
+      if isReplaying {
+        replayedInitialize = .some(reply)
+        replayedCommands = nil
+      } else {
+        onInitialized?(reply)
+      }
     case .commandsChanged(let commands):
-      if !isReplaying { onCommandsChanged?(commands) }
+      if isReplaying { replayedCommands = commands } else { onCommandsChanged?(commands) }
     case .settingsApplied(let effort, let model):
       appliedEffort = effort
       appliedModel = model
@@ -1002,9 +1165,11 @@ final class AgentSession {
   }
 
   private func write(_ command: AgentCommand, effect: NoteEffect = .none) {
-    guard let process else { return }
+    guard let process, !isReconnecting else { return }
     do {
       try sendNoted(command, effect: effect, to: process)
+    } catch HostClient.Failure.disconnected {
+      // The connection to the session host just ended: the session reconnects, not fails.
     } catch {
       phase = .failed(error.localizedDescription)
     }
@@ -1015,6 +1180,8 @@ final class AgentSession {
   @discardableResult private func sendNoted(
     _ command: AgentCommand, effect: NoteEffect = .none, to process: any ProcessTransport
   ) throws -> String? {
+    // Nothing reaches the host until it is back.
+    if isReconnecting { throw AgentProcess.Failure.notRunning }
     note(.sent(command, effect: effect), to: process)
     defer { sendMeta() }
     return try backend.send(command, to: process)
@@ -1027,11 +1194,23 @@ final class AgentSession {
       String(localized: "The session host could not start the process: \(reason)")
     case HostedProcess.Failure.noAnswer:
       String(localized: "The session host did not start the process in time.")
+    case HostedProcess.Failure.lost(let reason):
+      String(localized: "The session host no longer has this session's process: \(reason)")
     case HostClient.Failure.disconnected:
       String(localized: "The session host went away before the process started.")
     default:
       String(
         localized: "The session host could not start the process: \(error.localizedDescription)")
+    }
+  }
+
+  /// A held process that could not be replayed, said as its row shows it.
+  private static func message(forReattachFailure error: any Error) -> String {
+    switch error {
+    case HostClient.Failure.refused(let reason):
+      String(localized: "The session host would not give this session's process back: \(reason)")
+    default:
+      String(localized: "This session's process could not be read back from the session host.")
     }
   }
 

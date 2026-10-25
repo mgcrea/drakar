@@ -41,6 +41,7 @@ import Synchronization
   private let underTests: URL?
   private var connection: HostClient?
   private var connecting: Task<Outcome, Never>?
+  private var reconnecting: Task<HostClient?, Never>?
   private var quietUntil: ContinuousClock.Instant?
 
   private enum Outcome {
@@ -74,7 +75,12 @@ import Synchronization
   /// to have now: under tests without `testDirectory`, while cooling down, or for good once
   /// `cannotStart`.
   func client() async -> HostClient? {
-    if let connection { return connection }
+    if let connection {
+      if !connection.isClosed { return connection }
+      // Ended, and its `disconnected` not handled yet: this one is not to be had again.
+      self.connection = nil
+      isAvailable = false
+    }
     if let connecting { return Self.client(of: await connecting.value) }
     guard !cannotStart, let directory else { return nil }
     if let quietUntil, ContinuousClock.now < quietUntil { return nil }
@@ -99,6 +105,26 @@ import Synchronization
     return nil
   }
 
+  /// A connection once more, for the hosted processes whose connection ended (spec §5): the
+  /// host tried again with the start's backoff until one answers, every caller waiting on
+  /// the same attempt. Nil once no host can be had.
+  func reconnect() async -> HostClient? {
+    if let reconnecting { return await reconnecting.value }
+    let task = Task { () -> HostClient? in
+      var wait = Self.firstWait
+      while true {
+        if let client = await client() { return client }
+        guard !cannotStart, directory != nil else { return nil }
+        try? await Task.sleep(for: wait)
+        wait = min(wait * 2, Self.longestWait)
+      }
+    }
+    reconnecting = task
+    let client = await task.value
+    reconnecting = nil
+    return client
+  }
+
   /// Writes what was sent to the host before returning, for an app about to exit.
   func flush() {
     connection?.flush()
@@ -108,6 +134,18 @@ import Synchronization
   func held() async -> [HeldProcess] {
     guard let client = await client() else { return [] }
     return await Self.within(Self.helloLimit) { try await client.list() } ?? []
+  }
+
+  /// What the host holds, without starting one: with no socket there is no host, and nothing
+  /// held. For a launch or a window opening, which have nothing to ask a host that isn't up.
+  func heldIfRunning() async -> [HeldProcess] {
+    guard connection != nil || hasSocket else { return [] }
+    return await held()
+  }
+
+  private var hasSocket: Bool {
+    guard let directory, let socket = try? HostWire.socket(in: directory) else { return false }
+    return FileManager.default.fileExists(atPath: socket.path(percentEncoded: false))
   }
 
   private var directory: URL? {
