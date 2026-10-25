@@ -105,6 +105,23 @@ struct NextAfterReplyTests {
     project.stopAll()
   }
 
+  /// Marks hold back only the prompt sent to them: answering the shown row's choice still
+  /// moves on.
+  @Test func withRowsMarkedAnAnswerStillMovesOn() async throws {
+    let project = Project(folder: folder)
+    project.movesOnAfterReply = true
+    let b = try await row(in: project, "b", UrgencyTests.asking)
+    let a = try await row(in: project, "a", UrgencyTests.choosing)
+    project.select(a)
+    project.click(b, .toggle)
+    #expect(project.sendsToMarked)
+    let pending = try #require(a.session.transcript.pendingPermissions.first)
+    a.session.answer(pending, .deny(message: UserQuestion.declinedMessage))
+    try await settle(project, from: a)
+    #expect(project.selectedID == b.id)
+    project.stopAll()
+  }
+
   @Test func offTheShownSessionStays() async throws {
     let project = Project(folder: folder)
     _ = try await row(in: project, "b", UrgencyTests.asking)

@@ -314,6 +314,8 @@ final class Project {
   /// Whether the shown session's composer takes the focus when it appears: not when the
   /// sidebar's arrow keys chose it, so the keys keep moving in the list.
   @ObservationIgnored private(set) var focusesComposer = true
+  /// While `broadcast` sends: a prompt to the marked rows doesn't move on.
+  @ObservationIgnored private var isBroadcasting = false
   /// Stands in for the located binary in every session this window makes, in tests.
   @ObservationIgnored var executableOverride: URL?
   /// The batches still sending or running, one banner each; not saved with the window.
@@ -734,6 +736,8 @@ final class Project {
     _ text: String, context: [EditorSelection], attachments: [Attachment]
   ) -> BroadcastResult {
     var result = BroadcastResult(sent: 0, skipped: 0)
+    isBroadcasting = true
+    defer { isBroadcasting = false }
     let hasPDF = attachments.contains { $0.kind == .pdf }
     for item in markedSessions {
       guard item.session.canSend || item.session.canQueue,
@@ -1070,9 +1074,10 @@ final class Project {
   /// The shown session was answered: with Next After Replying on, the next of the window's
   /// own rows that wants the person is shown, once what sent the reply has done (a composer
   /// still clears its draft). Not while the session still wants something, nor for a prompt
-  /// sent to the marked rows, which the person is working through together.
+  /// sent to the marked rows, which the person is working through together; an answer or a
+  /// Dismiss on the shown row moves on with rows marked too.
   private func replied(_ item: ProjectSession) {
-    guard movesOnAfterReply, item.id == selectedID, !sendsToMarked else { return }
+    guard movesOnAfterReply, item.id == selectedID, !isBroadcasting else { return }
     Task { [weak self] in
       guard let self, self.selectedID == item.id, item.urgency == nil,
         let next = self.nextNeedingAttention(ownRowsOnly: true)?.item
