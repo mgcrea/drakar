@@ -20,17 +20,30 @@ import Synchronization
     Bundle.main.bundleURL.appending(path: "Contents/Helpers/DrakarHost")
   }
 
-  /// False until connected, and while reconnecting; false for good once the helper could
-  /// not start.
+  /// True only while connected. False says "not now" (not yet connected, reconnecting, or
+  /// cooling down after a host that did not answer in time) unless `cannotStart` is true too,
+  /// which says "never": then sessions run as the app's children for the app's whole life.
   private(set) var isAvailable = false
+  /// No host can be had (spec §5): the helper is missing or will not spawn, or the socket's
+  /// path is refused. A host that started but answered late is not this: it is tried again.
+  private(set) var cannotStart = false
   var onReleased: ((String) -> Void)?
 
   /// Tests only: the helper this instance started, if it started one.
   private(set) var started: pid_t?
 
+  private let helper: URL
+  private let cooldown: Duration
   private var connection: HostClient?
-  private var connecting: Task<HostClient?, Never>?
-  private var cannotStart = false
+  private var connecting: Task<Outcome, Never>?
+  private var quietUntil: ContinuousClock.Instant?
+
+  private enum Outcome {
+    case connected(HostClient)
+    /// Spawned, or a socket took the connection, but no hello came in time.
+    case noAnswer
+    case cannotStart
+  }
 
   /// The first wait after starting the helper, doubled up to `longestWait`; `client()` gives
   /// up after `patience`. A hello gets `helloLimit`, so a host that takes the connection but
@@ -40,24 +53,40 @@ import Synchronization
   private static let patience = Duration.seconds(5)
   private static let helloLimit = Duration.seconds(2)
 
-  init() {}
+  /// `cooldown`: how long after a host that did not answer `client()` gives nil at once, so
+  /// a slow start costs one wait, not one per session. `helper` is for tests.
+  init(cooldown: Duration = .seconds(30), helper: URL = SessionHost.helper) {
+    self.cooldown = cooldown
+    self.helper = helper
+  }
 
   /// The connection to the host, starting it when nothing answers. Nil when there is no host
-  /// to have: under tests without `testDirectory`, or once the helper could not start.
+  /// to have now: under tests without `testDirectory`, while cooling down, or for good once
+  /// `cannotStart`.
   func client() async -> HostClient? {
     if let connection { return connection }
-    if let connecting { return await connecting.value }
+    if let connecting { return Self.client(of: await connecting.value) }
     guard !cannotStart, let directory = Self.directory else { return nil }
+    if let quietUntil, ContinuousClock.now < quietUntil { return nil }
     let task = Task { await connect(in: directory) }
     connecting = task
-    let client = await task.value
+    let outcome = await task.value
     connecting = nil
-    if let client {
+    switch outcome {
+    case .connected(let client):
+      quietUntil = nil
       adopt(client)
-    } else {
+    case .noAnswer:
+      quietUntil = .now + cooldown
+    case .cannotStart:
       cannotStart = true
     }
-    return client
+    return Self.client(of: outcome)
+  }
+
+  private static func client(of outcome: Outcome) -> HostClient? {
+    if case .connected(let client) = outcome { return client }
+    return nil
   }
 
   /// What the host holds, or nothing when there is no host or it does not answer.
@@ -75,20 +104,20 @@ import Synchronization
       home: FileManager.default.homeDirectoryForCurrentUser)
   }
 
-  private func connect(in directory: URL) async -> HostClient? {
-    guard let socket = try? HostWire.socket(in: directory) else { return nil }
+  private func connect(in directory: URL) async -> Outcome {
+    guard let socket = try? HostWire.socket(in: directory) else { return .cannotStart }
     let deadline = ContinuousClock.now + Self.patience
     var wait = Self.firstWait
     var spawned = false
     while true {
-      if let client = await Self.answering(socket, until: deadline) { return client }
+      if let client = await Self.answering(socket, until: deadline) { return .connected(client) }
       if !spawned {
         // A socket a crashed host left is the new host's to remove, under its lock.
-        guard let pid = Self.startHelper(in: directory) else { return nil }
+        guard let pid = Self.startHelper(helper, in: directory) else { return .cannotStart }
         started = pid
         spawned = true
       }
-      guard ContinuousClock.now + wait < deadline else { return nil }
+      guard ContinuousClock.now + wait < deadline else { return .noAnswer }
       try? await Task.sleep(for: wait)
       wait = min(wait * 2, Self.longestWait)
     }
@@ -152,7 +181,7 @@ import Synchronization
   /// Starts the helper detached: its own session, stdio on `/dev/null`, none of the app's
   /// descriptors and a small environment of its own, so it does not die with the app nor
   /// hold anything of it. Nil when the helper is missing or will not start.
-  static func startHelper(in directory: URL) -> pid_t? {
+  static func startHelper(_ helper: URL = helper, in directory: URL) -> pid_t? {
     let helper = helper.path(percentEncoded: false)
     guard FileManager.default.isExecutableFile(atPath: helper) else { return nil }
 

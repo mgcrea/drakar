@@ -67,8 +67,8 @@ code 'chmod\(url\.path, 0o600\)' >/dev/null \
   || fail "session host socket mode not set"
 
 code 'LOCAL_PEERTOKEN' >/dev/null && code 'certificate leaf\[subject\.OU\]' >/dev/null \
-  && code 'getpeereid' >/dev/null \
-  && pass "session host checks the peer's uid and team signature" \
+  && code 'and identifier ' >/dev/null && code 'getpeereid' >/dev/null \
+  && pass "session host lets in only the user's own Drakar (uid, identifier, team)" \
   || fail "session host peer check missing"
 
 outgoing=$(code 'URLSession|NWConnection\((host|to):|NWBrowser|CFStreamCreatePairWithSocket|getaddrinfo' | wc -l | tr -d ' ')
