@@ -426,7 +426,7 @@ private struct WindowLevel: NSViewRepresentable {
   }
 }
 
-/// Windows opened as tabs of the key window.
+/// Windows opened as tabs of the frontmost project or picker window.
 @MainActor enum WindowTabs {
   /// The scene's action, handed over by the first window to appear: menus and rows open
   /// windows through it.
@@ -435,9 +435,12 @@ private struct WindowLevel: NSViewRepresentable {
   private static weak var tabHost: NSWindow?
   /// The window `openWindow` built for `tabHost`, handed over by `adopt`.
   private static weak var opened: NSWindow?
+  /// Every project and picker window, as each appeared (`adopt`): what a new tab may join,
+  /// unlike Settings or the Skills window.
+  private static let drakarWindows = NSHashTable<NSWindow>.weakObjects()
 
-  /// A window for `route`, as a tab of the key window when `asTab`. A project already
-  /// open comes forward instead: one window per folder.
+  /// A window for `route`, as a tab of the frontmost Drakar window when `asTab`. A project
+  /// already open comes forward instead: one window per folder.
   static func open(_ route: WindowRoute, asTab: Bool) {
     if let folder = route.folder,
       let window = OpenSessions.shared.window(
@@ -446,7 +449,7 @@ private struct WindowLevel: NSViewRepresentable {
       window.makeKeyAndOrderFront(nil)
       return
     }
-    tabHost = asTab ? NSApp.keyWindow : nil
+    tabHost = asTab ? host(among: NSApp.orderedWindows) : nil
     openWindow?(value: route)
     // Joined only now: SwiftUI sizes the new window and cascades it from the key window
     // after its content is in it, still inside `openWindow`, and a window already in the
@@ -458,8 +461,15 @@ private struct WindowLevel: NSViewRepresentable {
 
   /// A Drakar window appeared: when `open` is building it as a tab, it is the one to join.
   static func adopt(_ window: NSWindow) {
+    drakarWindows.add(window)
     guard tabHost != nil, tabHost !== window else { return }
     opened = window
+  }
+
+  /// The window a new tab joins: the frontmost of `ordered` that is a project or picker
+  /// window, even with Settings or the Skills window in front of it; nil when there is none.
+  static func host(among ordered: [NSWindow]) -> NSWindow? {
+    ordered.first { drakarWindows.contains($0) }
   }
 
   private static func join(_ window: NSWindow, to host: NSWindow) {
