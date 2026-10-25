@@ -213,8 +213,12 @@ final class ProjectSession: Identifiable {
       accountModelID: accountModel, messageModelID: transcript.contextModelID)
   }
 
+  /// When a Codex session's rollout file was last written, as of the last read: a Codex
+  /// row has no `preview`, which only Claude's transcripts give.
+  var rolloutModified: Date?
+
   /// When the transcript was last written: the session's last activity, from the file.
-  var lastActivity: Date? { preview?.modified }
+  var lastActivity: Date? { preview?.modified ?? rolloutModified }
 
   /// Why the row stopped, for its second line: the failure, or "Stopped, exit 1".
   var stopReason: String? {
@@ -1162,6 +1166,7 @@ final class Project {
       guard let self, let item else { return }
       self.fanOutFinished(item)
       if item.id != self.selectedID { item.isUnread = true }
+      self.readRolloutDate(item)
       Attention.shared.turnEnded(item, in: self)
     }
     // A start that failed reports no stop: its slot in a batch is freed all the same.
@@ -1210,12 +1215,29 @@ final class Project {
   /// The title and context from the transcript's end, off the main thread: every restored
   /// row shows them, while only the selected one reads its history.
   private func readPreview(_ item: ProjectSession) {
-    guard let target = item.session.resuming, target.agentKind == .claude else { return }
+    guard let target = item.session.resuming else { return }
+    guard target.agentKind == .claude else { return readRolloutDate(item) }
     let (file, account) = (target.transcriptFile, target.account)
     Task { [weak item] in
       let summary = await Task.detached { SessionIndex.summary(of: file, account: account) }.value
       item?.preview = summary
       Attention.shared.refresh()
+    }
+  }
+
+  /// A Codex row's last activity, off the main thread: its rollout file's date, as a Claude
+  /// row's comes with its transcript's summary. Nothing watches Codex's files, so it is read
+  /// again when a turn ends, by which point Codex has written the turn.
+  private func readRolloutDate(_ item: ProjectSession) {
+    guard let target = item.session.savedTarget ?? item.session.resuming,
+      target.agentKind == .codex, !target.file.isEmpty
+    else { return }
+    let file = target.transcriptFile
+    Task { [weak item] in
+      let date = await Task.detached {
+        try? file.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
+      }.value
+      item?.rolloutModified = date
     }
   }
 }
