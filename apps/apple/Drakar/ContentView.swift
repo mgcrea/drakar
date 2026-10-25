@@ -43,7 +43,7 @@ struct ContentView: View {
           }
         }
         .inspector(isPresented: $inspectorShown) {
-          InspectorView(project: project)
+          InspectorView(project: project, isShown: inspectorShown)
             .inspectorColumnWidth(min: 220, ideal: 280, max: 420)
             .background(ColumnSash(edge: .leading))
         }
