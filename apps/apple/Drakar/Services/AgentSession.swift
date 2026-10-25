@@ -737,8 +737,8 @@ final class AgentSession {
 
   private func handle(_ event: AgentProcess.Event) {
     switch event {
-    case .lines(let lines):
-      for line in lines { receive(line) }
+    case .lines(let lines, let time):
+      for line in lines { receive(line, at: time) }
     case .stderr(let text):
       diagnostics = String((diagnostics + text).suffix(4000))
     case .exited(let status, _):
@@ -753,7 +753,7 @@ final class AgentSession {
     }
   }
 
-  private func receive(_ line: AgentProcess.Line, at time: Date = .now) {
+  private func receive(_ line: AgentProcess.Line, at time: Date) {
     guard let process else { return }
     let output = backend.receive(line, from: process, at: time)
     for signal in output.signals { handle(signal) }

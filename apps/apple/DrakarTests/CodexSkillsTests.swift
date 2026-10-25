@@ -391,7 +391,7 @@ struct CodexSkillsTests {
       from: process, at: .now)
     var input: JSONValue?
     reading: for await event in stream {
-      guard case .lines(let lines) = event else { continue }
+      guard case .lines(let lines, _) = event else { continue }
       for case .json(let json) in lines where json["method"] == .string("turn/start") {
         input = json["params"]?["input"]
         break reading

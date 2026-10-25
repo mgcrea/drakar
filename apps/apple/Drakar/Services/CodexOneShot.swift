@@ -35,7 +35,7 @@ struct CodexOneShot {
     var results: [JSONValue] = []
     var isInitialized = false
     for await event in events {
-      guard case .lines(let lines) = event else { continue }
+      guard case .lines(let lines, _) = event else { continue }
       for line in lines {
         guard case .json(let json) = line, let rpc = CodexRPC.Line(json) else { continue }
         let result: JSONValue

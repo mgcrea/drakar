@@ -112,7 +112,7 @@ enum CapabilityProbe {
     var status: Int32?
     for await next in inputs {
       switch next {
-      case .event(.lines(let lines)):
+      case .event(.lines(let lines, _)):
         for case .controlResponse(let response) in lines.map(StreamMessage.init) {
           replies.take(response)
         }

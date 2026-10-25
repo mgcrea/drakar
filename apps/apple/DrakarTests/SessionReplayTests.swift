@@ -23,8 +23,8 @@ private nonisolated final class RecordingTransport: ProcessTransport, NoteSink {
     let (stream, continuation) = AsyncStream.makeStream(of: AgentProcess.Event.self)
     Task {
       for await event in events {
-        if case .lines(let lines) = event {
-          for line in lines { append(.out, Self.bytes(line)) }
+        if case .lines(let lines, let time) = event {
+          for line in lines { append(.out, Self.bytes(line), at: time) }
         }
         continuation.yield(event)
       }
@@ -42,11 +42,11 @@ private nonisolated final class RecordingTransport: ProcessTransport, NoteSink {
   func terminate() { process.terminate() }
   func note(_ bytes: Data) { append(.note, bytes) }
 
-  private func append(_ kind: HostRecord.Kind, _ bytes: Data) {
+  private func append(_ kind: HostRecord.Kind, _ bytes: Data, at time: Date = .now) {
     log.withLock { records in
       let offset = records.last.map { $0.offset + UInt64($0.bytes.count) } ?? 0
       records.append(
-        HostRecord(offset: offset, kind: kind, time: .now, attached: true, bytes: bytes))
+        HostRecord(offset: offset, kind: kind, time: time, attached: true, bytes: bytes))
     }
   }
 
@@ -513,15 +513,10 @@ struct SessionReplayTests {
       Comment(rawValue: transport.owed.map { String(decoding: $0, as: UTF8.self) }.joined()))
     try await Task.sleep(for: .milliseconds(500))
     #expect(recorder.records.count(where: { $0.kind == .in }) == writes)
-    // A thinking block's duration is timed off the log's clock, not the main actor's: it
-    // may differ by the lag between the two, which "Thought for 2s" rounds away.
     let entries = Self.differences(live.transcript.entries, replayed.transcript.entries)
     #expect(
-      Self.untimed(live.transcript.entries) == Self.untimed(replayed.transcript.entries),
+      live.transcript.entries == replayed.transcript.entries,
       Comment(rawValue: entries.joined(separator: "\n")))
-    for (left, right) in zip(live.transcript.entries, replayed.transcript.entries) {
-      #expect(abs((left.thinkingDuration ?? 0) - (right.thinkingDuration ?? 0)) < 0.5)
-    }
 
     Self.report(live, records: records)
     for line in entries { print("LIVE-CHECK \(live.agent) entries\(line)") }
@@ -611,14 +606,6 @@ struct SessionReplayTests {
     print(
       "LIVE-CHECK \(live.agent) usage \(live.transcript.lastTurn as Any) "
         + "\(live.transcript.contextUsage as Any)")
-  }
-
-  private static func untimed(_ entries: [Transcript.Entry]) -> [Transcript.Entry] {
-    entries.map { entry in
-      var entry = entry
-      entry.thinkingDuration = entry.thinkingDuration.map { _ in 0 }
-      return entry
-    }
   }
 
   /// Where two values differ, field by field (`[3].thinkingDuration: 1.2 ≠ 1.3`); a date to

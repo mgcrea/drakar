@@ -4,7 +4,8 @@ import Foundation
 /// (`AgentProcess`), or one a session host keeps through the app's quits.
 public protocol ProcessTransport: AnyObject, Sendable {
   var isRunning: Bool { get }
-  /// Launches the process and returns its events. Call once.
+  /// Launches the process and returns its events, `.lines` stamped with when they were read
+  /// from the process. Call once.
   func start() throws -> AsyncStream<AgentProcess.Event>
   func send(line: Data) throws
   /// Ends input; the CLI exits cleanly once its current turn is done.

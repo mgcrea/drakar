@@ -35,8 +35,9 @@ public final class AgentProcess: ProcessTransport, @unchecked Sendable {
   }
 
   public enum Event: Sendable, Equatable {
-    /// What the process wrote, a line each, parsed off the main thread.
-    case lines([Line])
+    /// What the process wrote, a line each, parsed off the main thread, and when it was read
+    /// off the pipe: the one clock a live session and a replay of its log both time lines by.
+    case lines([Line], at: Date)
     /// Diagnostics: the CLI's stderr is never protocol.
     case stderr(String)
     /// The process ended. `remainder` holds bytes it wrote after its last newline.
@@ -91,8 +92,9 @@ public final class AgentProcess: ProcessTransport, @unchecked Sendable {
         self.finish { $0.stdoutClosed = true }
         return
       }
+      let time = Date()
       let lines = self.state.withLock { $0.lines.append(chunk) }
-      if !lines.isEmpty { continuation.yield(.lines(lines.map(Self.parse))) }
+      if !lines.isEmpty { continuation.yield(.lines(lines.map(Self.parse), at: time)) }
     }
     errors.fileHandleForReading.readabilityHandler = { [weak self] handle in
       let chunk = handle.availableData

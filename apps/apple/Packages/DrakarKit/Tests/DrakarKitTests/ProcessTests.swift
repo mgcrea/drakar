@@ -111,7 +111,7 @@ struct AgentProcessTests {
 
   private func messages(_ events: [AgentProcess.Event]) -> [StreamMessage] {
     events.flatMap { event -> [StreamMessage] in
-      if case .lines(let batch) = event { return batch.map(StreamMessage.init) }
+      if case .lines(let batch, _) = event { return batch.map(StreamMessage.init) }
       return []
     }
   }
@@ -123,6 +123,18 @@ struct AgentProcessTests {
     let events = try await run("/bin/cat", [url.path])
     #expect(messages(events) == (try Fixture.turnWithTool.messages))
     #expect(events.last == .exited(status: 0, remainder: Data()))
+  }
+
+  @Test func aLineIsTimedWhenRead() async throws {
+    let before = Date()
+    let events = try await run("/bin/echo", ["{}"])
+    let received = Date()
+    let times = events.compactMap { event -> Date? in
+      if case .lines(_, let time) = event { return time }
+      return nil
+    }
+    let time = try #require(times.first)
+    #expect(time >= before && time <= received)
   }
 
   @Test func whatItSendsArrivesAsOneLine() async throws {
