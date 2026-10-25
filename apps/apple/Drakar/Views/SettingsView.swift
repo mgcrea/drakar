@@ -430,7 +430,7 @@ struct AttentionPane: View {
           .accessibilityIdentifier("settings.recognisesAsks")
       } footer: {
         Text(
-          "A reply that ends on a question, such as “Want me to build it that way?”, marks its session “Asked you”; one that ends on an offer marks it “Offered”. Either stays until you answer or dismiss it (⇧⌥⌘D)."
+          "A reply that ends on a question, such as “Want me to build it that way?”, marks its session “Asked you”; one that ends on an offer marks it “Offered”. Either stays until you answer or dismiss it (⌥⇧⌘D)."
         )
       }
       Section {
