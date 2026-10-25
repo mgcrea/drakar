@@ -1,0 +1,299 @@
+import Foundation
+import Synchronization
+
+/// The session host without its socket (spec §1–§2): the processes it holds, their logs, and
+/// which app is attached to each. A transport feeds it `connected`, `handle` and
+/// `disconnected`, and sends on what `deliver` is given.
+///
+/// Every log append happens under the one lock, so an attach reads its backlog and becomes
+/// the live receiver in one step: each record reaches the app once, backlog or live.
+public final class HostCore: @unchecked Sendable {
+  public typealias Client = Int
+
+  private let directory: URL
+  private let hostVersion: String
+  private let now: @Sendable () -> Date
+  /// Delivery happens here, in the order the events were made, and off the lock.
+  private let outbox = DispatchQueue(label: "HostCore.deliver")
+  private let state = Mutex(State())
+
+  private struct State {
+    var deliver: @Sendable (Client, HostEvent) -> Void = { _, _ in }
+    var clients: [Client: Int32] = [:]
+    var nextClient: Client = 1
+    var held: [String: Held] = [:]
+  }
+
+  private struct Held {
+    let child: HostChild
+    let log: HostLog
+    var meta: Data
+    var attached: Client?
+    var exitStatus: Int32?
+    /// Writes under way. Output read meanwhile waits in `pending`, so a line the CLI wrote
+    /// in answer to a write is never logged before the write's `in`.
+    var writes = 0
+    var pending: [HostChild.Output] = []
+  }
+
+  public init(
+    directory: URL, hostVersion: String, now: @escaping @Sendable () -> Date = Date.init
+  ) {
+    self.directory = directory
+    self.hostVersion = hostVersion
+    self.now = now
+  }
+
+  /// Events for one connected app. Called on one serial queue, in order, never while the
+  /// core's lock is held, so it may call back into the core.
+  public var deliver: @Sendable (Client, HostEvent) -> Void {
+    get { state.withLock { $0.deliver } }
+    set { state.withLock { $0.deliver = newValue } }
+  }
+
+  public func connected(pid: Int32) -> Client {
+    state.withLock { state in
+      let client = state.nextClient
+      state.nextClient += 1
+      state.clients[client] = pid
+      return client
+    }
+  }
+
+  /// Detaches the app from its processes, which carry on, and tells the other apps so.
+  public func disconnected(_ client: Client) {
+    withState { state, out in
+      guard state.clients.removeValue(forKey: client) != nil else { return }
+      for (id, held) in state.held where held.attached == client {
+        state.held[id]?.attached = nil
+        for other in state.clients.keys { out.send(other, .released(id: id)) }
+      }
+    }
+  }
+
+  /// No process held, running or ended and unacknowledged, and no app connected.
+  public var isIdle: Bool { state.withLock { $0.held.isEmpty && $0.clients.isEmpty } }
+
+  /// The direct replies to `request`. What an attach streams (backlog, `caughtUp`, then live
+  /// records, stderr and the exit) goes through `deliver` instead, so it stays in order.
+  /// A `write` returns once the CLI has taken the bytes, which waits on a CLI slow to read.
+  public func handle(_ request: HostRequest, from client: Client) -> [HostEvent] {
+    switch request {
+    case .hello:
+      // The host's major, whatever the app's: an app reading an older host only lists.
+      return [.welcome(protocol: HostWire.major, hostVersion: hostVersion, pid: getpid())]
+    case .list:
+      return [.listed(list())]
+    case .spawn(let configuration, let meta):
+      return [spawn(configuration, meta: meta)]
+    case .attach(let id, let from):
+      return attach(id, from: from, client: client)
+    case .write(let id, let bytes):
+      return write(id, bytes: bytes, from: client)
+    case .note(let id, let bytes):
+      return update(id, from: client) { held, out in
+        self.append(.note, bytes, to: id, &held, &out)
+      }
+    case .closeInput(let id):
+      return withChild(id, from: client) { $0.closeInput() }
+    case .terminate(let id):
+      return withChild(id, from: client) { $0.terminate() }
+    case .setMeta(let id, let meta):
+      return update(id, from: client) { held, _ in held.meta = meta }
+    case .acknowledge(let id):
+      return acknowledge(id, from: client)
+    }
+  }
+
+  // MARK: - Requests
+
+  private func list() -> [HeldProcess] {
+    state.withLock { state in
+      state.held.map { id, held in
+        HeldProcess(
+          id: id, meta: held.meta, running: held.exitStatus == nil,
+          exitStatus: held.exitStatus, logLength: held.log.length,
+          attachedApp: held.attached.flatMap { state.clients[$0] })
+      }
+      .sorted { $0.id < $1.id }
+    }
+  }
+
+  private func spawn(_ configuration: AgentProcess.Configuration, meta: Data) -> HostEvent {
+    let id = UUID().uuidString
+    let url = directory.appendingPathComponent("\(id).log")
+    let child = HostChild(configuration)
+    do {
+      let log = try HostLog(url: url)
+      state.withLock { $0.held[id] = Held(child: child, log: log, meta: meta) }
+      try child.start { [weak self] output in self?.received(output, from: id) }
+      return .spawned(id: id)
+    } catch {
+      let log = state.withLock { $0.held.removeValue(forKey: id)?.log }
+      try? log?.remove()
+      return .refused(reason: "could not start \(configuration.executable.path): \(error)")
+    }
+  }
+
+  private func attach(_ id: String, from offset: UInt64, client: Client) -> [HostEvent] {
+    withState { state, out in
+      guard state.clients[client] != nil else { return [.refused(reason: "not connected")] }
+      guard var held = state.held[id] else { return [Self.unknown(id)] }
+      if let other = held.attached, other != client { return [Self.taken(id)] }
+      let backlog: [HostRecord]
+      do {
+        backlog = try held.log.records(from: offset)
+      } catch {
+        return [.refused(reason: "could not read \(id)'s log from \(offset): \(error)")]
+      }
+      held.attached = client
+      for record in backlog { out.send(client, .record(id: id, record)) }
+      out.send(client, .caughtUp(id: id, offset: held.log.length))
+      if let status = held.exitStatus {
+        let tail = held.child.stderrTail
+        if !tail.isEmpty {
+          out.send(client, .stderr(id: id, text: String(decoding: tail, as: UTF8.self)))
+        }
+        out.send(client, .exited(id: id, status: status))
+      }
+      state.held[id] = held
+      return []
+    }
+  }
+
+  /// Written to stdin first, off the lock (a CLI that reads slowly must not stall every
+  /// other process), then logged as `in`: only a logged `in` says the bytes were sent.
+  private func write(_ id: String, bytes: Data, from client: Client) -> [HostEvent] {
+    var child: HostChild?
+    let refused = update(id, from: client) { held, _ in
+      held.writes += 1
+      child = held.child
+    }
+    guard let child else { return refused }
+    var failure: (any Error)?
+    do { try child.write(bytes) } catch { failure = error }
+    withState { state, out in
+      guard var held = state.held[id] else { return }
+      held.writes -= 1
+      if failure == nil { append(.in, bytes, to: id, &held, &out) }
+      if held.writes == 0 {
+        let pending = held.pending
+        held.pending = []
+        for output in pending { take(output, from: id, &held, &out) }
+      }
+      state.held[id] = held
+    }
+    return failure.map { [.refused(reason: "could not write to \(id): \($0)")] } ?? []
+  }
+
+  private func acknowledge(_ id: String, from client: Client) -> [HostEvent] {
+    var ended: Held?
+    let refused = withState { state, _ -> [HostEvent] in
+      guard let held = state.held[id] else { return [Self.unknown(id)] }
+      if let other = held.attached, other != client { return [Self.taken(id)] }
+      guard held.exitStatus != nil else { return [.refused(reason: "\(id) is still running")] }
+      ended = state.held.removeValue(forKey: id)
+      return []
+    }
+    try? ended?.log.remove()
+    return refused
+  }
+
+  /// Runs `change` on a process the app may act on: one nobody is attached to, or its own.
+  private func update(
+    _ id: String, from client: Client,
+    _ change: (inout Held, _ out: inout Outgoing) -> Void
+  ) -> [HostEvent] {
+    withState { state, out in
+      guard var held = state.held[id] else { return [Self.unknown(id)] }
+      if let other = held.attached, other != client { return [Self.taken(id)] }
+      change(&held, &out)
+      state.held[id] = held
+      return []
+    }
+  }
+
+  /// `action` on the child off the lock: closing stdin waits for a write under way.
+  private func withChild(
+    _ id: String, from client: Client, _ action: (HostChild) -> Void
+  ) -> [HostEvent] {
+    var child: HostChild?
+    let refused = update(id, from: client) { held, _ in child = held.child }
+    child.map(action)
+    return refused
+  }
+
+  // MARK: - The process's output
+
+  private func received(_ output: HostChild.Output, from id: String) {
+    withState { state, out in
+      guard var held = state.held[id] else { return }
+      if held.writes > 0 {
+        held.pending.append(output)
+      } else {
+        take(output, from: id, &held, &out)
+      }
+      state.held[id] = held
+    }
+  }
+
+  private func take(
+    _ output: HostChild.Output, from id: String, _ held: inout Held,
+    _ out: inout Outgoing
+  ) {
+    switch output {
+    case .line(let bytes):
+      append(.out, bytes, to: id, &held, &out)
+    case .stderr(let bytes):
+      // Past the exit the app has been told all; the tail still keeps it.
+      guard held.exitStatus == nil, let client = held.attached else { return }
+      out.send(client, .stderr(id: id, text: String(decoding: bytes, as: UTF8.self)))
+    case .exited(let status):
+      held.exitStatus = status
+      if let client = held.attached { out.send(client, .exited(id: id, status: status)) }
+    }
+  }
+
+  /// A record the log could not take is lost to the replay; the app attached still gets
+  /// nothing out of order, since it never had it.
+  private func append(
+    _ kind: HostRecord.Kind, _ bytes: Data, to id: String, _ held: inout Held,
+    _ out: inout Outgoing
+  ) {
+    guard
+      let record = try? held.log.append(
+        kind, bytes: bytes, time: now(), attached: held.attached != nil)
+    else { return }
+    if let client = held.attached { out.send(client, .record(id: id, record)) }
+  }
+
+  // MARK: - The lock
+
+  private struct Outgoing {
+    var events: [(Client, HostEvent)] = []
+    mutating func send(_ client: Client, _ event: HostEvent) { events.append((client, event)) }
+  }
+
+  /// `body` under the lock, with `out` queuing an event for delivery. The batch is handed
+  /// to the outbox before the lock is let go, so delivery keeps the order the log has.
+  private func withState<T>(
+    _ body: (inout State, _ out: inout Outgoing) -> T
+  ) -> T {
+    state.withLock { state in
+      var out = Outgoing()
+      let result = body(&state, &out)
+      if !out.events.isEmpty {
+        let deliver = state.deliver
+        let events = out.events
+        outbox.async { for (client, event) in events { deliver(client, event) } }
+      }
+      return result
+    }
+  }
+
+  private static func unknown(_ id: String) -> HostEvent { .refused(reason: "no process \(id)") }
+
+  private static func taken(_ id: String) -> HostEvent {
+    .refused(reason: "\(id) is attached to another app")
+  }
+}
