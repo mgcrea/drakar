@@ -11,11 +11,15 @@ final class TestHost {
   private(set) var server: HostServer?
   private let clients = Mutex<[HostClient]>([])
 
-  init(peerCheck: @escaping @Sendable (Int32) -> Bool = { _ in true }) throws {
+  init(
+    peerCheck: @escaping @Sendable (Int32) -> Bool = { _ in true },
+    accept: @escaping @Sendable (Int32) -> UnixSocket.Accepted = UnixSocket.accept
+  ) throws {
     let name = String(UUID().uuidString.prefix(6))
     directory = URL(fileURLWithPath: "/tmp/dh-\(name)", isDirectory: true)
     core = HostCore(directory: directory, hostVersion: "test")
-    server = try HostServer.start(directory: directory, core: core, peerCheck: peerCheck)
+    server = try HostServer.start(
+      directory: directory, core: core, peerCheck: peerCheck, accept: accept)
   }
 
   var socket: URL { get throws { try HostWire.socket(in: directory) } }

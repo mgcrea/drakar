@@ -248,4 +248,26 @@ import Testing
     host.close()
     #expect(throws: (any Error).self) { try HostClient.connect(socket: host.socket) }
   }
+
+  /// Out of descriptors, a peer stays queued and the listener stays readable: the host waits
+  /// before trying again rather than spinning on it, and takes the peer once it can.
+  @Test func aHostOutOfDescriptorsWaitsBeforeAcceptingAgain() async throws {
+    let tries = Mutex(0)
+    let first = Mutex<ContinuousClock.Instant?>(nil)
+    let host = try TestHost(accept: { listener in
+      let now = ContinuousClock.now
+      let since = first.withLock { first in
+        if first == nil { first = now }
+        return now - first!
+      }
+      guard since < .milliseconds(500) else { return UnixSocket.accept(listener) }
+      tries.withLock { $0 += 1 }
+      return .exhausted
+    })
+    defer { host.close() }
+    let client = try host.connect()
+    let welcome = try await within { try await client.hello(appVersion: "1") }
+    #expect(welcome.protocol == HostWire.major)
+    #expect(tries.withLock { $0 } <= 10)
+  }
 }

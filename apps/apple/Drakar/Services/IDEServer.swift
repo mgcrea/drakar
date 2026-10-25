@@ -16,7 +16,8 @@ import Network
 ///    creates is 0700, one another tool created is left as it is, and the audit checks
 ///    nobody else can write it).
 ///    A refused client never reaches the MCP layer, so it learns nothing about it.
-/// 3. **One listener.** This is the only `NWListener` in Drakar.
+/// 3. **One listener.** This is the only `NWListener` in Drakar. The only other socket is the
+///    session host's, a Unix socket (DrakarKit's `UnixSocket`), not a network one.
 ///
 /// Everything runs on the main queue: a few small JSON messages per edit, and the replies
 /// depend on UI the user answers there anyway.

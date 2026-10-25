@@ -1,17 +1,20 @@
 #!/usr/bin/env bash
 # Falsify Drakar's network claim:
 #
-#   Drakar opens one socket, a listener on 127.0.0.1 that answers only a client holding
-#   this launch's token, and makes no connection of its own. Everything that reaches the
-#   network is the `claude` you installed.
+#   Drakar opens one network socket, a listener on 127.0.0.1 that answers only a client
+#   holding this launch's token, and makes no connection of its own. Its session host
+#   listens on one Unix socket, which only your own Drakar can reach. Everything that
+#   reaches the network is the `claude` you installed.
 #
 # A marketing claim CI can check is the property worth keeping (bastion's
-# audit-listener.sh); this asserts the rules in Drakar/Services/IDEServer.swift's header.
+# audit-listener.sh); this asserts the rules in Drakar/Services/IDEServer.swift's header,
+# and the session host's in DrakarKit's Host/UnixSocket.swift and HostServer.swift.
 # Static rules prove the code cannot be talked into misbehaving by a setting; --running
 # proves the live process does not.
 #
 #   scripts/audit-network.sh            # sources
-#   scripts/audit-network.sh --running  # and the running app: lsof, lock files, the token
+#   scripts/audit-network.sh --running  # and the running app: lsof, lock files, the token,
+#                                       # the session host's socket
 #
 # Portable on purpose (BSD and GNU tools): it runs on CI as well as on this Mac. No
 # `set -e`: a check that fails must be counted and reported, not end the script early
@@ -19,7 +22,7 @@
 set -uo pipefail
 
 cd "$(dirname "$0")/.."
-SOURCES="apps/apple/Drakar apps/apple/Packages/DrakarKit/Sources"
+SOURCES="apps/apple/Drakar apps/apple/DrakarHost apps/apple/Packages/DrakarKit/Sources"
 failures=0
 checked=0
 
@@ -48,6 +51,25 @@ code '"x-claude-code-ide-authorization"' >/dev/null && code 'status: \.reject' >
 
 code 'posixPermissions: 0o600' >/dev/null && code 'posixPermissions: 0o700' >/dev/null \
   && pass "lock files created 0600, folders 0700" || fail "lock file permissions not set"
+
+n=$(count 'socket\(AF_UNIX')
+[ "$n" -eq 1 ] && pass "exactly one Unix socket, the session host's" \
+  || fail "expected one socket(AF_UNIX, found $n"
+
+inet=$(count 'socket\((AF|PF)_INET')
+[ "$inet" -eq 0 ] && pass "no raw network socket" || fail "$inet socket(AF_INET...) call(s)"
+
+code 'chmod\(directory\.path, 0o700\)' >/dev/null \
+  && pass "session host folder made 0700" || fail "session host folder mode not set"
+
+code 'chmod\(url\.path, 0o600\)' >/dev/null \
+  && pass "session host socket made 0600 before it listens" \
+  || fail "session host socket mode not set"
+
+code 'LOCAL_PEERTOKEN' >/dev/null && code 'certificate leaf\[subject\.OU\]' >/dev/null \
+  && code 'getpeereid' >/dev/null \
+  && pass "session host checks the peer's uid and team signature" \
+  || fail "session host peer check missing"
 
 outgoing=$(code 'URLSession|NWConnection\((host|to):|NWBrowser|CFStreamCreatePairWithSocket|getaddrinfo' | wc -l | tr -d ' ')
 [ "$outgoing" -eq 0 ] && pass "no outgoing networking API in Drakar's sources" \
@@ -103,6 +125,29 @@ if [ "${1:-}" = "--running" ]; then
         || fail "upgrade refused with the token ($with)"
     fi
   fi
+fi
+
+if [ "${1:-}" = "--running" ]; then
+  echo "Session host"
+  # Started on demand, so often not running; when it is, its socket must be the user's alone.
+  socket="$HOME/Library/Application Support/io.mgcrea.Drakar/host/host-v1.sock"
+  if [ ! -S "$socket" ]; then
+    printf '  skip  no session host socket at %s\n' "$socket"
+  else
+    mode=$(perl -e 'printf "%o", (stat shift)[2] & 07777' "$socket")
+    owner=$(perl -e 'print +(stat shift)[4]' "$socket")
+    dmode=$(perl -e 'printf "%o", (stat shift)[2] & 07777' "$(dirname "$socket")")
+    [ "$mode" = 600 ] && [ "$owner" = "$(id -u)" ] \
+      && pass "session host socket is 0600 and the user's" \
+      || fail "session host socket is $mode, owned by uid $owner"
+    [ "$dmode" = 700 ] && pass "session host folder is 0700" \
+      || fail "session host folder is $dmode"
+  fi
+  for host in $(pgrep -x DrakarHost); do
+    network=$(lsof -nP -a -p "$host" -i 2>/dev/null | awk 'NR > 1' | wc -l | tr -d ' ')
+    [ "$network" -eq 0 ] && pass "session host $host has no network socket" \
+      || fail "session host $host has $network network socket(s)"
+  done
 fi
 
 # A gate that passes when it inspected nothing is not a gate.

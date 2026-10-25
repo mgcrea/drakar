@@ -43,12 +43,31 @@ enum UnixSocket {
     return fd
   }
 
-  /// A peer waiting on `listener`, or nil once none is.
-  static func accept(_ listener: Int32) -> Int32? {
+  enum Accepted: Equatable {
+    case peer(Int32)
+    /// Nobody else is waiting.
+    case drained
+    /// A peer waits, but no descriptor is left to take it with (EMFILE, ENFILE).
+    case exhausted
+  }
+
+  /// A peer waiting on `listener`, close-on-exec at once: `peerCheck` takes time, and a CLI
+  /// spawned meanwhile must not inherit the connection.
+  static func accept(_ listener: Int32) -> Accepted {
     while true {
       let fd = Darwin.accept(listener, nil, nil)
-      if fd >= 0 { return fd }
-      if errno != EINTR { return nil }
+      if fd >= 0 {
+        guard fcntl(fd, F_SETFD, FD_CLOEXEC) == 0 else {
+          Darwin.close(fd)
+          continue
+        }
+        return .peer(fd)
+      }
+      switch errno {
+      case EINTR: continue
+      case EMFILE, ENFILE: return .exhausted
+      default: return .drained
+      }
     }
   }
 
@@ -63,13 +82,13 @@ enum UnixSocket {
     return (uid, pid)
   }
 
-  /// Non-blocking; a write to a peer that left fails with EPIPE rather than raising SIGPIPE;
-  /// and not inherited by the CLIs the host spawns, which would keep the connection open.
+  /// Non-blocking, and a write to a peer that left fails with EPIPE rather than raising
+  /// SIGPIPE. Already close-on-exec, from `make` or `accept`: not inherited by the CLIs the
+  /// host spawns, which would keep the connection open.
   static func prepare(_ fd: Int32) throws {
     var on: Int32 = 1
     try check(setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &on, socklen_t(MemoryLayout<Int32>.size)))
     try check(fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK))
-    try check(fcntl(fd, F_SETFD, FD_CLOEXEC))
   }
 
   static func check(_ result: Int32) throws {
@@ -139,11 +158,7 @@ final class UnixConnection: @unchecked Sendable {
   private var writing = Data()
   private var written = 0
   private var buffer = [UInt8](repeating: 0, count: 64 * 1024)
-  /// Bytes read past the last `\n`, of which the first `searched` hold none. Not
-  /// `LineBuffer`, which searches its whole buffer again for every chunk: a megabyte line
-  /// arrives in hundreds of them.
-  private var incoming = Data()
-  private var searched = 0
+  private var incoming = LineBuffer()
   private var ended = false
   private var cancelled = 0
   private var onLine: (@Sendable (Data) -> Void)?
@@ -231,31 +246,10 @@ final class UnixConnection: @unchecked Sendable {
     let count = buffer.withUnsafeMutableBytes { Darwin.read(fd, $0.baseAddress, $0.count) }
     if count < 0, errno == EINTR || errno == EAGAIN { return }
     guard count > 0 else { return end() }
-    for line in lines(adding: count) {
+    for line in incoming.append(Data(buffer[..<count])) {
       guard !state.withLock({ $0.closed }) else { return end() }
       onLine?(line)
     }
-  }
-
-  private func lines(adding count: Int) -> [Data] {
-    incoming.append(contentsOf: buffer[..<count])
-    var lines: [Data] = []
-    var start = 0
-    incoming.withUnsafeBytes { bytes in
-      guard let base = bytes.baseAddress else { return }
-      while let found = memchr(base + searched, 0x0A, bytes.count - searched) {
-        let end = base.distance(to: UnsafeRawPointer(found))
-        if end > start { lines.append(Data(bytes[start..<end])) }
-        start = end + 1
-        searched = start
-      }
-      searched = bytes.count
-    }
-    if start > 0 {
-      incoming = Data(incoming[start...])
-      searched -= start
-    }
-    return lines
   }
 
   private func flush() {

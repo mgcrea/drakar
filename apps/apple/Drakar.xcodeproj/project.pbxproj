@@ -15,6 +15,8 @@
 		9C6C5EA1B2F3CA06F0C1162F /* SupportKit in Frameworks */ = {isa = PBXBuildFile; productRef = 6AE69D3EEC51E82E422259BC /* SupportKit */; };
 		DD5BC15626DF390ABC899053 /* SupportKitUI in Frameworks */ = {isa = PBXBuildFile; productRef = B334DF48ECFE129A1A02AE0D /* SupportKitUI */; };
 		A67751313FD68891A2295F85 /* SupportKitSettings in Frameworks */ = {isa = PBXBuildFile; productRef = 4FE77CC5D1BB07D94B933CEF /* SupportKitSettings */; };
+		94D48F1EBCF8BBE9AB5FB3FF /* DrakarKit in Frameworks */ = {isa = PBXBuildFile; productRef = F178B41C2C2E859D9D6CA057 /* DrakarKit */; };
+		EF7EAC0B1BC134F525CD88FE /* DrakarHost in Copy Helpers */ = {isa = PBXBuildFile; fileRef = 79A4DE3982FADB7CFFEC5922 /* DrakarHost */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -25,11 +27,33 @@
 			remoteGlobalIDString = E26502CEA4017CADDA960B3E;
 			remoteInfo = Drakar;
 		};
+		AFFA8950AFFBCA2C08DC8631 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 7703239309CDBBAB8216DB2B /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 5891DD0AA7EBB914238D8EDB;
+			remoteInfo = DrakarHost;
+		};
 /* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		58057292B8D7B32A1BE59EFA /* Copy Helpers */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = Contents/Helpers;
+			dstSubfolderSpec = 1;
+			files = (
+				EF7EAC0B1BC134F525CD88FE /* DrakarHost in Copy Helpers */,
+			);
+			name = "Copy Helpers";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		47660703AFB87958CFE6D8C8 /* Drakar.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Drakar.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		951157530562D85D92CD3B43 /* DrakarTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = DrakarTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		79A4DE3982FADB7CFFEC5922 /* DrakarHost */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = DrakarHost; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -54,6 +78,11 @@
 		B0DF679FF3CC2B9F8D85582F /* DrakarTests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = DrakarTests;
+			sourceTree = "<group>";
+		};
+		BDD61564F71027E67C4D696C /* DrakarHost */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = DrakarHost;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -81,6 +110,14 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		674DC015E4F045390B505CC7 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				94D48F1EBCF8BBE9AB5FB3FF /* DrakarKit in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -89,6 +126,7 @@
 			children = (
 				85C043532B3431B2DFA5992B /* Drakar */,
 				B0DF679FF3CC2B9F8D85582F /* DrakarTests */,
+				BDD61564F71027E67C4D696C /* DrakarHost */,
 				ACC88B4F5A33BC51C9AB99EE /* Products */,
 			);
 			sourceTree = "<group>";
@@ -98,6 +136,7 @@
 			children = (
 				47660703AFB87958CFE6D8C8 /* Drakar.app */,
 				951157530562D85D92CD3B43 /* DrakarTests.xctest */,
+				79A4DE3982FADB7CFFEC5922 /* DrakarHost */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -112,10 +151,12 @@
 				61A55663A1EAB0C7D2F6A9D8 /* Sources */,
 				B4D6C6D4F9BB6D38D63CF9E2 /* Frameworks */,
 				AC4AC0C5308258E25AD22E5E /* Resources */,
+				58057292B8D7B32A1BE59EFA /* Copy Helpers */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				34BAEA0A7E89672BB5AE5C10 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				85C043532B3431B2DFA5992B /* Drakar */,
@@ -158,6 +199,28 @@
 			productReference = 951157530562D85D92CD3B43 /* DrakarTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
+		5891DD0AA7EBB914238D8EDB /* DrakarHost */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 7EAE8DA0AA805974EA9431FE /* Build configuration list for PBXNativeTarget "DrakarHost" */;
+			buildPhases = (
+				73D0EDAE51717F350A6AD75D /* Sources */,
+				674DC015E4F045390B505CC7 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				BDD61564F71027E67C4D696C /* DrakarHost */,
+			);
+			name = DrakarHost;
+			packageProductDependencies = (
+				F178B41C2C2E859D9D6CA057 /* DrakarKit */,
+			);
+			productName = DrakarHost;
+			productReference = 79A4DE3982FADB7CFFEC5922 /* DrakarHost */;
+			productType = "com.apple.product-type.tool";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -174,6 +237,9 @@
 					CE8F0CF72C1DABFCF45EEDE9 = {
 						CreatedOnToolsVersion = 26.6;
 						TestTargetID = E26502CEA4017CADDA960B3E;
+					};
+					5891DD0AA7EBB914238D8EDB = {
+						CreatedOnToolsVersion = 26.6;
 					};
 				};
 			};
@@ -197,6 +263,7 @@
 			targets = (
 				E26502CEA4017CADDA960B3E /* Drakar */,
 				CE8F0CF72C1DABFCF45EEDE9 /* DrakarTests */,
+				5891DD0AA7EBB914238D8EDB /* DrakarHost */,
 			);
 		};
 /* End PBXProject section */
@@ -233,6 +300,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		73D0EDAE51717F350A6AD75D /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -240,6 +314,11 @@
 			isa = PBXTargetDependency;
 			target = E26502CEA4017CADDA960B3E /* Drakar */;
 			targetProxy = AA38E399E436874724F71407 /* PBXContainerItemProxy */;
+		};
+		34BAEA0A7E89672BB5AE5C10 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 5891DD0AA7EBB914238D8EDB /* DrakarHost */;
+			targetProxy = AFFA8950AFFBCA2C08DC8631 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -474,6 +553,52 @@
 			};
 			name = Release;
 		};
+		52221C8E68EF048860942483 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CREATE_INFOPLIST_SECTION_IN_BINARY = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 75QE9PRT3V;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = "@executable_path/../Frameworks";
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = io.mgcrea.Drakar.DrakarHost;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = macosx;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
+		69E330BD78F7A46A7928DE85 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CREATE_INFOPLIST_SECTION_IN_BINARY = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 75QE9PRT3V;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = "@executable_path/../Frameworks";
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = io.mgcrea.Drakar.DrakarHost;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = macosx;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -500,6 +625,15 @@
 			buildConfigurations = (
 				A78BFE2F1F069DD4C6F82EEF /* Debug */,
 				540F51ECA0BB82C264CC7E9B /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		7EAE8DA0AA805974EA9431FE /* Build configuration list for PBXNativeTarget "DrakarHost" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				52221C8E68EF048860942483 /* Debug */,
+				69E330BD78F7A46A7928DE85 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
@@ -562,6 +696,10 @@
 			isa = XCSwiftPackageProductDependency;
 			package = DDA411622527A1114A78C853 /* XCRemoteSwiftPackageReference "swift-support-kit" */;
 			productName = SupportKitSettings;
+		};
+		F178B41C2C2E859D9D6CA057 /* DrakarKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = DrakarKit;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

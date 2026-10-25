@@ -31,8 +31,10 @@ unsaved tabs closes. What you select (or the file you have open) goes with your 
 prompt, as in the VS Code extension, and with a terminal `claude --ide`'s too. ⌥K pins a
 selection so the next one can be added beside it.
 
-`make audit` checks the network claim against the sources (one listener, on 127.0.0.1,
-token-gated, nothing outgoing), and `make audit-running` against the running app.
+`make audit` checks the network claim against the sources (one loopback listener, on
+127.0.0.1 and token-gated, for the IDE bridge; one Unix socket for the session host, that
+only your own Drakar can reach; nothing outgoing), and `make audit-running` against the
+running app.
 
 ## Layout
 

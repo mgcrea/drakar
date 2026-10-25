@@ -10,6 +10,7 @@ public final class HostServer: @unchecked Sendable {
   private let core: HostCore
   private let socket: URL
   private let lock: Int32
+  private let acceptQueue = DispatchQueue(label: "HostServer.accept")
   private let accepting: DispatchSourceRead
   private let peerCheck: @Sendable (Int32) -> Bool
   private let state = Mutex(State())
@@ -34,6 +35,14 @@ public final class HostServer: @unchecked Sendable {
   /// `peerCheck` runs only for a peer of the host's own uid.
   public static func start(
     directory: URL, core: HostCore, peerCheck: @escaping @Sendable (_ fd: Int32) -> Bool
+  ) throws -> HostServer? {
+    try start(directory: directory, core: core, peerCheck: peerCheck, accept: UnixSocket.accept)
+  }
+
+  /// `accept` is `UnixSocket.accept` but in tests, which run out of descriptors through it.
+  static func start(
+    directory: URL, core: HostCore, peerCheck: @escaping @Sendable (_ fd: Int32) -> Bool,
+    accept: @escaping @Sendable (_ listener: Int32) -> UnixSocket.Accepted
   ) throws -> HostServer? {
     let socket = try HostWire.socket(in: directory)
     try FileManager.default.createDirectory(
@@ -62,7 +71,7 @@ public final class HostServer: @unchecked Sendable {
     }
     let server = HostServer(
       core: core, socket: socket, lock: lock, listener: listener, peerCheck: peerCheck)
-    server.begin(listener)
+    server.begin(listener, accept: accept)
     return server
   }
 
@@ -74,23 +83,42 @@ public final class HostServer: @unchecked Sendable {
     self.socket = socket
     self.lock = lock
     self.peerCheck = peerCheck
-    accepting = DispatchSource.makeReadSource(
-      fileDescriptor: listener, queue: DispatchQueue(label: "HostServer.accept"))
+    accepting = DispatchSource.makeReadSource(fileDescriptor: listener, queue: acceptQueue)
   }
+
+  /// How long a host out of descriptors waits before accepting again.
+  static let exhaustedRetry = DispatchTimeInterval.milliseconds(100)
 
   deinit { stop() }
 
-  private func begin(_ listener: Int32) {
+  private func begin(
+    _ listener: Int32, accept: @escaping @Sendable (Int32) -> UnixSocket.Accepted
+  ) {
     core.deliver = { [weak self] client, event in
       self?.send(HostFrame.Answer(to: nil, events: [event]), to: client)
     }
+    let accepting = accepting
+    let queue = acceptQueue
     accepting.setEventHandler { [weak self] in
-      while let fd = UnixSocket.accept(listener) {
-        guard let self else {
-          Darwin.close(fd)
+      while true {
+        switch accept(listener) {
+        case .peer(let fd):
+          guard let self else {
+            Darwin.close(fd)
+            return
+          }
+          self.admit(fd)
+        case .drained:
+          return
+        case .exhausted:
+          // The peer stays queued and the listener readable: trying again at once would
+          // spin. Resumed even once stopped, since a suspended source never cancels.
+          accepting.suspend()
+          queue.asyncAfter(deadline: .now() + Self.exhaustedRetry) {
+            accepting.resume()
+          }
           return
         }
-        self.admit(fd)
       }
     }
     accepting.setCancelHandler { Darwin.close(listener) }
