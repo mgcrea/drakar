@@ -5,48 +5,8 @@ import Testing
 @testable import DrakarKit
 
 /// `HostServer` and `HostClient` over a real Unix socket, with the stand-in agents
-/// `HostCoreTests` runs, in a short directory of their own under `/tmp`.
+/// `HostCoreTests` runs.
 @Suite struct HostSocketTests {
-  private final class Host {
-    let directory: URL
-    let core: HostCore
-    private(set) var server: HostServer?
-    private let clients = Mutex<[HostClient]>([])
-
-    init(peerCheck: @escaping @Sendable (Int32) -> Bool = { _ in true }) throws {
-      let name = String(UUID().uuidString.prefix(6))
-      directory = URL(fileURLWithPath: "/tmp/dh-\(name)", isDirectory: true)
-      core = HostCore(directory: directory, hostVersion: "test")
-      server = try HostServer.start(directory: directory, core: core, peerCheck: peerCheck)
-    }
-
-    var socket: URL { get throws { try HostWire.socket(in: directory) } }
-
-    func connect() throws -> HostClient {
-      let client = try HostClient.connect(socket: socket)
-      clients.withLock { $0.append(client) }
-      return client
-    }
-
-    /// Ends whatever is still running, so no test leaves a process or a socket behind.
-    func close() {
-      for client in clients.withLock({ $0 }) { client.close() }
-      server?.stop()
-      let client = core.connected(pid: 0)
-      if case .listed(let held) = core.handle(.list, from: client).first {
-        for process in held { _ = core.handle(.terminate(id: process.id), from: client) }
-      }
-      core.disconnected(client)
-      try? FileManager.default.removeItem(at: directory)
-    }
-
-    func cat() -> AgentProcess.Configuration {
-      AgentProcess.Configuration(
-        executable: URL(fileURLWithPath: "/bin/cat"), arguments: [], environment: [:],
-        currentDirectory: directory)
-    }
-  }
-
   private struct TimedOut: Error {}
 
   /// `body`'s result, or a throw after 5 s: a broken host fails the test, never hangs it.
@@ -97,7 +57,7 @@ import Testing
   }
 
   @Test func aClientSpawnsAndAttaches() async throws {
-    let host = try Host()
+    let host = try TestHost()
     defer { host.close() }
     let client = try host.connect()
     let welcome = try await client.hello(appVersion: "1")
@@ -122,7 +82,7 @@ import Testing
   }
 
   @Test func theSocketIsTheUsersAlone() throws {
-    let host = try Host()
+    let host = try TestHost()
     defer { host.close() }
     var directory = stat()
     #expect(stat(host.directory.path, &directory) == 0)
@@ -135,7 +95,7 @@ import Testing
   }
 
   @Test func aSecondServerFindsTheLock() async throws {
-    let host = try Host()
+    let host = try TestHost()
     defer { host.close() }
     #expect(host.server != nil)
     let second = try HostServer.start(
@@ -168,7 +128,7 @@ import Testing
 
   @Test func aRefusedPeerLearnsNothing() async throws {
     let asked = Mutex(0)
-    let host = try Host { _ in
+    let host = try TestHost { _ in
       asked.withLock { $0 += 1 }
       return false
     }
@@ -180,7 +140,7 @@ import Testing
   }
 
   @Test func losingTheConnectionDetaches() async throws {
-    let host = try Host()
+    let host = try TestHost()
     defer { host.close() }
     let first = try host.connect()
     let second = try host.connect()
@@ -196,7 +156,7 @@ import Testing
 
   /// A line far longer than the socket takes at once arrives whole, byte for byte, both ways.
   @Test func aLongLineArrivesWhole() async throws {
-    let host = try Host()
+    let host = try TestHost()
     defer { host.close() }
     let client = try host.connect()
     let id = try await client.spawn(host.cat(), meta: Data())
@@ -219,7 +179,7 @@ import Testing
   /// A CLI that never reads its stdin blocks the write sent to it, and nothing else: the
   /// same app's next request to another process is answered meanwhile.
   @Test func aStuckWriteHoldsUpNoOtherRequest() async throws {
-    let host = try Host()
+    let host = try TestHost()
     defer { host.close() }
     let client = try host.connect()
     let deaf = try await client.spawn(
@@ -239,7 +199,7 @@ import Testing
   }
 
   @Test func aConnectionToNothingThrows() throws {
-    let host = try Host()
+    let host = try TestHost()
     host.close()
     #expect(throws: (any Error).self) { try HostClient.connect(socket: host.socket) }
   }

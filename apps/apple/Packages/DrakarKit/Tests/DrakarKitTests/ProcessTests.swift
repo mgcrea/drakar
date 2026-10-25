@@ -89,18 +89,47 @@ struct ClaudeCommandTests {
   }
 }
 
-/// `AgentProcess` against stand-in agents: `cat` replays a capture or echoes what it is
-/// sent, `sh` misbehaves on purpose. Real pipes, no network.
+/// Which `ProcessTransport` a test runs its stand-in agent through.
+enum Transport: String, CaseIterable, CustomTestStringConvertible, Sendable {
+  case child, hosted
+
+  var testDescription: String { rawValue }
+
+  /// A transport for `configuration`; a hosted one comes with the host to close afterwards.
+  func make(_ configuration: AgentProcess.Configuration) async throws
+    -> (any ProcessTransport, TestHost?)
+  {
+    switch self {
+    case .child:
+      return (AgentProcess(configuration), nil)
+    case .hosted:
+      let host = try TestHost()
+      let client = try host.connect()
+      _ = try await client.hello(appVersion: "test")
+      return (HostedProcess(client: client, configuration: configuration, meta: Data()), host)
+    }
+  }
+}
+
+/// A transport against stand-in agents: `cat` replays a capture or echoes what it is sent,
+/// `sh` misbehaves on purpose. Real pipes, and for a hosted one a real socket.
 @Suite("Supervising the process")
 struct AgentProcessTests {
 
+  private func configuration(_ executable: String, _ arguments: [String])
+    -> AgentProcess.Configuration
+  {
+    .init(
+      executable: URL(filePath: executable), arguments: arguments, environment: [:],
+      currentDirectory: FileManager.default.temporaryDirectory)
+  }
+
   private func run(
-    _ executable: String, _ arguments: [String], sending: [ClientMessage] = []
+    _ transport: Transport, _ executable: String, _ arguments: [String],
+    sending: [ClientMessage] = []
   ) async throws -> [AgentProcess.Event] {
-    let process = AgentProcess(
-      .init(
-        executable: URL(filePath: executable), arguments: arguments, environment: [:],
-        currentDirectory: FileManager.default.temporaryDirectory))
+    let (process, host) = try await transport.make(configuration(executable, arguments))
+    defer { host?.close() }
     let events = try process.start()
     for message in sending { try process.send(message) }
     process.closeInput()
@@ -116,18 +145,20 @@ struct AgentProcessTests {
     }
   }
 
-  @Test func deliversEveryLineThenTheExit() async throws {
+  @Test(arguments: Transport.allCases)
+  func deliversEveryLineThenTheExit(_ transport: Transport) async throws {
     let url = try #require(
       Bundle.module.url(
         forResource: "turn-with-tool", withExtension: "jsonl", subdirectory: "Fixtures"))
-    let events = try await run("/bin/cat", [url.path])
+    let events = try await run(transport, "/bin/cat", [url.path])
     #expect(messages(events) == (try Fixture.turnWithTool.messages))
     #expect(events.last == .exited(status: 0, remainder: Data()))
   }
 
-  @Test func aLineIsTimedWhenRead() async throws {
+  @Test(arguments: Transport.allCases)
+  func aLineIsTimedWhenRead(_ transport: Transport) async throws {
     let before = Date()
-    let events = try await run("/bin/echo", ["{}"])
+    let events = try await run(transport, "/bin/echo", ["{}"])
     let received = Date()
     let times = events.compactMap { event -> Date? in
       if case .lines(_, let time) = event { return time }
@@ -137,8 +168,9 @@ struct AgentProcessTests {
     #expect(time >= before && time <= received)
   }
 
-  @Test func whatItSendsArrivesAsOneLine() async throws {
-    let events = try await run("/bin/cat", [], sending: [.prompt("hello")])
+  @Test(arguments: Transport.allCases)
+  func whatItSendsArrivesAsOneLine(_ transport: Transport) async throws {
+    let events = try await run(transport, "/bin/cat", [], sending: [.prompt("hello")])
     guard case .user(let user) = messages(events).first else {
       Issue.record("got \(events)")
       return
@@ -146,20 +178,63 @@ struct AgentProcessTests {
     #expect(user.content == [.text("hello")])
   }
 
-  @Test func keepsStderrAndAnUnterminatedTail() async throws {
+  @Test(arguments: Transport.allCases)
+  func keepsStderrAndAnUnterminatedTail(_ transport: Transport) async throws {
     let events = try await run(
-      "/bin/sh", ["-c", "echo not-json; echo oops >&2; printf partial; exit 3"])
-    #expect(
-      messages(events) == [.unknown(type: "invalid-line", raw: .string("not-json"))])
+      transport, "/bin/sh", ["-c", "echo not-json; echo oops >&2; printf partial; exit 3"])
     #expect(events.contains(.stderr("oops\n")))
-    #expect(events.last == .exited(status: 3, remainder: Data("partial".utf8)))
+    switch transport {
+    case .child:
+      #expect(
+        messages(events) == [.unknown(type: "invalid-line", raw: .string("not-json"))])
+      #expect(events.last == .exited(status: 3, remainder: Data("partial".utf8)))
+    case .hosted:
+      // The host logs the tail as a line of its own, so the exit has none to carry.
+      #expect(
+        messages(events) == [
+          .unknown(type: "invalid-line", raw: .string("not-json")),
+          .unknown(type: "invalid-line", raw: .string("partial")),
+        ])
+      #expect(events.last == .exited(status: 3, remainder: Data()))
+    }
   }
 
-  @Test func refusesToSendOnceTheProcessIsGone() async throws {
-    let process = AgentProcess(
-      .init(
-        executable: URL(filePath: "/usr/bin/true"), arguments: [], environment: [:],
-        currentDirectory: FileManager.default.temporaryDirectory))
+  @Test(arguments: Transport.allCases)
+  func textThatIsNotJSONKeepsNoTerminator(_ transport: Transport) async throws {
+    let events = try await run(transport, "/bin/echo", ["text"])
+    #expect(events.contains(.lines([.invalid("text")], at: try #require(time(of: events)))))
+  }
+
+  private func time(of events: [AgentProcess.Event]) -> Date? {
+    for case .lines(_, let time) in events { return time }
+    return nil
+  }
+
+  @Test(arguments: Transport.allCases)
+  func endingInputEndsCat(_ transport: Transport) async throws {
+    // `run` closes input and waits for the exit: a `cat` that kept reading would hang it.
+    let events = try await run(transport, "/bin/cat", [])
+    #expect(events.last == .exited(status: 0, remainder: Data()))
+  }
+
+  @Test(arguments: Transport.allCases)
+  func terminateEndsAProcessThatWouldNot(_ transport: Transport) async throws {
+    let (process, host) = try await transport.make(configuration("/bin/sleep", ["30"]))
+    defer { host?.close() }
+    let events = try process.start()
+    process.terminate()
+    var status: Int32?
+    for await event in events {
+      if case .exited(let code, _) = event { status = code }
+    }
+    #expect(try #require(status) != 0)
+    #expect(!process.isRunning)
+  }
+
+  @Test(arguments: Transport.allCases)
+  func refusesToSendOnceTheProcessIsGone(_ transport: Transport) async throws {
+    let (process, host) = try await transport.make(configuration("/usr/bin/true", []))
+    defer { host?.close() }
     for await _ in try process.start() {}
     #expect(throws: AgentProcess.Failure.notRunning) { try process.send(.prompt("late")) }
   }
