@@ -45,4 +45,13 @@ struct ProjectPathTests {
       ])
     #expect(ProjectPath.encodedPrefixes(for: "/Users/me/app") == ["-Users-me-app"])
   }
+
+  /// Claude Code keeps ASCII letters and digits only (`replace(/[^a-zA-Z0-9]/g,"-")`, in
+  /// 2.1.308): an accented letter is a `-` too.
+  @Test func anAccentedLetterIsADashLikeAnyOtherCharacter() {
+    #expect(
+      ProjectPath.encodedPrefixes(for: "/Users/me/Développement/app") == [
+        "-Users-me-Développement-app", "-Users-me-D-veloppement-app",
+      ])
+  }
 }
