@@ -114,6 +114,8 @@ CLI travel base64-encoded so a line the CLI wrote is never split or re-encoded.
   today.
 - `setMeta {id, meta}`: replace the blob.
 - `acknowledge {id}`: the app has the process's end; the host forgets it and its log.
+- `detach {id}` (minor 1): the app lets go; the process carries on with nobody attached, and
+  the other apps get `released`.
 - Events: `record {id, offset, kind, time, attached, bytes}` (`kind` is `out`, `in` or
   `note`; an `in` echoes the attached app's own write, so its offset is known; `time` is when
   the host logged it and `attached` whether an app was attached then, which says nothing of

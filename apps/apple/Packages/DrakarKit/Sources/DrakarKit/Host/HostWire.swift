@@ -3,7 +3,7 @@ import Foundation
 /// What the app and the session host say to each other (spec §2). Newline-delimited JSON, one
 /// request or event per line.
 public enum HostWire {
-  public static let major = 1, minor = 0
+  public static let major = 1, minor = 1
 
   /// The socket's path would not fit `sockaddr_un.sun_path`.
   public struct PathTooLong: Error, Equatable {
@@ -60,6 +60,9 @@ public enum HostRequest: Codable, Sendable, Equatable {
   case terminate(id: String)
   case setMeta(id: String, meta: Data)
   case acknowledge(id: String)
+  /// The app lets go of the process, which carries on: nobody is attached, and the other
+  /// apps are told. Added in minor 1.
+  case detach(id: String)
 }
 
 public enum HostEvent: Codable, Sendable, Equatable {

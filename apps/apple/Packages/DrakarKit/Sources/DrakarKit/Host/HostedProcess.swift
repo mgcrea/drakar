@@ -102,8 +102,9 @@ public final class HostedProcess: ProcessTransport, @unchecked Sendable {
     try? request { .terminate(id: $0) }
   }
 
-  /// Stops listening and leaves the process running in the host, for another to pick up.
+  /// Lets go of the process, which runs on in the host for another app, or this one, to pick up.
   public func detach() {
+    try? request { .detach(id: $0) }
     let pump = state.withLock { state in
       state.detached = true
       state.running = false

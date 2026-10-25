@@ -153,7 +153,8 @@ public final class HostServer: @unchecked Sendable {
       return
     }
     switch frame.request {
-    case .write(let id, _), .note(let id, _), .closeInput(let id):
+    // `detach` shares the lane so it never overtakes a write the app sent before it.
+    case .write(let id, _), .note(let id, _), .closeInput(let id), .detach(let id):
       lane(id).async { self.answer(frame, from: client) }
     case .acknowledge(let id):
       if answer(frame, from: client).isEmpty {

@@ -110,6 +110,8 @@ public final class HostCore: @unchecked Sendable {
       return update(id, from: client) { held, _ in held.meta = meta }
     case .acknowledge(let id):
       return acknowledge(id, from: client)
+    case .detach(let id):
+      return detach(id, from: client)
     }
   }
 
@@ -239,6 +241,18 @@ public final class HostCore: @unchecked Sendable {
     }
     try? ended?.log.remove()
     return refused
+  }
+
+  /// Nobody attached already makes it moot; another app's attach is not the caller's to end.
+  private func detach(_ id: String, from client: Client) -> [HostEvent] {
+    withState { state, out in
+      guard state.held[id] != nil else { return [Self.unknown(id)] }
+      guard let attached = state.held[id]?.attached else { return [] }
+      if attached != client { return [Self.taken(id)] }
+      state.held[id]?.attached = nil
+      for other in state.clients.keys where other != client { out.send(other, .released(id: id)) }
+      return []
+    }
   }
 
   /// Runs `change` on a process the app may act on: one nobody is attached to, or its own.

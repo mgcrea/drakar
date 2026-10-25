@@ -103,6 +103,10 @@ public final class HostClient: @unchecked Sendable {
   /// A refusal shows up in the process's `attach` stream, if it has one. Throws once the
   /// connection has ended.
   public func send(_ request: HostRequest) throws {
+    // What the host streams after a detach is not for this app: the attach ends here.
+    if case .detach(let id) = request {
+      state.withLock { $0.streams.removeValue(forKey: id) }?.finish()
+    }
     let waiting = request.process.map { Waiting.process($0, isAttach: false) } ?? .nothing
     let id = state.withLock { state -> Int? in
       guard !state.closed else { return nil }
@@ -234,7 +238,7 @@ extension HostRequest {
   fileprivate var process: String? {
     switch self {
     case .attach(let id, _), .write(let id, _), .note(let id, _), .closeInput(let id),
-      .terminate(let id), .setMeta(let id, _), .acknowledge(let id):
+      .terminate(let id), .setMeta(let id, _), .acknowledge(let id), .detach(let id):
       id
     case .hello, .list, .spawn:
       nil

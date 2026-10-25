@@ -310,6 +310,32 @@ import Testing
     #expect(host.held(id)?.attachedApp == 2)
   }
 
+  @Test func detachingLetsAnotherAppHaveIt() async throws {
+    let host = try Host()
+    defer { host.close() }
+    let first = host.connect(pid: 1)
+    let second = host.connect(pid: 2)
+    let id = try host.spawn("/bin/cat", from: first)
+    #expect(host.core.handle(.attach(id: id, from: 0), from: first).isEmpty)
+    guard case .refused = host.core.handle(.detach(id: id), from: second).first else {
+      Issue.record("an app detached another's process")
+      return
+    }
+
+    #expect(host.core.handle(.detach(id: id), from: first).isEmpty)
+    #expect(host.held(id)?.attachedApp == nil)
+    #expect(await eventually { host.inbox.of(second) == [.released(id: id)] })
+    // Nothing the process does now reaches the app that let go, and a second detach is moot.
+    let before = host.inbox.of(first).count
+    #expect(host.core.handle(.detach(id: id), from: first).isEmpty)
+    #expect(host.core.handle(.attach(id: id, from: 0), from: second).isEmpty)
+    _ = host.core.handle(.write(id: id, bytes: bytes("later\n")), from: second)
+    let later = bytes("later\n")
+    #expect(await eventually { host.inbox.records(second).contains { $0.bytes == later } })
+    #expect(host.inbox.of(first).count == before)
+    #expect(host.held(id)?.attachedApp == 2)
+  }
+
   @Test func idleOnlyWithNothingHeld() async throws {
     let host = try Host()
     defer { host.close() }

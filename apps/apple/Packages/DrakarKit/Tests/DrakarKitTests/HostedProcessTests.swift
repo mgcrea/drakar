@@ -60,8 +60,20 @@ import Testing
       throw TimedOut()
     }
     first.detach()
-
+    // The connection stays open, yet the process is free for another app to take.
+    let other = try await connected(host)
     let held = try #require(try await client.list().first)
+    #expect(held.attachedApp == nil)
+    let taken = HostedProcess(client: other, held: held)
+    _ = try await within { try await taken.replay() }
+    #expect(try await client.list().first?.attachedApp == getpid())
+    taken.detach()
+    try await within {
+      while try await client.list().first?.attachedApp != nil {
+        try await Task.sleep(for: .milliseconds(10))
+      }
+    }
+
     #expect(held.id == first.id)
     #expect(held.meta == Data("m".utf8))
     let second = HostedProcess(client: client, held: held)

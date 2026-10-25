@@ -15,6 +15,7 @@ import Testing
       .attach(id: "a", from: 42), .write(id: "a", bytes: bytes), .note(id: "a", bytes: bytes),
       .closeInput(id: "a"), .terminate(id: "a"), .setMeta(id: "a", meta: bytes),
       .acknowledge(id: "a"),
+      .detach(id: "a"),
     ]
     for request in requests {
       let data = try JSONEncoder().encode(request)
