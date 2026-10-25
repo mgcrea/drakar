@@ -318,6 +318,8 @@ final class Project {
   @ObservationIgnored private var isBroadcasting = false
   /// Stands in for the located binary in every session this window makes, in tests.
   @ObservationIgnored var executableOverride: URL?
+  /// Where the sessions this window doesn't hold are listed from; tests give it their own.
+  @ObservationIgnored var monitor = SessionMonitor.shared
   /// The batches still sending or running, one banner each; not saved with the window.
   private(set) var fanOuts: [FanOutBatch] = []
   /// The Run in Each Subfolder sheet, while shown.
@@ -391,7 +393,6 @@ final class Project {
   /// it is made from changes: the sidebar, its badge, the menus and the window's storage
   /// each ask, and grouping looks at every session under the folder.
   var groups: ProjectGroups {
-    let monitor = SessionMonitor.shared
     let folder = ProjectPath.normalize(self.folder.path(percentEncoded: false))
     let others = OpenSessions.shared.folders.filter { $0 != folder }
     let attached = Set(held.compactMap(\.sessionID))
@@ -907,7 +908,7 @@ final class Project {
   /// "Pineapple (fork #2)" for a copy of `target`: its title, numbered after every fork of
   /// it the folder lists, in the window's rows and on disk. Nil when it has no title yet.
   private func forkName(for target: ResumeTarget) -> String? {
-    let listed = SessionMonitor.shared.summaries(
+    let listed = monitor.summaries(
       under: ProjectPath.normalize(folder.path(percentEncoded: false)))
     let original =
       session(withID: target.sessionID)?.knownTitle
