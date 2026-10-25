@@ -143,6 +143,13 @@ final class AgentSession {
   /// The connection to the session host ended under the running process: nothing is sent
   /// until a new one is up and the process attached again (spec §5).
   private(set) var isReconnecting = false
+  /// The session host may hold this session's process, which the window is taking back:
+  /// nothing is sent and no process starts until it has, or one would run beside it.
+  var waitsForHost = false
+  /// Its process runs on in the session host, but could not be taken back: nothing is sent
+  /// and no process starts, which would run the session twice, until the next launch takes
+  /// it back.
+  private(set) var isOutOfReach = false
   /// The longest a replay held the main actor between two of its waits; for tests.
   @ObservationIgnored private(set) var longestReplayHold = Duration.zero
   /// The turns Codex's thread holds, as `throughTurns` counts them.
@@ -234,6 +241,7 @@ final class AgentSession {
     case .failure(let error):
       // Its process carries on in the host, out of reach: not shown alive and silent.
       process = nil
+      isOutOfReach = true
       notingPermissions { transcript.processExited() }
       phase = .failed(Self.message(forReattachFailure: error))
     }
@@ -306,15 +314,15 @@ final class AgentSession {
   }
 
   var canSend: Bool {
-    !isReadOnly && !isMoving && !historyFailed && !isReconnecting && !transcript.isRunning
-      && phase != .starting
+    !isReadOnly && !isMoving && !historyFailed && !isReconnecting && !waitsForHost
+      && !isOutOfReach && !transcript.isRunning && phase != .starting
   }
 
   /// A prompt typed while a turn runs goes now, and waits in the CLI until it can be taken:
   /// at the next tool boundary, or once the turn ends.
   var canQueue: Bool {
-    !isReadOnly && !isMoving && !historyFailed && !isReconnecting && transcript.isRunning
-      && process != nil
+    !isReadOnly && !isMoving && !historyFailed && !isReconnecting && !waitsForHost
+      && !isOutOfReach && transcript.isRunning && process != nil
   }
 
   /// The mode the pill shows: the process's while it runs, else what the next start takes.
@@ -600,7 +608,9 @@ final class AgentSession {
   /// Every await is a point where the window may have closed (`stop()`) or another process
   /// may have opened the session (`isReadOnly`): after each, either ends the spawn.
   private func spawn(unlessStoppedSince stops: Int) async {
-    guard stopCount == stops, process == nil, phase != .starting, !isMoving else { return }
+    guard stopCount == stops, process == nil, phase != .starting, !isMoving, !waitsForHost,
+      !isOutOfReach
+    else { return }
     if resuming?.forks == true || resuming == nil {
       // A first turn that never finished (End Session, a crash) left no saved target, but
       // the transcript exists from `system/init` on: look for it.
@@ -1208,9 +1218,15 @@ final class AgentSession {
   private static func message(forReattachFailure error: any Error) -> String {
     switch error {
     case HostClient.Failure.refused(let reason):
-      String(localized: "The session host would not give this session's process back: \(reason)")
+      String(
+        localized:
+          "The session host would not give this session's process back: \(reason). It runs on there, and Drakar takes it back at its next launch."
+      )
     default:
-      String(localized: "This session's process could not be read back from the session host.")
+      String(
+        localized:
+          "This session's process could not be read back from the session host. It runs on there, and Drakar takes it back at its next launch."
+      )
     }
   }
 

@@ -17,6 +17,8 @@ public final class HostedProcess: ProcessTransport, @unchecked Sendable {
     case noAnswer
     /// The host would not attach the process again: it no longer holds it, or another app has.
     case lost(String)
+    /// The host stopped sending a replay's log before the end of it.
+    case quiet
   }
 
   private let configuration: AgentProcess.Configuration?
@@ -159,13 +161,26 @@ public final class HostedProcess: ProcessTransport, @unchecked Sendable {
 
   /// Attaches from the start of the log and returns what it holds up to now. Only for a
   /// process the host held already; `live()` then carries on after it. Throws when the host
-  /// refuses the attach or the connection ends first.
-  public func replay() async throws -> (records: [HostRecord], offset: UInt64) {
+  /// refuses the attach or the connection ends first, and `Failure.quiet` when the host sends
+  /// nothing of the log for `quietLimit`: bounded by silence, not by time, as a long log takes
+  /// seconds. A quiet host's process is let go of, for the next launch to take.
+  public func replay(quietLimit: Duration = .seconds(10)) async throws -> (
+    records: [HostRecord], offset: UInt64
+  ) {
     let (id, client) = state.withLock { ($0.id, $0.client) }
     guard let id else { throw HostClient.Failure.unexpected }
     let stream = client.attach(id, from: 0)
     return try await withCheckedThrowingContinuation { continuation in
-      pump(stream, on: client, replaying: continuation)
+      let replaying = Replaying(continuation)
+      pump(stream, on: client, replaying: replaying)
+      Task { [weak self] in
+        while !replaying.isDone {
+          try? await Task.sleep(for: min(quietLimit / 4, .seconds(1)))
+          guard replaying.quietFor >= quietLimit, replaying.resume(with: .failure(Failure.quiet))
+          else { continue }
+          self?.detach()
+        }
+      }
     }
   }
 
@@ -272,7 +287,7 @@ public final class HostedProcess: ProcessTransport, @unchecked Sendable {
   /// before `caughtUp` go to it instead, which resumes at `caughtUp`.
   private func pump(
     _ stream: AsyncStream<HostEvent>, on client: HostClient,
-    replaying: CheckedContinuation<(records: [HostRecord], offset: UInt64), any Error>?
+    replaying: Replaying?
   ) {
     let sink = state.withLock { $0.sink }
     let task = Task {
@@ -289,6 +304,7 @@ public final class HostedProcess: ProcessTransport, @unchecked Sendable {
             return true
           }
           guard isNew else { continue }
+          replaying?.heard()
           if replaying != nil {
             backlog.append(record)
           } else if let event = Self.event(for: record) {
@@ -296,14 +312,12 @@ public final class HostedProcess: ProcessTransport, @unchecked Sendable {
           }
         case .caughtUp(_, let offset):
           state.withLock { $0.caughtUp = max($0.caughtUp, offset) }
-          replaying?.resume(returning: (backlog, offset))
+          replaying?.resume(with: .success((backlog, offset)))
           replaying = nil
         case .stderr(_, let text):
           sink.yield(.stderr(text))
         case .exited(_, let status):
-          if let waiting = replaying {
-            waiting.resume(throwing: HostClient.Failure.unexpected)
-          }
+          replaying?.resume(with: .failure(HostClient.Failure.unexpected))
           let forgets = state.withLock { state in
             state.exited = true
             return state.forgets
@@ -313,7 +327,7 @@ public final class HostedProcess: ProcessTransport, @unchecked Sendable {
           return
         case .refused(let reason):
           if let waiting = replaying {
-            waiting.resume(throwing: HostClient.Failure.refused(reason))
+            waiting.resume(with: .failure(HostClient.Failure.refused(reason)))
             replaying = nil
             sink.finish()
             return
@@ -324,7 +338,7 @@ public final class HostedProcess: ProcessTransport, @unchecked Sendable {
           break
         }
       }
-      replaying?.resume(throwing: HostClient.Failure.disconnected)
+      replaying?.resume(with: .failure(HostClient.Failure.disconnected))
       // Let go of, or attached again: these events are no longer the process's.
       guard !Task.isCancelled else { return sink.finish() }
       // The connection ended: the process carries on in the host, so this is no exit.
@@ -346,6 +360,37 @@ public final class HostedProcess: ProcessTransport, @unchecked Sendable {
     var bytes = record.bytes
     if bytes.last == 0x0A { bytes.removeLast() }
     return .lines([AgentProcess.parse(bytes)], at: record.time)
+  }
+}
+
+/// A replay's caller, resumed once, by the pump or by a host gone quiet, and when the log was
+/// last heard of.
+private final class Replaying: Sendable {
+  typealias Replay = (records: [HostRecord], offset: UInt64)
+
+  private let state:
+    Mutex<(waiting: CheckedContinuation<Replay, any Error>?, heard: ContinuousClock.Instant)>
+
+  init(_ continuation: CheckedContinuation<Replay, any Error>) {
+    state = Mutex((continuation, .now))
+  }
+
+  var isDone: Bool { state.withLock { $0.waiting == nil } }
+
+  var quietFor: Duration { .now - state.withLock { $0.heard } }
+
+  func heard() {
+    state.withLock { $0.heard = .now }
+  }
+
+  /// False when it was resumed already.
+  @discardableResult func resume(with result: Result<Replay, any Error>) -> Bool {
+    let waiting = state.withLock { state in
+      defer { state.waiting = nil }
+      return state.waiting
+    }
+    waiting?.resume(with: result)
+    return waiting != nil
   }
 }
 

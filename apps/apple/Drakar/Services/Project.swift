@@ -1120,6 +1120,19 @@ final class Project {
     replied(item)
   }
 
+  /// Takes back what the session host holds for the window (`adoptHeld`), in the background.
+  /// Meanwhile the rows the window kept for its sessions send nothing (`waitsForHost`), so that
+  /// none starts its session's process again beside the one the host runs; what is typed in
+  /// them stays in the composer, and goes with the row that takes their place.
+  @discardableResult func takeBackHeld() -> Task<Void, Never> {
+    let waiting = sessions.filter { $0.session.resuming != nil && !$0.session.isProcessRunning }
+    for item in waiting { item.session.waitsForHost = true }
+    return Task {
+      await adoptHeld(await sessionHost.heldIfRunning())
+      for item in waiting { item.session.waitsForHost = false }
+    }
+  }
+
   /// The processes the session host holds for this window and no app has (spec §3
   /// Relaunch), back as rows, live. The row the window kept for the same session gives way
   /// to one, as does the blank row a window opens with when it has nothing else.

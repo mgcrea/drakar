@@ -191,7 +191,7 @@ struct ContentView: View {
       self.project = project
       OpenSessions.shared.register(project, window: windowID)
       // What the session host kept of the window's sessions since the last launch.
-      Task { await project.adoptHeld(await project.sessionHost.heldIfRunning()) }
+      project.takeBackHeld()
     }
     guard let project else { return }
     for target in OpenSessions.shared.takePending(for: folder.path(percentEncoded: false)) {

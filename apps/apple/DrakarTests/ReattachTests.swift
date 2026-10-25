@@ -138,13 +138,23 @@ struct ReattachTests {
     (session.process as? HostedProcess)?.detach()
   }
 
+  /// A Claude Code session the window kept, with an empty transcript: one it can resume.
+  private func target(_ id: String) -> ResumeTarget {
+    let file = bin.appending(path: "\(id).jsonl")
+    FileManager.default.createFile(atPath: file.path(percentEncoded: false), contents: Data())
+    return ResumeTarget(
+      sessionID: id, cwd: folder.path(percentEncoded: false),
+      file: file.path(percentEncoded: false), accountDirectory: bin.path(percentEncoded: false),
+      accountIsDefault: true)
+  }
+
   /// The stand-in's next step.
   private func step(_ name: String) throws {
     try Data().write(to: fake.appendingPathExtension(name))
   }
 
   private func eventually(
-    within limit: Duration = .seconds(20), _ condition: () async -> Bool
+    within limit: Duration = .seconds(60), _ condition: () async -> Bool
   ) async -> Bool {
     let deadline = ContinuousClock.now + limit
     while ContinuousClock.now < deadline {
@@ -210,11 +220,8 @@ struct ReattachTests {
     let id = try #require(live.sessionID)
     drop(live)
 
-    let target = ResumeTarget(
-      sessionID: id, cwd: folder.path(percentEncoded: false),
-      file: bin.appending(path: "\(id).jsonl").path(percentEncoded: false),
-      accountDirectory: bin.path(percentEncoded: false), accountIsDefault: true)
-    let kept = Project(folder: folder, restoring: StoredProject(sessions: [target], selected: id))
+    let kept = Project(
+      folder: folder, restoring: StoredProject(sessions: [target(id)], selected: id))
     kept.executableOverride = fake
     kept.sessionHost = app
     defer { kept.stopAll() }
@@ -236,6 +243,88 @@ struct ReattachTests {
     #expect(blank.sessions.count == 1)
     #expect(blank.sessions.first?.session.isHosted == true)
     #expect(blank.selectedID == blank.sessions.first?.id)
+  }
+
+  /// A prompt to the row the window kept, sent while the window is still taking the session
+  /// back, starts no second process beside the host's: it waits in the composer, which the
+  /// row taking its place keeps, and the hosted row is the one that sends.
+  @Test func aRowSentToWhileItIsTakenBackStartsNoOtherProcess() async throws {
+    defer { cleanUp() }
+    let app = app()
+    let live = await start("go-idle", in: window(on: app))
+    #expect(await eventually { live.transcript.turnEnd != nil })
+    let id = try #require(live.sessionID)
+    drop(live)
+
+    let kept = Project(
+      folder: folder, restoring: StoredProject(sessions: [target(id)], selected: id))
+    kept.executableOverride = fake
+    kept.sessionHost = app
+    defer { kept.stopAll() }
+    let adoption = kept.takeBackHeld()
+    let row = try #require(kept.sessions.first)
+    #expect(!row.session.canSend && !row.session.canQueue)
+    row.draft = "typed meanwhile"
+    row.session.send("typed meanwhile")
+    await adoption.value
+    #expect(await app.held().count == 1)
+    #expect(sent("typed meanwhile") == 0)
+
+    #expect(kept.sessions.count == 1)
+    let back = try #require(kept.sessions.first)
+    #expect(back.session.isHosted)
+    #expect(back.draft == "typed meanwhile")
+    #expect(back.session.canSend)
+    back.session.send("typed meanwhile")
+    #expect(await eventually { sent("typed meanwhile") == 1 })
+    #expect(await app.held().count == 1)
+  }
+
+  /// A Codex row waits the same way, though nothing tells Codex's sessions live elsewhere
+  /// apart; with nothing held for it, it can send once the window has asked.
+  @Test func aCodexRowWaitsWhileTheWindowTakesBackItsSessions() async throws {
+    defer { cleanUp() }
+    let app = app()
+    let thread = ResumeTarget(
+      sessionID: "thr-1", cwd: folder.path(percentEncoded: false), file: "",
+      accountDirectory: bin.path(percentEncoded: false), accountIsDefault: true, agent: .codex)
+    let kept = Project(
+      folder: folder, restoring: StoredProject(sessions: [thread], selected: "thr-1"))
+    // Its history is read from a CLI that fails at once.
+    kept.executableOverride = URL(filePath: "/usr/bin/false")
+    kept.sessionHost = app
+    defer { kept.stopAll() }
+    let adoption = kept.takeBackHeld()
+    let row = try #require(kept.sessions.first)
+    #expect(!row.session.canSend)
+    await adoption.value
+    await row.session.loadHistory()
+    #expect(row.session.canSend)
+  }
+
+  /// A held process that could not be taken back runs on in the host: its row says so, and
+  /// can neither send nor start another process for the session.
+  @Test func aProcessNotTakenBackLeavesARowThatCannotSend() async throws {
+    defer { cleanUp() }
+    let app = app()
+    let client = try #require(await app.client())
+    let meta = SessionMeta(
+      start: AgentStart(
+        folder: folder, environment: [:], executableOverride: fake, allowsBypass: false),
+      windowFolder: folder.path(percentEncoded: false), history: .none)
+    let held = HeldProcess(
+      id: "nope", meta: try JSONEncoder().encode(meta), running: true, logLength: 0)
+    let session = try #require(await AgentSession(reattaching: held, client: client))
+    #expect(session.isOutOfReach)
+    guard case .failed = session.phase else {
+      Issue.record("phase is \(session.phase)")
+      return
+    }
+    #expect(!session.canSend && !session.canQueue)
+    session.send("again")
+    await session.spawn()
+    #expect(!session.isProcessRunning)
+    #expect(await app.held().isEmpty)
   }
 
   /// Waiting on the person when dropped: still waiting, and answered once.

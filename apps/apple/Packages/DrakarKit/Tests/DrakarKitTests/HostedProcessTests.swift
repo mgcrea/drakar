@@ -277,6 +277,32 @@ import Testing
     }
   }
 
+  /// A host that sends part of a log and then nothing fails the replay once it has been
+  /// quiet for the limit, and the process is let go of.
+  @Test func aReplayTheHostStopsSendingFails() async throws {
+    let name = String(UUID().uuidString.prefix(6))
+    let directory = URL(fileURLWithPath: "/tmp/dh-\(name)", isDirectory: true)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    let host = try QuietHost(in: directory)
+    let client = try HostClient.connect(socket: host.socket)
+    defer {
+      client.close()
+      host.close()
+      try? FileManager.default.removeItem(at: directory)
+    }
+    let process = HostedProcess(
+      client: client, held: HeldProcess(id: "h-1", meta: Data(), running: true, logLength: 99))
+    let began = ContinuousClock.now
+    await #expect(throws: HostedProcess.Failure.quiet) {
+      try await process.replay(quietLimit: .milliseconds(300))
+    }
+    #expect(ContinuousClock.now - began < .seconds(3))
+    #expect(!process.isRunning)
+    try await within {
+      while !host.sawDetach { try await Task.sleep(for: .milliseconds(10)) }
+    }
+  }
+
   @Test func replayOfAProcessTheHostDoesNotKnowIsRefused() async throws {
     let host = try TestHost()
     defer { host.close() }
@@ -332,6 +358,54 @@ private final class SlowSpawnProxy: @unchecked Sendable {
   func close() {
     upstream.close()
     downstream.withLock { $0 }?.close()
+    Darwin.close(listener)
+  }
+}
+
+/// A host that takes one app and answers an attach with the log's first record, then says
+/// nothing more.
+private final class QuietHost: @unchecked Sendable {
+  let socket: URL
+  private let listener: Int32
+  private let connection = Mutex<UnixConnection?>(nil)
+  private let detached = Mutex(false)
+
+  var sawDetach: Bool { detached.withLock { $0 } }
+
+  init(in directory: URL) throws {
+    socket = directory.appending(path: "quiet")
+    listener = try UnixSocket.listening(at: socket)
+    let listener = listener
+    Thread.detachNewThread { [self] in
+      var accepted: Int32 = -1
+      while accepted < 0 {
+        if case .peer(let fd) = UnixSocket.accept(listener) { accepted = fd } else { usleep(1000) }
+      }
+      try? UnixSocket.prepare(accepted)
+      let peer = UnixConnection(fd: accepted, label: "quiet-host")
+      connection.withLock { $0 = peer }
+      peer.start(
+        line: { [self] line in
+          guard let frame = try? JSONDecoder().decode(HostFrame.Request.self, from: line) else {
+            return
+          }
+          switch frame.request {
+          case .attach(let id, _):
+            let record = HostRecord(
+              offset: 0, kind: .out, time: .now, attached: true, bytes: Data("one\n".utf8))
+            let answer = HostFrame.Answer(to: nil, events: [.record(id: id, record)])
+            if let bytes = try? JSONEncoder().encode(answer) { peer.send(bytes) }
+          case .detach:
+            detached.withLock { $0 = true }
+          default:
+            break
+          }
+        }, closed: {})
+    }
+  }
+
+  func close() {
+    connection.withLock { $0 }?.close()
     Darwin.close(listener)
   }
 }
