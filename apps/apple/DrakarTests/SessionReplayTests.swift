@@ -404,6 +404,264 @@ struct SessionReplayTests {
     try await waitFor { session.isProcessRunning }
     #expect(session.codexTurnsBeforeProcess == 2)
   }
+
+  // MARK: The real CLIs
+
+  /// Opt-in, as they spend a few cheap turns of the signed-in accounts:
+  /// `TEST_RUNNER_DRAKAR_LIVE_CLI=1 xcodebuild test …`.
+  private nonisolated static let runsLiveCLIs =
+    ProcessInfo.processInfo.environment["DRAKAR_LIVE_CLI"] == "1"
+
+  /// Thinking, a tool that asks first, partial messages: what the stand-ins never write.
+  @Test(.enabled(if: runsLiveCLIs), .timeLimit(.minutes(3)))
+  func liveClaudeReplayMatches() async throws {
+    let scratch = try Self.liveScratch(git: false)
+    defer { try? FileManager.default.removeItem(at: scratch) }
+    let suite = "drakar-live-\(UUID().uuidString)"
+    defer { UserDefaults().removePersistentDomain(forName: suite) }
+    try await ClaudeChoice.$testSuite.withValue(suite) {
+      let live = AgentSession(folder: scratch)
+      defer { live.stop() }
+      // As `-drakar.debugSettingSources project` runs it: the person's own rules and hooks
+      // would let the tool through unasked.
+      (live.backend as? ClaudeBackend)?.command = ClaudeCommand(
+        extraArguments: ["--setting-sources", "project"])
+      live.setModel("claude-haiku-4-5-20251001")
+      try await expectLiveReplayMatches(
+        live, history: .none,
+        prompts: [
+          "Think briefly, then create a file named hello.txt containing hi. Then say done.",
+          "Now say bye.",
+        ])
+    }
+  }
+
+  /// Item deltas, a command approval, the thread's own ids and counters.
+  @Test(.enabled(if: runsLiveCLIs), .timeLimit(.minutes(3)))
+  func liveCodexReplayMatches() async throws {
+    let scratch = try Self.liveScratch(git: true)
+    defer { try? FileManager.default.removeItem(at: scratch) }
+    let suite = "drakar-live-\(UUID().uuidString)"
+    defer { UserDefaults().removePersistentDomain(forName: suite) }
+    try await ClaudeChoice.$testSuite.withValue(suite) {
+      let live = AgentSession(folder: scratch, agent: .codex)
+      defer { live.stop() }
+      // The cheapest `model/list` offers (0.163.0).
+      live.setModel("gpt-6-luna")
+      live.setEffort("low")
+      try await expectLiveReplayMatches(
+        live, history: .codexTurns(0),
+        prompts: ["Run the shell command `touch hello.txt`, then say done.", "Now say bye."])
+      #expect(live.codexTurnsBeforeProcess == 0)
+    }
+  }
+
+  /// `/tmp/dh-live-<6 chars>`, a git repository for Codex.
+  private static func liveScratch(git: Bool) throws -> URL {
+    let name = "dh-live-" + UUID().uuidString.prefix(6).lowercased()
+    let scratch = URL(filePath: "/tmp/\(name)", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
+    if git {
+      let process = Process()
+      process.executableURL = URL(filePath: "/usr/bin/git")
+      process.arguments = ["init", "-q", scratch.path(percentEncoded: false)]
+      try process.run()
+      process.waitUntilExit()
+    }
+    return scratch
+  }
+
+  /// `live` sent each prompt in turn, every permission allowed, then rebuilt from its log:
+  /// the same entries, and nothing written or owed to the CLI. What else differs is printed
+  /// (`LIVE-CHECK`), for the stop point's report.
+  private func expectLiveReplayMatches(
+    _ live: AgentSession, history: HistoryMark, prompts: [String]
+  ) async throws {
+    live.accounts = { [] }
+    live.catalog = ModelCatalog()
+    live.accountStore = AccountStore()
+    live.makeTransport = { RecordingTransport($0) }
+    live.setMode(.ask)
+    let began = ContinuousClock.now
+    for (index, prompt) in prompts.enumerated() {
+      live.send(prompt)
+      try await endTurn(live, prompts: index + 1)
+    }
+    let recorder = try #require(live.process as? RecordingTransport)
+    try await settle(recorder)
+    let records = recorder.records
+    let writes = records.count(where: { $0.kind == .in })
+    print("LIVE-CHECK \(live.agent) live took \(ContinuousClock.now - began)")
+
+    let replayed = await AgentSession(
+      replaying: [],
+      meta: SessionMeta(
+        start: AgentStart(
+          folder: live.folder, environment: [:], executableOverride: live.executable,
+          model: live.modelPick, mode: live.modePick, effort: live.effortPick,
+          allowsBypass: live.launchedWithBypass),
+        windowFolder: live.folder.path(percentEncoded: false), modePick: live.modePick,
+        modelPick: live.modelPick, effortPick: live.effortPick, history: history))
+    replayed.catalog = ModelCatalog()
+    replayed.accountStore = AccountStore()
+    replayed.replay(records)
+
+    let transport = try #require(replayed.process as? ReplayTransport)
+    #expect(transport.mode == .muted)
+    #expect(
+      transport.owed.isEmpty,
+      Comment(rawValue: transport.owed.map { String(decoding: $0, as: UTF8.self) }.joined()))
+    try await Task.sleep(for: .milliseconds(500))
+    #expect(recorder.records.count(where: { $0.kind == .in }) == writes)
+    // A thinking block's duration is timed off the log's clock, not the main actor's: it
+    // may differ by the lag between the two, which "Thought for 2s" rounds away.
+    let entries = Self.differences(live.transcript.entries, replayed.transcript.entries)
+    #expect(
+      Self.untimed(live.transcript.entries) == Self.untimed(replayed.transcript.entries),
+      Comment(rawValue: entries.joined(separator: "\n")))
+    for (left, right) in zip(live.transcript.entries, replayed.transcript.entries) {
+      #expect(abs((left.thinkingDuration ?? 0) - (right.thinkingDuration ?? 0)) < 0.5)
+    }
+
+    Self.report(live, records: records)
+    for line in entries { print("LIVE-CHECK \(live.agent) entries\(line)") }
+    let transcript = Self.differences(live.transcript, replayed.transcript)
+    for line in transcript where !line.hasPrefix(".entries") {
+      print("LIVE-CHECK \(live.agent) transcript\(line)")
+    }
+    let (shownLive, shownReplayed) = (Self.shown(live), Self.shown(replayed))
+    for (key, value) in shownLive.sorted(by: { $0.key < $1.key }) where shownReplayed[key] != value
+    {
+      print("LIVE-CHECK \(live.agent) session.\(key): \(value) ≠ \(shownReplayed[key] ?? "-")")
+    }
+  }
+
+  /// Until the `prompts`th turn ends, allowing what it asks; fails fast on a dead process.
+  private func endTurn(_ session: AgentSession, prompts: Int) async throws {
+    let deadline = ContinuousClock.now + .seconds(75)
+    while session.transcript.turnEnd == nil
+      || session.transcript.entries.compactMap(\.headline).count < prompts
+    {
+      if case .failed(let reason) = session.phase {
+        Issue.record("\(session.agent) failed: \(reason) \(session.diagnostics)")
+        throw CancellationError()
+      }
+      if case .exited(let status) = session.phase {
+        Issue.record("\(session.agent) exited \(status): \(session.diagnostics)")
+        throw CancellationError()
+      }
+      try #require(ContinuousClock.now < deadline, "turn \(prompts) never ended")
+      if let pending = session.transcript.pendingPermissions.first {
+        print("LIVE-CHECK \(session.agent) allowing \(pending.request.toolName)")
+        session.answer(pending, .allow(updatedInput: pending.request.input))
+      }
+      try await Task.sleep(for: .milliseconds(200))
+    }
+    #expect(session.transcript.turnEnd == .completed)
+  }
+
+  /// Until the CLI has written nothing for two seconds: the replies a turn's end asks for.
+  private func settle(_ recorder: RecordingTransport) async throws {
+    var count = -1
+    for _ in 0..<15 where recorder.records.count != count {
+      count = recorder.records.count
+      try await Task.sleep(for: .seconds(2))
+    }
+  }
+
+  /// What the pills, the gauge and the footer read off a session.
+  private static func shown(_ session: AgentSession) -> [String: String] {
+    [
+      "sessionID": "\(session.sessionID as Any)",
+      "phase": "\(session.phase)",
+      "title": "\(session.title as Any)",
+      "permissionMode": "\(session.permissionMode as Any)",
+      "shownMode": session.shownMode,
+      "shownEffort": "\(session.shownEffort as Any)",
+      "appliedModel": "\(session.appliedModel as Any)",
+      "runningModel": "\(session.runningModel as Any)",
+      "reportedContext": "\(session.reportedContext as Any)",
+      "pillNote": "\(session.pillNote as Any)",
+      "canSend": "\(session.canSend)",
+    ]
+  }
+
+  /// What the log held and the transcript showed, for the report.
+  private static func report(_ live: AgentSession, records: [HostRecord]) {
+    let kinds = Dictionary(grouping: records, by: \.kind).mapValues(\.count)
+    let types = Dictionary(
+      grouping: records.filter { $0.kind == .out }.compactMap { record in
+        (try? JSONValue.parse(record.bytes)).map {
+          $0["type"]?.stringValue ?? $0["method"]?.stringValue ?? "reply"
+        }
+      }, by: { $0 }
+    ).mapValues(\.count)
+    let shapes = live.transcript.entries.map { entry in
+      switch entry.kind {
+      case .prompt: "prompt"
+      case .text: "text"
+      case .thinking: "thinking(\(entry.thinkingDuration.map { "\($0)s" } ?? "-"))"
+      case .tool(let call): "tool(\(call.name))"
+      case .notice: "notice"
+      case .failure(let reason): "failure(\(reason))"
+      }
+    }
+    print("LIVE-CHECK \(live.agent) records \(kinds) out \(types.sorted { $0.key < $1.key })")
+    print("LIVE-CHECK \(live.agent) entries \(shapes)")
+    print(
+      "LIVE-CHECK \(live.agent) usage \(live.transcript.lastTurn as Any) "
+        + "\(live.transcript.contextUsage as Any)")
+  }
+
+  private static func untimed(_ entries: [Transcript.Entry]) -> [Transcript.Entry] {
+    entries.map { entry in
+      var entry = entry
+      entry.thinkingDuration = entry.thinkingDuration.map { _ in 0 }
+      return entry
+    }
+  }
+
+  /// Where two values differ, field by field (`[3].thinkingDuration: 1.2 ≠ 1.3`); a date to
+  /// the nanosecond, which its description rounds to the second.
+  private static func differences(_ live: Any, _ replayed: Any, at path: String = "")
+    -> [String]
+  {
+    if let left = live as? Date, let right = replayed as? Date {
+      guard left != right else { return [] }
+      return [
+        "\(path): \(left.timeIntervalSinceReferenceDate) ≠ "
+          + "\(right.timeIntervalSinceReferenceDate)"
+      ]
+    }
+    let left = Mirror(reflecting: live)
+    let right = Mirror(reflecting: replayed)
+    let leftChildren = Array(left.children)
+    let rightChildren = Array(right.children)
+    // A dictionary's order is its own: its elements are compared as a set.
+    func describe(_ mirror: Mirror, _ value: Any) -> String {
+      guard mirror.displayStyle == .dictionary else { return String(reflecting: value) }
+      return mirror.children.map { String(reflecting: $0.value) }.sorted().joined(separator: ", ")
+    }
+    func leaf() -> [String] {
+      let (a, b) = (describe(left, live), describe(right, replayed))
+      return a == b ? [] : ["\(path): \(a.prefix(400)) ≠ \(b.prefix(400))"]
+    }
+    if left.displayStyle == .collection {
+      var found = zip(leftChildren, rightChildren).enumerated().flatMap { index, pair in
+        differences(pair.0.value, pair.1.value, at: "\(path)[\(index)]")
+      }
+      if leftChildren.count != rightChildren.count {
+        found.append("\(path).count: \(leftChildren.count) ≠ \(rightChildren.count)")
+      }
+      return found
+    }
+    guard left.displayStyle != .dictionary, !leftChildren.isEmpty,
+      leftChildren.map(\.label) == rightChildren.map(\.label)
+    else { return leaf() }
+    return zip(leftChildren, rightChildren).flatMap { pair in
+      differences(pair.0.value, pair.1.value, at: "\(path).\(pair.0.label ?? "_")")
+    }
+  }
 }
 
 /// A host's log written by hand.
