@@ -131,6 +131,32 @@ struct SessionMarksTests {
     #expect(prompts(codex).isEmpty)
   }
 
+  /// With a watched session shown, ⌘-click marks only the row clicked: a watched row isn't
+  /// one of the window's own, which are all the marks ever cover.
+  @Test func commandClickWithAWatchedSessionShownMarksOnlyTheRow() throws {
+    let (project, items) = try project(2)
+    defer { project.stopAll() }
+    _ = project.attach(
+      ResumeTarget(
+        sessionID: "w", cwd: folder.path(percentEncoded: false),
+        file: folder.appending(path: "w.jsonl").path(percentEncoded: false),
+        accountDirectory: folder.path(percentEncoded: false), accountIsDefault: false),
+      watching: true, readOnly: true)
+    project.click(items[1], .toggle)
+    #expect(project.marked == [items[1].id])
+  }
+
+  /// A ⇧-click whose last clicked row was removed since starts from the row shown.
+  @Test func shiftClickAfterTheAnchorWentStartsFromTheShownRow() throws {
+    let (project, items) = try project(4)
+    defer { project.stopAll() }
+    project.click(items[0], .plain)
+    project.remove(items[0])
+    project.select(items[1])  // the arrow keys show a row without clicking it
+    project.click(items[3], .extend)
+    #expect(project.marked == [items[1].id, items[2].id, items[3].id])
+  }
+
   /// A new click forgets what the last broadcast said.
   @Test func aClickForgetsTheLastBroadcast() throws {
     let (project, items) = try project(2)

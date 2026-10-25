@@ -742,13 +742,19 @@ final class Project {
       markAnchor = item.id
       select(item)
     case .toggle:
-      if marked.isEmpty, let selectedID, selectedID != item.id { marked = [selectedID] }
+      // The shown row, if it is one of the window's own: a watched one can't be marked.
+      if marked.isEmpty, let selected, !selected.isWatching, selected.id != item.id {
+        marked = [selected.id]
+      }
       if marked.remove(item.id) == nil { marked.insert(item.id) }
       markAnchor = item.id
     case .extend:
       let rows = listedHeld.map(\.id)
       guard let end = rows.firstIndex(of: item.id) else { return }
-      let start = (markAnchor ?? selectedID).flatMap { rows.firstIndex(of: $0) } ?? end
+      // The last clicked row, else the one shown when that one was removed since.
+      let start =
+        markAnchor.flatMap { rows.firstIndex(of: $0) }
+        ?? selectedID.flatMap { rows.firstIndex(of: $0) } ?? end
       marked.formUnion(rows[min(start, end)...max(start, end)])
     }
   }
@@ -817,10 +823,20 @@ final class Project {
     for item in markedSessions { end(item) }
   }
 
-  /// Takes every marked session out of the window.
+  /// Takes every marked session out of the window, each as `remove` does, then shows and
+  /// loads the first row left once: a row about to go never reads its transcript.
   func removeMarked() {
-    for item in markedSessions { remove(item) }
+    for item in markedSessions {
+      item.session.stop()
+      sessions.removeAll { $0.id == item.id }
+      fanOutFinished(item)
+    }
     marked = []
+    if let selectedID, !sessions.contains(where: { $0.id == selectedID }) {
+      self.selectedID = sessions.first?.id
+    }
+    if let selected { load(selected) }
+    Attention.shared.refresh()
   }
 
   /// `item` ended a turn or stopped: its slot goes to the next waiting session.

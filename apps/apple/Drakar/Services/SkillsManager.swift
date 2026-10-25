@@ -231,10 +231,9 @@ final class SkillsManager {
 
   private func watch() {
     unwatch()
-    let roots = [
-      account.directory.appending(path: "skills"), account.directory.appending(path: "commands"),
-      home.appending(path: ".agents/skills"), home.appending(path: ".codex/skills"),
-    ]
+    // The person's own roots, as installs and deletes plan them; the project's are watched
+    // through its window below.
+    let roots = SkillPlaces(account: account.directory, home: home, project: nil).roots
     watchers = roots.filter { FileManager.default.fileExists(atPath: $0.skillPath) }.compactMap {
       FolderWatcher(folder: $0) { [weak self] _ in self?.userFilesChanged() }
     }
