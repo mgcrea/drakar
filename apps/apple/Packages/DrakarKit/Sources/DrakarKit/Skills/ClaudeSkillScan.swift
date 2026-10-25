@@ -209,5 +209,5 @@ public enum ClaudeSkillScan {
     return String(decoding: data, as: UTF8.self)
   }
 
-  static func path(_ url: URL) -> String { ProjectPath.normalize(url.path(percentEncoded: false)) }
+  static func path(_ url: URL) -> String { ProjectPath.normalize(url) }
 }

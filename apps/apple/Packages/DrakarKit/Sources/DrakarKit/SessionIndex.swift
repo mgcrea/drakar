@@ -40,7 +40,7 @@ public struct ClaudeAccount: Sendable, Hashable {
   /// The directory as one path: a resumed session's account and a discovered one name the
   /// same folder with and without a trailing slash.
   public var key: String {
-    ProjectPath.normalize(directory.standardizedFileURL.path(percentEncoded: false))
+    ProjectPath.normalize(directory.standardizedFileURL)
   }
 
   /// `~/.claude`, every `~/.claude-*` holding a `projects` folder, and any `extra`

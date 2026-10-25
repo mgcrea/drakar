@@ -22,7 +22,7 @@ public struct Subfolder: Sendable, Hashable, Identifiable {
 public enum SubfolderScan {
   public static func children(of parent: URL) -> [Subfolder] {
     let manager = FileManager.default
-    let root = ProjectPath.normalize(parent.path(percentEncoded: false))
+    let root = ProjectPath.normalize(parent)
     let names = (try? manager.contentsOfDirectory(atPath: root)) ?? []
     return names.filter { !$0.hasPrefix(".") }
       .compactMap { name -> Subfolder? in

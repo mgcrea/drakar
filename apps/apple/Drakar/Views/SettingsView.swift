@@ -193,7 +193,7 @@ enum ClaudeChoice {
   }
 
   private static func folderKey(_ folder: URL) -> String {
-    ProjectPath.normalize(folder.path(percentEncoded: false))
+    ProjectPath.normalize(folder)
   }
 
   /// The account a configuration directory holds; `~/.claude` is the default one.

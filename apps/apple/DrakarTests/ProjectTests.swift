@@ -239,12 +239,12 @@ struct ProjectTests {
     let sub = folder.appending(path: "sub").path(percentEncoded: false)
     #expect(
       OpenSessions.shared.ownerFolder(forCwd: sub)
-        == ProjectPath.normalize(folder.path(percentEncoded: false)))
+        == ProjectPath.normalize(folder))
     #expect(OpenSessions.shared.ownerFolder(forCwd: "/elsewhere/x") == "/elsewhere/x")
   }
 
   @Test func pendingAttachmentsWaitForTheirWindow() {
-    let path = ProjectPath.normalize(folder.path(percentEncoded: false))
+    let path = ProjectPath.normalize(folder)
     OpenSessions.shared.requestAttach(target("a"), in: path)
     #expect(OpenSessions.shared.takePending(for: path).map(\.sessionID) == ["a"])
     #expect(OpenSessions.shared.takePending(for: path).isEmpty)

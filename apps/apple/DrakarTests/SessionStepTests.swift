@@ -57,7 +57,7 @@ struct SessionStepTests {
   /// The arrow keys onto an ended session keep the keys in the list, as onto a held row.
   @Test func theArrowKeysKeepTheKeysOnAnEndedRow() async throws {
     let project = try project()
-    let path = ProjectPath.normalize(project.folder.path(percentEncoded: false))
+    let path = ProjectPath.normalize(project.folder)
     let account = ClaudeAccount(
       directory: project.folder.appending(path: "claude-config", directoryHint: .isDirectory),
       isDefault: false)

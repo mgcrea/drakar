@@ -279,8 +279,8 @@ struct ComposerView: View {
   static func selectionNote(
     _ selection: EditorSelection, sessionFolder: URL, projectFolder: URL
   ) -> String? {
-    let session = ProjectPath.normalize(sessionFolder.path(percentEncoded: false))
-    let project = ProjectPath.normalize(projectFolder.path(percentEncoded: false))
+    let session = ProjectPath.normalize(sessionFolder)
+    let project = ProjectPath.normalize(projectFolder)
     guard session != project, isWorktree(session),
       !ProjectPath.contains(session, selection.filePath)
     else { return nil }

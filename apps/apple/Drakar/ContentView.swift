@@ -240,7 +240,7 @@ struct ContentView: View {
 
   /// A project clicked on home: its open window comes forward, or this one becomes it.
   private func enter(_ folder: URL) {
-    let path = ProjectPath.normalize(folder.path(percentEncoded: false))
+    let path = ProjectPath.normalize(folder)
     if let window = OpenSessions.shared.window(forFolder: path) {
       window.makeKeyAndOrderFront(nil)
       return
@@ -268,7 +268,7 @@ struct ContentView: View {
   private func show(_ next: WindowRoute, attaching targets: [ResumeTarget]) {
     guard case .project(let folder) = next else { return }
     if let owner = OpenSessions.shared.projects.values.first(where: {
-      ProjectPath.normalize($0.folder.path(percentEncoded: false)) == folder
+      ProjectPath.normalize($0.folder) == folder
     }) {
       for target in targets { owner.attach(target) }
       owner.workspace.window?.makeKeyAndOrderFront(nil)
@@ -442,7 +442,7 @@ private struct WindowLevel: NSViewRepresentable {
   static func open(_ route: WindowRoute, asTab: Bool) {
     if let folder = route.folder,
       let window = OpenSessions.shared.window(
-        forFolder: ProjectPath.normalize(folder.path(percentEncoded: false)))
+        forFolder: ProjectPath.normalize(folder))
     {
       window.makeKeyAndOrderFront(nil)
       return

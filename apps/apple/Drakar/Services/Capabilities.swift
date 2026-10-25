@@ -134,7 +134,7 @@ final class CapabilityStore {
   private var entries: [String: Capabilities] = [:]
 
   func capabilities(for folder: URL, account: ClaudeAccount) -> Capabilities {
-    let path = ProjectPath.normalize(folder.path(percentEncoded: false))
+    let path = ProjectPath.normalize(folder)
     let key = path + "\n" + account.key
     if let entry = entries[key] { return entry }
     let entry = Capabilities(

@@ -293,7 +293,7 @@ enum ProjectMemory {
   }
 
   private static func path(of folder: URL) -> String {
-    ProjectPath.normalize(folder.path(percentEncoded: false))
+    ProjectPath.normalize(folder)
   }
 }
 
@@ -393,7 +393,7 @@ final class Project {
   /// it is made from changes: the sidebar, its badge, the menus and the window's storage
   /// each ask, and grouping looks at every session under the folder.
   var groups: ProjectGroups {
-    let folder = ProjectPath.normalize(self.folder.path(percentEncoded: false))
+    let folder = ProjectPath.normalize(self.folder)
     let others = OpenSessions.shared.folders.filter { $0 != folder }
     let attached = Set(held.compactMap(\.sessionID))
     let inOtherWindows = Set(
@@ -828,8 +828,8 @@ final class Project {
   /// folder, under the account the lists are for: a worktree is another checkout. The lists
   /// are Claude Code's: a Codex session never speaks for them.
   func speaksForProject(_ session: AgentSession) -> Bool {
-    ProjectPath.normalize(session.folder.path(percentEncoded: false))
-      == ProjectPath.normalize(folder.path(percentEncoded: false))
+    ProjectPath.normalize(session.folder)
+      == ProjectPath.normalize(folder)
       && session.agent == .claude && session.account?.key == capabilities.accountKey
   }
 
@@ -926,7 +926,7 @@ final class Project {
   /// it the folder lists, in the window's rows and on disk. Nil when it has no title yet.
   private func forkName(for target: ResumeTarget) -> String? {
     let listed = monitor.summaries(
-      under: ProjectPath.normalize(folder.path(percentEncoded: false)))
+      under: ProjectPath.normalize(folder))
     let original =
       session(withID: target.sessionID)?.knownTitle
       ?? listed.first { $0.sessionID == target.sessionID }

@@ -103,7 +103,7 @@ final class CodexSkills {
     async throws -> CodexSkillList.Listing
   {
     var params: [String: JSONValue] = [
-      "cwds": .array([.string(ProjectPath.normalize(folder.path(percentEncoded: false)))])
+      "cwds": .array([.string(ProjectPath.normalize(folder))])
     ]
     if force { params["forceReload"] = .bool(true) }
     let results = try await CodexOneShot(configuration: configuration).run { previous in
@@ -120,7 +120,7 @@ final class CodexSkillStore {
   private var entries: [String: CodexSkills] = [:]
 
   func skills(for folder: URL) -> CodexSkills {
-    let path = ProjectPath.normalize(folder.path(percentEncoded: false))
+    let path = ProjectPath.normalize(folder)
     if let entry = entries[path] { return entry }
     let entry = CodexSkills(folder: URL(filePath: path, directoryHint: .isDirectory))
     entries[path] = entry
