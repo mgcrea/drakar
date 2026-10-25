@@ -198,6 +198,51 @@ import Testing
     #expect(listed.count == 2)
   }
 
+  /// The detach and the attach right after it go out with nothing awaited between: the attach
+  /// must not run first, or the detach would undo it.
+  @Test func anAttachRightAfterADetachSurvivesIt() async throws {
+    let host = try TestHost()
+    defer { host.close() }
+    let client = try host.connect()
+    let id = try await client.spawn(host.cat(), meta: Data())
+    _ = try await events(client.attach(id, from: 0)) { $0 == .caughtUp(id: id, offset: 0) }
+
+    for round in 0..<100 {
+      let text = "again \(round)\n"
+      try client.send(.detach(id: id))
+      let stream = client.attach(id, from: 0)
+      try client.send(.write(id: id, bytes: Data(text.utf8)))
+      // The echo is live, so the attach is still the app's after the detach before it.
+      _ = try await events(stream, until: isOut(text))
+      #expect(try await client.list().first?.attachedApp == getpid())
+    }
+  }
+
+  /// One connection's stuck write holds up its own process's requests, not another
+  /// connection's.
+  @Test func aStuckWriteHoldsUpNoOtherConnection() async throws {
+    let host = try TestHost()
+    defer { host.close() }
+    let first = try host.connect()
+    let second = try host.connect()
+    let deaf = try await first.spawn(
+      AgentProcess.Configuration(
+        executable: URL(fileURLWithPath: "/bin/sleep"), arguments: ["30"], environment: [:],
+        currentDirectory: host.directory),
+      meta: Data())
+    try first.send(.write(id: deaf, bytes: Data(repeating: 0x61, count: 1 << 20)))
+
+    let cat = host.cat()
+    let listed = try await within {
+      let other = try await second.spawn(cat, meta: Data())
+      let stream = second.attach(other, from: 0)
+      try second.send(.write(id: other, bytes: Data("b\n".utf8)))
+      _ = try await self.events(stream, until: self.isOut("b\n"))
+      return try await second.list()
+    }
+    #expect(listed.count == 2)
+  }
+
   @Test func aConnectionToNothingThrows() throws {
     let host = try TestHost()
     host.close()

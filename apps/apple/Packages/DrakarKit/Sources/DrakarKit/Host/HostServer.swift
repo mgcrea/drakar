@@ -14,12 +14,19 @@ public final class HostServer: @unchecked Sendable {
   private let peerCheck: @Sendable (Int32) -> Bool
   private let state = Mutex(State())
 
+  private struct Lane: Hashable {
+    var client: HostCore.Client
+    var id: String
+  }
+
   private struct State {
     var connections: [HostCore.Client: UnixConnection] = [:]
-    /// One per process, for its writes, notes and `closeInput`, in the order the app sent
-    /// them. Off the connection, since a write waits on a CLI slow to read: the app's
-    /// requests to every other process go on meanwhile.
-    var lanes: [String: DispatchQueue] = [:]
+    /// One per connection and process. Every request naming a process but `terminate` runs
+    /// on its lane in the order the app sent them, so a detach never overtakes a write nor
+    /// is overtaken by the attach after it. Off the connection, since a write waits on a CLI
+    /// slow to read: the app's requests to every other process, and other apps', go on
+    /// meanwhile. `terminate` stays inline, since killing a CLI is how a stuck write ends.
+    var lanes: [Lane: DispatchQueue] = [:]
     var stopped = false
   }
 
@@ -139,7 +146,10 @@ public final class HostServer: @unchecked Sendable {
   }
 
   private func left(_ client: HostCore.Client) {
-    _ = state.withLock { $0.connections.removeValue(forKey: client) }
+    state.withLock { state in
+      state.connections.removeValue(forKey: client)
+      state.lanes = state.lanes.filter { $0.key.client != client }
+    }
     core.disconnected(client)
   }
 
@@ -153,14 +163,16 @@ public final class HostServer: @unchecked Sendable {
       return
     }
     switch frame.request {
-    // `detach` shares the lane so it never overtakes a write the app sent before it.
-    case .write(let id, _), .note(let id, _), .closeInput(let id), .detach(let id):
-      lane(id).async { self.answer(frame, from: client) }
+    case .attach(let id, _), .write(let id, _), .note(let id, _), .closeInput(let id),
+      .setMeta(let id, _), .detach(let id):
+      lane(id, of: client).async { self.answer(frame, from: client) }
     case .acknowledge(let id):
-      if answer(frame, from: client).isEmpty {
-        _ = state.withLock { $0.lanes.removeValue(forKey: id) }
+      lane(id, of: client).async {
+        if self.answer(frame, from: client).isEmpty {
+          _ = self.state.withLock { $0.lanes.removeValue(forKey: Lane(client: client, id: id)) }
+        }
       }
-    default:
+    case .hello, .list, .spawn, .terminate:
       answer(frame, from: client)
     }
   }
@@ -172,11 +184,12 @@ public final class HostServer: @unchecked Sendable {
     return replies
   }
 
-  private func lane(_ id: String) -> DispatchQueue {
+  private func lane(_ id: String, of client: HostCore.Client) -> DispatchQueue {
     state.withLock { state in
-      if let lane = state.lanes[id] { return lane }
+      let key = Lane(client: client, id: id)
+      if let lane = state.lanes[key] { return lane }
       let lane = DispatchQueue(label: "HostServer.lane")
-      state.lanes[id] = lane
+      state.lanes[key] = lane
       return lane
     }
   }
