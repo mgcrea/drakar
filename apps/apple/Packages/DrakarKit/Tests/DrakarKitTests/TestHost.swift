@@ -9,6 +9,7 @@ final class TestHost {
   let directory: URL
   let core: HostCore
   private(set) var server: HostServer?
+  private let peerCheck: @Sendable (Int32) -> Bool
   private let clients = Mutex<[HostClient]>([])
 
   init(
@@ -18,6 +19,7 @@ final class TestHost {
     let name = String(UUID().uuidString.prefix(6))
     directory = URL(fileURLWithPath: "/tmp/dh-\(name)", isDirectory: true)
     core = HostCore(directory: directory, hostVersion: "test")
+    self.peerCheck = peerCheck
     server = try HostServer.start(
       directory: directory, core: core, peerCheck: peerCheck, accept: accept)
   }
@@ -28,6 +30,18 @@ final class TestHost {
     let client = try HostClient.connect(socket: socket)
     clients.withLock { $0.append(client) }
     return client
+  }
+
+  /// Drops every app's connection, as a host that lost them would, and takes new ones on
+  /// the same core: the processes carry on. A child another test spawns that moment can hold
+  /// the lock's descriptor until it execs, so the new server waits for it.
+  func restart() throws {
+    server?.stop()
+    server = nil
+    for _ in 0..<100 where server == nil {
+      server = try HostServer.start(directory: directory, core: core, peerCheck: peerCheck)
+      if server == nil { usleep(10_000) }
+    }
   }
 
   /// Ends whatever is still running, so no test leaves a process or a socket behind.

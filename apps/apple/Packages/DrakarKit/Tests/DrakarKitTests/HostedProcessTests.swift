@@ -212,6 +212,71 @@ import Testing
     }
   }
 
+  /// The lines of `events` up to the one that is `last`.
+  private func lines(of events: AsyncStream<AgentProcess.Event>, through last: String)
+    async throws -> [AgentProcess.Line]
+  {
+    try await within {
+      var seen: [AgentProcess.Line] = []
+      for await event in events {
+        guard case .lines(let lines, _) = event else { continue }
+        seen += lines
+        if lines.contains(.invalid(last)) { return seen }
+      }
+      throw TimedOut()
+    }
+  }
+
+  /// A connection that ends leaves the process running, and a new one carries on where the
+  /// last left off: what the CLI wrote meanwhile comes once, and nothing comes twice.
+  @Test func aNewConnectionResumesWhereTheLastLeftOff() async throws {
+    let host = try TestHost()
+    defer { host.close() }
+    let client = try await connected(host)
+    let process = HostedProcess(client: client, configuration: host.cat(), meta: Data())
+    let events = try process.start()
+    try process.send(line: Data("one\n".utf8))
+    #expect(try await lines(of: events, through: "one") == [.invalid("one")])
+
+    try host.restart()
+    try await within { for await _ in events {} }
+    #expect(process.isRunning)
+    #expect(throws: (any Error).self) { try process.send(line: Data("lost\n".utf8)) }
+    // Written while no app was attached, as another app could have.
+    let other = host.core.connected(pid: 0)
+    let id = try #require(process.id)
+    #expect(host.core.handle(.write(id: id, bytes: Data("two\n".utf8)), from: other).isEmpty)
+    host.core.disconnected(other)
+
+    let again = try await connected(host)
+    let live = process.reattach(on: again)
+    try process.send(line: Data("three\n".utf8))
+    #expect(
+      try await lines(of: live, through: "three") == [.invalid("two"), .invalid("three")])
+    process.terminate()
+  }
+
+  /// A process the host no longer holds ends the events, and says why, rather than leaving
+  /// them open with nothing to come.
+  @Test func aReattachTheHostRefusesEndsTheProcess() async throws {
+    let host = try TestHost()
+    defer { host.close() }
+    let client = try await connected(host)
+    let process = HostedProcess(
+      client: client, held: HeldProcess(id: "nope", meta: Data(), running: true, logLength: 0))
+    let seen = try await within {
+      var seen: [AgentProcess.Event] = []
+      for await event in process.reattach(on: client) { seen.append(event) }
+      return seen
+    }
+    #expect(seen.last == .exited(status: -1, remainder: Data()))
+    #expect(!process.isRunning)
+    guard case .lost? = process.startFailure as? HostedProcess.Failure else {
+      Issue.record("startFailure is \(String(describing: process.startFailure))")
+      return
+    }
+  }
+
   @Test func replayOfAProcessTheHostDoesNotKnowIsRefused() async throws {
     let host = try TestHost()
     defer { host.close() }

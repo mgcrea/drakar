@@ -54,6 +54,10 @@ public final class HostClient: @unchecked Sendable {
 
   deinit { connection.close() }
 
+  /// The connection ended, whoever ended it: true before `disconnected` yields, and before
+  /// any stream it ends finishes.
+  public var isClosed: Bool { state.withLock { $0.closed } }
+
   public func hello(appVersion: String) async throws -> (
     protocol: Int, hostVersion: String, pid: Int32
   ) {

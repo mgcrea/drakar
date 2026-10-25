@@ -4,7 +4,9 @@ import Synchronization
 /// An agent's CLI run through the session host: it yields the events `AgentProcess` does,
 /// but the process outlives the app. A new one spawns when `start()` is called, not before.
 /// One the host already holds is picked up with `replay()`, which returns the whole log, and
-/// then `live()`, which carries on from where the replay ended.
+/// then `live()`, which carries on from where the replay ended. A connection that ends ends
+/// the events but not the process: `reattach(on:)` carries on, on a new one, from where the
+/// last left off.
 ///
 /// The host logs every line the CLI writes, so `.lines` carries the time the host read each
 /// one, as `AgentProcess` does for a pipe, and `.exited` has no `remainder`: the host logged
@@ -13,17 +15,25 @@ public final class HostedProcess: ProcessTransport, @unchecked Sendable {
   public enum Failure: Error, Equatable {
     /// The host did not say it spawned the process within the spawn limit.
     case noAnswer
+    /// The host would not attach the process again: it no longer holds it, or another app has.
+    case lost(String)
   }
 
-  private let client: HostClient
   private let configuration: AgentProcess.Configuration?
   private let meta: Data
   private let spawnLimit: Duration
-  private let events: AsyncStream<AgentProcess.Event>
-  private let sink: AsyncStream<AgentProcess.Event>.Continuation
   private let state: Mutex<State>
 
   private struct State {
+    /// The connection now: a new one after `reattach(on:)`.
+    var client: HostClient
+    /// The events of the attach now.
+    var events: AsyncStream<AgentProcess.Event>
+    var sink: AsyncStream<AgentProcess.Event>.Continuation
+    /// Where the log ended at the last `caughtUp`, and the last record delivered since: an
+    /// attach on a new connection starts at the later, which sends that record again.
+    var caughtUp: UInt64 = 0
+    var delivered: UInt64?
     var id: String?
     var started = false
     var running: Bool
@@ -44,22 +54,21 @@ public final class HostedProcess: ProcessTransport, @unchecked Sendable {
     client: HostClient, configuration: AgentProcess.Configuration, meta: Data,
     spawnLimit: Duration = .seconds(10)
   ) {
-    self.client = client
     self.configuration = configuration
     self.meta = meta
     self.spawnLimit = spawnLimit
-    (events, sink) = AsyncStream.makeStream()
-    state = Mutex(State(running: false))
+    let (events, sink) = AsyncStream.makeStream(of: AgentProcess.Event.self)
+    state = Mutex(State(client: client, events: events, sink: sink, running: false))
   }
 
   /// A process the host already holds: `replay()`, then `live()`.
   public init(client: HostClient, held: HeldProcess) {
-    self.client = client
     configuration = nil
     meta = held.meta
     spawnLimit = .zero
-    (events, sink) = AsyncStream.makeStream()
-    state = Mutex(State(id: held.id, running: held.running))
+    let (events, sink) = AsyncStream.makeStream(of: AgentProcess.Event.self)
+    state = Mutex(
+      State(client: client, events: events, sink: sink, id: held.id, running: held.running))
   }
 
   public var id: String? { state.withLock { $0.id } }
@@ -72,6 +81,7 @@ public final class HostedProcess: ProcessTransport, @unchecked Sendable {
 
   /// Spawns the process and returns its events. Call once.
   public func start() throws -> AsyncStream<AgentProcess.Event> {
+    let (events, client) = state.withLock { ($0.events, $0.client) }
     guard let configuration else { return events }
     let first = state.withLock { state in
       defer { state.started = true }
@@ -81,10 +91,10 @@ public final class HostedProcess: ProcessTransport, @unchecked Sendable {
     guard first else { return events }
     let task = Task {
       do {
-        let id = try await spawn(configuration)
+        let id = try await spawn(configuration, on: client)
         try spawned(id)
         guard !state.withLock({ $0.detached }) else { return }
-        pump(client.attach(id, from: 0), replaying: nil)
+        pump(client.attach(id, from: 0), on: client, replaying: nil)
       } catch {
         state.withLock { $0.startFailure = error }
         ended(status: -1)
@@ -137,11 +147,11 @@ public final class HostedProcess: ProcessTransport, @unchecked Sendable {
   /// Lets go of the process, which runs on in the host for another app, or this one, to pick up.
   public func detach() {
     try? request { .detach(id: $0) }
-    let pump = state.withLock { state in
+    let (pump, sink) = state.withLock { state in
       state.detached = true
       state.running = false
       defer { state.pump = nil }
-      return state.pump
+      return (state.pump, state.sink)
     }
     pump?.cancel()
     sink.finish()
@@ -151,22 +161,45 @@ public final class HostedProcess: ProcessTransport, @unchecked Sendable {
   /// process the host held already; `live()` then carries on after it. Throws when the host
   /// refuses the attach or the connection ends first.
   public func replay() async throws -> (records: [HostRecord], offset: UInt64) {
+    let (id, client) = state.withLock { ($0.id, $0.client) }
     guard let id else { throw HostClient.Failure.unexpected }
     let stream = client.attach(id, from: 0)
     return try await withCheckedThrowingContinuation { continuation in
-      pump(stream, replaying: continuation)
+      pump(stream, on: client, replaying: continuation)
     }
   }
 
   /// What the process does after `replay()`, and nothing before it.
-  public func live() -> AsyncStream<AgentProcess.Event> { events }
+  public func live() -> AsyncStream<AgentProcess.Event> { state.withLock { $0.events } }
+
+  /// Attaches again on `client`, the connection the events came on having ended: what the
+  /// process did meanwhile and after, each line once. Requests go on `client` from now on.
+  public func reattach(on client: HostClient) -> AsyncStream<AgentProcess.Event> {
+    let (events, sink) = AsyncStream.makeStream(of: AgentProcess.Event.self)
+    let (id, from, before) = state.withLock { state in
+      state.client = client
+      state.events = events
+      state.sink = sink
+      defer { state.pump = nil }
+      return (state.id, max(state.caughtUp, state.delivered ?? 0), state.pump)
+    }
+    before?.cancel()
+    guard let id else {
+      sink.finish()
+      return events
+    }
+    pump(client.attach(id, from: from), on: client, replaying: nil)
+    return events
+  }
 
   // MARK: -
 
   /// The new process's id, or `Failure.noAnswer` once `spawnLimit` has gone by. A spawn the
   /// host answers after that is ended at once, for nobody holds it.
-  private func spawn(_ configuration: AgentProcess.Configuration) async throws -> String {
-    let (client, meta, limit) = (client, meta, spawnLimit)
+  private func spawn(_ configuration: AgentProcess.Configuration, on client: HostClient)
+    async throws -> String
+  {
+    let (meta, limit) = (meta, spawnLimit)
     let once = Once()
     return try await withCheckedThrowingContinuation { continuation in
       let timer = Task {
@@ -207,7 +240,7 @@ public final class HostedProcess: ProcessTransport, @unchecked Sendable {
   private func request(_ make: @escaping @Sendable (String) -> HostRequest) throws {
     try state.withLock { state in
       if let id = state.id {
-        try client.send(make(id))
+        try state.client.send(make(id))
       } else if state.started {
         state.waiting.append(make)
       } else {
@@ -221,34 +254,48 @@ public final class HostedProcess: ProcessTransport, @unchecked Sendable {
       state.id = id
       let waiting = state.waiting
       state.waiting = []
-      for make in waiting { try client.send(make(id)) }
+      for make in waiting { try state.client.send(make(id)) }
     }
   }
 
-  private func ended(status: Int32) {
+  private func ended(status: Int32, sink: AsyncStream<AgentProcess.Event>.Continuation) {
     state.withLock { $0.running = false }
     sink.yield(.exited(status: status, remainder: Data()))
     sink.finish()
   }
 
-  /// Turns what an attach streams into events. With `replaying`, the records before
-  /// `caughtUp` go to it instead, which resumes at `caughtUp`.
+  private func ended(status: Int32) {
+    ended(status: status, sink: state.withLock { $0.sink })
+  }
+
+  /// Turns what an attach on `client` streams into events. With `replaying`, the records
+  /// before `caughtUp` go to it instead, which resumes at `caughtUp`.
   private func pump(
-    _ stream: AsyncStream<HostEvent>,
+    _ stream: AsyncStream<HostEvent>, on client: HostClient,
     replaying: CheckedContinuation<(records: [HostRecord], offset: UInt64), any Error>?
   ) {
+    let sink = state.withLock { $0.sink }
     let task = Task {
       var replaying = replaying
       var backlog: [HostRecord] = []
+      var refusal: String?
       for await event in stream {
         switch event {
         case .record(_, let record):
+          // A reattach starts at the last record delivered, which it sends again.
+          let isNew = state.withLock { state in
+            guard state.delivered.map({ record.offset > $0 }) ?? true else { return false }
+            state.delivered = record.offset
+            return true
+          }
+          guard isNew else { continue }
           if replaying != nil {
             backlog.append(record)
           } else if let event = Self.event(for: record) {
             sink.yield(event)
           }
         case .caughtUp(_, let offset):
+          state.withLock { $0.caughtUp = max($0.caughtUp, offset) }
           replaying?.resume(returning: (backlog, offset))
           replaying = nil
         case .stderr(_, let text):
@@ -261,7 +308,7 @@ public final class HostedProcess: ProcessTransport, @unchecked Sendable {
             state.exited = true
             return state.forgets
           }
-          ended(status: status)
+          ended(status: status, sink: sink)
           if forgets { acknowledge() }
           return
         case .refused(let reason):
@@ -271,14 +318,20 @@ public final class HostedProcess: ProcessTransport, @unchecked Sendable {
             sink.finish()
             return
           }
+          refusal = reason
           sink.yield(.stderr("The session host refused: \(reason)\n"))
         case .welcome, .listed, .spawned, .released:
           break
         }
       }
-      // The connection ended: the process carries on in the host, so this is no exit.
       replaying?.resume(throwing: HostClient.Failure.disconnected)
-      sink.finish()
+      // Let go of, or attached again: these events are no longer the process's.
+      guard !Task.isCancelled else { return sink.finish() }
+      // The connection ended: the process carries on in the host, so this is no exit.
+      guard !client.isClosed else { return sink.finish() }
+      // The connection is up, so the host ended the attach: refused, and nothing will come.
+      state.withLock { $0.startFailure = Failure.lost(refusal ?? "the attach ended") }
+      ended(status: -1, sink: sink)
     }
     state.withLock { state in
       if state.detached { task.cancel() } else { state.pump = task }
