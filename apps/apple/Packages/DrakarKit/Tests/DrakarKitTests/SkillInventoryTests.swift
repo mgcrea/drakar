@@ -11,7 +11,7 @@ struct SkillInventoryTests {
 
   private func cleanUp() { try? FileManager.default.removeItem(at: root) }
 
-  private func path(_ url: URL) -> String { ProjectPath.normalize(url.path(percentEncoded: false)) }
+  private func path(_ url: URL) -> String { ProjectPath.normalize(url) }
 
   /// No disk: every path is its own folder, and none is a link.
   private func merge(

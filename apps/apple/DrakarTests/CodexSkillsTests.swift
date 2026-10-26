@@ -228,7 +228,7 @@ struct CodexSkillsTests {
   /// The read asks `skills/list` for the folder, forcing a reload when asked, and lists what
   /// it answers.
   @Test func readsSkillsListFromCodex() async throws {
-    let path = ProjectPath.normalize(folder.path(percentEncoded: false))
+    let path = ProjectPath.normalize(folder)
     let script = folder.appending(path: "codex")
     func skill(_ name: String) -> String {
       #"{"name":"\#(name)","description":"d","path":"/\#(name)/SKILL.md","scope":"repo","enabled":true}"#

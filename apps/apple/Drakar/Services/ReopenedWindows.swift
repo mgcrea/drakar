@@ -82,7 +82,7 @@ final class ReopenedWindows {
   /// tab group, and the one after it is returned to open.
   func arrived(_ window: NSWindow, folder: URL) -> WindowRoute? {
     guard let next = queue.first,
-      next.folder == ProjectPath.normalize(folder.path(percentEncoded: false))
+      next.folder == ProjectPath.normalize(folder)
     else { return nil }
     queue.removeFirst()
     if let frame = next.frame { window.setFrame(from: frame) }

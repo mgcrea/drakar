@@ -4,6 +4,11 @@ import Foundation
 /// deepest open project owning a session. Ported from Armada's `ProjectPath`, where a raw
 /// prefix once counted `armada-old`'s sessions as `armada`'s.
 public enum ProjectPath {
+  /// `url`'s path as written, not percent-encoded, normalized.
+  public static func normalize(_ url: URL) -> String {
+    normalize(url.path(percentEncoded: false))
+  }
+
   /// No trailing slash (except the root's), `.` and `..` resolved on the string.
   public static func normalize(_ raw: String) -> String {
     var path = raw

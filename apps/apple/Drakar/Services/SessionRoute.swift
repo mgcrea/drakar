@@ -14,7 +14,7 @@ enum WindowRoute: Codable, Hashable {
   case picker(token: UUID)
 
   static func project(_ url: URL) -> WindowRoute {
-    .project(folder: ProjectPath.normalize(url.path(percentEncoded: false)))
+    .project(folder: ProjectPath.normalize(url))
   }
 
   static func picker() -> WindowRoute { .picker(token: UUID()) }
@@ -101,7 +101,7 @@ final class OpenSessions {
   var folders: [String] {
     Array(
       Set(
-        projects.values.map { ProjectPath.normalize($0.folder.path(percentEncoded: false)) }))
+        projects.values.map { ProjectPath.normalize($0.folder) }))
   }
 
   /// The window holding `sessionID` as one of its own rows; one only watching it does not
@@ -126,7 +126,7 @@ final class OpenSessions {
   /// The window showing the project at `folder`, as `normalize` writes it.
   func window(forFolder folder: String) -> NSWindow? {
     projects.values.first {
-      ProjectPath.normalize($0.folder.path(percentEncoded: false)) == folder
+      ProjectPath.normalize($0.folder) == folder
     }?.workspace.window
   }
 

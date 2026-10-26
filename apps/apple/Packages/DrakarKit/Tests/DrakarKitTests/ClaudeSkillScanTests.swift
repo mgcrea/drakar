@@ -25,7 +25,7 @@ struct ClaudeSkillScanTests {
 
   private func cleanUp() { try? FileManager.default.removeItem(at: root) }
 
-  private func path(_ url: URL) -> String { ProjectPath.normalize(url.path(percentEncoded: false)) }
+  private func path(_ url: URL) -> String { ProjectPath.normalize(url) }
 
   private func write(_ text: String, to file: URL) throws {
     try FileManager.default.createDirectory(

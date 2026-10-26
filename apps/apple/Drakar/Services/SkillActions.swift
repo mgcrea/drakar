@@ -3,7 +3,7 @@ import Foundation
 
 extension URL {
   /// The path as skill rows spell it: no trailing slash.
-  nonisolated var skillPath: String { ProjectPath.normalize(path(percentEncoded: false)) }
+  nonisolated var skillPath: String { ProjectPath.normalize(self) }
 }
 
 /// How the Skills window writes a path: under the home folder with `~`.

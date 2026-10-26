@@ -25,7 +25,7 @@ struct ReopenedWindowsTests {
     }
   }
 
-  private func path(_ url: URL) -> String { ProjectPath.normalize(url.path(percentEncoded: false)) }
+  private func path(_ url: URL) -> String { ProjectPath.normalize(url) }
 
   private func window() -> NSWindow {
     let window = NSWindow(

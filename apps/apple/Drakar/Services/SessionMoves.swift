@@ -192,9 +192,9 @@ extension SessionMoves {
   /// After the picker moved `folder` from `source` to `target`: offer to take its sessions
   /// along. Asks nothing when there is nothing to move.
   static func offer(folder: URL, from source: ClaudeAccount, to target: ClaudeAccount) {
-    let path = ProjectPath.normalize(folder.path(percentEncoded: false))
+    let path = ProjectPath.normalize(folder)
     let held = OpenSessions.shared.projects.values
-      .filter { ProjectPath.normalize($0.folder.path(percentEncoded: false)) == path }
+      .filter { ProjectPath.normalize($0.folder) == path }
       .flatMap(\.held)
       .compactMap { item in item.session.savedTarget.map { (target: $0, title: item.displayTitle) }
       }
