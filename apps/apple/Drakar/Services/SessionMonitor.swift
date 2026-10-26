@@ -21,7 +21,8 @@ final class SessionMonitor {
   /// The sessions a `claude` process has open now, outside Drakar.
   private(set) var liveSessions: [LiveSession] = []
 
-  @ObservationIgnored private var accounts: [ClaudeAccount]
+  /// Settable for tests, which read a registry of their own.
+  @ObservationIgnored var accounts: [ClaudeAccount]
   @ObservationIgnored private var accountModels: [URL: String] = [:]
   @ObservationIgnored private var live: [URL: [String: LiveSession]] = [:]
   @ObservationIgnored private var watchers: [FolderWatcher] = []

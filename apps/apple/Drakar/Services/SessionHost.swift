@@ -33,7 +33,8 @@ import Synchronization
 
   /// Our host's, from its hello: what it runs for this app's own rows the registry of live
   /// sessions must not take for another app's (`LiveSession.read`).
-  private(set) var hostPID: Int32? { didSet { if hostPID != oldValue { hostedChanged() } } }
+  /// Settable for tests, whose host is the test process.
+  var hostPID: Int32? { didSet { if hostPID != oldValue { hostedChanged() } } }
 
   /// Tests only: the helper this instance started, if it started one.
   private(set) var started: pid_t?

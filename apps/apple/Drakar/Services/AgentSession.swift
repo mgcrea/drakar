@@ -1046,10 +1046,14 @@ final class AgentSession {
     for signal in output.signals { handle(signal) }
     let waiting = transcript.pendingPermissions.count
     var turnEnded = false
+    let known = sessionID
     for event in output.events {
       transcript.apply(event, at: time)
       if case .turnEnded = event { turnEnded = true }
     }
+    // A new or forked session has no id until `system/init`: a registry read before it
+    // listed this row's own process as another app's, and nothing else would read it again.
+    if isHosted, !isReplaying, sessionID != known { SessionMonitor.shared.hostedChanged() }
     if agent == .codex { codexTurns += output.events.turnsEnded }
     if unsentName != nil { sendUnsentName() }
     if !isReplaying, transcript.pendingPermissions.count > waiting,

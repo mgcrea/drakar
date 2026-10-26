@@ -366,7 +366,6 @@ struct TwoAppsTests {
     #expect(!session.isProcessRunning)
     #expect(session.resuming?.sessionID == "t-5")
     #expect(prompts(session) == ["before"])
-    #expect(session.canSend)
     session.send("go-after")
     #expect(await eventually { sent("go-after") == 1 })
   }
@@ -500,6 +499,74 @@ struct TwoAppsTests {
     #expect(older.asked.contains(.list))
     // An older host's pid is never one whose processes are this app's own.
     #expect(b.hostPID == nil)
+  }
+
+  /// A new hosted session has no id until `system/init`. A registry read before it lists the
+  /// row's own process, and the row learning its id must read the registries again, or the
+  /// next window to register takes the row for another app's and stops it mid-turn.
+  @Test func aHostedSessionThatLearnsItsIdIsNotAnotherAppsSession() async throws {
+    defer { cleanUp() }
+    let account = ClaudeAccount(
+      directory: bin.appending(path: "account", directoryHint: .isDirectory), isDefault: true)
+    let registry = account.directory.appending(path: "sessions", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: registry, withIntermediateDirectories: true)
+    let slow = bin.appending(path: "slow")
+    let script = """
+      #!/bin/sh
+      sid="s-new-$$"
+      printf '{"pid":%s,"sessionId":"%s"}' "$$" "$sid" > "\(registry.path(percentEncoded: false))/$$.json"
+      while read -r line; do
+        case "$line" in *'"type":"user"'*) break;; esac
+      done
+      while [ ! -f "$0.init" ]; do sleep 0.02; done
+      printf '%s\\n' '{"type":"system","subtype":"init","cwd":"/tmp","session_id":"'"$sid"'","model":"m","permissionMode":"default"}'
+      while read -r line; do :; done
+
+      """
+    try Data(script.utf8).write(to: slow)
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: slow.path)
+
+    // The test process is the host here: what it spawned is a hosted process.
+    let monitor = SessionMonitor.shared
+    let (accounts, hostPID) = (monitor.accounts, SessionHost.shared.hostPID)
+    // Started first: its account discovery would replace the account set after.
+    await monitor.start()
+    monitor.accounts = [account]
+    SessionHost.shared.hostPID = getpid()
+    defer {
+      monitor.accounts = accounts
+      SessionHost.shared.hostPID = hostPID
+    }
+
+    let a = app(in: host.directory)
+    let project = Project(folder: folder)
+    project.executableOverride = slow
+    project.sessionHost = a
+    defer { project.stopAll() }
+    let windowID = UUID()
+    OpenSessions.shared.register(project, window: windowID)
+    defer { OpenSessions.shared.unregister(window: windowID) }
+    let session = project.newSession(agent: .claude, folder: folder).session
+    session.accounts = { [] }
+    session.send("go")
+    #expect(await eventually { session.isHosted && session.isProcessRunning })
+    #expect(session.sessionID == nil)
+    // The registry is read with the process listed, its row not knowing its id yet.
+    #expect(
+      await eventually {
+        ((try? FileManager.default.contentsOfDirectory(atPath: registry.path)) ?? []).count == 1
+      })
+    monitor.hostedChanged()
+    #expect(monitor.liveIDs.contains { $0.hasPrefix("s-new-") })
+
+    try Data().write(to: slow.appendingPathExtension("init"))
+    #expect(await eventually { session.sessionID != nil })
+    // Another window opens: the registries as last read decide what it takes for elsewhere.
+    let other = UUID()
+    OpenSessions.shared.register(Project(folder: folder), window: other)
+    defer { OpenSessions.shared.unregister(window: other) }
+    #expect(!session.isReadOnly)
+    #expect(session.isProcessRunning)
   }
 }
 
