@@ -37,7 +37,12 @@ refused with an error, never truncated.
 The app starts the helper on demand: `posix_spawn` with `POSIX_SPAWN_SETSID`, stdio on
 `/dev/null`, `--directory <dir>`. It is not a launchd agent. The host raises its descriptor
 limit (about four descriptors per process held), ignores `SIGPIPE`, and holds `host.lock`
-for its life. Whoever starts it first runs its copy; hosts of one major are interchangeable.
+for its life. No CLI it spawns can hold the socket or an app's connection: Foundation's
+`Process` on Darwin closes every inherited descriptor but stdio in the child (checked
+2026-10-25 with `lsof` on a `Process`-spawned `/bin/sh` whose parent had a socket and a file
+open without close-on-exec: only 0–2 were left), and the host also sets close-on-exec on
+every socket it opens or accepts. A spawn path other than `Process` would need its own
+`POSIX_SPAWN_CLOEXEC_DEFAULT`. Whoever starts it first runs its copy; hosts of one major are interchangeable.
 A host that takes `host.lock` removes every `*.log` in the directory before it serves: it
 holds nothing yet, so they are what a host killed by a logout, a reboot or a crash left.
 
