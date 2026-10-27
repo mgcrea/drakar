@@ -47,10 +47,6 @@ struct ContentView: View {
             .inspectorColumnWidth(min: 220, ideal: 280, max: 420)
             .background(ColumnSash(edge: .leading))
         }
-        // Hidden after being seen: what it showed was seen.
-        .onChange(of: inspectorShown) { was, now in
-          if was, !now { project.clearCapabilityMarks() }
-        }
         // The first window on the folder reads its lists, shown or not, so a change shows on
         // the toolbar button.
         .task(id: ObjectIdentifier(project)) { project.capabilities.loadIfNeeded() }

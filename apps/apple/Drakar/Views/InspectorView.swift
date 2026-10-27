@@ -42,6 +42,11 @@ struct InspectorView: View {
     .onAppear {
       if !project.capabilityMarks.isEmpty { tab = .capabilities }
     }
+    // Hidden on the tab that shows the marks: they were seen. Hidden on Session, they were
+    // not, and the toolbar's dot shows them now.
+    .onChange(of: isShown) { was, now in
+      if was, !now, tab == .capabilities { project.clearCapabilityMarks() }
+    }
   }
 }
 

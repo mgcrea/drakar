@@ -987,7 +987,7 @@ final class Project {
     }
   }
 
-  /// Hiding the inspector after it was on screen: everything was seen.
+  /// Hiding the inspector on its Skills & MCP tab: everything marked was seen.
   func clearCapabilityMarks() {
     capabilityMarks = CapabilityMarks()
   }
