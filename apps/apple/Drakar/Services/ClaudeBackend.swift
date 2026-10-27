@@ -9,6 +9,8 @@ final class ClaudeBackend: AgentBackend {
   var command = ClaudeCommand()
   /// The stream's, so a new one for each process.
   private var translator = ClaudeTranslator()
+  /// The process's too: a replay's new backend counts from one, and reads the log's ids as
+  /// its own only if they were counted the same way.
   private var requestCount = 0
 
   var notFoundMessage: String { ClaudeLaunch.notFound }
@@ -39,6 +41,7 @@ final class ClaudeBackend: AgentBackend {
 
   func started(_ process: any ProcessTransport, then first: AgentCommand?) throws {
     translator = ClaudeTranslator()
+    requestCount = 0
     try process.send(.initialize(requestID: nextRequestID("init")))
     askAppliedSettings(process)
     if let first { try send(first, to: process) }

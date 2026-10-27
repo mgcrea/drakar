@@ -52,6 +52,14 @@ struct QuestionPanelTests {
     #expect(QuestionPanel.digitPick("0", modifiers: [], typing: false) == nil)
   }
 
+  /// On AZERTY the digit row types digits with ⇧ held: ⇧& is "1", and it picks as 1 does.
+  @Test func aDigitTypedWithShiftPicks() {
+    #expect(QuestionPanel.digitPick("1", modifiers: .shift, typing: false)! == (0, false))
+    #expect(
+      QuestionPanel.digitPick("1", modifiers: [.command, .shift], typing: false)! == (0, true))
+    #expect(QuestionPanel.digitPick("1", modifiers: [.option, .shift], typing: false) == nil)
+  }
+
   /// ⌘'s pick answers only once it leaves every question with one: the last one picked,
   /// in whatever order, and never "Other", which waits for its text.
   @Test func aPickCompletesTheAnswersOnlyWhenEveryQuestionHasOne() {

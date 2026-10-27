@@ -172,6 +172,51 @@ struct SessionReplayTests {
     #expect(receivedLines() == before)
   }
 
+  /// A session's second process counts its request ids from one, as the replay's new
+  /// backend does: nothing it asked comes back owed.
+  @Test func aSecondProcessReplaysOwingNothing() async throws {
+    let (live, first) = try await liveTurn()
+    defer { live.stop() }
+    live.stop()
+    live.send("again")
+    try await waitFor { (live.process as? RecordingTransport).map { $0 !== first } == true }
+    let second = try #require(live.process as? RecordingTransport)
+    try await waitFor { !live.transcript.pendingPermissions.isEmpty }
+    let pending = try #require(live.transcript.pendingPermissions.first)
+    live.answer(pending, .allow(updatedInput: pending.request.input))
+    // The context request the turn's `result` makes, the last thing the backend asks.
+    try await waitFor {
+      second.records.contains {
+        $0.kind == .in && String(decoding: $0.bytes, as: UTF8.self).contains("get_context_usage")
+      }
+    }
+    let replayed = await AgentSession(replaying: second.records, meta: meta)
+    let transport = try #require(replayed.process as? ReplayTransport)
+    #expect(transport.owed.isEmpty)
+  }
+
+  /// A rate limit the log kept is a reading from when its line came, not from the replay:
+  /// one from hours ago never passes for the account's latest.
+  @Test func aReplayedRateLimitIsReadWhenItsLineCame() async throws {
+    let account = ClaudeAccount(
+      directory: folder.appending(path: "account", directoryHint: .isDirectory),
+      isDefault: false)
+    var start = meta.start
+    start.account = account
+    let meta = SessionMeta(
+      start: start, windowFolder: folder.path(percentEncoded: false), history: .none)
+    let then = Date.now.addingTimeInterval(-6 * 3600)
+    let event =
+      #"{"type":"rate_limit_event","rate_limit_info":{"unifiedWindows":{"five_hour":{"utilization":0.5,"resetsAt":4070908800}}}}"#
+    let records = [Self.initLine, event].enumerated().map { index, line in
+      HostRecord(
+        offset: UInt64(index * 1000), kind: .out, time: then, attached: true,
+        bytes: Data(line.utf8))
+    }
+    _ = await AgentSession(replaying: records, meta: meta)
+    #expect(AccountStore.shared.usage(for: account)?.readAt == then)
+  }
+
   @Test func anAnsweredPermissionIsNotPendingAgain() async throws {
     let (live, recorder) = try await liveTurn()
     defer { live.stop() }

@@ -1072,7 +1072,7 @@ final class AgentSession {
   private func receive(_ line: AgentProcess.Line, at time: Date) {
     guard let process else { return }
     let output = backend.receive(line, from: process, at: time)
-    for signal in output.signals { handle(signal) }
+    for signal in output.signals { handle(signal, at: time) }
     let waiting = transcript.waitingCount
     var turnEnded = false
     let known = sessionID
@@ -1213,10 +1213,11 @@ final class AgentSession {
     }
   }
 
-  private func handle(_ signal: SessionSignal) {
+  /// `time` is when its line came, a replay's from the log.
+  private func handle(_ signal: SessionSignal, at time: Date) {
     switch signal {
     case .rateLimit(let info):
-      if let account { accountStore.record(info, for: account) }
+      if let account { accountStore.record(info, for: account, at: time) }
     case .models(let models):
       if agent == .codex {
         catalog.recordCodex(models)
