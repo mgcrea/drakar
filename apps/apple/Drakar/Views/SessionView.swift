@@ -33,6 +33,12 @@ struct SessionView: View {
     .task(id: askedQuestion?.callID) {
       if askedQuestion != nil { item.questionFocusRequest += 1 }
     }
+    .environment(\.askedElicitation, askedElicitation)
+    // The same for a server's question, in its call's card or in the composer's place, and
+    // again when it moves from one to the other.
+    .task(id: elicitationFocusKey) {
+      if elicitationFocusKey != nil { item.questionFocusRequest += 1 }
+    }
     // Below the transcript's end, not after it: the history scrolls on under the composer
     // to the window's edge, and the scroll view keeps room for it as it grows. An inset and
     // not a `safeAreaBar`, whose scroll edge effect on the Mac is a band across the pane,
@@ -70,7 +76,9 @@ struct SessionView: View {
             )
             .id(plan.id)
           }
-        } else if askedQuestion != nil {
+        } else if let pending = item.pendingElicitation, askedElicitation == nil {
+          Docked { elicitationPanel(pending).id(pending.requestID) }
+        } else if askedQuestion != nil || askedElicitation != nil {
           Docked { QuestionWaitingStrip() }
         } else if let choice = pendingChoice {
           Docked {
@@ -164,9 +172,11 @@ struct SessionView: View {
     }
     // Esc anywhere in the session, as in the extension: the turn stops, what was queued
     // runs next, and the composer takes the keys. A panel or menu with Esc of its own
-    // takes it first.
+    // takes it first. While a server's question waits, Esc is left to its panel, whose
+    // Decline lets the turn go on.
     .onKeyPress(.escape) {
-      guard session.transcript.isRunning, !session.isReadOnly else { return .ignored }
+      guard session.transcript.isRunning, !session.isReadOnly, item.pendingElicitation == nil
+      else { return .ignored }
       session.interrupt(keepingQueued: true)
       item.focusRequest += 1
       return .handled
@@ -286,6 +296,34 @@ struct SessionView: View {
         session.answerEarlierQuestion(answers)
       },
       skip: session.dismissEarlierQuestion)
+  }
+
+  /// The first MCP server's question waiting, answered in the card of the call it interrupted
+  /// when the transcript draws one (`AskedElicitation.anchor`). Nil otherwise: the composer's
+  /// place answers it.
+  private var askedElicitation: AskedElicitation? {
+    guard let pending = item.pendingElicitation,
+      let callID = AskedElicitation.anchor(for: pending.elicitation, in: session.transcript)
+    else { return nil }
+    let panel = elicitationPanel(pending)
+    return AskedElicitation(
+      callID: callID, requestID: pending.requestID, focusRequest: item.questionFocusRequest,
+      count: session.transcript.pendingElicitations.count, panel: { panel })
+  }
+
+  /// Changes with the question waiting and with where it is answered, so its panel takes the
+  /// keys each time.
+  private var elicitationFocusKey: [String]? {
+    item.pendingElicitation.map { [$0.requestID, askedElicitation?.callID ?? ""] }
+  }
+
+  /// The questions wait in arrival order; the first is the one answered.
+  private func elicitationPanel(_ pending: Transcript.PendingElicitation) -> ElicitationPanel {
+    let session = session
+    return ElicitationPanel(
+      elicitation: pending.elicitation,
+      position: (1, session.transcript.pendingElicitations.count),
+      answer: { session.answer(pending, $0) }, focusRequest: item.questionFocusRequest)
   }
 
   private var problem: String? {

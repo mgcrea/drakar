@@ -298,7 +298,11 @@ struct EntryView: View, Equatable {
       case .tool(let call) where call.kind.isSubagent:
         AgentCallView(call: call, task: task, children: children)
       case .tool(let call):
-        ToolCallView(call: call)
+        if case .mcp = call.kind {
+          MCPCallView(call: call)
+        } else {
+          ToolCallView(call: call)
+        }
       case .notice(let text):
         // The CLI brackets its own notes ("[Request interrupted by user]").
         Label(
