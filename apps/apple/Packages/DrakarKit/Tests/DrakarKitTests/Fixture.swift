@@ -70,6 +70,14 @@ enum Fixture: String {
   /// `origin.kind` is `task-notification`). Stream events, thinking and status lines dropped;
   /// ids and paths scrubbed.
   case forkSubagent = "fork-subagent"
+  /// Two MCP elicitations on Claude Code 2.1.311 (2026-10-27, `haiku` 4.5), from
+  /// `scripts/elicit-mcp-server.py` registered as `elicit`: `ask_team`'s form request
+  /// (`requested_schema`, `property_order`), the CLI's lines up to its tool result (the reply
+  /// `{"action":"accept","content":{…}}` echoed back by the server, the token as `<secret>`),
+  /// then `sign_in`'s URL request (`url`, `elicitation_id` `el-1`) and the
+  /// `elicitation_complete` that followed its `{"action":"accept"}`. The lines between are
+  /// cut (the second call, its `can_use_tool`); the lines kept are whole.
+  case elicitation = "elicitation"
   /// The transcript line Claude Code 2.1.288 wrote for a prompt sent with a 64×64 red PNG
   /// and a text document `notes.txt` (2026-10-06): blocks kept as sent, keys trimmed.
   case historyWithAttachments = "history-with-attachments"
