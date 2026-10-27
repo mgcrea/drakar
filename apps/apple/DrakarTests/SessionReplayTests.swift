@@ -292,8 +292,8 @@ struct SessionReplayTests {
     log.out(Self.elicitation)
     log.note(
       .sent(
-        .answerElicitation(requestID: "el-1", .decline),
-        effect: .answeredElicitation(requestID: "el-1", answer: .decline)))
+        .answerElicitation(requestID: "el-1", NotedAnswer(.decline)),
+        effect: .answeredElicitation(requestID: "el-1", action: .decline)))
     log.in(try ClientMessage.answerElicitation(requestID: "el-1", .decline).line())
     let replayed = await AgentSession(replaying: log.records, meta: meta)
     #expect(replayed.transcript.pendingElicitations.isEmpty)
@@ -304,20 +304,42 @@ struct SessionReplayTests {
       })
   }
 
+  /// A form answered before the app quit: the log has its keys alone, which is enough to
+  /// have it answered and owe nothing for it.
+  @Test func anAnsweredFormIsNotPendingAgain() async throws {
+    let answer = ElicitationAnswer.accept(["team": .string("core")])
+    let message = ClientMessage.answerElicitation(requestID: "el-1", answer)
+    var log = Log()
+    log.out(Self.initLine)
+    log.out(Self.elicitation)
+    log.note(
+      .sent(
+        .answerElicitation(requestID: "el-1", NotedAnswer(answer)),
+        effect: .answeredElicitation(requestID: "el-1", action: ElicitationAction(answer))))
+    log.in(try #require(try message.redactedLine()))
+    let replayed = await AgentSession(replaying: log.records, meta: meta)
+    #expect(replayed.transcript.pendingElicitations.isEmpty)
+    #expect((replayed.process as? ReplayTransport)?.owed.isEmpty == true)
+    #expect(
+      replayed.transcript.entries.contains {
+        $0.kind == .notice("Answered srv's question: Pick one")
+      })
+  }
+
   /// The note a replay takes the answer from says what was done, never what was typed.
   @Test func anAnswersNoteKeepsNothingTyped() throws {
     let answer = ElicitationAnswer.accept(["token": .string("s3cret-value")])
     let note = SessionNote.sent(
-      .answerElicitation(requestID: "el-1", answer),
-      effect: .answeredElicitation(requestID: "el-1", answer: answer))
+      .answerElicitation(requestID: "el-1", NotedAnswer(answer)),
+      effect: .answeredElicitation(requestID: "el-1", action: ElicitationAction(answer)))
     let bytes = try JSONEncoder().encode(note)
-    #expect(!String(decoding: bytes, as: UTF8.self).contains("s3cret"))
-    let accepted = ElicitationAnswer.accept(nil)
+    let leaks = String(decoding: bytes, as: UTF8.self).contains("s3cret")
+    #expect(!leaks)
     #expect(
       try JSONDecoder().decode(SessionNote.self, from: bytes)
         == .sent(
-          .answerElicitation(requestID: "el-1", accepted),
-          effect: .answeredElicitation(requestID: "el-1", answer: accepted)))
+          .answerElicitation(requestID: "el-1", NotedAnswer(.accept(nil))),
+          effect: .answeredElicitation(requestID: "el-1", action: .accept)))
   }
 
   /// A session host keeps each line's `\n`, which a pipe's reader takes off: a replayed

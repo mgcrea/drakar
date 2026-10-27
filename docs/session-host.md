@@ -4,7 +4,7 @@
 and `codex app-server` processes Drakar's sessions run, so they outlive the app: a quit, a
 crash, a Sparkle update or a `make run` leaves them working, and the next launch attaches
 again and replays what they did meanwhile. This is the protocol as built (HostWire major 1,
-minor 2). The design and its reasons are in
+minor 3). The design and its reasons are in
 `docs/superpowers/specs/2026-10-25-session-host-design.md`, which lists where the build
 departed from it.
 
@@ -100,7 +100,7 @@ event it does not know, not the whole answer.
 | `list` | `listed [HeldProcess]` | `HeldProcess`: `id`, `meta`, `running`, `exitStatus?`, `logLength`, `attachedApp?` (the attached app's pid). |
 | `spawn {configuration, meta}` | `spawned {id}` or `refused` | Starts the process and its log. `configuration`: `executable`, `arguments`, `environment`, `currentDirectory`. |
 | `attach {id, from}` | none; the stream | Sends the log from byte offset `from`, then `caughtUp`, then live. Refused while another app is attached. `from` must be a record's offset or the end. |
-| `write {id, bytes}` | none | Written to stdin, then logged as `in`. Returns once the CLI has taken the bytes. |
+| `write {id, bytes, logged?}` | none | Written to stdin, then logged as `in`. Returns once the CLI has taken the bytes. `logged` (minor 3), when present, is what the `in` record holds in place of `bytes`: the app sends it for an accepted MCP form, its values each `"<redacted>"` (`ClientMessage.redactedLine()`). Omitted, as an older app sends it, `bytes` are logged. An older host ignores it and logs `bytes` in full. |
 | `note {id, bytes}` | none | Logged as `note`, written to nothing: the app's own marks for its replay. |
 | `closeInput {id}` | none | Closes stdin. |
 | `terminate {id, forget?}` | none | Ends the process. `forget: true` (minor 2) has the host forget it once it has ended, as `acknowledge` would, for an app that may be gone by then; at once if it has ended already. Omitted, as an older app sends it, what ended is kept. |
@@ -188,7 +188,7 @@ app; it reattaches from its offset.
   (`host-v<n>.sock`, `n` below its major), says `hello`, `list`s, and shows what it finds as
   sessions held elsewhere (read-only). It never attaches to them.
 - **Minor versions only add** fields, requests and events, and both sides ignore what they
-  do not know. Minor 0 → 1 added `detach`; 1 → 2 added `terminate`'s `forget`. `HostWire.major` / `HostWire.minor` are the
+  do not know. Minor 0 → 1 added `detach`; 1 → 2 added `terminate`'s `forget`; 2 → 3 added `write`'s `logged`. `HostWire.major` / `HostWire.minor` are the
   constants.
 - A Sparkle update replaces the bundle while the old host runs from its open inode; the new
   app then speaks to an older-built host of the same major, hence the rules above.

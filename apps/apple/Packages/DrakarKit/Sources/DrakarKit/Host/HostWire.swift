@@ -3,7 +3,7 @@ import Foundation
 /// What the app and the session host say to each other (spec §2). Newline-delimited JSON, one
 /// request or event per line.
 public enum HostWire {
-  public static let major = 1, minor = 2
+  public static let major = 1, minor = 3
 
   /// The socket's path would not fit `sockaddr_un.sun_path`.
   public struct PathTooLong: Error, Equatable {
@@ -53,7 +53,10 @@ public enum HostRequest: Codable, Sendable, Equatable {
   case list
   case spawn(AgentProcess.Configuration, meta: Data)
   case attach(id: String, from: UInt64)
-  case write(id: String, bytes: Data)
+  /// `bytes` go to stdin; `logged`, when there is one, is what the log keeps of them in their
+  /// place (`ClientMessage.redactedLine()`). Added in minor 3; nil, as an older app sends it,
+  /// logs `bytes`. An older host ignores it and logs `bytes`.
+  case write(id: String, bytes: Data, logged: Data? = nil)
   /// Logged as a `note` and written to nothing: the app's own marks for its replay.
   case note(id: String, bytes: Data)
   case closeInput(id: String)

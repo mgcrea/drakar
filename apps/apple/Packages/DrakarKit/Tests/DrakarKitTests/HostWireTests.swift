@@ -12,7 +12,8 @@ import Testing
   @Test func requestsAndEventsRoundTrip() throws {
     let requests: [HostRequest] = [
       .hello(protocol: 1, appVersion: "2.0"), .list, .spawn(configuration, meta: bytes),
-      .attach(id: "a", from: 42), .write(id: "a", bytes: bytes), .note(id: "a", bytes: bytes),
+      .attach(id: "a", from: 42), .write(id: "a", bytes: bytes),
+      .write(id: "a", bytes: bytes, logged: Data("x".utf8)), .note(id: "a", bytes: bytes),
       .closeInput(id: "a"), .terminate(id: "a"), .terminate(id: "a", forget: true),
       .setMeta(id: "a", meta: bytes),
       .acknowledge(id: "a"),
@@ -43,6 +44,16 @@ import Testing
     let older = Data(#"{"terminate":{"id":"a"}}"#.utf8)
     #expect(try JSONDecoder().decode(HostRequest.self, from: older) == .terminate(id: "a"))
     #expect(try JSONEncoder().encode(HostRequest.terminate(id: "a")) == older)
+  }
+
+  /// An older app's `write` has no `logged`, and a plain one is sent as it would send it.
+  @Test func aWriteWithoutLoggedIsAnOlderAppsWrite() throws {
+    let older = Data(#"{"write":{"bytes":"YQo=","id":"a"}}"#.utf8)
+    let write = HostRequest.write(id: "a", bytes: Data("a\n".utf8))
+    #expect(try JSONDecoder().decode(HostRequest.self, from: older) == write)
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = .sortedKeys
+    #expect(try encoder.encode(write) == older)
   }
 
   @Test func socketPathIsUnderTheBundlesFolder() throws {

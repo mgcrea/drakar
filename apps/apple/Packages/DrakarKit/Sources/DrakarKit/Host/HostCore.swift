@@ -108,8 +108,8 @@ public final class HostCore: @unchecked Sendable {
       return [spawn(configuration, meta: meta)]
     case .attach(let id, let from):
       return attach(id, from: from, client: client)
-    case .write(let id, let bytes):
-      return write(id, bytes: bytes, from: client)
+    case .write(let id, let bytes, let logged):
+      return write(id, bytes: bytes, logged: logged ?? bytes, from: client)
     case .note(let id, let bytes):
       return update(id, from: client) { held, out in
         self.append(.note, bytes, to: id, &held, &out)
@@ -218,8 +218,11 @@ public final class HostCore: @unchecked Sendable {
   }
 
   /// Written to stdin first, off the lock (a CLI that reads slowly must not stall every
-  /// other process), then logged as `in`: only a logged `in` says the bytes were sent.
-  private func write(_ id: String, bytes: Data, from client: Client) -> [HostEvent] {
+  /// other process), then logged as `in`: only a logged `in` says the bytes were sent. What
+  /// is logged is `logged`, which the app may have kept short of what was typed.
+  private func write(_ id: String, bytes: Data, logged: Data, from client: Client)
+    -> [HostEvent]
+  {
     var child: HostChild?
     let refused = update(id, from: client) { held, _ in
       held.writes += 1
@@ -231,7 +234,7 @@ public final class HostCore: @unchecked Sendable {
     let forgotten = withState { state, out -> HostLog? in
       guard var held = state.held[id] else { return nil }
       held.writes -= 1
-      if failure == nil { append(.in, bytes, to: id, &held, &out) }
+      if failure == nil { append(.in, logged, to: id, &held, &out) }
       if held.writes == 0 {
         let pending = held.pending
         held.pending = []

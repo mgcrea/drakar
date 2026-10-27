@@ -127,6 +127,15 @@ public enum ClientMessage: Sendable, Equatable {
     try json.line()
   }
 
+  /// What a log keeps of `line()` when it may not keep all of it: an accepted form's values
+  /// each `"<redacted>"`, its keys kept (the server's schema names them, not the person).
+  /// Nil for a line that holds nothing the person typed, which a log keeps as it is.
+  public func redactedLine() throws -> Data? {
+    guard case .answerElicitation(let id, .accept(let content?)) = self else { return nil }
+    let redacted = content.mapValues { _ in JSONValue.string("<redacted>") }
+    return try Self.answerElicitation(requestID: id, .accept(redacted)).line()
+  }
+
   /// A bare string for text alone; else blocks, the text last. A prompt of attachments alone
   /// has no text block, as the extension sends it.
   private static func content(_ text: String, context: [String], attachments: [JSONValue])
@@ -166,35 +175,6 @@ public enum ElicitationAnswer: Sendable, Equatable {
     case .decline: .object(["action": .string("decline")])
     case .cancel: .object(["action": .string("cancel")])
     }
-  }
-}
-
-/// Coded as its action alone, for the records a client keeps of what it did: what the
-/// person typed reaches the CLI (`json`) and is never kept. An accepted form decodes as
-/// `.accept(nil)`.
-extension ElicitationAnswer: Codable {
-  private enum Action: String, Codable {
-    case accept, decline, cancel
-  }
-
-  public init(from decoder: any Decoder) throws {
-    self =
-      switch try decoder.singleValueContainer().decode(Action.self) {
-      case .accept: .accept(nil)
-      case .decline: .decline
-      case .cancel: .cancel
-      }
-  }
-
-  public func encode(to encoder: any Encoder) throws {
-    let action: Action =
-      switch self {
-      case .accept: .accept
-      case .decline: .decline
-      case .cancel: .cancel
-      }
-    var container = encoder.singleValueContainer()
-    try container.encode(action)
   }
 }
 

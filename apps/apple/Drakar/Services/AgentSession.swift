@@ -801,8 +801,8 @@ final class AgentSession {
 
   private func send(_ answer: ElicitationAnswer, to pending: Transcript.PendingElicitation) {
     write(
-      .answerElicitation(requestID: pending.requestID, answer),
-      effect: .answeredElicitation(requestID: pending.requestID, answer: answer))
+      .answerElicitation(requestID: pending.requestID, NotedAnswer(answer)),
+      effect: .answeredElicitation(requestID: pending.requestID, action: ElicitationAction(answer)))
     notingPermissions {
       transcript.resolveElicitation(requestID: pending.requestID, with: answer)
     }
@@ -1198,8 +1198,8 @@ final class AgentSession {
       transcript.queue(prompt)
     case .answered(let id):
       notingPermissions { transcript.resolvePermission(requestID: id) }
-    case .answeredElicitation(let id, let answer):
-      notingPermissions { transcript.resolveElicitation(requestID: id, with: answer) }
+    case .answeredElicitation(let id, let action):
+      notingPermissions { transcript.resolveElicitation(requestID: id, with: action.answer) }
     case .none:
       break
     }

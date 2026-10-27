@@ -107,8 +107,13 @@ public final class HostedProcess: ProcessTransport, @unchecked Sendable {
   }
 
   public func send(line: Data) throws {
+    try send(line: line, logged: nil)
+  }
+
+  /// The host writes `line` to the CLI and logs `logged` in its place, if there is one.
+  public func send(line: Data, logged: Data?) throws {
     guard isRunning else { throw AgentProcess.Failure.notRunning }
-    try request { .write(id: $0, bytes: line) }
+    try request { .write(id: $0, bytes: line, logged: logged) }
   }
 
   /// A mark for the replay of the log: kept with it, written to nothing.

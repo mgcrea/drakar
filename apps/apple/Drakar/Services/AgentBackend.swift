@@ -57,8 +57,8 @@ struct AgentLaunch {
 enum AgentCommand: Codable, Equatable {
   case prompt(text: String, context: [EditorSelection], uuid: String, attachments: [Attachment])
   case answer(requestID: String, decision: PermissionDecision)
-  /// Its note keeps the action alone (`ElicitationAnswer`'s coding), never what was typed.
-  case answerElicitation(requestID: String, ElicitationAnswer)
+  /// Its note keeps the action alone (`NotedAnswer`), never what was typed.
+  case answerElicitation(requestID: String, NotedAnswer)
   case interrupt(cancelQueued: Bool)
   case cancelQueued(uuid: String)
   case setMode(String)

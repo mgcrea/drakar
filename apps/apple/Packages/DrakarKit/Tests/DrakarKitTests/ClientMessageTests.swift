@@ -101,6 +101,24 @@ struct ClientMessageTests {
     #expect(response(.cancel) == .object(["action": .string("cancel")]))
   }
 
+  /// What a log keeps of an accepted form: the keys the server's schema named, never what
+  /// the person typed. A line holding nothing typed is kept as it is.
+  @Test func redactsAnAnsweredFormForALog() throws {
+    let answered = ClientMessage.answerElicitation(
+      requestID: "e1", .accept(["team": .string("core"), "size": .number(3)]))
+    #expect(
+      try answered.redactedLine().map { String(decoding: $0, as: UTF8.self) }
+        == #"{"response":{"request_id":"e1","response":{"action":"accept","content":{"size":"<redacted>","team":"<redacted>"}},"subtype":"success"},"type":"control_response"}"#
+        + "\n")
+    let untyped: [ClientMessage] = [
+      .answerElicitation(requestID: "e1", .accept(nil)),
+      .answerElicitation(requestID: "e1", .decline),
+      .answerElicitation(requestID: "e1", .cancel),
+      .prompt("hello"), .initialize(requestID: "x"),
+    ]
+    for message in untyped { #expect(try message.redactedLine() == nil) }
+  }
+
   /// Every line is one line: a newline inside would split it into two broken messages.
   @Test func endsEveryLineWithItsOnlyNewline() throws {
     let line = try ClientMessage.prompt("two\nlines").line()

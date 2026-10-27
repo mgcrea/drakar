@@ -386,6 +386,58 @@ struct ReattachTests {
     #expect(sent("el-1") == 1)
   }
 
+  /// An accepted form's values reach the CLI, and the host's log keeps its keys alone; the
+  /// next app to come back to it has the question answered, and answers it no more.
+  @Test func anAnsweredFormReachesTheCLIButNotTheLog() async throws {
+    defer { cleanUp() }
+    let app = app()
+    let live = await start("go-elicit", in: window(on: app))
+    #expect(await eventually { says(live, "one") })
+    try step("a")
+    #expect(await eventually { !live.transcript.pendingElicitations.isEmpty })
+    let pending = try #require(live.transcript.pendingElicitations.first)
+    live.answer(pending, .accept(["team": .string("SECRET-XYZ")]))
+    #expect(await eventually { sent("SECRET-XYZ") == 1 })
+
+    let id = try #require(await app.held().first?.id)
+    let log = host.directory.appending(path: "\(id).log")
+    let records = { () -> [HostRecord] in
+      let data = (try? Data(contentsOf: log)) ?? Data()
+      return data.split(separator: 0x0A).compactMap {
+        try? JSONDecoder().decode(HostRecord.self, from: Data($0))
+      }
+    }
+    let redacted = #"{"action":"accept","content":{"team":"<redacted>"}}"#
+    #expect(
+      await eventually {
+        records().contains {
+          $0.kind == .in && String(decoding: $0.bytes, as: UTF8.self).contains(redacted)
+        }
+      })
+    // A record's bytes are base64 in the file, so each is read back too. Booleans, so that a
+    // failure does not print what it found.
+    let fileLeaks =
+      ((try? Data(contentsOf: log)) ?? Data()).range(of: Data("SECRET-XYZ".utf8)) != nil
+    let recordLeaks = records().contains { $0.bytes.range(of: Data("SECRET-XYZ".utf8)) != nil }
+    #expect(!fileLeaks)
+    #expect(!recordLeaks)
+
+    drop(live)
+    let back = window(on: app)
+    defer { back.stopAll() }
+    await back.adoptHeld(await app.held())
+    let session = try #require(back.sessions.first?.session)
+    #expect(session.isHosted)
+    #expect(session.transcript.pendingElicitations.isEmpty)
+    #expect(says(session, "one"))
+    #expect(
+      session.transcript.entries.contains {
+        $0.kind == .notice("Answered srv's question: Pick one")
+      })
+    try await Task.sleep(for: .milliseconds(300))
+    #expect(sent("el-1") == 1)
+  }
+
   /// Exited while nobody was attached: shown ended, as an exit seen live is, and then the
   /// host forgets it.
   @Test func anEndedSessionIsShownAndForgotten() async throws {

@@ -193,7 +193,7 @@ public final class HostServer: @unchecked Sendable {
       return
     }
     switch frame.request {
-    case .attach(let id, _), .write(let id, _), .note(let id, _), .closeInput(let id),
+    case .attach(let id, _), .write(let id, _, _), .note(let id, _), .closeInput(let id),
       .setMeta(let id, _), .detach(let id):
       lane(id, of: client).async { self.answer(frame, from: client) }
     case .acknowledge(let id):

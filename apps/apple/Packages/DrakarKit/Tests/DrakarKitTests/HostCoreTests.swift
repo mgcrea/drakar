@@ -113,6 +113,20 @@ import Testing
     #expect(host.logged(id) == records)
   }
 
+  /// `logged` is what the log keeps in place of what went to stdin, which `cat` echoes.
+  @Test func aWriteLogsWhatItIsToldToInPlaceOfItsBytes() async throws {
+    let host = try Host()
+    defer { host.close() }
+    let client = host.connect(pid: 42)
+    let id = try host.spawn("/bin/cat", from: client)
+    let write = HostRequest.write(id: id, bytes: bytes("typed\n"), logged: bytes("hidden\n"))
+    #expect(host.core.handle(write, from: client).isEmpty)
+    #expect(await eventually { host.logged(id).count == 2 })
+    let records = host.logged(id)
+    #expect(records.map(\.kind) == [.in, .out])
+    #expect(records.map(\.bytes) == [bytes("hidden\n"), bytes("typed\n")])
+  }
+
   @Test func attachReplaysThenCaughtUp() async throws {
     let host = try Host()
     defer { host.close() }
