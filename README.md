@@ -12,6 +12,8 @@ processes that work on your files, which App Sandbox forbids.
 Settings › General picks which `claude` runs when more than one is installed, and the
 account (`CLAUDE_CONFIG_DIR`) a new session starts under. The footer warns when the CLI is
 outside the versions Drakar was tested with, since the protocol it speaks is undocumented.
+What Drakar does about each feature of the extension's UI, and how to review a new
+release of it (`make extension-diff`), is [docs/extension-parity.md](docs/extension-parity.md).
 
 ## Drakar as the editor of `claude` in a terminal
 

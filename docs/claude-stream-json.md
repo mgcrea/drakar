@@ -553,6 +553,11 @@ is also a valid scenario, but a different one (`control_cancel_request`). The 20
 driver also asked for a fork (`subagent_type: "fork"`) and waited past the first `result`
 for the notification turn.
 
+The same pass covers the extension's UI: `make extension-diff` lists what the installed
+extension changed since the snapshot in `docs/extension-surface/` (requests its webview
+sends, UI copy, settings), and `docs/extension-parity.md` records what Drakar does about
+each request.
+
 The changelog gives no dates; `npm view @anthropic-ai/claude-code time --json` does (publish
 times, UTC), and `dist-tags` separates `latest` from `stable`. The changelog items between
 2.1.296 and 2.1.308 that touch Drakar (2.1.299 queued content blocks, 2.1.300 larger

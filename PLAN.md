@@ -73,7 +73,7 @@ today.
 
 ### 2.2 Not the extension's webview
 
-The extension's UI is a 5.8 MB React bundle talking to VS Code through
+The extension's UI is a 6 MB React bundle (`webview/index.js`, 6.0 MB in 2.1.311) talking to VS Code through
 `acquireVsCodeApi()`. Hosting it in a WKWebView with a shim would reproduce its look
 exactly, and is ruled out: the package is "© Anthropic PBC. All rights reserved", its
 internal message format changes every release, and a webview plus six megabytes of
