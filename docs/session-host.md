@@ -205,15 +205,17 @@ mark and where its history stood when the process started. The app sends `setMet
 change, and `note`s for what a replay needs to redo its own actions (a command's effect, a
 start). The host reads none of it.
 
-**Quitting.** Sessions at work (mid-turn, or waiting for a permission or a question) are
-handed over: the CLI is sent nothing, but the app sends the host a `detach`, which clears
-`attachedApp` and tells the other apps `released`. An idle session's process is terminated
-with `forget`: the host forgets it once it ends, the app being gone by then. The connection is
-flushed at will-terminate. A window closed, End Session or a removed row stops its process
-the same way, and the app also acknowledges it when its exit arrives (an older host ignores
-`forget`). So what the next launch finds is only what a quit handed over at work. A window
-that closes while it takes a process back stops the session it rebuilt as it stops its rows,
-rather than leave the process attached to the app with no row.
+**Quitting, closing a window.** Sessions at work (mid-turn, or waiting for a permission or a
+question) are handed over, at a quit and when their window closes or goes back to home: the
+CLI is sent nothing, but the app sends the host a `detach`, which clears `attachedApp` and
+tells the other apps `released`. An idle session's process is terminated with `forget`: the
+host forgets it once it ends, the app being gone by then. The connection is flushed at
+will-terminate. End Session or a removed row stops its process the same way, at work or not,
+and the app also acknowledges it when its exit arrives (an older host ignores `forget`). So
+what a project's next window finds, in this launch or the next, is only what a quit or a
+close handed over at work. A window that closes while it takes a process back stops the
+session it rebuilt as it stops its rows, rather than leave the process attached to the app
+with no row.
 
 **Relaunch.** The app connects, `list`s, and for each process no app is attached to whose
 `meta` names a window, opens the window and rebuilds the session from `meta` (history from

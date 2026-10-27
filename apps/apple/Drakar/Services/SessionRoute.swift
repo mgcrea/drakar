@@ -180,6 +180,6 @@ final class OpenSessions {
 
   /// Sessions mid-turn across every window that quitting stops, for the quit question.
   var stoppedByQuitting: Int {
-    RunningSessions.stoppedByQuitting(projects.values.flatMap { $0.sessions.map(\.session) })
+    RunningSessions.stoppedByLeaving(projects.values.flatMap { $0.sessions.map(\.session) })
   }
 }

@@ -1505,9 +1505,10 @@ final class Project {
     Attention.shared.refresh()
   }
 
-  func stopAll() {
+  /// `handingOver` when the window goes: the sessions at work carry on in the session host.
+  func stopAll(handingOver: Bool = false) {
     isStopped = true
-    for item in sessions { item.session.stop() }
+    for item in sessions { item.session.stop(handingOver: handingOver) }
     releaseCapabilities()
   }
 
@@ -1518,8 +1519,12 @@ final class Project {
       + groups.elsewhere.count { urgency(of: $0).map(counts) ?? false }
   }
 
-  /// Sessions mid-turn: what closing the window would interrupt.
+  /// Sessions mid-turn.
   var runningCount: Int { sessions.count { $0.session.transcript.isRunning } }
+
+  /// Sessions mid-turn that closing the window would interrupt: the session host keeps the
+  /// others working.
+  var stoppedByClosing: Int { RunningSessions.stoppedByLeaving(sessions.map(\.session)) }
 
   /// The window's own rows; a watched one is not kept.
   var held: [ProjectSession] { sessions.filter { !$0.isWatching } }

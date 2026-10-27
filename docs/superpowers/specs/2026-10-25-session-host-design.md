@@ -151,8 +151,11 @@ builds are signed with the team too, so there is no exception for them.
   forever, and lets it exit.)* A session handed over whose turn then ends stays up, idle,
   in the host until the app comes back and stops it by the same rule. The quit confirmation
   for running sessions goes; the unsaved-files one stays.
-- **Closing a window, End Session, removing a row** still stop the process, as now: those
-  are about the session, not the app. *(My call; see "Settled with the person".)*
+- **Closing a window** (or its project, back to home) hands over its sessions at work as
+  quitting does, and stops the idle ones; its close confirmation counts only what it would
+  stop. The project's next window takes them back, in this launch or the next (see
+  "Settled with the person"). **End Session and removing a row** still stop the process:
+  those are about the session, not its window.
 - **Relaunch.** At launch the app connects, lists what the host holds, and makes sure every
   project window with a held process no app is attached to is open, whether or not windows
   reopen in Settings. Each window rebuilds its sessions from `meta`, loads the history from
@@ -255,8 +258,12 @@ no way to take a process from an app that is running.
 Approved 2026-10-25. The two questions left open were not answered, so the document's
 defaults stand, each the builder's call until the person says otherwise:
 
-- Closing a window stops its sessions, as today (§3); only quitting, a crash or an update
-  hands sessions to the host.
+- ~~Closing a window stops its sessions, as today (§3); only quitting, a crash or an update
+  hands sessions to the host.~~ Changed by the person on 2026-10-27, after closing a window
+  with ⌘W in the live check stopped a turn that ⌘Q would have kept: closing a window or its
+  project hands its sessions at work to the host, as quitting does (§3). A session handed
+  over this way stays in the host, idle once its turn ends, until the project's window
+  opens again; nothing yet shows it while no window holds it.
 - Quitting says nothing when sessions keep running: the confirmation for running sessions
   simply goes.
 

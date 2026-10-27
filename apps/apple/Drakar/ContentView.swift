@@ -61,7 +61,8 @@ struct ContentView: View {
           WindowReader { window in
             workspace.window = window
             WindowCloseGuard.install(
-              on: window, for: workspace, running: { [weak project] in project?.runningCount ?? 0 })
+              on: window, for: workspace,
+              running: { [weak project] in project?.stoppedByClosing ?? 0 })
             if let next = ReopenedWindows.shared.arrived(window, folder: project.folder) {
               WindowTabs.open(next, asTab: false)
             }
@@ -139,8 +140,9 @@ struct ContentView: View {
     .navigationSubtitle(project.map { Self.shortened($0.folder) } ?? "")
     .onChange(of: route, initial: true) { open(route) }
     .onDisappear {
-      // The window is gone: no session outlives it.
-      project?.stopAll()
+      // The window is gone: its sessions at work carry on in the session host, for the
+      // project's next window; the others stop.
+      project?.stopAll(handingOver: true)
       OpenSessions.shared.unregister(window: windowID)
     }
     .task {
@@ -201,13 +203,13 @@ struct ContentView: View {
   }
 
   /// Back to home in this window: the questions a close asks (unsaved tabs, sessions mid-turn),
-  /// then the project's sessions stop and the window shows the projects. Nothing reopens
-  /// it but a click on home.
+  /// then the project's sessions stop, those at work left to the session host, and the
+  /// window shows the projects. Nothing reopens it but a click on home.
   private func closeProject() {
     guard let project else { return }
     let workspace = project.workspace
     let unsaved = workspace.unsavedDocuments
-    let running = project.runningCount
+    let running = project.stoppedByClosing
     guard let window = workspace.window, !unsaved.isEmpty || running > 0 else {
       return leaveProject()
     }
@@ -233,7 +235,7 @@ struct ContentView: View {
   }
 
   private func leaveProject() {
-    project?.stopAll()
+    project?.stopAll(handingOver: true)
     project?.workspace.window?.isDocumentEdited = false
     OpenSessions.shared.unregister(window: windowID)
     // The next project this window opens must not restore this one's sessions.

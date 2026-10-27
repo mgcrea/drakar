@@ -913,12 +913,13 @@ final class AgentSession {
     if let process { _ = try? sendNoted(.cancelQueued(uuid: prompt.uuid), to: process) }
   }
 
-  /// Ends the process: input closed so it can finish cleanly, then terminated, because a
-  /// window that closed mid-turn must not leave a `claude` working on nobody's behalf. At a
-  /// quit, one at work in the session host is let go instead: it carries on there, sent
-  /// nothing, for the next launch to pick up. An idle one ends at a quit too, and the host
-  /// forgets it by itself once it has: the app may be gone by then.
-  func stop() {
+  /// Ends the process: input closed so it can finish cleanly, then terminated, so that End
+  /// Session or a removed row leaves no `claude` working on nobody's behalf. When its window
+  /// goes (`handingOver`, a closed window or project) or the app quits, one at work in the
+  /// session host is let go instead: it carries on there, sent nothing, for the project's
+  /// next window to pick up. An idle one ends then too, and the host forgets it by itself
+  /// once it has: the app may be gone by then.
+  func stop(handingOver: Bool = false) {
     let waiting = transcript.waitingCount
     defer { permissionsMayHaveChanged(from: waiting) }
     stopCount += 1
@@ -926,7 +927,7 @@ final class AgentSession {
     pendingEffect = .none
     let wasRunning = process != nil
     if let hosted = process as? HostedProcess {
-      if AppLifecycle.isTerminating, isAtWork {
+      if handingOver || AppLifecycle.isTerminating, isAtWork {
         hosted.detach()
       } else if isReconnecting {
         end(hosted, onceReconnected: sessionHost)

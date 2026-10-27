@@ -211,6 +211,30 @@ struct ReattachTests {
     #expect(session.transcript.entries.count { $0.kind == .text("two") } == 1)
   }
 
+  /// A window closed mid-turn while the app runs hands its session to the host, and the
+  /// project's next window takes it back live, with what it said meanwhile.
+  @Test func aWindowClosedMidTurnComesBackWhenTheProjectReopens() async throws {
+    defer { cleanUp() }
+    let app = app()
+    let closed = window(on: app)
+    let live = await start("go-stream", in: closed)
+    #expect(await eventually { says(live, "one") })
+    #expect(closed.stoppedByClosing == 0)
+    closed.stopAll(handingOver: true)
+    #expect(await eventually { await app.held().first?.attachedApp == nil })
+    try step("a")
+
+    let back = window(on: app)
+    defer { back.stopAll() }
+    await back.adoptHeld(await app.held())
+    let session = try #require(back.sessions.first?.session)
+    #expect(session.isHosted)
+    #expect(session.transcript.isRunning)
+    #expect(await eventually { says(session, "two") })
+    try step("b")
+    #expect(await eventually { says(session, "three") })
+  }
+
   /// The row the window kept for the session, from its stored project, is the one that
   /// comes back live, not a second row beside it; so is the blank row a window opens with.
   @Test func theRowsTheWindowOpenedWithGiveWay() async throws {

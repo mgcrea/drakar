@@ -98,7 +98,7 @@ struct HostedSessionTests {
     session.send("hi")
     #expect(await eventually { session.phase == .ready })
     #expect(session.isAtWork)
-    #expect(RunningSessions.stoppedByQuitting([session]) == 0)
+    #expect(RunningSessions.stoppedByLeaving([session]) == 0)
 
     AppLifecycle.isTerminating = true
     session.stop()
@@ -128,9 +128,43 @@ struct HostedSessionTests {
     #expect(await eventually { await host.held().isEmpty })
   }
 
-  /// Closing a window is about the session, not the app: it ends the turn, host or not, and
-  /// the host forgets the process once it has ended.
-  @Test func closingTheWindowStillStops() async throws {
+  /// Mid-turn when its window closes, the session is let go as at a quit: its process carries
+  /// on in the host, for the project's next window.
+  @Test func closingTheWindowHandsOverASessionAtWork() async throws {
+    SessionHost.testDirectory = directory
+    let host = SessionHost()
+    defer { cleanUp(host) }
+    let session = session(on: host)
+    session.send("hi")
+    #expect(await eventually { session.phase == .ready })
+    #expect(session.isAtWork)
+
+    session.stop(handingOver: true)
+    try await Task.sleep(for: .milliseconds(500))
+    let held = await host.held()
+    #expect(held.count == 1)
+    #expect(held.first?.running == true)
+    #expect(held.first?.attachedApp == nil)
+  }
+
+  /// An idle session has nothing in flight: closing its window ends it, and the host
+  /// forgets it.
+  @Test func closingTheWindowStopsAnIdleSession() async throws {
+    SessionHost.testDirectory = directory
+    let host = SessionHost()
+    defer { cleanUp(host) }
+    let session = session(on: host)
+    session.send("quick")
+    #expect(await eventually { session.phase == .ready && !session.transcript.isRunning })
+    #expect(await eventually { await host.held().count == 1 })
+
+    session.stop(handingOver: true)
+    #expect(await eventually { await host.held().isEmpty })
+  }
+
+  /// End Session and a removed row are about the session, not its window: they end the
+  /// turn, host or not, and the host forgets the process once it has ended.
+  @Test func endingTheSessionStillStops() async throws {
     SessionHost.testDirectory = directory
     let host = SessionHost()
     defer { cleanUp(host) }
@@ -170,7 +204,7 @@ struct HostedSessionTests {
     #expect(await eventually { session.phase == .ready })
     #expect(session.process is AgentProcess)
     #expect(!session.isHosted)
-    #expect(RunningSessions.stoppedByQuitting([session]) == 1)
+    #expect(RunningSessions.stoppedByLeaving([session]) == 1)
     session.stop()
   }
 

@@ -441,9 +441,9 @@ enum RunningSessions {
     }
   }
 
-  /// Of `sessions`, those mid-turn that quitting stops: the session host keeps the others
-  /// working.
-  static func stoppedByQuitting(_ sessions: [AgentSession]) -> Int {
+  /// Of `sessions`, those mid-turn that closing their window or quitting stops: the session
+  /// host keeps the others working.
+  static func stoppedByLeaving(_ sessions: [AgentSession]) -> Int {
     sessions.count { $0.transcript.isRunning && !$0.isHosted }
   }
 
