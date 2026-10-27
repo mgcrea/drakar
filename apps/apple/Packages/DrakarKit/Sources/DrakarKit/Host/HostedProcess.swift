@@ -174,10 +174,12 @@ public final class HostedProcess: ProcessTransport, @unchecked Sendable {
   /// process the host held already; `live()` then carries on after it. Throws when the host
   /// refuses the attach or the connection ends first, and `Failure.quiet` when the host sends
   /// nothing of the log for `quietLimit`: bounded by silence, not by time, as a long log takes
-  /// seconds. A quiet host's process is let go of, for the next launch to take.
-  public func replay(quietLimit: Duration = .seconds(10)) async throws -> (
-    records: [HostRecord], offset: UInt64
-  ) {
+  /// seconds. Until its first record the host reads the whole backlog, behind any other
+  /// replay, so that wait is `firstLimit`. A quiet host's process is let go of, for the next
+  /// launch to take.
+  public func replay(
+    quietLimit: Duration = .seconds(10), firstLimit: Duration = .seconds(60)
+  ) async throws -> (records: [HostRecord], offset: UInt64) {
     let (id, client) = state.withLock { ($0.id, $0.client) }
     guard let id else { throw HostClient.Failure.unexpected }
     let stream = client.attach(id, from: 0)
@@ -187,7 +189,8 @@ public final class HostedProcess: ProcessTransport, @unchecked Sendable {
       Task { [weak self] in
         while !replaying.isDone {
           try? await Task.sleep(for: min(quietLimit / 4, .seconds(1)))
-          guard replaying.quietFor >= quietLimit, replaying.resume(with: .failure(Failure.quiet))
+          guard replaying.isQuiet(first: firstLimit, then: quietLimit),
+            replaying.resume(with: .failure(Failure.quiet))
           else { continue }
           self?.detach()
         }
@@ -379,16 +382,28 @@ public final class HostedProcess: ProcessTransport, @unchecked Sendable {
 private final class Replaying: Sendable {
   typealias Replay = (records: [HostRecord], offset: UInt64)
 
+  /// `heard` is nil until the host's first record.
   private let state:
-    Mutex<(waiting: CheckedContinuation<Replay, any Error>?, heard: ContinuousClock.Instant)>
+    Mutex<
+      (
+        waiting: CheckedContinuation<Replay, any Error>?, began: ContinuousClock.Instant,
+        heard: ContinuousClock.Instant?
+      )
+    >
 
   init(_ continuation: CheckedContinuation<Replay, any Error>) {
-    state = Mutex((continuation, .now))
+    state = Mutex((continuation, .now, nil))
   }
 
   var isDone: Bool { state.withLock { $0.waiting == nil } }
 
-  var quietFor: Duration { .now - state.withLock { $0.heard } }
+  /// Nothing heard for `first` since it began, or for `then` since the last record.
+  func isQuiet(first: Duration, then: Duration) -> Bool {
+    state.withLock { state in
+      guard let heard = state.heard else { return .now - state.began >= first }
+      return .now - heard >= then
+    }
+  }
 
   func heard() {
     state.withLock { $0.heard = .now }

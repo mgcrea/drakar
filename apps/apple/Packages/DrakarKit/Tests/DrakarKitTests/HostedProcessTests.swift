@@ -324,6 +324,29 @@ import Testing
     }
   }
 
+  /// Before its first record the host is reading the log, which takes a while for a long one
+  /// or behind other replays: that is work, not a quiet host, and the replay waits it out.
+  @Test func aReplayWaitsLongerForTheFirstRecord() async throws {
+    let host = try TestHost()
+    defer { host.close() }
+    let client = try await connected(host)
+    _ = try await client.spawn(
+      AgentProcess.Configuration(
+        executable: URL(filePath: "/bin/sh"), arguments: ["-c", "echo one; echo two"],
+        environment: [:], currentDirectory: host.directory),
+      meta: Data())
+    try await within {
+      while try await client.list().first?.running != false {
+        try await Task.sleep(for: .milliseconds(10))
+      }
+    }
+    let held = try #require(try await client.list().first)
+    host.core.readingBacklog = { Thread.sleep(forTimeInterval: 1) }
+    let process = HostedProcess(client: client, held: held)
+    let (records, _) = try await process.replay(quietLimit: .milliseconds(300))
+    #expect(records.map(\.bytes) == [Data("one\n".utf8), Data("two\n".utf8)])
+  }
+
   @Test func replayOfAProcessTheHostDoesNotKnowIsRefused() async throws {
     let host = try TestHost()
     defer { host.close() }
