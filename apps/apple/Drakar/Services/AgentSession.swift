@@ -142,6 +142,9 @@ final class AgentSession {
   /// `reportReplayedCommands()`.
   @ObservationIgnored private var replayedInitialize: JSONValue??
   @ObservationIgnored private var replayedCommands: JSONValue?
+  /// Whether the replay read the process's start. A quit before the host answered the spawn
+  /// logged none, and the process is started once live.
+  @ObservationIgnored private var replayedStart = false
   /// The connection to the session host ended under the running process: nothing is sent
   /// until a new one is up and the process attached again (spec §5).
   private(set) var isReconnecting = false
@@ -296,11 +299,15 @@ final class AgentSession {
   /// What a Codex row whose process another Drakar holds ends on: nothing of it is live here.
   static let runsInAnotherWindow = String(localized: "Running in another Drakar window.")
 
-  /// From the replay to the process it stood for: the replies it owes go first, once, then
-  /// what the process does next is taken as it comes.
+  /// From the replay to the process it stood for: its start if the log held none, then the
+  /// replies the replay owes, once, then what the process does next as it comes.
   private func goLive(on hosted: HostedProcess) {
     let owed = (process as? ReplayTransport)?.owed ?? []
     process = hosted
+    if !replayedStart {
+      note(.started(first: nil, effect: .none), to: hosted)
+      try? backend.started(hosted, then: nil)
+    }
     for line in owed { try? hosted.send(line: line) }
     sendMeta()
     follow(hosted.live(), of: hosted)
@@ -1191,6 +1198,7 @@ final class AgentSession {
   private func replay(_ note: SessionNote, at time: Date, to transport: ReplayTransport) {
     switch note {
     case .started(let first, let effect):
+      replayedStart = true
       apply(effect, at: time)
       try? backend.started(transport, then: first)
     case .sent(let command, let effect):

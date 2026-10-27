@@ -352,6 +352,40 @@ struct ReattachTests {
     #expect(await app.held().isEmpty)
   }
 
+  /// Spawned, but the quit came before the host answered: the start, `initialize` with it,
+  /// never reached the log. Taken back, the process is started before its first prompt,
+  /// and once: a later replay reads the start in the log.
+  @Test func aProcessWhoseStartWasLostIsStartedOnce() async throws {
+    defer { cleanUp() }
+    let app = app()
+    let client = try #require(await app.client())
+    let meta = SessionMeta(
+      start: AgentStart(
+        folder: folder, environment: [:], executableOverride: fake, allowsBypass: false),
+      windowFolder: folder.path(percentEncoded: false), history: .none)
+    _ = try await client.spawn(
+      AgentProcess.Configuration(
+        executable: fake, arguments: [], environment: [:], currentDirectory: folder),
+      meta: try JSONEncoder().encode(meta))
+    let held = try #require(await app.held().first)
+    let session = try #require(await AgentSession(reattaching: held, client: client))
+    session.accounts = { [] }
+    session.send("go-idle")
+    #expect(await eventually { sent("go-idle") == 1 })
+    let log = try String(contentsOf: received, encoding: .utf8).split(separator: "\n")
+    let initialize = log.firstIndex { $0.contains(#""subtype":"initialize""#) }
+    let prompt = log.firstIndex { $0.contains("go-idle") }
+    #expect(initialize != nil && initialize! < prompt!, "sent \(log)")
+    #expect(await eventually { !session.transcript.isRunning })
+    drop(session)
+
+    let again = try #require(await app.held().first)
+    let back = try #require(await AgentSession(reattaching: again, client: client))
+    defer { back.stop() }
+    try await Task.sleep(for: .milliseconds(300))
+    #expect(sent(#""subtype":"initialize""#) == 1)
+  }
+
   /// Waiting on the person when dropped: still waiting, and answered once.
   @Test func aPermissionWaitingIsAnsweredOnce() async throws {
     defer { cleanUp() }
