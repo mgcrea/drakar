@@ -76,7 +76,11 @@ struct SessionView: View {
             )
             .id(plan.id)
           }
-        } else if let pending = item.pendingElicitation, askedElicitation == nil {
+          // A server's question waiting at the same time is never hidden behind the plan.
+          if let pending = dockedElicitation {
+            Docked { elicitationPanel(pending).id(pending.requestID) }
+          }
+        } else if let pending = dockedElicitation {
           Docked { elicitationPanel(pending).id(pending.requestID) }
         } else if askedQuestion != nil || askedElicitation != nil {
           Docked { QuestionWaitingStrip() }
@@ -309,6 +313,12 @@ struct SessionView: View {
     return AskedElicitation(
       callID: callID, requestID: pending.requestID, focusRequest: item.questionFocusRequest,
       count: session.transcript.pendingElicitations.count, panel: { panel })
+  }
+
+  /// The first MCP server's question waiting with no card in the transcript to answer it in:
+  /// answered in the composer's place, below a plan waiting too.
+  private var dockedElicitation: Transcript.PendingElicitation? {
+    askedElicitation == nil ? item.pendingElicitation : nil
   }
 
   /// Changes with the question waiting and with where it is answered, so its panel takes the
