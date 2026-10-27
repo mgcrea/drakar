@@ -166,19 +166,34 @@ final class ProjectSession: Identifiable {
     return nil
   }
 
-  /// What the first waiting permission request wants: "Bash: make test".
-  var waitingFor: String? {
-    guard let pending = session.transcript.pendingPermissions.first else { return nil }
-    let name = pending.request.displayName ?? pending.request.toolName
-    let summary = pending.request.summary
-    return summary.isEmpty ? name : "\(name): \(summary)"
+  /// The first MCP server's question waiting on the person.
+  var pendingElicitation: Transcript.PendingElicitation? {
+    session.transcript.pendingElicitations.first
   }
 
-  /// How much this session wants the person, from the most urgent thing it waits on.
+  /// What the first waiting permission request wants, "Bash: make test", else what the
+  /// first waiting question asks, "linear: Which team?".
+  var waitingFor: String? {
+    if let pending = session.transcript.pendingPermissions.first {
+      let name = pending.request.displayName ?? pending.request.toolName
+      let summary = pending.request.summary
+      return summary.isEmpty ? name : "\(name): \(summary)"
+    }
+    guard let elicitation = pendingElicitation?.elicitation else { return nil }
+    let server =
+      elicitation.serverLabel.isEmpty
+      ? String(localized: "An MCP server") : elicitation.serverLabel
+    let message = elicitation.message
+    return message.isEmpty ? server : "\(server): \(message)"
+  }
+
+  /// How much this session wants the person, from the most urgent thing it waits on. A
+  /// question blocks its tool mid-turn as a permission does.
   var urgency: Urgency? {
     if let pending = session.transcript.pendingPermissions.first {
       return pending.request.isChoice || pending.request.isPlan ? .choice : .permission
     }
+    if pendingElicitation != nil { return .permission }
     switch closingAsk?.kind {
     case .question: return .question
     case .offer: return .offer
@@ -548,7 +563,7 @@ final class Project {
   /// a session live elsewhere, which Drakar only watches.
   var yesOrNoSelected: ClosingAsk? {
     guard let selected, selected.session.canSend,
-      selected.session.transcript.pendingPermissions.isEmpty,
+      !selected.session.transcript.isWaitingOnPerson,
       let ask = selected.closingAsk, ask.isYesOrNo
     else { return nil }
     return ask
@@ -1547,7 +1562,7 @@ final class Project {
       guard let self, let item else { return }
       self.fanOutFinished(item)
     }
-    session.onPermissionRequested = { [weak self, weak item] _ in
+    session.onPermissionRequested = { [weak self, weak item] in
       guard let self, let item else { return }
       Attention.shared.permissionRequested(item, in: self)
     }

@@ -169,6 +169,35 @@ public enum ElicitationAnswer: Sendable, Equatable {
   }
 }
 
+/// Coded as its action alone, for the records a client keeps of what it did: what the
+/// person typed reaches the CLI (`json`) and is never kept. An accepted form decodes as
+/// `.accept(nil)`.
+extension ElicitationAnswer: Codable {
+  private enum Action: String, Codable {
+    case accept, decline, cancel
+  }
+
+  public init(from decoder: any Decoder) throws {
+    self =
+      switch try decoder.singleValueContainer().decode(Action.self) {
+      case .accept: .accept(nil)
+      case .decline: .decline
+      case .cancel: .cancel
+      }
+  }
+
+  public func encode(to encoder: any Encoder) throws {
+    let action: Action =
+      switch self {
+      case .accept: .accept
+      case .decline: .decline
+      case .cancel: .cancel
+      }
+    var container = encoder.singleValueContainer()
+    try container.encode(action)
+  }
+}
+
 public enum PermissionDecision: Codable, Sendable, Equatable {
   /// Run the tool. `updatedInput` is the input to run it with: the request's own, or one
   /// the user edited. `updatedPermissions` carries any of the request's suggestions the

@@ -58,8 +58,9 @@ struct TranscriptView: View {
           // Inside the row, so a jump to the prompt stops short of its bubble.
           .padding(.top, entry.isPrompt ? 12 : 0)
         }
-        // Not while a permission waits on the user: nothing is being worked on then.
-        if transcript.isRunning && transcript.pendingPermissions.isEmpty {
+        // Not while a permission or a question waits on the user: nothing is being worked on
+        // then.
+        if transcript.isRunning && !transcript.isWaitingOnPerson {
           WorkingIndicator(status: workingStatus)
         }
         // Below the turn they wait behind, until the CLI takes each into the conversation.

@@ -133,7 +133,11 @@ final class Attention: NSObject, UNUserNotificationCenterDelegate {
     guard let level = item.urgency, AttentionChoice.isOn(level, .notifies),
       !inView(item, in: project), let wants = item.wants
     else { return }
-    let body = level == .choice ? wants : String(localized: "Wants to use \(wants)")
+    // A server's question says itself; only a tool is something it wants to use.
+    let asksQuestion =
+      item.pendingElicitation != nil && item.session.transcript.pendingPermissions.isEmpty
+    let body =
+      level == .choice || asksQuestion ? wants : String(localized: "Wants to use \(wants)")
     post(title: item.displayTitle, body: body, item: item, wantsAnswer: true)
   }
 

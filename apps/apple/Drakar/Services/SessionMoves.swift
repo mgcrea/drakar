@@ -37,7 +37,7 @@ enum SessionMoves {
   static func held(_ session: AgentSession) -> Held {
     Held(
       hasProcess: session.isProcessRunning,
-      isBusy: session.transcript.isRunning || !session.transcript.pendingPermissions.isEmpty)
+      isBusy: session.transcript.isRunning || session.transcript.isWaitingOnPerson)
   }
 
   /// The sessions not on `target`: those listed, and the windows' own, whose transcript can

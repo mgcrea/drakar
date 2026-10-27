@@ -348,9 +348,10 @@ struct ReattachTests {
     #expect(sent("req-1") == 1)
   }
 
-  /// Asked while nobody was attached, which Drakar declines on its own: declined once,
-  /// after the replay, and not again by the next app to come back to it.
-  @Test func anElicitationThatArrivedWhileAwayIsDeclinedOnce() async throws {
+  /// Asked while nobody was attached: it waits for the person when an app comes back, with
+  /// nothing sent for it on its own; answered once, and neither asked nor answered again by
+  /// the next app to come back to it.
+  @Test func anElicitationThatArrivedWhileAwayWaitsAndIsAnsweredOnce() async throws {
     defer { cleanUp() }
     let app = app()
     let live = await start("go-elicit", in: window(on: app))
@@ -363,6 +364,13 @@ struct ReattachTests {
     let back = window(on: app)
     await back.adoptHeld(await app.held())
     let session = try #require(back.sessions.first?.session)
+    #expect(session.transcript.pendingElicitations.map(\.requestID) == ["el-1"])
+    try await Task.sleep(for: .milliseconds(300))
+    #expect(sent("el-1") == 0)
+
+    let pending = try #require(session.transcript.pendingElicitations.first)
+    session.answer(pending, .decline)
+    #expect(session.transcript.pendingElicitations.isEmpty)
     #expect(await eventually { sent("el-1") == 1 })
     try await Task.sleep(for: .milliseconds(300))
     #expect(sent("el-1") == 1)
@@ -371,7 +379,9 @@ struct ReattachTests {
     let again = window(on: app)
     defer { again.stopAll() }
     await again.adoptHeld(await app.held())
-    #expect(again.sessions.first?.session.isHosted == true)
+    let adopted = try #require(again.sessions.first?.session)
+    #expect(adopted.isHosted)
+    #expect(adopted.transcript.pendingElicitations.isEmpty)
     try await Task.sleep(for: .milliseconds(300))
     #expect(sent("el-1") == 1)
   }

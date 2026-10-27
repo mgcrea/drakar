@@ -16,6 +16,8 @@ enum NoteEffect: Codable, Equatable {
   case prompt(text: String, context: String?, attachments: [AttachmentPreview])
   case queued(QueuedPrompt)
   case answered(requestID: String)
+  /// An MCP server's question, answered as `answer` says, its action alone kept.
+  case answeredElicitation(requestID: String, answer: ElicitationAnswer)
   case none
 }
 

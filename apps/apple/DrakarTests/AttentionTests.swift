@@ -131,7 +131,7 @@ struct UrgencyTests {
     item.session.send("Build it")
     for _ in 0..<50
     where item.session.transcript.turnEnd == nil
-      && item.session.transcript.pendingPermissions.isEmpty
+      && !item.session.transcript.isWaitingOnPerson
     {
       try await Task.sleep(for: .milliseconds(100))
     }
@@ -159,6 +159,20 @@ struct UrgencyTests {
     defer { project.stopAll() }
     #expect(item.urgency == .choice)
     #expect(item.wants == "Which filename?")
+  }
+
+  /// A tool blocked mid-turn on an MCP server's question waits as one blocked on a
+  /// permission does.
+  @Test func anMCPServersQuestionWaitsLikeAPermission() async throws {
+    let (project, item) = try await session([
+      #"{"type":"control_request","request_id":"e1","request":{"subtype":"elicitation","mcp_server_name":"linear","message":"Which team?"}}"#
+    ])
+    defer { project.stopAll() }
+    #expect(item.pendingElicitation?.requestID == "e1")
+    #expect(item.urgency == .permission)
+    #expect(item.wants == "linear: Which team?")
+    #expect(item.waitingFor == "linear: Which team?")
+    #expect(project.waitingCount == 1)
   }
 
   /// Looking is not answering.

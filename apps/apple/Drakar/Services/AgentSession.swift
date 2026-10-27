@@ -97,20 +97,20 @@ final class AgentSession {
   /// Where the session's `rate_limit_event`s go; tests give it their own.
   @ObservationIgnored var accountStore: AccountStore = .shared
 
-  /// For the window's attention: a turn ended, a permission request arrived, the process
-  /// stopped on its own.
+  /// For the window's attention: a turn ended, a permission request or an MCP server's
+  /// question arrived, the process stopped on its own.
   @ObservationIgnored var onTurnEnded: (() -> Void)?
-  @ObservationIgnored var onPermissionRequested: ((Transcript.PendingPermission) -> Void)?
+  @ObservationIgnored var onPermissionRequested: (() -> Void)?
   @ObservationIgnored var onStopped: (() -> Void)?
   /// A start that failed before any process ran (folder gone, no CLI): no stop is reported.
   @ObservationIgnored var onFailed: (() -> Void)?
-  /// The number of waiting permission requests changed: asked, answered, cancelled, or gone
-  /// with the process.
+  /// The number of permission requests and questions waiting changed: asked, answered,
+  /// cancelled, or gone with the process.
   @ObservationIgnored var onPermissionsChanged: (() -> Void)?
   /// A prompt was sent: whatever the last turn asked is answered.
   @ObservationIgnored var onPromptSent: (() -> Void)?
-  /// The person answered what the session waited on: a permission request, or the turn
-  /// that ended with a prompt. Not a session's first prompt, nor one queued mid-turn.
+  /// The person answered what the session waited on: a permission request, a question, or
+  /// the turn that ended with a prompt. Not a session's first prompt, nor one queued mid-turn.
   @ObservationIgnored var onReplied: (() -> Void)?
   /// The process answered `initialize`: its reply, which lists the skills.
   @ObservationIgnored var onInitialized: ((JSONValue?) -> Void)?
@@ -337,7 +337,7 @@ final class AgentSession {
   var hostID: String? { (process as? HostedProcess)?.id }
 
   /// Mid-turn, or waiting on the person: what a quit hands to the host rather than ends.
-  var isAtWork: Bool { transcript.isRunning || !transcript.pendingPermissions.isEmpty }
+  var isAtWork: Bool { transcript.isRunning || transcript.isWaitingOnPerson }
 
   /// The record a relaunched app rebuilds the session from, for its last process; nil before
   /// one was launched.
@@ -792,11 +792,27 @@ final class AgentSession {
     onReplied?()
   }
 
+  /// What the person did with an MCP server's question, which goes back to the server.
+  func answer(_ pending: Transcript.PendingElicitation, _ answer: ElicitationAnswer) {
+    guard !isReconnecting else { return }
+    send(answer, to: pending)
+    onReplied?()
+  }
+
+  private func send(_ answer: ElicitationAnswer, to pending: Transcript.PendingElicitation) {
+    write(
+      .answerElicitation(requestID: pending.requestID, answer),
+      effect: .answeredElicitation(requestID: pending.requestID, answer: answer))
+    notingPermissions {
+      transcript.resolveElicitation(requestID: pending.requestID, with: answer)
+    }
+  }
+
   /// The question the conversation ends on, which its process ended before it was answered
   /// (`Transcript.unansweredQuestion`): offered again in place of the composer, as the
   /// extension offers it, while nothing runs or waits and until it is dismissed.
   var earlierQuestion: Transcript.ToolCall? {
-    guard canSend, transcript.pendingPermissions.isEmpty,
+    guard canSend, !transcript.isWaitingOnPerson,
       let call = transcript.unansweredQuestion, call.id != dismissedQuestionID
     else { return nil }
     return call
@@ -872,9 +888,14 @@ final class AgentSession {
   }
 
   /// Stops the turn, and drops what was queued behind it: stop means stop. Esc keeps the
-  /// queue, as the extension's does: what was queued runs next.
+  /// queue, as the extension's does: what was queued runs next. A question an MCP server
+  /// waits on is cancelled first, so that the server is not left waiting on it.
   func interrupt(keepingQueued: Bool = false) {
     guard transcript.isRunning else { return }
+    // Kept waiting while reconnecting, as `answer` keeps them: a cancel now would reach nobody.
+    if !isReconnecting {
+      for pending in transcript.pendingElicitations { send(.cancel, to: pending) }
+    }
     write(.interrupt(cancelQueued: !keepingQueued))
   }
 
@@ -890,7 +911,7 @@ final class AgentSession {
   /// nothing, for the next launch to pick up. An idle one ends at a quit too, and the host
   /// forgets it by itself once it has: the app may be gone by then.
   func stop() {
-    let waiting = transcript.pendingPermissions.count
+    let waiting = transcript.waitingCount
     defer { permissionsMayHaveChanged(from: waiting) }
     stopCount += 1
     pendingPrompt = nil
@@ -973,13 +994,13 @@ final class AgentSession {
   }
 
   private func notingPermissions(_ change: () -> Void) {
-    let waiting = transcript.pendingPermissions.count
+    let waiting = transcript.waitingCount
     change()
     permissionsMayHaveChanged(from: waiting)
   }
 
   private func permissionsMayHaveChanged(from waiting: Int) {
-    if !isReplaying, transcript.pendingPermissions.count != waiting { onPermissionsChanged?() }
+    if !isReplaying, transcript.waitingCount != waiting { onPermissionsChanged?() }
   }
 
   private func handle(_ event: AgentProcess.Event) {
@@ -1044,7 +1065,7 @@ final class AgentSession {
     guard let process else { return }
     let output = backend.receive(line, from: process, at: time)
     for signal in output.signals { handle(signal) }
-    let waiting = transcript.pendingPermissions.count
+    let waiting = transcript.waitingCount
     var turnEnded = false
     let known = sessionID
     for event in output.events {
@@ -1056,11 +1077,7 @@ final class AgentSession {
     if isHosted, !isReplaying, sessionID != known { SessionMonitor.shared.hostedChanged() }
     if agent == .codex { codexTurns += output.events.turnsEnded }
     if unsentName != nil { sendUnsentName() }
-    if !isReplaying, transcript.pendingPermissions.count > waiting,
-      let pending = transcript.pendingPermissions.last
-    {
-      onPermissionRequested?(pending)
-    }
+    if !isReplaying, transcript.waitingCount > waiting { onPermissionRequested?() }
     permissionsMayHaveChanged(from: waiting)
     if turnEndDeferred, output.signals.contains(.queueChanged) {
       if transcript.isRunning {
@@ -1181,6 +1198,8 @@ final class AgentSession {
       transcript.queue(prompt)
     case .answered(let id):
       notingPermissions { transcript.resolvePermission(requestID: id) }
+    case .answeredElicitation(let id, let answer):
+      notingPermissions { transcript.resolveElicitation(requestID: id, with: answer) }
     case .none:
       break
     }

@@ -62,6 +62,8 @@ final class ClaudeBackend: AgentBackend {
       )
     case .answer(let id, let decision):
       return (.permission(requestID: id, decision), nil)
+    case .answerElicitation(let id, let answer):
+      return (.answerElicitation(requestID: id, answer), nil)
     case .interrupt(let cancelQueued):
       return (.interrupt(requestID: nextRequestID("interrupt"), cancelQueued: cancelQueued), nil)
     case .cancelQueued(let uuid):

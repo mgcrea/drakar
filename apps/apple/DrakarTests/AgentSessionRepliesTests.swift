@@ -40,18 +40,68 @@ struct AgentSessionRepliesTests {
     return nil
   }
 
-  @Test func anElicitationIsDeclined() async throws {
-    let script = try standIn(
-      writing:
-        #"{"type":"control_request","request_id":"e1","request":{"subtype":"elicitation","mcp_server_name":"linear","message":"Which team?"}}"#
-    )
+  private static let question =
+    #"{"type":"control_request","request_id":"e1","request":{"subtype":"elicitation","mcp_server_name":"linear","message":"Which team?","mode":"form","requested_schema":{"type":"object","properties":{"team":{"type":"string"}}}}}"#
+
+  /// What the stand-in was sent so far, a line each.
+  private func sentLines(to script: URL) -> [String] {
+    let stdin = script.appendingPathExtension("stdin")
+    let text = (try? String(contentsOf: stdin, encoding: .utf8)) ?? ""
+    return text.split(separator: "\n").map(String.init)
+  }
+
+  /// A session sent a prompt, once the stand-in's question waits on it.
+  private func waitingSession(
+    onRequested: (() -> Void)? = nil
+  ) async throws -> (AgentSession, URL) {
+    let script = try standIn(writing: Self.question)
     let session = AgentSession(folder: folder)
     session.executableOverride = script
+    session.onPermissionRequested = onRequested
     session.send("hello")
+    for _ in 0..<50 where session.transcript.pendingElicitations.isEmpty {
+      try await Task.sleep(for: .milliseconds(100))
+    }
+    return (session, script)
+  }
+
+  @Test func anElicitationWaitsForThePerson() async throws {
+    var requested = 0
+    let (session, script) = try await waitingSession { requested += 1 }
     defer { session.stop() }
+    #expect(session.transcript.pendingElicitations.map(\.requestID) == ["e1"])
+    #expect(session.isAtWork)
+    #expect(requested == 1)
+    try await Task.sleep(for: .seconds(1))
+    #expect(!sentLines(to: script).contains { $0.contains(#""request_id":"e1""#) })
+  }
+
+  @Test func anAnsweredElicitationGoesBack() async throws {
+    let (session, script) = try await waitingSession()
+    defer { session.stop() }
+    var replied = 0
+    session.onReplied = { replied += 1 }
+    let pending = try #require(session.transcript.pendingElicitations.first)
+    session.answer(pending, .accept(["team": .string("core")]))
     let reply = try await sentLine(to: script, containing: #""request_id":"e1""#)
-    #expect(reply?.contains(#""action":"decline""#) == true)
-    #expect(session.transcript.pendingPermissions.isEmpty)
+    #expect(reply?.contains(#""action":"accept""#) == true)
+    #expect(reply?.contains(#""team":"core""#) == true)
+    #expect(session.transcript.pendingElicitations.isEmpty)
+    #expect(replied == 1)
+  }
+
+  @Test func anInterruptCancelsTheQuestion() async throws {
+    let (session, script) = try await waitingSession()
+    defer { session.stop() }
+    #expect(session.transcript.pendingElicitations.count == 1)
+    session.interrupt()
+    _ = try await sentLine(to: script, containing: #""subtype":"interrupt""#)
+    let lines = sentLines(to: script)
+    let cancel = try #require(lines.firstIndex { $0.contains(#""request_id":"e1""#) })
+    let interrupt = try #require(lines.firstIndex { $0.contains(#""subtype":"interrupt""#) })
+    #expect(lines[cancel].contains(#""action":"cancel""#))
+    #expect(cancel < interrupt)
+    #expect(session.transcript.pendingElicitations.isEmpty)
   }
 
   @Test func aRequestItCannotServeIsRefused() async throws {

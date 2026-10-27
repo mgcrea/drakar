@@ -225,7 +225,7 @@ struct SessionReplayTests {
     let replayed = await AgentSession(replaying: [], meta: meta)
     var calls: [String] = []
     replayed.onTurnEnded = { calls.append("turn ended") }
-    replayed.onPermissionRequested = { _ in calls.append("permission requested") }
+    replayed.onPermissionRequested = { calls.append("permission requested") }
     replayed.onPermissionsChanged = { calls.append("permissions changed") }
     replayed.onPromptSent = { calls.append("prompt sent") }
     await replayed.replay(log.records)
@@ -234,38 +234,90 @@ struct SessionReplayTests {
     #expect(replayed.transcript.turnEnd == .completed)
   }
 
-  private static let elicitation =
-    #"{"type":"control_request","request_id":"el-1","request":{"subtype":"elicitation","mcp_server_name":"srv","message":"Pick one"}}"#
+  /// A request Drakar cannot serve, which it refuses on its own.
+  private static let unserved =
+    #"{"type":"control_request","request_id":"h-1","request":{"subtype":"hook_callback","callback_id":"c"}}"#
 
-  private static func decline() throws -> Data {
-    try ClientMessage.declineElicitation(requestID: "el-1").line()
+  private static func refusal() throws -> Data {
+    try ClientMessage.refuse(
+      requestID: "h-1", error: "Unsupported control request subtype: hook_callback"
+    ).line()
   }
 
   /// A reply is owed for each request the CLI wrote, and a logged write answers one: two
-  /// copies of a request with one decline logged after them still owe the other.
+  /// copies of a request with one refusal logged after them still owe the other.
   @Test func owedRepliesAreSentOnce() async throws {
+    var log = Log()
+    log.out(Self.initLine, attached: false)
+    log.out(Self.unserved, attached: false)
+    let replayed = await AgentSession(replaying: log.records, meta: meta)
+    let transport = try #require(replayed.process as? ReplayTransport)
+    #expect(transport.owed == [try Self.refusal()])
+    let reply = try JSONValue.parse(try #require(transport.owed.first))
+    #expect(reply["response"]?["request_id"]?.stringValue == "h-1")
+
+    log.out(Self.unserved, attached: false)
+    log.in(try Self.refusal())
+    let again = await AgentSession(replaying: log.records, meta: meta)
+    #expect((again.process as? ReplayTransport)?.owed == [try Self.refusal()])
+  }
+
+  /// Sent after an earlier replay, and logged: the next replay does not refuse it again.
+  @Test func anOwedReplyAlreadySentIsNotOwed() async throws {
+    var log = Log()
+    log.out(Self.unserved, attached: false)
+    log.in(try Self.refusal())
+    let replayed = await AgentSession(replaying: log.records, meta: meta)
+    #expect((replayed.process as? ReplayTransport)?.owed.isEmpty == true)
+  }
+
+  private static let elicitation =
+    #"{"type":"control_request","request_id":"el-1","request":{"subtype":"elicitation","mcp_server_name":"srv","message":"Pick one"}}"#
+
+  /// Asked while nobody was attached: the person's, so it waits for them again and nothing
+  /// is owed for it.
+  @Test func anUnansweredElicitationIsPending() async throws {
     var log = Log()
     log.out(Self.initLine, attached: false)
     log.out(Self.elicitation, attached: false)
     let replayed = await AgentSession(replaying: log.records, meta: meta)
-    let transport = try #require(replayed.process as? ReplayTransport)
-    #expect(transport.owed == [try Self.decline()])
-    let reply = try JSONValue.parse(try #require(transport.owed.first))
-    #expect(reply["response"]?["request_id"]?.stringValue == "el-1")
-
-    log.out(Self.elicitation, attached: false)
-    log.in(try Self.decline())
-    let again = await AgentSession(replaying: log.records, meta: meta)
-    #expect((again.process as? ReplayTransport)?.owed == [try Self.decline()])
+    #expect(replayed.transcript.pendingElicitations.map(\.requestID) == ["el-1"])
+    #expect((replayed.process as? ReplayTransport)?.owed.isEmpty == true)
   }
 
-  /// Sent after an earlier replay, and logged: the next replay does not decline it again.
-  @Test func anOwedReplyAlreadySentIsNotOwed() async throws {
+  /// Answered before the app quit: not asked again, and noted as it was live.
+  @Test func anAnsweredElicitationIsNotPendingAgain() async throws {
     var log = Log()
-    log.out(Self.elicitation, attached: false)
-    log.in(try Self.decline())
+    log.out(Self.initLine)
+    log.out(Self.elicitation)
+    log.note(
+      .sent(
+        .answerElicitation(requestID: "el-1", .decline),
+        effect: .answeredElicitation(requestID: "el-1", answer: .decline)))
+    log.in(try ClientMessage.answerElicitation(requestID: "el-1", .decline).line())
     let replayed = await AgentSession(replaying: log.records, meta: meta)
+    #expect(replayed.transcript.pendingElicitations.isEmpty)
     #expect((replayed.process as? ReplayTransport)?.owed.isEmpty == true)
+    #expect(
+      replayed.transcript.entries.contains {
+        $0.kind == .notice("Declined srv's question: Pick one")
+      })
+  }
+
+  /// The note a replay takes the answer from says what was done, never what was typed.
+  @Test func anAnswersNoteKeepsNothingTyped() throws {
+    let answer = ElicitationAnswer.accept(["token": .string("s3cret-value")])
+    let note = SessionNote.sent(
+      .answerElicitation(requestID: "el-1", answer),
+      effect: .answeredElicitation(requestID: "el-1", answer: answer))
+    let bytes = try JSONEncoder().encode(note)
+    #expect(!String(decoding: bytes, as: UTF8.self).contains("s3cret"))
+    let accepted = ElicitationAnswer.accept(nil)
+    #expect(
+      try JSONDecoder().decode(SessionNote.self, from: bytes)
+        == .sent(
+          .answerElicitation(requestID: "el-1", accepted),
+          effect: .answeredElicitation(requestID: "el-1", answer: accepted)))
   }
 
   /// A session host keeps each line's `\n`, which a pipe's reader takes off: a replayed
@@ -284,9 +336,9 @@ struct SessionReplayTests {
   /// answered it, so it is owed all the same.
   @Test func aReplyNeverWrittenIsOwedThoughAttached() async throws {
     var log = Log()
-    log.out(Self.elicitation, attached: true)
+    log.out(Self.unserved, attached: true)
     let replayed = await AgentSession(replaying: log.records, meta: meta)
-    #expect((replayed.process as? ReplayTransport)?.owed == [try Self.decline()])
+    #expect((replayed.process as? ReplayTransport)?.owed == [try Self.refusal()])
   }
 
   // MARK: Codex
