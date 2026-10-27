@@ -80,4 +80,13 @@ struct SubfolderScanTests {
     #expect(ProjectPath.label(of: "/p/apps/.claude/worktrees/fix-x/src", in: "/p/apps") == "fix-x")
     #expect(ProjectPath.label(of: "/p/other/beta", in: "/p/apps") == "beta")
   }
+
+  /// In a window opened on a worktree, the worktree is the window's own: a subfolder is
+  /// named by its path down from it, and another worktree still by its name.
+  @Test func folderLabelsInAWorktreesWindow() {
+    let root = "/p/apps/.claude/worktrees/fix-x"
+    #expect(ProjectPath.label(of: root + "/src", in: root) == "src")
+    #expect(ProjectPath.label(of: root + "/web/alpha", in: root) == "web/alpha")
+    #expect(ProjectPath.label(of: "/p/apps/.claude/worktrees/fix-y/src", in: root) == "fix-y")
+  }
 }

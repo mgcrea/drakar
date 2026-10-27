@@ -44,16 +44,16 @@ public enum ProjectPath {
 
   /// How the toolbar names the folder a session runs in, for a window on `root`: nil for
   /// `root` itself, a worktree's own name, the path down from `root`, or the folder's name
-  /// when it is outside `root`.
+  /// when it is outside `root`. A worktree `root` is in is the window's own, not named.
   public static func label(of path: String, in root: String) -> String? {
     let (path, root) = (normalize(path), normalize(root))
     guard path != root else { return nil }
-    if let range = path.range(of: "/.claude/worktrees/") {
-      return String(path[range.upperBound...].prefix { $0 != "/" })
+    let inside = contains(root, path)
+    let below = inside ? "/" + path.dropFirst(root == "/" ? 1 : root.count + 1) : path
+    if let range = below.range(of: "/.claude/worktrees/") {
+      return String(below[range.upperBound...].prefix { $0 != "/" })
     }
-    if contains(root, path) {
-      return String(path.dropFirst(root == "/" ? 1 : root.count + 1))
-    }
+    if inside { return String(below.dropFirst()) }
     return URL(filePath: path).lastPathComponent
   }
 
