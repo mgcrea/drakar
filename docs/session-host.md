@@ -274,3 +274,29 @@ lsof host.lock
 To ask a running host, connect to the socket from a program signed by the app's team; a
 shell cannot pass the peer check. The `HostWire` tests in DrakarKit and `HostClient` are the
 reference clients.
+
+## Checking replay against the real CLIs
+
+The replay tests use stand-in CLIs. Two opt-in tests in `SessionReplayTests` run the real
+ones: `liveClaudeReplayMatches` (Haiku, `--setting-sources project`, a prompt that thinks and
+runs a tool needing permission, then a second turn) and `liveCodexReplayMatches` (a scratch
+git folder). Each records a live session, replays the record, and requires
+`transcript.entries` to be equal, nothing written during replay, and nothing owed. They are
+skipped unless the variable is set, and `xcodebuild` only passes it to the tests with the
+`TEST_RUNNER_` prefix:
+
+```sh
+TEST_RUNNER_DRAKAR_LIVE_CLI=1 xcodebuild test -project apps/apple/Drakar.xcodeproj \
+  -scheme Drakar -destination 'platform=macOS' -only-testing:DrakarTests/SessionReplayTests
+```
+
+Run it after a CLI update that changes the stream. Observed 2026-10-25 with Claude Code
+2.1.308 and codex-cli 0.163.0: exact equality for both, once lines were timed when read
+(before that, thinking durations differed by up to 51 ms). A Claude run costs about $0.025;
+each live part takes 8–19 s. Every run leaves its session in the person's own stores
+(`~/.claude/projects/-private-tmp-dh-live-*`, `~/.codex/sessions/<date>/`); nothing removes
+them.
+
+Not covered by it: Codex reasoning items (the cheap models produced none), a resumed session
+(history cut at the transcript length), and the host's raw bytes (the test's recorder logs
+each line re-serialised after parsing).
