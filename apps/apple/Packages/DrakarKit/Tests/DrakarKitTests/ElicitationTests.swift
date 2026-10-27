@@ -202,4 +202,16 @@ struct ElicitationTests {
     #expect(inputs["size"] == .text("4"))
     #expect(inputs["team"] == .picks(["web"]))
   }
+
+  /// Only a field with a `default` starts filled in, and a required flag starts off: an
+  /// optional flag nobody touched is not sent as false.
+  @Test func startsOnlyWhatHasADefault() throws {
+    let schema = try json(
+      #"{"type":"object","properties":{"agree":{"type":"boolean"},"notify":{"type":"boolean"},"size":{"type":"integer"},"team":{"type":"string","default":"web"}},"required":["agree"]}"#
+    )
+    let form = try #require(ElicitationForm(schema: schema, order: nil))
+    #expect(form.initialInputs == ["agree": .flag(false), "team": .text("web")])
+    #expect(
+      form.content(from: form.initialInputs) == ["agree": .bool(false), "team": .string("web")])
+  }
 }

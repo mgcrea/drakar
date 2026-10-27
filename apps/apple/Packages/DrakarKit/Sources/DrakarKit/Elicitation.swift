@@ -130,9 +130,12 @@ public struct ElicitationForm: Sendable, Equatable {
     return content
   }
 
-  /// Each field's starting input, from its `default`.
+  /// The fields that start with an input: each one with a `default`, and a required flag as
+  /// off. An optional flag without one starts absent, so it is sent only once toggled.
   public var initialInputs: [String: ElicitationInput] {
-    Dictionary(uniqueKeysWithValues: fields.map { ($0.key, $0.initialInput) })
+    var inputs: [String: ElicitationInput] = [:]
+    for field in fields { inputs[field.key] = field.initialInput }
+    return inputs
   }
 }
 
@@ -166,7 +169,7 @@ public struct ElicitationField: Sendable, Equatable, Identifiable {
   /// A text field whose key or title reads as a password, secret, token or API key.
   public var isSecret: Bool
   public var kind: Kind
-  let initialInput: ElicitationInput
+  let initialInput: ElicitationInput?
 
   /// Nil when `property` is outside the subset.
   init?(key: String, property: JSONValue, isRequired: Bool) {
@@ -206,7 +209,7 @@ public struct ElicitationField: Sendable, Equatable, Identifiable {
     } else {
       isSecret = false
     }
-    initialInput = Self.input(kind: kind, default: property["default"])
+    initialInput = Self.input(kind: kind, default: property["default"], isRequired: isRequired)
   }
 
   static let formats: Set<String> = ["email", "uri", "date", "date-time"]
@@ -238,13 +241,16 @@ public struct ElicitationField: Sendable, Equatable, Identifiable {
         .ignoresCase())
   }
 
-  private static func input(kind: Kind, default value: JSONValue?) -> ElicitationInput {
+  /// Nil without a `default` the field can take, except for a required flag, which starts off.
+  private static func input(kind: Kind, default value: JSONValue?, isRequired: Bool)
+    -> ElicitationInput?
+  {
     switch kind {
-    case .text: .text(value?.stringValue ?? "")
-    case .number: .text(value?.numberValue.map(numeral) ?? "")
-    case .flag: .flag(value?.boolValue ?? false)
-    case .choice: .picks(Set(value?.stringValue.map { [$0] } ?? []))
-    case .choices: .picks(Set((value?.arrayValue ?? []).compactMap(\.stringValue)))
+    case .text: value?.stringValue.map(ElicitationInput.text)
+    case .number: value?.numberValue.map { .text(numeral($0)) }
+    case .flag: value?.boolValue.map(ElicitationInput.flag) ?? (isRequired ? .flag(false) : nil)
+    case .choice: value?.stringValue.map { .picks([$0]) }
+    case .choices: value?.arrayValue.map { .picks(Set($0.compactMap(\.stringValue))) }
     }
   }
 
