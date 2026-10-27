@@ -28,7 +28,9 @@ public enum AgentEvent: Sendable, Equatable {
   case toolResult(callID: String, Transcript.ToolResult)
   case note(Note)
   case permissionRequested(Transcript.PendingPermission)
+  /// Also withdraws an elicitation with that id.
   case permissionWithdrawn(requestID: String)
+  case elicitationRequested(Transcript.PendingElicitation)
   /// A main-thread request went out: what the prompt cache is reckoned from.
   case requestSent(at: Date)
   case usage(ContextSample)

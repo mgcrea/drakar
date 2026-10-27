@@ -47,6 +47,9 @@ public struct ClaudeTranslator: Sendable {
             note: Transcript.compactionNote(trigger: trigger, preTokens: preTokens), at: time)))
     case .system(.notification(let text, let isError)):
       events.append(.note(.init(text: text, isFailure: isError)))
+    case .system(.elicitationComplete(let server, _)):
+      events.append(
+        .note(.init(text: String(localized: "\(server) finished the step in the browser"))))
     case .system(.task(let event)):
       if let call = event.toolUseID { agentCallByTask[event.taskID] = call }
       if let call = event.toolUseID ?? agentCallByTask[event.taskID] {
@@ -63,9 +66,9 @@ public struct ClaudeTranslator: Sendable {
       case .canUseTool(let permission):
         events.append(
           .permissionRequested(.init(requestID: request.requestID, request: permission)))
-      case .elicitation(let server, let question):
+      case .elicitation(let elicitation):
         events.append(
-          .note(.init(text: Transcript.declinedQuestionNote(server: server, question: question))))
+          .elicitationRequested(.init(requestID: request.requestID, elicitation: elicitation)))
       case .other: break
       }
     case .controlCancelRequest(let id):

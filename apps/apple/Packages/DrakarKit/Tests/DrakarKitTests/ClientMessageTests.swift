@@ -85,6 +85,22 @@ struct ClientMessageTests {
         == .object(["behavior": .string("deny"), "message": .string("Not now")]))
   }
 
+  /// The envelope 2.1.311 accepted (`Fixture.elicitation`); an integer stays an integer.
+  @Test func answersAnElicitation() throws {
+    #expect(
+      try text(
+        .answerElicitation(
+          requestID: "e1", .accept(["size": .number(4), "team": .string("core")])))
+        == #"{"response":{"request_id":"e1","response":{"action":"accept","content":{"size":4,"team":"core"}},"subtype":"success"},"type":"control_response"}"#
+        + "\n")
+    let response = { (answer: ElicitationAnswer) in
+      ClientMessage.answerElicitation(requestID: "e1", answer).json["response"]?["response"]
+    }
+    #expect(response(.accept(nil)) == .object(["action": .string("accept")]))
+    #expect(response(.decline) == .object(["action": .string("decline")]))
+    #expect(response(.cancel) == .object(["action": .string("cancel")]))
+  }
+
   /// Every line is one line: a newline inside would split it into two broken messages.
   @Test func endsEveryLineWithItsOnlyNewline() throws {
     let line = try ClientMessage.prompt("two\nlines").line()

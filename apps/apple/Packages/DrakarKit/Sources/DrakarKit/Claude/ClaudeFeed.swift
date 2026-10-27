@@ -39,6 +39,9 @@ public struct ClaudeFeed: Sendable {
   public mutating func resolvePermission(requestID: String) {
     transcript.resolvePermission(requestID: requestID)
   }
+  public mutating func resolveElicitation(requestID: String, with answer: ElicitationAnswer) {
+    transcript.resolveElicitation(requestID: requestID, with: answer)
+  }
   public mutating func processExited() { transcript.processExited() }
   public mutating func noteColdCache(at now: Date = .now) { transcript.noteColdCache(at: now) }
   public func grouped() -> (top: [Transcript.Entry], children: [String: [Transcript.Entry]]) {

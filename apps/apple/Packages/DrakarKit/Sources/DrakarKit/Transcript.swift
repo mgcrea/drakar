@@ -107,9 +107,21 @@ public struct Transcript: Sendable, Equatable {
     public var request: PermissionRequest
   }
 
+  /// An MCP server's question waiting for the person, with no deadline.
+  public struct PendingElicitation: Sendable, Equatable, Identifiable {
+    public var id: String { requestID }
+    public var requestID: String
+    public var elicitation: Elicitation
+  }
+
   public private(set) var entries: [Entry] = []
   public private(set) var session: SessionInfo?
   public private(set) var pendingPermissions: [PendingPermission] = []
+  /// In arrival order.
+  public private(set) var pendingElicitations: [PendingElicitation] = []
+  /// A permission or a question waits on the person: the turn cannot go on without them.
+  public var isWaitingOnPerson: Bool { !pendingPermissions.isEmpty || !pendingElicitations.isEmpty }
+  public var waitingCount: Int { pendingPermissions.count + pendingElicitations.count }
   /// How the newest turn ended; nil while it runs, before any turn, and after a prompt.
   /// Live, from its `result`; in history, which has none, from `stop_reason: end_turn`.
   public private(set) var turnEnd: TurnEnd?
@@ -150,7 +162,7 @@ public struct Transcript: Sendable, Equatable {
   /// main thread's last entry is text, and it and the text blocks of the same message
   /// before it make the closing text. Nil when it ended on a tool call or a note.
   public var closingText: ClosingText? {
-    guard turnEnd == .completed, !isRunning, pendingPermissions.isEmpty else { return nil }
+    guard turnEnd == .completed, !isRunning, !isWaitingOnPerson else { return nil }
     var messageID: String?
     var parts: [String] = []
     scan: for entry in entries.reversed()
@@ -285,12 +297,60 @@ public struct Transcript: Sendable, Equatable {
     pendingPermissions.removeAll { $0.requestID == requestID }
   }
 
+  /// Removes it and notes what became of it: answered, declined, cancelled or, for a link,
+  /// opened. The note names the server and the question, never what the person entered.
+  public mutating func resolveElicitation(requestID: String, with answer: ElicitationAnswer) {
+    revision += 1
+    guard let index = pendingElicitations.firstIndex(where: { $0.requestID == requestID })
+    else { return }
+    let elicitation = pendingElicitations.remove(at: index).elicitation
+    addNotice(Self.elicitationNote(elicitation, answer: answer))
+  }
+
+  /// The CLI took the question back.
+  private mutating func withdrawElicitation(requestID: String) {
+    guard let index = pendingElicitations.firstIndex(where: { $0.requestID == requestID })
+    else { return }
+    let elicitation = pendingElicitations.remove(at: index).elicitation
+    let server = Self.asker(elicitation)
+    addNotice(
+      elicitation.message.isEmpty
+        ? String(localized: "\(server) withdrew its question")
+        : String(localized: "\(server) withdrew its question: \(elicitation.message)"))
+  }
+
+  /// The newest tool call of `serverName`'s tools still without a result, or nil. Claude
+  /// Code names a server's tools `mcp__<server>__<tool>`, every character of the server's
+  /// name outside `[A-Za-z0-9_-]` made `_`.
+  public func elicitationAnchor(for serverName: String) -> String? {
+    let prefix = "mcp__\(Self.toolNamePart(serverName))__"
+    for entry in entries.reversed() {
+      if case .tool(let call) = entry.kind, call.result == nil, call.name.hasPrefix(prefix) {
+        return call.id
+      }
+    }
+    return nil
+  }
+
+  /// Per UTF-16 unit, as the CLI's JavaScript replaces them.
+  private static func toolNamePart(_ name: String) -> String {
+    String(
+      name.utf16.map { unit in
+        guard let scalar = Unicode.Scalar(unit), scalar.isASCII,
+          scalar.properties.isAlphabetic || ("0"..."9").contains(scalar) || scalar == "_"
+            || scalar == "-"
+        else { return "_" }
+        return Character(scalar)
+      })
+  }
+
   /// The process died. Nothing is running any more and nothing can still be answered,
   /// whatever the last line said.
   public mutating func processExited() {
     revision += 1
     isRunning = false
     pendingPermissions.removeAll()
+    pendingElicitations.removeAll()
     stopThinking()
     // What waited behind its turn will never run.
     if !queuedPrompts.isEmpty {
@@ -332,6 +392,7 @@ public struct Transcript: Sendable, Equatable {
       if let failure = summary.failureText, !endsSaying(failure) { addNote(.failure(failure)) }
       // A turn that ended cannot still be asking, nor thinking.
       pendingPermissions.removeAll()
+      pendingElicitations.removeAll()
       stopThinking()
     case .itemStarted(let item):
       place(item, replacing: false, at: time)
@@ -355,6 +416,9 @@ public struct Transcript: Sendable, Equatable {
       pendingPermissions.append(pending)
     case .permissionWithdrawn(let id):
       resolvePermission(requestID: id)
+      withdrawElicitation(requestID: id)
+    case .elicitationRequested(let pending):
+      pendingElicitations.append(pending)
     case .requestSent(let at):
       requestAt = at
     case .usage(let sample):
@@ -456,12 +520,29 @@ public struct Transcript: Sendable, Equatable {
     }
   }
 
-  static func declinedQuestionNote(server: String?, question: String?) -> String {
-    let asker = server ?? String(localized: "An MCP server")
-    let note = String(
-      localized: "\(asker) asked a question Drakar cannot show yet, so it was declined")
-    guard let question, !question.isEmpty else { return note }
-    return "\(note): \(question)"
+  /// What became of a question. Never what the person entered.
+  static func elicitationNote(_ elicitation: Elicitation, answer: ElicitationAnswer) -> String {
+    let server = asker(elicitation)
+    if case .accept = answer, case .url(let url) = elicitation.content {
+      let host = url.host() ?? url.absoluteString
+      return String(localized: "Opened \(server)'s link to \(host)")
+    }
+    let question = elicitation.message
+    return switch (answer, question.isEmpty) {
+    case (.accept, false): String(localized: "Answered \(server)'s question: \(question)")
+    case (.accept, true): String(localized: "Answered \(server)'s question")
+    case (.decline, false): String(localized: "Declined \(server)'s question: \(question)")
+    case (.decline, true): String(localized: "Declined \(server)'s question")
+    case (.cancel, false): String(localized: "Cancelled \(server)'s question: \(question)")
+    case (.cancel, true): String(localized: "Cancelled \(server)'s question")
+    }
+  }
+
+  /// The server's name as the card shows it, which may start a note in lower case, as
+  /// `linear` does; "an MCP server" for a request that named none.
+  private static func asker(_ elicitation: Elicitation) -> String {
+    elicitation.serverLabel.isEmpty
+      ? String(localized: "an MCP server") : elicitation.serverLabel
   }
 
   /// Thinking whose block never landed did not finish: it has no duration.

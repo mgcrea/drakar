@@ -38,8 +38,8 @@ public enum ClientMessage: Sendable, Equatable {
   /// Names the session as `/rename` does: the process appends the `custom-title` line and
   /// keeps the name for its own later writes (docs/claude-stream-json.md, "Session titles").
   case renameSession(requestID: String, title: String, sessionID: String)
-  /// The answer to an `elicitation`: no answer from the person.
-  case declineElicitation(requestID: String)
+  /// The person's answer to an `elicitation`, which the CLI passes to the server unchanged.
+  case answerElicitation(requestID: String, ElicitationAnswer)
   /// The answer to a request Drakar cannot serve, so that the CLI stops waiting on it.
   case refuse(requestID: String, error: String)
 
@@ -104,13 +104,13 @@ public enum ClientMessage: Sendable, Equatable {
           "subtype": .string("rename_session"), "title": .string(title),
           "source": .string("host"), "session_id": .string(sessionID),
         ])
-    case .declineElicitation(let id):
+    case .answerElicitation(let id, let answer):
       .object([
         "type": .string("control_response"),
         "response": .object([
           "subtype": .string("success"),
           "request_id": .string(id),
-          "response": .object(["action": .string("decline")]),
+          "response": answer.json,
         ]),
       ])
     case .refuse(let id, let error):
@@ -147,6 +147,25 @@ public enum ClientMessage: Sendable, Equatable {
       "request_id": .string(id),
       "request": .object(request),
     ])
+  }
+}
+
+/// What the person did with an MCP server's question: `{action, content?}`.
+public enum ElicitationAnswer: Sendable, Equatable {
+  /// The form's values; nil for a link, opened.
+  case accept([String: JSONValue]?)
+  case decline
+  /// Dismissed without a choice, as an interrupt does.
+  case cancel
+
+  var json: JSONValue {
+    switch self {
+    case .accept(let content?):
+      .object(["action": .string("accept"), "content": .object(content)])
+    case .accept(nil): .object(["action": .string("accept")])
+    case .decline: .object(["action": .string("decline")])
+    case .cancel: .object(["action": .string("cancel")])
+    }
   }
 }
 

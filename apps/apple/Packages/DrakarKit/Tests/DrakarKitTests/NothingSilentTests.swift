@@ -28,18 +28,34 @@ struct NothingSilentTests {
   private let elicitation =
     #"{"type":"control_request","request_id":"e1","request":{"subtype":"elicitation","mcp_server_name":"linear","message":"Which team?","mode":"form","requested_schema":{"type":"object"}}}"#
 
-  /// An MCP server's question waits on the client with no deadline; Drakar declines it, as
-  /// the extension does.
-  @Test func declinesAnElicitation() throws {
-    guard case .controlRequest(let request) = try message(elicitation) else {
-      Issue.record("not a control request")
+  /// An MCP server's question waits on the client with no deadline; it is the person's to
+  /// answer, so nothing goes back on its own.
+  @Test func leavesAnElicitationToThePerson() throws {
+    guard case .controlRequest(let request) = try message(elicitation),
+      case .elicitation(let question) = request.kind
+    else {
+      Issue.record("not an elicitation")
       return
     }
-    #expect(request.kind == .elicitation(serverName: "linear", message: "Which team?"))
-    #expect(
-      try text(request.reply)
-        == #"{"response":{"request_id":"e1","response":{"action":"decline"},"subtype":"success"},"type":"control_response"}"#
-        + "\n")
+    #expect(question.serverLabel == "linear")
+    #expect(question.message == "Which team?")
+    #expect(request.reply == nil)
+  }
+
+  /// A request with nothing to show still waits, as a question that can only be declined,
+  /// rather than being declined unseen.
+  @Test func anElicitationWithNothingToShowStillWaits() throws {
+    let line =
+      #"{"type":"control_request","request_id":"e9","request":{"subtype":"elicitation"}}"#
+    guard case .controlRequest(let request) = try message(line),
+      case .elicitation(let question) = request.kind
+    else {
+      Issue.record("not an elicitation")
+      return
+    }
+    #expect(question.content == .unsupported)
+    #expect(request.reply == nil)
+    #expect(try transcript([line]).pendingElicitations.map(\.requestID) == ["e9"])
   }
 
   /// A request Drakar has no answer for is refused at once, as the SDK refuses one, rather
@@ -67,14 +83,29 @@ struct NothingSilentTests {
     #expect(request.reply == nil)
   }
 
-  @Test func saysWhatADeclinedQuestionAsked() throws {
+  @Test func anElicitationWaits() throws {
     let transcript = try transcript([elicitation])
+    #expect(transcript.pendingElicitations.count == 1)
+    #expect(transcript.isWaitingOnPerson)
+    #expect(transcript.entries.map(\.kind) == [.prompt("Run it")])
+  }
+
+  /// The fixture's URL elicitation, answered, then the server's word that it is done.
+  @Test func notesALinkFinished() throws {
+    var transcript = ClaudeFeed()
+    transcript.addPrompt("Run it")
+    let complete = try #require(
+      try Fixture.elicitation.messages.first {
+        if case .system(.elicitationComplete) = $0 { return true }
+        return false
+      })
+    transcript.apply(complete)
     guard case .notice(let note) = transcript.entries.last?.kind else {
       Issue.record("no notice: \(String(describing: transcript.entries.last?.kind))")
       return
     }
-    #expect(note.contains("linear"))
-    #expect(note.contains("Which team?"))
+    #expect(note.contains("elicit"))
+    #expect(note.contains("finished the step in the browser"))
   }
 
   // MARK: Failed turns

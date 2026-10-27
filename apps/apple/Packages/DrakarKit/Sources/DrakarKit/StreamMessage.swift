@@ -81,6 +81,9 @@ public enum SystemEvent: Sendable, Equatable {
   /// The commands and skills changed mid-session (a plugin or skill reloaded): the new
   /// `commands` list, shaped as `initialize`'s.
   case commandsChanged(JSONValue)
+  /// An MCP server says the step a URL elicitation sent the person to is done, before its
+  /// tool's result (2.1.311, `Fixture.elicitation`).
+  case elicitationComplete(serverName: String, elicitationID: String?)
   case other(subtype: String, raw: JSONValue)
 
   init?(_ json: JSONValue) {
@@ -107,6 +110,10 @@ public enum SystemEvent: Sendable, Equatable {
     case "commands_changed":
       guard let commands = json["commands"] else { return nil }
       self = .commandsChanged(commands)
+    case "elicitation_complete":
+      guard let server = json["mcp_server_name"]?.stringValue else { return nil }
+      self = .elicitationComplete(
+        serverName: server, elicitationID: json["elicitation_id"]?.stringValue)
     case _ where TaskEvent.Kind(rawValue: subtype) != nil:
       guard let event = TaskEvent(json, subtype: subtype) else { return nil }
       self = .task(event)
@@ -382,19 +389,18 @@ public struct ControlRequest: Sendable, Equatable {
     case canUseTool(PermissionRequest)
     /// An MCP server asking the person something. Sent whatever the client registered, and
     /// waited on with no deadline.
-    case elicitation(serverName: String?, message: String?)
+    case elicitation(Elicitation)
     /// Requests the CLI sends only to a client that registered for them in `initialize`
     /// (hooks, SDK MCP servers, dialog kinds), which Drakar does not.
     case other(subtype: String, raw: JSONValue)
   }
 
-  /// What goes back without asking the person: an elicitation is declined, as the extension
-  /// declines it, and anything else refused as the SDK refuses it, so that the CLI never
-  /// waits on a request nobody will answer. Nil for a permission, which is the person's.
+  /// What goes back without asking the person: anything Drakar cannot serve is refused as
+  /// the SDK refuses it, so that the CLI never waits on a request nobody will answer. Nil
+  /// for a permission and an elicitation, which are the person's.
   public var reply: ClientMessage? {
     switch kind {
-    case .canUseTool: nil
-    case .elicitation: .declineElicitation(requestID: requestID)
+    case .canUseTool, .elicitation: nil
     case .other(let subtype, _):
       .refuse(requestID: requestID, error: "Unsupported control request subtype: \(subtype)")
     }
@@ -410,9 +416,12 @@ public struct ControlRequest: Sendable, Equatable {
       guard let permission = PermissionRequest(request) else { return nil }
       kind = .canUseTool(permission)
     case "elicitation":
+      // One with nothing to show still waits, as a question that can only be declined.
       kind = .elicitation(
-        serverName: request["mcp_server_name"]?.stringValue,
-        message: request["message"]?.stringValue)
+        Elicitation(claudeRequest: request)
+          ?? Elicitation(
+            serverName: "", displayName: nil, message: "", elicitationID: nil, title: nil,
+            description: nil, content: .unsupported))
     default: kind = .other(subtype: subtype, raw: request)
     }
   }

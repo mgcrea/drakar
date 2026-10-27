@@ -59,6 +59,19 @@ public struct Elicitation: Sendable, Equatable {
     }
   }
 
+  init(
+    serverName: String, displayName: String?, message: String, elicitationID: String?,
+    title: String?, description: String?, content: Content
+  ) {
+    self.serverName = serverName
+    self.displayName = displayName
+    self.message = message
+    self.elicitationID = elicitationID
+    self.title = title
+    self.description = description
+    self.content = content
+  }
+
   private static func webURL(_ url: URL) -> URL? {
     guard let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https",
       url.host()?.isEmpty == false
