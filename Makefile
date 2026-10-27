@@ -47,6 +47,12 @@ audit: ## Check the network claim against the sources (scripts/audit-network.sh)
 audit-running: ## The same, plus the running app: its sockets, lock files and token
 	@scripts/audit-network.sh --running
 
+extension-diff: ## What the installed VS Code extension changed since the reviewed snapshot
+	@scripts/extension-surface.sh
+
+extension-accept: ## Make the installed extension the reviewed snapshot (ledger updated first)
+	@scripts/extension-surface.sh --accept
+
 # Explicit targets rather than a `%:` catch-all. A match-anything rule prints "'X' is up to
 # date" instead of forwarding whenever the goal happens to name a file or directory at the
 # root — and apps/ and docs/ are both real paths. Silent success is the one failure a
@@ -54,7 +60,7 @@ audit-running: ## The same, plus the running app: its sockets, lock files and to
 $(APPLE_TARGETS):
 	@$(MAKE) --no-print-directory -C $(APPLE) $@
 
-.PHONY: help audit audit-running $(APPLE_TARGETS)
+.PHONY: help audit audit-running extension-diff extension-accept $(APPLE_TARGETS)
 
 # ─── directory goals ─────────────────────────────────────────────────────────
 # A goal naming an existing directory is a target make considers already built, so
