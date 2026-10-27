@@ -371,8 +371,7 @@ public struct CodexSession: Sendable {
     case "turn/started":
       if let id = params["turn"]?["id"]?.stringValue { turnStarted(id, into: &step) }
     case "turn/completed":
-      let id = params["turn"]?["id"]?.stringValue
-      if case .running(let current) = turn, let id, id != current { return false }
+      // A completion for another turn than the running one never gets here (`receive`).
       if turn == .starting { return false }
       turn = .idle
       approvals.removeAll()
