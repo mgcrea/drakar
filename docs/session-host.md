@@ -223,13 +223,16 @@ cut to the turn count), then `attach`es from 0 and replays.
 **Replay.** Records are taken in order with every write muted: an `in` goes through the path
 the app's own send took (a prompt is added, an answer resolves its permission, a Codex call
 is registered), an `out` is received as usual, a `note` redoes the app's own effect. Nothing
-reaches the CLI. A replay is parsed off the main actor and yields between slices. A host
+reaches the CLI. An MCP server's question (an elicitation) shows pending unless a `note` the
+app logged when the person answered it says so; the answer's logged `in` may be redacted
+(`write`'s `logged`), so the replay does not read the answer from it. A replay is parsed off
+the main actor and yields between slices. A host
 that sends nothing of the log for 10 seconds (quiet, not slow: a long log takes seconds)
 is let go of and the row shows the failure; a refused attach or an ended connection does the
 same.
 
-**Owed replies.** Some requests the backends answer on their own (an elicitation declined,
-an unknown control request refused, a context-usage request after a `result`). One is owed
+**Owed replies.** Some requests the backends answer on their own (an unknown control
+request refused, a context-usage request after a `result`). One is owed
 if the replay received it as an `out` record and no later logged `in` is byte-equal to the
 reply it would produce. The `attached` flag does not decide this. Owed replies are sent once,
 at the end of the replay, before live lines are taken. A permission no `in` answers shows

@@ -233,11 +233,12 @@ The VS Code extension writes a picked effort into the user's `settings.json`
 (`updateSettings("userSettings", {effortLevel})`). Drakar sends it as a flag setting, so a
 pick lasts for its session as the model's does.
 
-## Lines beside the conversation (read from the 2.1.288 source, 2026-10-06; not yet captured)
+## Lines beside the conversation (read from the 2.1.288 source, 2026-10-06; elicitations captured on 2.1.311)
 
 What the CLI says that is not a block of the conversation, and what Drakar does with it.
-Read out of the CLI's bundled JavaScript and the extension's (2.1.289), not seen on a live
-stream yet:
+Read out of the CLI's bundled JavaScript and the extension's (2.1.289). The two elicitation
+rows were captured live on 2.1.311 (2026-10-27); the others are not seen on a live stream
+yet:
 
 | Line | Shape | Drakar |
 | --- | --- | --- |
