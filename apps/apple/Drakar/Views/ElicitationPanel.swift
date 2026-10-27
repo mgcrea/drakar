@@ -68,7 +68,8 @@ struct MCPCallView: View {
 }
 
 /// An MCP server's question, in its call's card or in place of the composer: the server and
-/// what it asks, then its form, its link, or word that Drakar can't show it.
+/// what it asks, then its form, its link, a link it won't open, or word that Drakar can't
+/// show it.
 ///
 /// Submit sends the form once every field holds; Open in Browser accepts and then opens the
 /// link, on a click or ⌘↩ and never by itself; Decline, or Esc, tells the server no. What is
@@ -197,6 +198,8 @@ struct ElicitationPanel: View {
         }
       case .url(let url):
         link(url)
+      case .nonWebLink(let link):
+        nonWebLink(link)
       case .unsupported:
         Text("Drakar can't show this form.")
           .font(.callout)
@@ -395,6 +398,21 @@ struct ElicitationPanel: View {
     }
   }
 
+  /// A link that isn't http or https: shown, to be copied, and never opened.
+  private func nonWebLink(_ link: String) -> some View {
+    VStack(alignment: .leading, spacing: 4) {
+      Text("Drakar only opens web links.")
+        .font(.callout)
+        .foregroundStyle(.secondary)
+      Text(link)
+        .font(.callout.monospaced())
+        .foregroundStyle(.secondary)
+        .fixedSize(horizontal: false, vertical: true)
+        .textSelection(.enabled)
+        .accessibilityIdentifier("elicitation.url")
+    }
+  }
+
   // MARK: - The answer
 
   private var footer: some View {
@@ -430,7 +448,7 @@ struct ElicitationPanel: View {
         .disabled(isReconnecting)
         .help(url.absoluteString)
         .accessibilityIdentifier("elicitation.open")
-      case .unsupported:
+      case .nonWebLink, .unsupported:
         EmptyView()
       }
     }
@@ -442,7 +460,7 @@ struct ElicitationPanel: View {
     return switch content {
     case .form: String(localized: "⌘↩ to submit, Esc to decline")
     case .url: String(localized: "⌘↩ to open, Esc to decline")
-    case .unsupported: String(localized: "Esc to decline")
+    case .nonWebLink, .unsupported: String(localized: "Esc to decline")
     }
   }
 }

@@ -150,14 +150,24 @@ struct ElicitationTests {
     for schema in [nested, bareArray, notObject] {
       #expect(try elicitation(schema: schema).content == .unsupported, "\(schema)")
     }
-    let file = try #require(
-      Elicitation(
-        claudeRequest: try json(
-          #"{"mcp_server_name":"s","message":"m","mode":"url","url":"file:///etc/passwd"}"#)))
-    #expect(file.content == .unsupported)
+    let noLink = try #require(
+      Elicitation(claudeRequest: try json(#"{"mcp_server_name":"s","message":"m","mode":"url"}"#)))
+    #expect(noLink.content == .unsupported)
     let unknown = try #require(
       Elicitation(claudeRequest: try json(#"{"mcp_server_name":"s","message":"m","mode":"chat"}"#)))
     #expect(unknown.content == .unsupported)
+  }
+
+  /// A link that isn't http or https keeps its text, for the card to show it without
+  /// opening it.
+  @Test func keepsALinkItWillNotOpen() throws {
+    for url in ["file:///etc/passwd", "javascript:alert(1)", "http:///nohost"] {
+      let elicitation = try #require(
+        Elicitation(
+          claudeRequest: try json(
+            #"{"mcp_server_name":"s","message":"m","mode":"url","url":"\#(url)"}"#)))
+      #expect(elicitation.content == .nonWebLink(url), "\(url)")
+    }
   }
 
   @Test func requiresRequiredFields() throws {

@@ -4,14 +4,17 @@ import Foundation
 ///
 /// Verified on 2.1.311 (`Fixture.elicitation`): a `control_request` of subtype
 /// `elicitation` carries `mcp_server_name`, `message` and `mode`; a form adds
-/// `requested_schema` and `property_order`, a link adds `url` and `elicitation_id`. A request
-/// that can be read but not shown (a schema outside MCP's form subset, a link that isn't
-/// http or https, an unknown mode) is `.unsupported`, a card that can only decline.
+/// `requested_schema` and `property_order`, a link adds `url` and `elicitation_id`. A link
+/// that isn't http or https is `.nonWebLink`, shown and never opened. A request that can be
+/// read but not shown (a schema outside MCP's form subset, a link mode with no link, an
+/// unknown mode) is `.unsupported`. Both are cards that can only decline.
 public struct Elicitation: Sendable, Equatable {
   public enum Content: Sendable, Equatable {
     case form(ElicitationForm)
     /// Always http or https.
     case url(URL)
+    /// A link mode's `url` as sent, which isn't http or https.
+    case nonWebLink(String)
     case unsupported
   }
 
@@ -51,9 +54,11 @@ public struct Elicitation: Sendable, Equatable {
         }
         .map(Content.form) ?? .unsupported
     case .string("url"):
-      content =
-        text("url").flatMap(URL.init(string:)).flatMap(Self.webURL).map(Content.url)
-        ?? .unsupported
+      if let link = text("url") {
+        content = URL(string: link).flatMap(Self.webURL).map(Content.url) ?? .nonWebLink(link)
+      } else {
+        content = .unsupported
+      }
     default:
       content = .unsupported
     }

@@ -115,7 +115,9 @@ struct ElicitationPanelTests {
     let link = Elicitation.Content.url(try #require(URL(string: "https://example.com")))
     #expect(ElicitationPanel.hint(form, isReconnecting: false) == "⌘↩ to submit, Esc to decline")
     #expect(ElicitationPanel.hint(link, isReconnecting: false) == "⌘↩ to open, Esc to decline")
-    for content in [form, link, .unsupported] {
+    #expect(
+      ElicitationPanel.hint(.nonWebLink("file:///x"), isReconnecting: false) == "Esc to decline")
+    for content in [form, link, .nonWebLink("file:///x"), .unsupported] {
       #expect(ElicitationPanel.hint(content, isReconnecting: true) == "Reconnecting…")
     }
   }
