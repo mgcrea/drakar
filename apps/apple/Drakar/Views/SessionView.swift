@@ -313,7 +313,8 @@ struct SessionView: View {
     return AskedElicitation(
       callID: callID, requestID: pending.requestID, focusRequest: item.questionFocusRequest,
       count: session.transcript.pendingElicitations.count,
-      hostLogsAnswers: panel.hostLogsAnswers, panel: { panel })
+      hostLogsAnswers: panel.hostLogsAnswers, isReconnecting: panel.isReconnecting,
+      panel: { panel })
   }
 
   /// The first MCP server's question waiting with no card in the transcript to answer it in:
@@ -337,7 +338,8 @@ struct SessionView: View {
       elicitation: pending.elicitation,
       position: (1, session.transcript.pendingElicitations.count),
       answer: { session.answer(pending, $0) }, focusRequest: item.questionFocusRequest,
-      isDocked: isDocked, hostLogsAnswers: session.hostLogsAnswersInFull)
+      isDocked: isDocked, hostLogsAnswers: session.hostLogsAnswersInFull,
+      isReconnecting: session.isReconnecting)
   }
 
   private var problem: String? {

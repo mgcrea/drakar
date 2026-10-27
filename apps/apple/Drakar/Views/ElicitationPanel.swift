@@ -3,12 +3,13 @@ import DrakarKit
 import SwiftUI
 
 /// The MCP server's question waiting on the person, answered under the card of the tool call
-/// it interrupted. Equal by call, request, focus request, how many wait and what the host
-/// logs, as `AskedQuestion` is by its own: an equal value is never handed on, so the request
-/// belongs in the comparison, or a second question in the same call would keep the first
-/// one's panel and answer for it; the count, or "1 of 2" would stay up once the other was
-/// answered; and what the host logs, or a session reattached to a newer host would keep the
-/// older one's caveat.
+/// it interrupted. Equal by call, request, focus request, how many wait, what the host logs
+/// and whether the session reconnects, as `AskedQuestion` is by its own: an equal value is
+/// never handed on, so the request belongs in the comparison, or a second question in the
+/// same call would keep the first one's panel and answer for it; the count, or "1 of 2" would
+/// stay up once the other was answered; what the host logs, or a session reattached to a
+/// newer host would keep the older one's caveat; and the reconnecting, or the buttons would
+/// stay as they were.
 struct AskedElicitation: Equatable {
   let callID: String
   let requestID: String
@@ -18,11 +19,14 @@ struct AskedElicitation: Equatable {
   let count: Int
   /// `ElicitationPanel.hostLogsAnswers`.
   let hostLogsAnswers: Bool
+  /// `ElicitationPanel.isReconnecting`.
+  let isReconnecting: Bool
   let panel: () -> ElicitationPanel
 
   static func == (a: Self, b: Self) -> Bool {
     a.callID == b.callID && a.requestID == b.requestID && a.focusRequest == b.focusRequest
       && a.count == b.count && a.hostLogsAnswers == b.hostLogsAnswers
+      && a.isReconnecting == b.isReconnecting
   }
 
   /// The call whose card answers `elicitation`: its server's newest call still running, when
@@ -87,6 +91,9 @@ struct ElicitationPanel: View {
   /// The session's host is older than minor 3 and logs the answer whole (spec anti-goal):
   /// the form says so.
   var hostLogsAnswers = false
+  /// The session reconnects to its host: an answer now would reach nobody, so the buttons
+  /// and Esc wait, and a link never opens unanswered.
+  var isReconnecting = false
 
   @State private var inputs: [String: ElicitationInput]
   /// The fields changed so far: only they say what is wrong with them.
@@ -101,7 +108,7 @@ struct ElicitationPanel: View {
   init(
     elicitation: Elicitation, position: (index: Int, count: Int)?,
     answer: @escaping (ElicitationAnswer) -> Void, focusRequest: Int? = nil, isDocked: Bool = false,
-    hostLogsAnswers: Bool = false
+    hostLogsAnswers: Bool = false, isReconnecting: Bool = false
   ) {
     self.elicitation = elicitation
     self.position = position
@@ -109,6 +116,7 @@ struct ElicitationPanel: View {
     self.focusRequest = focusRequest
     self.isDocked = isDocked
     self.hostLogsAnswers = hostLogsAnswers
+    self.isReconnecting = isReconnecting
     if case .form(let form) = elicitation.content {
       _inputs = State(initialValue: form.initialInputs)
     } else {
@@ -203,7 +211,7 @@ struct ElicitationPanel: View {
     // Here and not only on Decline's shortcut: the panel's own Esc comes before the session's,
     // which would interrupt the turn instead.
     .onKeyPress(.escape) {
-      answer(.decline)
+      if !isReconnecting { answer(.decline) }
       return .handled
     }
     .onChange(of: focusRequest) {
@@ -391,29 +399,35 @@ struct ElicitationPanel: View {
 
   private var footer: some View {
     HStack {
-      Text(hint).font(.caption).foregroundStyle(.tertiary)
+      Text(Self.hint(elicitation.content, isReconnecting: isReconnecting))
+        .font(.caption)
+        .foregroundStyle(.tertiary)
+        .accessibilityIdentifier("elicitation.hint")
       Spacer()
       Button("Decline") { answer(.decline) }
         .keyboardShortcut(.cancelAction)
         .help("Tell the server you won't answer")
+        .disabled(isReconnecting)
         .accessibilityIdentifier("elicitation.decline")
       switch elicitation.content {
       case .form(let form):
         let content = form.content(from: inputs)
         Button("Submit") {
-          if let content { answer(.accept(content)) }
+          if let content, !isReconnecting { answer(.accept(content)) }
         }
         .buttonStyle(.borderedProminent)
         .keyboardShortcut(.return, modifiers: .command)
-        .disabled(content == nil)
+        .disabled(content == nil || isReconnecting)
         .accessibilityIdentifier("elicitation.submit")
       case .url(let url):
         Button("Open in Browser") {
+          guard !isReconnecting else { return }
           answer(.accept(nil))
           NSWorkspace.shared.open(url)
         }
         .buttonStyle(.borderedProminent)
         .keyboardShortcut(.return, modifiers: .command)
+        .disabled(isReconnecting)
         .help(url.absoluteString)
         .accessibilityIdentifier("elicitation.open")
       case .unsupported:
@@ -422,8 +436,10 @@ struct ElicitationPanel: View {
     }
   }
 
-  private var hint: String {
-    switch elicitation.content {
+  /// The footer's keys, or why the buttons wait.
+  static func hint(_ content: Elicitation.Content, isReconnecting: Bool) -> String {
+    if isReconnecting { return String(localized: "Reconnecting…") }
+    return switch content {
     case .form: String(localized: "⌘↩ to submit, Esc to decline")
     case .url: String(localized: "⌘↩ to open, Esc to decline")
     case .unsupported: String(localized: "Esc to decline")
