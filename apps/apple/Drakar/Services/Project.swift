@@ -188,12 +188,14 @@ final class ProjectSession: Identifiable {
   }
 
   /// How much this session wants the person, from the most urgent thing it waits on. A
-  /// question blocks its tool mid-turn as a permission does.
+  /// question blocks its tool mid-turn as a permission does, so beside a plan or a choice it
+  /// is the question's level that shows.
   var urgency: Urgency? {
-    if let pending = session.transcript.pendingPermissions.first {
-      return pending.request.isChoice || pending.request.isPlan ? .choice : .permission
+    let permission = session.transcript.pendingPermissions.first.map { pending in
+      pending.request.isChoice || pending.request.isPlan ? Urgency.choice : .permission
     }
-    if pendingElicitation != nil { return .permission }
+    let question: Urgency? = pendingElicitation == nil ? nil : .permission
+    if let waiting = [permission, question].compactMap(\.self).max() { return waiting }
     switch closingAsk?.kind {
     case .question: return .question
     case .offer: return .offer

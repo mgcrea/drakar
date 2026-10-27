@@ -175,6 +175,22 @@ struct UrgencyTests {
     #expect(project.waitingCount == 1)
   }
 
+  /// A plan waiting beside an MCP server's question: the question's level shows, not the
+  /// plan's lower one.
+  @Test func aQuestionBesideAPlanWaitsLikeAPermission() async throws {
+    let (project, item) = try await session([
+      ##"{"type":"control_request","request_id":"p1","request":{"subtype":"can_use_tool","tool_name":"ExitPlanMode","input":{"plan":"# Add hello.txt"},"tool_use_id":"t1","requires_user_interaction":true}}"##,
+      #"{"type":"control_request","request_id":"e1","request":{"subtype":"elicitation","mcp_server_name":"linear","message":"Which team?"}}"#,
+    ])
+    defer { project.stopAll() }
+    for _ in 0..<50 where item.pendingElicitation == nil {
+      try await Task.sleep(for: .milliseconds(100))
+    }
+    #expect(item.session.transcript.pendingPermissions.map(\.requestID) == ["p1"])
+    #expect(item.pendingElicitation?.requestID == "e1")
+    #expect(item.urgency == .permission)
+  }
+
   /// Looking is not answering.
   @Test func selectingTheRowKeepsIt() async throws {
     let (project, item) = try await session(Self.asking)
