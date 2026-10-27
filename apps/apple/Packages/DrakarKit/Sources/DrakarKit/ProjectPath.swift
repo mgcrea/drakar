@@ -44,11 +44,17 @@ public enum ProjectPath {
 
   /// How the toolbar names the folder a session runs in, for a window on `root`: nil for
   /// `root` itself, a worktree's own name, the path down from `root`, or the folder's name
-  /// when it is outside `root`. A worktree `root` is in is the window's own, not named.
+  /// when it is outside `root`. A worktree `root` is in is the window's own, not named. Two
+  /// paths that only meet once resolved (a link, `/tmp`) are compared that way, as `owner`
+  /// compares them.
   public static func label(of path: String, in root: String) -> String? {
     let (path, root) = (normalize(path), normalize(root))
     guard path != root else { return nil }
     let inside = contains(root, path)
+    if !inside {
+      let (real, realRoot) = (resolved(path), resolved(root))
+      if contains(realRoot, real) { return label(of: real, in: realRoot) }
+    }
     let below = inside ? "/" + path.dropFirst(root == "/" ? 1 : root.count + 1) : path
     if let range = below.range(of: "/.claude/worktrees/") {
       return String(below[range.upperBound...].prefix { $0 != "/" })

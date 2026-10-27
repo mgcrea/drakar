@@ -38,6 +38,25 @@ struct ProjectPathTests {
     #expect(ProjectPath.Owners([folder]).owner(of: cwd) == ProjectPath.normalize(folder))
   }
 
+  /// A folder opened through a link names its resolved sessions as its own: none for the
+  /// folder itself, the path down from it for a subfolder, whichever side is resolved.
+  @Test func aFolderOpenedThroughALinkLabelsItsResolvedSessions() throws {
+    let real = FileManager.default.temporaryDirectory.appending(path: "real-\(UUID())")
+    let link = FileManager.default.temporaryDirectory.appending(path: "link-\(UUID())")
+    try FileManager.default.createDirectory(
+      at: real.appending(path: "web/alpha"), withIntermediateDirectories: true)
+    try FileManager.default.createSymbolicLink(at: link, withDestinationURL: real)
+    defer {
+      try? FileManager.default.removeItem(at: link)
+      try? FileManager.default.removeItem(at: real)
+    }
+    let resolved = ProjectPath.resolved(real.path(percentEncoded: false))
+    let folder = link.path(percentEncoded: false)
+    #expect(ProjectPath.label(of: resolved, in: folder) == nil)
+    #expect(ProjectPath.label(of: resolved + "/web/alpha", in: folder) == "web/alpha")
+    #expect(ProjectPath.label(of: folder + "/web/alpha", in: resolved) == "web/alpha")
+  }
+
   @Test func transcriptFoldersBeginWithTheFoldersEncoding() {
     #expect(
       ProjectPath.encodedPrefixes(for: "/Users/me/my.app") == [
