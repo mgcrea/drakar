@@ -49,12 +49,13 @@ struct QuestionPanel: View {
   }
 
   /// What a digit does: the row it picks, and whether ⌘ held with it answers too. Nil while
-  /// "Other"'s field takes the typing, and with any other modifier.
+  /// "Other"'s field takes the typing, and with any other modifier. ⇧ is not one: AZERTY
+  /// types its digits with it, and on a layout that doesn't, ⇧ makes no digit.
   static func digitPick(_ characters: String, modifiers: EventModifiers, typing: Bool)
     -> (row: Int, answers: Bool)?
   {
     guard !typing, let digit = Int(characters), digit >= 1 else { return nil }
-    switch modifiers.subtracting([.capsLock, .numericPad]) {
+    switch modifiers.subtracting([.shift, .capsLock, .numericPad]) {
     case []: return (digit - 1, false)
     case .command: return (digit - 1, true)
     default: return nil
