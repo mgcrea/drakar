@@ -307,6 +307,50 @@ import Testing
     #expect(listed.count == 2)
   }
 
+  /// An app about to exit hands the socket all it queued, more than the socket's buffer
+  /// takes at once, waiting for a peer slow to read rather than dropping the rest.
+  @Test func flushNowWaitsForAPeerSlowToRead() async throws {
+    var fds: [Int32] = [0, 0]
+    #expect(socketpair(AF_UNIX, SOCK_STREAM, 0, &fds) == 0)
+    try UnixSocket.prepare(fds[0])
+    let reader = fds[1]
+    defer { Darwin.close(reader) }
+    let connection = UnixConnection(fd: fds[0], label: "flush-now")
+    connection.start(line: { _ in }, closed: {})
+    let line = Data(repeating: 0x61, count: 1 << 20)
+    connection.send(line)
+    let received = Task.detached { () -> Int in
+      try? await Task.sleep(for: .milliseconds(200))
+      var total = 0
+      var buffer = [UInt8](repeating: 0, count: 64 * 1024)
+      while true {
+        let count = Darwin.read(reader, &buffer, buffer.count)
+        if count <= 0 { return total }
+        total += count
+      }
+    }
+    connection.flushNow()
+    connection.close()
+    let count = await received.value
+    #expect(count == line.count + 1)
+  }
+
+  /// A peer that never reads holds up the exit for the limit, no longer.
+  @Test func flushNowGivesUpOnAPeerThatNeverReads() throws {
+    var fds: [Int32] = [0, 0]
+    #expect(socketpair(AF_UNIX, SOCK_STREAM, 0, &fds) == 0)
+    try UnixSocket.prepare(fds[0])
+    defer { Darwin.close(fds[1]) }
+    let connection = UnixConnection(fd: fds[0], label: "flush-now-deaf")
+    connection.start(line: { _ in }, closed: {})
+    connection.send(Data(repeating: 0x61, count: 1 << 20))
+    let began = ContinuousClock.now
+    connection.flushNow(within: .milliseconds(300))
+    let took = ContinuousClock.now - began
+    connection.close()
+    #expect(took >= .milliseconds(250) && took < .seconds(2), "took \(took)")
+  }
+
   @Test func aConnectionToNothingThrows() throws {
     let host = try TestHost()
     host.close()

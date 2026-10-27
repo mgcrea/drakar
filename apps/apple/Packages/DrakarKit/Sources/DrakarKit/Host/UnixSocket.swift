@@ -230,10 +230,22 @@ final class UnixConnection: @unchecked Sendable {
     }
   }
 
-  /// Writes what is queued before returning, as far as the socket takes it without waiting:
-  /// for a process about to exit, whose queue would not run again.
-  func flushNow() {
-    queue.sync { flush() }
+  /// Writes what is queued before returning, waiting up to `limit` for the peer to take
+  /// what the socket's buffer does not: for a process about to exit, whose queue would not
+  /// run again. The limit is so that a stuck peer cannot hold up the exit.
+  func flushNow(within limit: Duration = .seconds(2)) {
+    let deadline = ContinuousClock.now + limit
+    queue.sync {
+      while true {
+        flush()
+        guard !ended, writer != nil, state.withLock({ $0.queued }) > 0 else { return }
+        let left = deadline - .now
+        guard left > .zero else { return }
+        var writable = pollfd(fd: fd, events: Int16(POLLOUT), revents: 0)
+        let waited = poll(&writable, 1, Int32((left / .milliseconds(1)).rounded(.up)))
+        if waited == 0 || (waited < 0 && errno != EINTR) { return }
+      }
+    }
   }
 
   /// Sends nothing more and drops what is still queued.
