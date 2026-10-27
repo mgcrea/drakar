@@ -172,6 +172,29 @@ struct SessionReplayTests {
     #expect(receivedLines() == before)
   }
 
+  /// A session's second process counts its request ids from one, as the replay's new
+  /// backend does: nothing it asked comes back owed.
+  @Test func aSecondProcessReplaysOwingNothing() async throws {
+    let (live, first) = try await liveTurn()
+    defer { live.stop() }
+    live.stop()
+    live.send("again")
+    try await waitFor { (live.process as? RecordingTransport).map { $0 !== first } == true }
+    let second = try #require(live.process as? RecordingTransport)
+    try await waitFor { !live.transcript.pendingPermissions.isEmpty }
+    let pending = try #require(live.transcript.pendingPermissions.first)
+    live.answer(pending, .allow(updatedInput: pending.request.input))
+    // The context request the turn's `result` makes, the last thing the backend asks.
+    try await waitFor {
+      second.records.contains {
+        $0.kind == .in && String(decoding: $0.bytes, as: UTF8.self).contains("get_context_usage")
+      }
+    }
+    let replayed = await AgentSession(replaying: second.records, meta: meta)
+    let transport = try #require(replayed.process as? ReplayTransport)
+    #expect(transport.owed.isEmpty)
+  }
+
   @Test func anAnsweredPermissionIsNotPendingAgain() async throws {
     let (live, recorder) = try await liveTurn()
     defer { live.stop() }
