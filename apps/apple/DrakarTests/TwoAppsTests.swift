@@ -104,7 +104,8 @@ struct TwoAppsTests {
   }
 
   /// A process spawned straight in the host with `meta`, and an app of its own attached to
-  /// it, which lets it go by closing.
+  /// it, which lets it go by closing. Attached once the host has said so: a list sent before
+  /// that would find the process free.
   private func held(_ meta: SessionMeta) async throws -> (owner: HostClient, id: String) {
     let owner = try HostClient.connect(socket: try HostWire.socket(in: host.directory))
     let id = try await owner.spawn(
@@ -112,7 +113,9 @@ struct TwoAppsTests {
         executable: URL(filePath: "/bin/cat"), arguments: [], environment: [:],
         currentDirectory: bin),
       meta: try JSONEncoder().encode(meta))
-    _ = owner.attach(id, from: 0)
+    for await event in owner.attach(id, from: 0) {
+      if case .caughtUp = event { break }
+    }
     return (owner, id)
   }
 
