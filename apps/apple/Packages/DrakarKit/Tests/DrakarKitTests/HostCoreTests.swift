@@ -444,6 +444,7 @@ import Testing
     #expect(host.held(id)?.meta == bytes("n"))
     #expect(
       host.core.handle(.hello(protocol: HostWire.major, appVersion: "1"), from: client).first
-        == .welcome(protocol: HostWire.major, hostVersion: "test", pid: getpid()))
+        == .welcome(
+          protocol: HostWire.major, hostVersion: "test", pid: getpid(), minor: HostWire.minor))
   }
 }

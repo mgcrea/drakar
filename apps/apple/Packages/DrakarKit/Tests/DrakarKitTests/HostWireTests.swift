@@ -28,7 +28,8 @@ import Testing
     let held = HeldProcess(
       id: "a", meta: bytes, running: false, exitStatus: 3, logLength: 9, attachedApp: 123)
     let events: [HostEvent] = [
-      .welcome(protocol: 1, hostVersion: "1.0", pid: 5), .listed([held]), .listed([]),
+      .welcome(protocol: 1, hostVersion: "1.0", pid: 5),
+      .welcome(protocol: 1, hostVersion: "1.0", pid: 5, minor: 3), .listed([held]), .listed([]),
       .spawned(id: "a"), .record(id: "a", record), .caughtUp(id: "a", offset: 99),
       .stderr(id: "a", text: "oops"), .exited(id: "a", status: -1), .released(id: "a"),
       .refused(reason: "busy"),
@@ -54,6 +55,20 @@ import Testing
     let encoder = JSONEncoder()
     encoder.outputFormatting = .sortedKeys
     #expect(try encoder.encode(write) == older)
+  }
+
+  /// An older host's `welcome` has no `minor`: it is minor 2 or lower.
+  @Test func aWelcomeWithoutMinorIsAnOlderHosts() throws {
+    let older = Data(#"{"welcome":{"hostVersion":"1.0","pid":5,"protocol":1}}"#.utf8)
+    #expect(
+      try JSONDecoder().decode(HostEvent.self, from: older)
+        == .welcome(protocol: 1, hostVersion: "1.0", pid: 5))
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = .sortedKeys
+    let welcome = HostEvent.welcome(protocol: 1, hostVersion: "1.0", pid: 5, minor: 3)
+    #expect(
+      String(decoding: try encoder.encode(welcome), as: UTF8.self)
+        == #"{"welcome":{"hostVersion":"1.0","minor":3,"pid":5,"protocol":1}}"#)
   }
 
   @Test func socketPathIsUnderTheBundlesFolder() throws {

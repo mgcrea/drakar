@@ -71,6 +71,9 @@ struct AgentSessionRepliesTests {
     defer { session.stop() }
     #expect(session.transcript.pendingElicitations.map(\.requestID) == ["e1"])
     #expect(session.isAtWork)
+    // A process on a pipe has no host to log the answer.
+    #expect(!session.isHosted)
+    #expect(!session.hostLogsAnswersInFull)
     #expect(requested == 1)
     try await Task.sleep(for: .seconds(1))
     #expect(!sentLines(to: script).contains { $0.contains(#""request_id":"e1""#) })

@@ -3,10 +3,12 @@ import DrakarKit
 import SwiftUI
 
 /// The MCP server's question waiting on the person, answered under the card of the tool call
-/// it interrupted. Equal by call, request, focus request and how many wait, as `AskedQuestion`
-/// is: an equal value is never handed on, so the request belongs in the comparison, or a
-/// second question in the same call would keep the first one's panel and answer for it; and
-/// the count, or "1 of 2" would stay up once the other was answered.
+/// it interrupted. Equal by call, request, focus request, how many wait and what the host
+/// logs, as `AskedQuestion` is by its own: an equal value is never handed on, so the request
+/// belongs in the comparison, or a second question in the same call would keep the first
+/// one's panel and answer for it; the count, or "1 of 2" would stay up once the other was
+/// answered; and what the host logs, or a session reattached to a newer host would keep the
+/// older one's caveat.
 struct AskedElicitation: Equatable {
   let callID: String
   let requestID: String
@@ -14,11 +16,13 @@ struct AskedElicitation: Equatable {
   let focusRequest: Int
   /// How many questions wait, this one among them.
   let count: Int
+  /// `ElicitationPanel.hostLogsAnswers`.
+  let hostLogsAnswers: Bool
   let panel: () -> ElicitationPanel
 
   static func == (a: Self, b: Self) -> Bool {
     a.callID == b.callID && a.requestID == b.requestID && a.focusRequest == b.focusRequest
-      && a.count == b.count
+      && a.count == b.count && a.hostLogsAnswers == b.hostLogsAnswers
   }
 
   /// The call whose card answers `elicitation`: its server's newest call still running, when
@@ -80,6 +84,9 @@ struct ElicitationPanel: View {
   /// as `QuestionPanel`'s options do: a row that sized a scroll view of its own laid the
   /// transcript out again without end.
   var isDocked = false
+  /// The session's host is older than minor 3 and logs the answer whole (spec anti-goal):
+  /// the form says so.
+  var hostLogsAnswers = false
 
   @State private var inputs: [String: ElicitationInput]
   /// The fields changed so far: only they say what is wrong with them.
@@ -93,13 +100,15 @@ struct ElicitationPanel: View {
 
   init(
     elicitation: Elicitation, position: (index: Int, count: Int)?,
-    answer: @escaping (ElicitationAnswer) -> Void, focusRequest: Int? = nil, isDocked: Bool = false
+    answer: @escaping (ElicitationAnswer) -> Void, focusRequest: Int? = nil, isDocked: Bool = false,
+    hostLogsAnswers: Bool = false
   ) {
     self.elicitation = elicitation
     self.position = position
     self.answer = answer
     self.focusRequest = focusRequest
     self.isDocked = isDocked
+    self.hostLogsAnswers = hostLogsAnswers
     if case .form(let form) = elicitation.content {
       _inputs = State(initialValue: form.initialInputs)
     } else {
@@ -121,6 +130,16 @@ struct ElicitationPanel: View {
   /// The link's host, shown big so where it leads is read before it is opened.
   static func hostText(_ url: URL) -> String {
     url.host(percentEncoded: false) ?? url.absoluteString
+  }
+
+  /// The line under a form whose answer an older host will log whole; nil for a link, whose
+  /// answer holds nothing typed, and for a host that keeps it out of its log.
+  static func hostCaveat(_ content: Elicitation.Content, hostLogsAnswers: Bool) -> String? {
+    guard hostLogsAnswers, case .form = content else { return nil }
+    return String(
+      localized:
+        "This session's host is from an earlier build and keeps what you send here in its log until it restarts."
+    )
   }
 
   /// The problems shown: those of the fields changed so far.
@@ -160,6 +179,13 @@ struct ElicitationPanel: View {
             .fixedSize(horizontal: false, vertical: true)
         } else {
           fields(form)
+        }
+        if let caveat = Self.hostCaveat(elicitation.content, hostLogsAnswers: hostLogsAnswers) {
+          Text(caveat)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+            .accessibilityIdentifier("elicitation.hostCaveat")
         }
       case .url(let url):
         link(url)

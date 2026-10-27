@@ -12,6 +12,7 @@ public final class HostCore: @unchecked Sendable {
 
   private let directory: URL
   private let hostVersion: String
+  private let minor: Int?
   private let now: @Sendable () -> Date
   /// Delivery happens here, in the order the events were made, and off the lock.
   private let outbox = DispatchQueue(label: "HostCore.deliver")
@@ -39,11 +40,14 @@ public final class HostCore: @unchecked Sendable {
     var forgets = false
   }
 
+  /// `minor` is what `welcome` says: tests stand in an older host with nil.
   public init(
-    directory: URL, hostVersion: String, now: @escaping @Sendable () -> Date = Date.init
+    directory: URL, hostVersion: String, minor: Int? = HostWire.minor,
+    now: @escaping @Sendable () -> Date = Date.init
   ) {
     self.directory = directory
     self.hostVersion = hostVersion
+    self.minor = minor
     self.now = now
   }
 
@@ -101,7 +105,9 @@ public final class HostCore: @unchecked Sendable {
     switch request {
     case .hello:
       // The host's major, whatever the app's: an app reading an older host only lists.
-      return [.welcome(protocol: HostWire.major, hostVersion: hostVersion, pid: getpid())]
+      return [
+        .welcome(protocol: HostWire.major, hostVersion: hostVersion, pid: getpid(), minor: minor)
+      ]
     case .list:
       return [.listed(list())]
     case .spawn(let configuration, let meta):

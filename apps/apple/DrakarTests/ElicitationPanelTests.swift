@@ -94,6 +94,20 @@ struct ElicitationPanelTests {
     #expect(ElicitationPanel.firstTypedField(url.content) == nil)
   }
 
+  /// Under a form whose session's host logs answers whole, a line says so; never under a
+  /// link, whose answer holds nothing typed, nor for a host that keeps it out of its log.
+  @Test func saysWhenAnOlderHostLogsTheAnswer() throws {
+    let form = try #require(feed([Self.question()]).pendingElicitations.first).elicitation.content
+    let link = Elicitation.Content.url(try #require(URL(string: "https://example.com")))
+    #expect(
+      ElicitationPanel.hostCaveat(form, hostLogsAnswers: true)
+        == "This session's host is from an earlier build and keeps what you send here in its log until it restarts."
+    )
+    #expect(ElicitationPanel.hostCaveat(form, hostLogsAnswers: false) == nil)
+    #expect(ElicitationPanel.hostCaveat(link, hostLogsAnswers: true) == nil)
+    #expect(ElicitationPanel.hostCaveat(.unsupported, hostLogsAnswers: true) == nil)
+  }
+
   @Test func picksAndUnpicksAmongSeveral() {
     let one = ElicitationPanel.picking("core", true, in: nil)
     #expect(one == .picks(["core"]))

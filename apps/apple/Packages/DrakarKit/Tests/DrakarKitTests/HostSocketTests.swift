@@ -56,6 +56,19 @@ import Testing
     }
   }
 
+  /// A host older than minor 3 sends no `minor`: the app reads it as 2, for its connection and
+  /// each process on it. Nothing is known before the hello.
+  @Test func anOlderHostsMinorIsTwo() async throws {
+    let host = try TestHost(minor: nil)
+    defer { host.close() }
+    let client = try host.connect()
+    let process = HostedProcess(client: client, configuration: host.cat(), meta: Data())
+    #expect(client.hostMinor == nil)
+    #expect(try await client.hello(appVersion: "1").minor == 2)
+    #expect(client.hostMinor == 2)
+    #expect(process.hostMinor == 2)
+  }
+
   @Test func aClientSpawnsAndAttaches() async throws {
     let host = try TestHost()
     defer { host.close() }
@@ -64,6 +77,8 @@ import Testing
     #expect(welcome.protocol == HostWire.major)
     #expect(welcome.hostVersion == "test")
     #expect(welcome.pid == getpid())
+    #expect(welcome.minor == HostWire.minor)
+    #expect(client.hostMinor == HostWire.minor)
 
     let id = try await client.spawn(host.cat(), meta: Data("m".utf8))
     let stream = client.attach(id, from: 0)

@@ -72,7 +72,9 @@ public enum HostRequest: Codable, Sendable, Equatable {
 }
 
 public enum HostEvent: Codable, Sendable, Equatable {
-  case welcome(protocol: Int, hostVersion: String, pid: Int32)
+  /// `minor`: the host's. Added in minor 3; nil, as an older host sends it, is minor 2 or
+  /// lower.
+  case welcome(protocol: Int, hostVersion: String, pid: Int32, minor: Int? = nil)
   case listed([HeldProcess])
   case spawned(id: String)
   case record(id: String, HostRecord)

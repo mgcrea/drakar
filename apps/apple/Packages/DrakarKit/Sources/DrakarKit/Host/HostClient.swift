@@ -28,6 +28,7 @@ public final class HostClient: @unchecked Sendable {
     var waiting: [Int: Waiting] = [:]
     var streams: [String: AsyncStream<HostEvent>.Continuation] = [:]
     var closed = false
+    var hostMinor: Int?
   }
 
   private enum Waiting {
@@ -58,14 +59,20 @@ public final class HostClient: @unchecked Sendable {
   /// any stream it ends finishes.
   public var isClosed: Bool { state.withLock { $0.closed } }
 
+  /// The host's minor, from its `welcome`: 2 for a host that names none, being older than 3.
+  /// Nil before `hello`.
+  public var hostMinor: Int? { state.withLock { $0.hostMinor } }
+
   public func hello(appVersion: String) async throws -> (
-    protocol: Int, hostVersion: String, pid: Int32
+    protocol: Int, hostVersion: String, pid: Int32, minor: Int
   ) {
     let replies = try await ask(.hello(protocol: HostWire.major, appVersion: appVersion))
-    guard case .welcome(let major, let hostVersion, let pid)? = replies.first else {
+    guard case .welcome(let major, let hostVersion, let pid, let minor)? = replies.first else {
       throw Self.failure(replies)
     }
-    return (major, hostVersion, pid)
+    let known = minor ?? 2
+    state.withLock { $0.hostMinor = known }
+    return (major, hostVersion, pid, known)
   }
 
   public func list() async throws -> [HeldProcess] {

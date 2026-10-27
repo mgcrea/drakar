@@ -96,11 +96,11 @@ event it does not know, not the whole answer.
 
 | Request | Answer | Does |
 | --- | --- | --- |
-| `hello {protocol, appVersion}` | `welcome {protocol, hostVersion, pid}` | Always the host's major, whatever the app sent: the app decides. A newer app reading an older host only lists. |
+| `hello {protocol, appVersion}` | `welcome {protocol, hostVersion, pid, minor?}` | Always the host's major, whatever the app sent: the app decides. A newer app reading an older host only lists. `minor` (minor 3) is the host's; absent, as an older host sends it, the host is minor 2 or lower. The app keeps it for the connection (`HostClient.hostMinor`). |
 | `list` | `listed [HeldProcess]` | `HeldProcess`: `id`, `meta`, `running`, `exitStatus?`, `logLength`, `attachedApp?` (the attached app's pid). |
 | `spawn {configuration, meta}` | `spawned {id}` or `refused` | Starts the process and its log. `configuration`: `executable`, `arguments`, `environment`, `currentDirectory`. |
 | `attach {id, from}` | none; the stream | Sends the log from byte offset `from`, then `caughtUp`, then live. Refused while another app is attached. `from` must be a record's offset or the end. |
-| `write {id, bytes, logged?}` | none | Written to stdin, then logged as `in`. Returns once the CLI has taken the bytes. `logged` (minor 3), when present, is what the `in` record holds in place of `bytes`: the app sends it for an accepted MCP form, its values each `"<redacted>"` (`ClientMessage.redactedLine()`). Omitted, as an older app sends it, `bytes` are logged. An older host ignores it and logs `bytes` in full. |
+| `write {id, bytes, logged?}` | none | Written to stdin, then logged as `in`. Returns once the CLI has taken the bytes. `logged` (minor 3), when present, is what the `in` record holds in place of `bytes`: the app sends it for an accepted MCP form, its values each `"<redacted>"` (`ClientMessage.redactedLine()`). Omitted, as an older app sends it, `bytes` are logged. An older host (no `minor` in its `welcome`) ignores it and logs `bytes` in full, so the app says so under an MCP form whose session it holds. |
 | `note {id, bytes}` | none | Logged as `note`, written to nothing: the app's own marks for its replay. |
 | `closeInput {id}` | none | Closes stdin. |
 | `terminate {id, forget?}` | none | Ends the process. `forget: true` (minor 2) has the host forget it once it has ended, as `acknowledge` would, for an app that may be gone by then; at once if it has ended already. Omitted, as an older app sends it, what ended is kept. |
@@ -117,7 +117,7 @@ fire-and-forget ones, in the process's attach stream.
 
 | Event | Sent | Fields |
 | --- | --- | --- |
-| `welcome` | to `hello` | `protocol`, `hostVersion`, `pid` |
+| `welcome` | to `hello` | `protocol`, `hostVersion`, `pid`, `minor` (minor 3; absent from an older host, which is 2 or lower) |
 | `listed` | to `list` | `[HeldProcess]`, sorted by id |
 | `spawned` | to `spawn` | `id` |
 | `record` | attach stream | `id`, then the record (below) |
@@ -188,7 +188,7 @@ app; it reattaches from its offset.
   (`host-v<n>.sock`, `n` below its major), says `hello`, `list`s, and shows what it finds as
   sessions held elsewhere (read-only). It never attaches to them.
 - **Minor versions only add** fields, requests and events, and both sides ignore what they
-  do not know. Minor 0 → 1 added `detach`; 1 → 2 added `terminate`'s `forget`; 2 → 3 added `write`'s `logged`. `HostWire.major` / `HostWire.minor` are the
+  do not know. Minor 0 → 1 added `detach`; 1 → 2 added `terminate`'s `forget`; 2 → 3 added `write`'s `logged` and `welcome`'s `minor`. `HostWire.major` / `HostWire.minor` are the
   constants.
 - A Sparkle update replaces the bundle while the old host runs from its open inode; the new
   app then speaks to an older-built host of the same major, hence the rules above.

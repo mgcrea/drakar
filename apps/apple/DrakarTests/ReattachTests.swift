@@ -12,10 +12,11 @@ final class LocalHost {
   let core: HostCore
   private var server: HostServer?
 
-  init() throws {
+  /// `minor`: what its `welcome` says; nil stands in for a host older than minor 3.
+  init(minor: Int? = HostWire.minor) throws {
     let name = String(UUID().uuidString.prefix(6))
     directory = URL(fileURLWithPath: "/tmp/dh-\(name)", isDirectory: true)
-    core = HostCore(directory: directory, hostVersion: "test")
+    core = HostCore(directory: directory, hostVersion: "test", minor: minor)
     try start()
   }
 
@@ -436,6 +437,26 @@ struct ReattachTests {
       })
     try await Task.sleep(for: .milliseconds(300))
     #expect(sent("el-1") == 1)
+  }
+
+  /// A host older than minor 3 names no minor in its `welcome`, and logs an answer whole,
+  /// what was typed among it: a session it holds says so, for its card to. One on ours does
+  /// not.
+  @Test func aSessionKnowsAnOlderHostLogsAnswersInFull() async throws {
+    defer { cleanUp() }
+    let current = await start("go-idle", in: window(on: app()))
+    #expect(await eventually { current.transcript.turnEnd != nil })
+    #expect(current.isHosted)
+    #expect(!current.hostLogsAnswersInFull)
+
+    let older = try LocalHost(minor: nil)
+    defer { older.close() }
+    SessionHost.testDirectory = older.directory
+    let app = SessionHost(cooldown: .milliseconds(100), helper: URL(filePath: "/usr/bin/true"))
+    let session = await start("go-idle", in: window(on: app))
+    #expect(await eventually { session.transcript.turnEnd != nil })
+    #expect(session.isHosted)
+    #expect(session.hostLogsAnswersInFull)
   }
 
   /// Exited while nobody was attached: shown ended, as an exit seen live is, and then the

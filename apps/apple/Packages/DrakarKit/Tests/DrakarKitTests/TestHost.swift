@@ -12,13 +12,15 @@ final class TestHost {
   private let peerCheck: @Sendable (Int32) -> Bool
   private let clients = Mutex<[HostClient]>([])
 
+  /// `minor`: what the host's `welcome` says; nil stands in for a host older than minor 3.
   init(
     peerCheck: @escaping @Sendable (Int32) -> Bool = { _ in true },
-    accept: @escaping @Sendable (Int32) -> UnixSocket.Accepted = UnixSocket.accept
+    accept: @escaping @Sendable (Int32) -> UnixSocket.Accepted = UnixSocket.accept,
+    minor: Int? = HostWire.minor
   ) throws {
     let name = String(UUID().uuidString.prefix(6))
     directory = URL(fileURLWithPath: "/tmp/dh-\(name)", isDirectory: true)
-    core = HostCore(directory: directory, hostVersion: "test")
+    core = HostCore(directory: directory, hostVersion: "test", minor: minor)
     self.peerCheck = peerCheck
     server = try HostServer.start(
       directory: directory, core: core, peerCheck: peerCheck, accept: accept)

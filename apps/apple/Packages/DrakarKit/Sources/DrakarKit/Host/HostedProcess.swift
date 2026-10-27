@@ -77,6 +77,10 @@ public final class HostedProcess: ProcessTransport, @unchecked Sendable {
 
   public var isRunning: Bool { state.withLock { $0.running } }
 
+  /// The minor of the host on the connection now (`HostClient.hostMinor`). A host older
+  /// than 3 logs every write whole, an answer's typed values among them.
+  public var hostMinor: Int? { state.withLock { $0.client.hostMinor } }
+
   /// Why the host never started the process, once its events have ended for that reason:
   /// what `AgentProcess.start()` would have thrown, which no event says.
   public var startFailure: (any Error)? { state.withLock { $0.startFailure } }

@@ -336,6 +336,14 @@ final class AgentSession {
   /// The session host's id for the process, while it has one there.
   var hostID: String? { (process as? HostedProcess)?.id }
 
+  /// Its host keeps an answer to an MCP server's question whole in its log, what was typed
+  /// among it: a host older than minor 3, from an earlier build still running. False on a
+  /// pipe, which logs nothing.
+  var hostLogsAnswersInFull: Bool {
+    guard let minor = (process as? HostedProcess)?.hostMinor else { return false }
+    return minor < 3
+  }
+
   /// Mid-turn, or waiting on the person: what a quit hands to the host rather than ends.
   var isAtWork: Bool { transcript.isRunning || transcript.isWaitingOnPerson }
 
