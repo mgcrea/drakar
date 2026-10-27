@@ -91,7 +91,12 @@ struct ElicitationTests {
 
   @Test func marksSecrets() throws {
     #expect(try captured().fields.filter(\.isSecret).map(\.key) == ["api_token"])
-    for key in ["password", "Passphrase", "client_secret", "API key"] {
+    let secrets = [
+      "password", "Passphrase", "client_secret", "API key", "apiToken", "accessToken",
+      "authToken", "githubToken", "userPassword", "newPassword", "clientSecret", "openaiApiKey",
+      "password2",
+    ]
+    for key in secrets {
       #expect(try field(#"{"type":"string"}"#, key: key).isSecret, "\(key)")
       #expect(try field(#"{"type":"string","title":"\#(key)"}"#).isSecret, "\(key)")
     }
@@ -99,6 +104,17 @@ struct ElicitationTests {
       #expect(try !field(#"{"type":"string"}"#, key: key).isSecret, "\(key)")
       #expect(try !field(#"{"type":"string","title":"\#(key)"}"#).isSecret, "\(key)")
     }
+  }
+
+  /// A number is typed like text, so a secret one is hidden too; a choice or a flag shows
+  /// nothing typed and never is.
+  @Test func marksSecretNumbersOnly() throws {
+    #expect(try field(#"{"type":"integer"}"#, key: "secret_code").isSecret)
+    #expect(try !field(#"{"type":"boolean"}"#, key: "secret").isSecret)
+    #expect(try !field(#"{"type":"string","enum":["a","b"]}"#, key: "token").isSecret)
+    #expect(
+      try !field(#"{"type":"array","items":{"type":"string","enum":["a"]}}"#, key: "password")
+        .isSecret)
   }
 
   @Test func readsEveryKind() throws {

@@ -166,7 +166,7 @@ public struct ElicitationField: Sendable, Equatable, Identifiable {
   public var title: String
   public var description: String?
   public var isRequired: Bool
-  /// A text field whose key or title reads as a password, secret, token or API key.
+  /// A text or number field whose key or title reads as a password, secret, token or API key.
   public var isSecret: Bool
   public var kind: Kind
   let initialInput: ElicitationInput?
@@ -204,10 +204,9 @@ public struct ElicitationField: Sendable, Equatable, Identifiable {
     title = property["title"]?.stringValue.flatMap { $0.isEmpty ? nil : $0 } ?? key
     description = property["description"]?.stringValue
     self.isRequired = isRequired
-    if case .text = kind {
-      isSecret = Self.readsAsSecret(key) || Self.readsAsSecret(title)
-    } else {
-      isSecret = false
+    switch kind {
+    case .text, .number: isSecret = Self.readsAsSecret(key) || Self.readsAsSecret(title)
+    case .flag, .choice, .choices: isSecret = false
     }
     initialInput = Self.input(kind: kind, default: property["default"], isRequired: isRequired)
   }
@@ -235,10 +234,22 @@ public struct ElicitationField: Sendable, Equatable, Identifiable {
     return options
   }
 
+  /// Camel humps and a letter meeting a digit part words too: `apiToken`, `password2`.
   private static func readsAsSecret(_ name: String) -> Bool {
-    name.contains(
-      #/(^|[^a-z0-9])(password|passphrase|secret|token|api[ _-]?key)($|[^a-z0-9])/#
-        .ignoresCase())
+    var words = ""
+    var previous: Character?
+    for character in name {
+      if let previous,
+        (previous.isLowercase && character.isUppercase)
+          || (previous.isLetter && character.isNumber) || (previous.isNumber && character.isLetter)
+      {
+        words.append(" ")
+      }
+      words.append(character)
+      previous = character
+    }
+    return words.lowercased().contains(
+      #/(^|[^a-z0-9])(password|passphrase|secret|token|api[ _-]?key)($|[^a-z0-9])/#)
   }
 
   /// Nil without a `default` the field can take, except for a required flag, which starts off.
