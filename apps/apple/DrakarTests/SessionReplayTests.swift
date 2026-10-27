@@ -195,6 +195,28 @@ struct SessionReplayTests {
     #expect(transport.owed.isEmpty)
   }
 
+  /// A rate limit the log kept is a reading from when its line came, not from the replay:
+  /// one from hours ago never passes for the account's latest.
+  @Test func aReplayedRateLimitIsReadWhenItsLineCame() async throws {
+    let account = ClaudeAccount(
+      directory: folder.appending(path: "account", directoryHint: .isDirectory),
+      isDefault: false)
+    var start = meta.start
+    start.account = account
+    let meta = SessionMeta(
+      start: start, windowFolder: folder.path(percentEncoded: false), history: .none)
+    let then = Date.now.addingTimeInterval(-6 * 3600)
+    let event =
+      #"{"type":"rate_limit_event","rate_limit_info":{"unifiedWindows":{"five_hour":{"utilization":0.5,"resetsAt":4070908800}}}}"#
+    let records = [Self.initLine, event].enumerated().map { index, line in
+      HostRecord(
+        offset: UInt64(index * 1000), kind: .out, time: then, attached: true,
+        bytes: Data(line.utf8))
+    }
+    _ = await AgentSession(replaying: records, meta: meta)
+    #expect(AccountStore.shared.usage(for: account)?.readAt == then)
+  }
+
   @Test func anAnsweredPermissionIsNotPendingAgain() async throws {
     let (live, recorder) = try await liveTurn()
     defer { live.stop() }
