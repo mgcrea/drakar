@@ -75,6 +75,11 @@ struct ElicitationPanel: View {
   /// Never on appearing, in its card or in the composer's place: a transcript row that changed
   /// the focus on appearing laid the transcript out again without end (d19c1fa).
   var focusRequest: Int?
+  /// In the composer's place, whose band does not scroll: the fields scroll themselves there,
+  /// so a long form keeps its buttons in view. In a transcript card they grow with the form,
+  /// as `QuestionPanel`'s options do: a row that sized a scroll view of its own laid the
+  /// transcript out again without end.
+  var isDocked = false
 
   @State private var inputs: [String: ElicitationInput]
   /// The fields changed so far: only they say what is wrong with them.
@@ -88,12 +93,13 @@ struct ElicitationPanel: View {
 
   init(
     elicitation: Elicitation, position: (index: Int, count: Int)?,
-    answer: @escaping (ElicitationAnswer) -> Void, focusRequest: Int? = nil
+    answer: @escaping (ElicitationAnswer) -> Void, focusRequest: Int? = nil, isDocked: Bool = false
   ) {
     self.elicitation = elicitation
     self.position = position
     self.answer = answer
     self.focusRequest = focusRequest
+    self.isDocked = isDocked
     if case .form(let form) = elicitation.content {
       _inputs = State(initialValue: form.initialInputs)
     } else {
@@ -148,7 +154,13 @@ struct ElicitationPanel: View {
       header
       switch elicitation.content {
       case .form(let form):
-        fields(form)
+        if isDocked {
+          ScrollView { fields(form).frame(maxWidth: .infinity, alignment: .leading) }
+            .frame(maxHeight: 360)
+            .fixedSize(horizontal: false, vertical: true)
+        } else {
+          fields(form)
+        }
       case .url(let url):
         link(url)
       case .unsupported:

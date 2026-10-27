@@ -78,10 +78,10 @@ struct SessionView: View {
           }
           // A server's question waiting at the same time is never hidden behind the plan.
           if let pending = dockedElicitation {
-            Docked { elicitationPanel(pending).id(pending.requestID) }
+            Docked { elicitationPanel(pending, isDocked: true).id(pending.requestID) }
           }
         } else if let pending = dockedElicitation {
-          Docked { elicitationPanel(pending).id(pending.requestID) }
+          Docked { elicitationPanel(pending, isDocked: true).id(pending.requestID) }
         } else if askedQuestion != nil || askedElicitation != nil {
           Docked { QuestionWaitingStrip() }
         } else if let choice = pendingChoice {
@@ -328,12 +328,15 @@ struct SessionView: View {
   }
 
   /// The questions wait in arrival order; the first is the one answered.
-  private func elicitationPanel(_ pending: Transcript.PendingElicitation) -> ElicitationPanel {
+  private func elicitationPanel(_ pending: Transcript.PendingElicitation, isDocked: Bool = false)
+    -> ElicitationPanel
+  {
     let session = session
     return ElicitationPanel(
       elicitation: pending.elicitation,
       position: (1, session.transcript.pendingElicitations.count),
-      answer: { session.answer(pending, $0) }, focusRequest: item.questionFocusRequest)
+      answer: { session.answer(pending, $0) }, focusRequest: item.questionFocusRequest,
+      isDocked: isDocked)
   }
 
   private var problem: String? {
