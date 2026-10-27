@@ -229,6 +229,17 @@ struct ElicitationTests {
     #expect(inputs["team"] == .picks(["web"]))
   }
 
+  /// A default that isn't one of the options is not picked: a choice starts empty, and
+  /// several keep only the defaults that are options.
+  @Test func picksOnlyDefaultsAmongTheOptions() throws {
+    let schema = try json(
+      #"{"type":"object","properties":{"team":{"type":"string","enum":["core","web"],"default":"ops"},"tags":{"type":"array","items":{"type":"string","enum":["a","b"]},"default":["a","z"]}}}"#
+    )
+    let form = try #require(ElicitationForm(schema: schema, order: nil))
+    #expect(form.initialInputs == ["tags": .picks(["a"])])
+    #expect(form.problems(in: form.initialInputs).isEmpty)
+  }
+
   /// Only a field with a `default` starts filled in, and a required flag starts off: an
   /// optional flag nobody touched is not sent as false.
   @Test func startsOnlyWhatHasADefault() throws {

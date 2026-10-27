@@ -258,15 +258,24 @@ public struct ElicitationField: Sendable, Equatable, Identifiable {
   }
 
   /// Nil without a `default` the field can take, except for a required flag, which starts off.
+  /// A choice takes only defaults among its options: one outside them starts it empty.
   private static func input(kind: Kind, default value: JSONValue?, isRequired: Bool)
     -> ElicitationInput?
   {
+    func picks(_ values: [JSONValue], among options: [Option]) -> ElicitationInput? {
+      let picks = Set(values.compactMap(\.stringValue)).filter { pick in
+        options.contains { $0.value == pick }
+      }
+      return picks.isEmpty ? nil : .picks(picks)
+    }
     switch kind {
-    case .text: value?.stringValue.map(ElicitationInput.text)
-    case .number: value?.numberValue.map { .text(numeral($0)) }
-    case .flag: value?.boolValue.map(ElicitationInput.flag) ?? (isRequired ? .flag(false) : nil)
-    case .choice: value?.stringValue.map { .picks([$0]) }
-    case .choices: value?.arrayValue.map { .picks(Set($0.compactMap(\.stringValue))) }
+    case .text: return value?.stringValue.map(ElicitationInput.text)
+    case .number: return value?.numberValue.map { .text(numeral($0)) }
+    case .flag:
+      return value?.boolValue.map(ElicitationInput.flag) ?? (isRequired ? .flag(false) : nil)
+    case .choice(let options): return value.flatMap { picks([$0], among: options) }
+    case .choices(let options, _, _):
+      return value?.arrayValue.flatMap { picks($0, among: options) }
     }
   }
 
