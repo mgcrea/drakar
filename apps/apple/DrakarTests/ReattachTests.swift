@@ -386,6 +386,25 @@ struct ReattachTests {
     #expect(sent(#""subtype":"initialize""#) == 1)
   }
 
+  /// A closed window ends its sessions' processes, which the host lists until they have
+  /// exited, attached to this app still. A window opened on the folder meanwhile shows none
+  /// of them as another app's: no `released` would ever come to free the row.
+  @Test func aProcessThisAppEndedIsNotAnotherAppsSession() async throws {
+    defer { cleanUp() }
+    let app = app()
+    let closed = window(on: app)
+    let live = await start("go-idle", in: closed)
+    #expect(await eventually { live.transcript.turnEnd != nil })
+    let held = await app.held()
+    #expect(held.count == 1 && held.first?.attachedApp != nil)
+    closed.stopAll()
+
+    let reopened = window(on: app)
+    defer { reopened.stopAll() }
+    await reopened.adoptHeld(held)
+    #expect(reopened.sessions.isEmpty)
+  }
+
   /// Waiting on the person when dropped: still waiting, and answered once.
   @Test func aPermissionWaitingIsAnsweredOnce() async throws {
     defer { cleanUp() }

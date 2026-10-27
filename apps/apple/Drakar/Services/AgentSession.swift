@@ -939,6 +939,7 @@ final class AgentSession {
       } else if isReconnecting {
         end(hosted, onceReconnected: sessionHost)
       } else {
+        if let id = hosted.id { sessionHost.ending(id) }
         hosted.closeInput()
         // Done with it: the host forgets it once it ends, so no later launch shows it again.
         hosted.forgetWhenEnded()
@@ -967,6 +968,7 @@ final class AgentSession {
     Task {
       guard let client = await host.reconnect() else { return }
       _ = hosted.reattach(on: client)
+      if let id = hosted.id { host.ending(id) }
       hosted.forgetWhenEnded()
       hosted.closeInput()
       hosted.terminate()

@@ -1347,7 +1347,7 @@ final class Project {
   func adoptHeld(_ held: [HeldProcess], olderHosts: [HeldProcess] = []) async {
     let own = ProjectPath.normalize(folder.path(percentEncoded: false))
     let ours = { (process: HeldProcess) -> Bool in
-      guard !self.adopting.contains(process.id),
+      guard !self.adopting.contains(process.id), !self.sessionHost.ended.contains(process.id),
         !self.sessions.contains(where: { $0.session.hostID == process.id }),
         let meta = try? JSONDecoder().decode(SessionMeta.self, from: process.meta)
       else { return false }

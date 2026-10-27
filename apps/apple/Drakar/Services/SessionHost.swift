@@ -51,6 +51,9 @@ import Synchronization
   /// go (`released`), asked in the order they began watching until one takes it, so that one
   /// attaches; and told of each new connection, which no `released` sent meanwhile reached.
   private var releaseWatchers: [ReleaseWatcher] = []
+  /// The processes this app ended for good (a window closed, End Session). The host lists
+  /// one until it has exited, attached to this app still, and no `released` comes of it here.
+  private(set) var ended: Set<String> = []
 
   private struct ReleaseWatcher {
     weak var owner: AnyObject?
@@ -210,6 +213,11 @@ import Synchronization
   /// own host, not a test's.
   private func hostedChanged() {
     if self === Self.shared { SessionMonitor.shared.hostedChanged() }
+  }
+
+  /// This app ends the process for good: no window takes it back, nor shows it held elsewhere.
+  func ending(_ id: String) {
+    ended.insert(id)
   }
 
   private func released(_ id: String) {
