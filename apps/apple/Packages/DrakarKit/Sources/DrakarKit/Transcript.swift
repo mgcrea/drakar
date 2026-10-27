@@ -319,14 +319,18 @@ public struct Transcript: Sendable, Equatable {
         : String(localized: "\(server) withdrew its question: \(elicitation.message)"))
   }
 
-  /// The newest tool call of `serverName`'s tools still without a result, or nil. Claude
-  /// Code names a server's tools `mcp__<server>__<tool>`, every character of the server's
-  /// name outside `[A-Za-z0-9_-]` made `_`.
+  /// The newest tool call of `serverName`'s tools still without a result in the current turn
+  /// (after the latest prompt), or nil: an earlier turn's call left without one was
+  /// interrupted, and asks nothing. Claude Code names a server's tools
+  /// `mcp__<server>__<tool>`, every character of the server's name outside `[A-Za-z0-9_-]`
+  /// made `_`.
   public func elicitationAnchor(for serverName: String) -> String? {
     let prefix = "mcp__\(Self.toolNamePart(serverName))__"
     for entry in entries.reversed() {
-      if case .tool(let call) = entry.kind, call.result == nil, call.name.hasPrefix(prefix) {
-        return call.id
+      switch entry.kind {
+      case .prompt: return nil
+      case .tool(let call) where call.result == nil && call.name.hasPrefix(prefix): return call.id
+      case .text, .thinking, .tool, .notice, .failure: continue
       }
     }
     return nil

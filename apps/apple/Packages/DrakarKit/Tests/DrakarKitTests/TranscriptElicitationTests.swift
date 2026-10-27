@@ -125,6 +125,16 @@ struct TranscriptElicitationTests {
     #expect(answered.transcript.elicitationAnchor(for: "linear") == nil)
   }
 
+  /// A call an earlier turn left without a result, interrupted, is not the one asking: only
+  /// the current turn's calls are.
+  @Test func anchorsOnlyInTheCurrentTurn() throws {
+    var feed = try feed([Self.call("old", name: "mcp__linear__a")])
+    feed.addPrompt("Again")
+    #expect(feed.transcript.elicitationAnchor(for: "linear") == nil)
+    feed.apply(try StreamMessage(line: Data(Self.call("new", name: "mcp__linear__a").utf8)))
+    #expect(feed.transcript.elicitationAnchor(for: "linear") == "new")
+  }
+
   /// Claude Code names a server's tools after its name with every character outside
   /// `[A-Za-z0-9_-]` made `_`.
   @Test func anchorsToACallWhoseServerNameWasNormalised() throws {
