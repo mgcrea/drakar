@@ -6,7 +6,7 @@ import Foundation
 /// minutes. A guess from the client's side, and worded as one: the API says nothing of it
 /// between requests.
 public struct PromptCache: Sendable, Equatable {
-  public enum TTL: Sendable, Equatable, Hashable {
+  public enum TTL: Codable, Sendable, Equatable, Hashable {
     case fiveMinutes, oneHour
 
     public var duration: TimeInterval {

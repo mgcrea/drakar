@@ -68,7 +68,7 @@ public struct ClaudeAccount: Codable, Sendable, Hashable {
 }
 
 /// One session on disk, read enough to list it.
-public struct SessionSummary: Sendable, Hashable, Identifiable {
+public struct SessionSummary: Codable, Sendable, Hashable, Identifiable {
   public var sessionID: String
   public var account: ClaudeAccount
   public var file: URL
@@ -96,6 +96,13 @@ public struct SessionSummary: Sendable, Hashable, Identifiable {
   public var closingAsk: ClosingAsk?
   public var closingMessageID: String?
 
+  /// Everything read from the transcript, not `live`: whether a process has it open is
+  /// the registry's to say each time, never a saved answer.
+  private enum CodingKeys: String, CodingKey {
+    case sessionID, account, file, cwd, title, lastPrompt, modified, size, context, modelID
+    case awaitsToolResult, pendingQuestion, closingAsk, closingMessageID
+  }
+
   /// The transcript's path, not the session id: one id can have a transcript under two
   /// accounts, when a session was resumed after switching `CLAUDE_CONFIG_DIR`.
   public var id: String { file.path(percentEncoded: false) }
@@ -121,9 +128,11 @@ public enum SessionIndex {
   ///
   /// Ordered by file date before any file is opened, so only the sessions shown are read,
   /// and with `folder`, the newer ones a sibling folder's encoded name also matched.
-  /// A session that was never prompted has no file and is not listed.
+  /// A session that was never prompted has no file and is not listed. A file `cache` holds
+  /// at its current size and date is not opened at all.
   public static func list(
     accounts: [ClaudeAccount], limit: Int = 200, under folder: String? = nil,
+    cache: SessionSummaryCache = SessionSummaryCache(),
     isAlive: (Int32) -> Bool = LiveSession.isAlive
   ) -> [SessionSummary] {
     // Per account: one id can have a transcript under two accounts, and a process has
@@ -170,7 +179,11 @@ public enum SessionIndex {
     var listed: [SessionSummary] = []
     for (file, account, modified, size) in found.sorted(by: { $0.2 > $1.2 }) {
       guard listed.count < limit else { break }
-      var summary = summarize(file: file, account: account, modified: modified, size: size)
+      var summary =
+        cache.summary(of: file, modified: modified, size: size)
+        ?? summarize(file: file, account: account, modified: modified, size: size)
+      // The account as discovered now, not as it was when the summary was saved.
+      summary.account = account
       if let owners {
         guard let cwd = summary.cwd, owners.owner(of: cwd) != nil else { continue }
       }

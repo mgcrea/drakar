@@ -1,7 +1,7 @@
 import Foundation
 
 /// The tokens one API request reported, from an `assistant` entry's `message.usage`.
-public struct TokenUsage: Sendable, Equatable, Hashable {
+public struct TokenUsage: Codable, Sendable, Equatable, Hashable {
   public var input: Int
   public var cacheCreation: Int
   public var cacheRead: Int
@@ -49,7 +49,7 @@ public struct TokenUsage: Sendable, Equatable, Hashable {
 }
 
 /// How full a session's context was at its newest main-thread turn.
-public struct ContextReading: Sendable, Equatable, Hashable {
+public struct ContextReading: Codable, Sendable, Equatable, Hashable {
   public var usage: TokenUsage
   /// `message.model`. Never carries `[1m]`, so it cannot say the window size on its own.
   public var modelID: String?

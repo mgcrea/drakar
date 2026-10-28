@@ -20,8 +20,8 @@ public struct ClosingText: Sendable, Equatable {
 /// model: Drakar makes no outgoing connection. Measured on a hundred labelled endings
 /// (`closing-endings.jsonl`): most asks explain themselves after the question, so any
 /// question in the closing paragraphs counts, the last one shown.
-public struct ClosingAsk: Sendable, Hashable {
-  public enum Kind: String, Sendable {
+public struct ClosingAsk: Codable, Sendable, Hashable {
+  public enum Kind: String, Codable, Sendable {
     case question, offer
   }
 

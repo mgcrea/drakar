@@ -7,7 +7,12 @@ import Observation
 /// reads the same folders. Armada's `SessionWatcher`, narrowed to what Drakar shows.
 @Observable
 final class SessionMonitor {
-  static let shared = SessionMonitor()
+  static let shared = SessionMonitor(
+    cacheFile: ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+      ? nil
+      : SessionSummaryCache.file(
+        bundleID: Bundle.main.bundleIdentifier ?? "io.mgcrea.Drakar",
+        home: FileManager.default.homeDirectoryForCurrentUser))
 
   /// By transcript path, its folder resolved (`key(_:)`): one id can have a transcript per
   /// account.
@@ -30,6 +35,9 @@ final class SessionMonitor {
   @ObservationIgnored private var included: Set<String> = []
   @ObservationIgnored private var discovery: Task<Void, Never>?
   @ObservationIgnored private let discover: (() async -> [ClaudeAccount])?
+  /// Where the launch listing keeps its summaries for the next launch; nil reads every
+  /// transcript each time, as tests do.
+  @ObservationIgnored private let cacheFile: URL?
   @ObservationIgnored private var generations: [String: Int] = [:]
   /// `realpath` of each transcript folder seen, so a key costs one lookup.
   @ObservationIgnored private var resolvedFolders: [String: String] = [:]
@@ -48,9 +56,13 @@ final class SessionMonitor {
 
   /// `accounts` for tests; the app discovers them, its shell's `CLAUDE_CONFIG_DIR` included.
   /// `discover` replaces the login-shell discovery, for tests.
-  init(accounts: [ClaudeAccount] = [], discover: (() async -> [ClaudeAccount])? = nil) {
+  init(
+    accounts: [ClaudeAccount] = [], discover: (() async -> [ClaudeAccount])? = nil,
+    cacheFile: URL? = nil
+  ) {
     self.accounts = accounts
     self.discover = discover
+    self.cacheFile = cacheFile
   }
 
   /// The ids a `claude` process has open now.
@@ -150,10 +162,19 @@ final class SessionMonitor {
     }
     // Before the long listing: a restored row live in a terminal locks at once.
     readRegistries()
-    let listed = await Task.detached { SessionIndex.list(accounts: accounts, limit: 500) }.value
+    // Only the transcripts written since the last launch are opened: the rest come from the
+    // summaries it saved, which saves reading a gigabyte or more before home can show.
+    let cacheFile = self.cacheFile
+    let listed = await Task.detached {
+      let cache = cacheFile.map(SessionSummaryCache.load(from:)) ?? SessionSummaryCache()
+      return SessionIndex.list(accounts: accounts, limit: 500, cache: cache)
+    }.value
     merge(listed)
     readRegistries()
     isLoaded = true
+    if let cacheFile {
+      Task.detached(priority: .utility) { try? SessionSummaryCache(listed).save(to: cacheFile) }
+    }
     scanFolders(after: .zero)
     for account in accounts {
       for name in ["sessions", "projects"] {
