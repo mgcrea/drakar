@@ -213,6 +213,9 @@ private struct ForkSessionCommand: View {
 /// behind beside a live one stops `claude --ide` from connecting to either.
 final class AppDelegate: NSObject, NSApplicationDelegate {
   func applicationDidFinishLaunching(_ notification: Notification) {
+    // Before any view reads `Changelog.hasUnseen`, or a fresh install draws the
+    // What's New count on its very first launch.
+    Changelog.markSeenIfUnset()
     IDEBridge.shared.start()
     // Set at launch, not at the first post: a click on a notification delivered before a
     // relaunch must still land. Setting it does not prompt.

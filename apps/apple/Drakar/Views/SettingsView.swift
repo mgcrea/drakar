@@ -4,17 +4,21 @@ import SwiftUI
 
 // MARK: - Settings
 
-/// The panes, and the order they sit in: General, Transcript, Theme, Attention, About.
+/// The panes, and the order they sit in: General, Transcript, Theme, Attention, What's New,
+/// About.
 ///
 /// An entitlement pane joins only when something is actually sold: before a StoreKit
 /// product is registered it would be a button that fails.
 ///
-/// About stays last, because it answers a question you only ask with a bug report open.
+/// What's New sits beside About, as in armada: both answer what this build is rather than
+/// how it behaves. About stays last, because it answers a question you only ask with a bug
+/// report open.
 enum SettingsPane: String, SupportKitSettings.SettingsPane {
   case general
   case transcript
   case theme
   case attention
+  case whatsNew
   case about
 
   var title: LocalizedStringKey {
@@ -23,6 +27,7 @@ enum SettingsPane: String, SupportKitSettings.SettingsPane {
     case .transcript: "Transcript"
     case .theme: "Theme"
     case .attention: "Attention"
+    case .whatsNew: "What's New"
     case .about: "About"
     }
   }
@@ -33,8 +38,15 @@ enum SettingsPane: String, SupportKitSettings.SettingsPane {
     case .transcript: "text.bubble"
     case .theme: "paintpalette"
     case .attention: "bell.badge"
+    case .whatsNew: "sparkles"
     case .about: "info.circle"
     }
+  }
+
+  /// The unread-release count on What's New, and nothing anywhere else. Read on
+  /// every sidebar draw, so it clears the moment the pane marks the notes seen.
+  var badge: Int {
+    self == .whatsNew && Changelog.hasUnseen ? Changelog.unseen.count : 0
   }
 
   static var defaultPane: SettingsPane { .general }
@@ -297,6 +309,7 @@ struct SettingsView: View {
       case .transcript: TranscriptPane()
       case .theme: ThemePane()
       case .attention: AttentionPane()
+      case .whatsNew: WhatsNewPane()
       case .about:
         AboutSettingsPane(app: Support.app, preferIssueTracker: Support.preferIssueTracker)
       }

@@ -35,6 +35,9 @@ nonisolated enum Changelog {
     /// `Date` literal: a `Date(timeIntervalSince1970:)` in a generated file is
     /// unreadable in a diff, and formatting at generation time would bake the
     /// generating machine's locale into every build.
+    ///
+    /// Empty for a version written down before its tag (`## [1.0.0] - Unreleased`),
+    /// which the tag dates; `WhatsNewPane.dateLine(for:)` shows it as "Unreleased".
     let date: String
     let sections: [Section]
 
