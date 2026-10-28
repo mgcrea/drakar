@@ -1,4 +1,5 @@
 import AppKit
+import OSLog
 import Observation
 import Sparkle
 import SwiftUI
@@ -10,8 +11,8 @@ import SwiftUI
 /// Everything here is built around one property: **a Drakar nobody has said yes to has
 /// never resolved a name.** That is stronger than "the checkbox is off", and it is why
 /// `SPUStandardUpdaterController` is not a stored property built at launch but a `nil` that
-/// stays `nil`. Sparkle starts a scheduler the moment it is constructed, so constructing it
-/// and then declining to check would leave the claim resting on a flag rather than on the
+/// stays `nil`. Sparkle starts a scheduler the moment its updater starts, so starting it and
+/// then declining to check would leave the claim resting on a flag rather than on the
 /// absence of the machinery.
 ///
 /// Armada's controller, copied, less what Drakar does not have: no screenshot guard (there
@@ -38,35 +39,36 @@ final class UpdateController: NSObject {
 
   private(set) var isChecking = false
   private(set) var lastCheck: Date?
+  /// Why the updater would not start, the last time it was asked to; nil once it has.
+  private(set) var startFailure: String?
 
-  /// Whether the updater exists: never before somebody says yes, or presses Check Now.
+  /// Whether automatic checks are on.
+  ///
+  /// The answer lives in Sparkle's own `UserDefaults` key, `SUEnableAutomaticChecks`, which
+  /// the plist default (false) answers for a fresh install. DIVERGES from armada, which reads
+  /// it on every access: here it is stored and written through, so that the card on Home and
+  /// the Settings pane, both on screen for as long as their windows are, follow one observed
+  /// value rather than each keeping the answer it read when it appeared.
+  private(set) var automatic: Bool
+
+  /// Whether the consent card has been answered, either way. Stored for the same reason.
+  private(set) var hasAnswered: Bool
+
+  /// Whether the updater exists and has started: never before somebody says yes, or presses
+  /// Check Now, and never when Sparkle refused to start.
   var isStarted: Bool { controller != nil }
 
   init(defaults: UserDefaults = .standard) {
     self.defaults = defaults
+    automatic = defaults.bool(forKey: "SUEnableAutomaticChecks")
+    hasAnswered = defaults.bool(forKey: Self.choiceMade)
     super.init()
-  }
-
-  /// Whether automatic checks are on.
-  ///
-  /// The answer lives in Sparkle's own `UserDefaults` key, read through the updater when it
-  /// exists and directly when it does not. A second `@AppStorage` mirror would be one more
-  /// thing to drift, and the plist default (`SUEnableAutomaticChecks`, false) already
-  /// answers for a fresh install.
-  var automatic: Bool {
-    controller?.updater.automaticallyChecksForUpdates
-      ?? defaults.bool(forKey: "SUEnableAutomaticChecks")
-  }
-
-  /// Whether the consent card has been answered, either way.
-  var hasAnswered: Bool {
-    defaults.bool(forKey: Self.choiceMade)
   }
 
   /// Called from `applicationDidFinishLaunching`. Builds nothing unless the user has
   /// already opted in.
   func startIfConsented() {
-    guard defaults.bool(forKey: "SUEnableAutomaticChecks") else { return }
+    guard automatic else { return }
     start()
   }
 
@@ -87,19 +89,39 @@ final class UpdateController: NSObject {
     // Written through even when no updater exists, so that a "no" answered at the consent
     // card is durable without constructing one to record it.
     defaults.set(on, forKey: "SUEnableAutomaticChecks")
+    automatic = on
   }
 
   /// Record an answer from either place that asks: the card or the pane.
   func answer(automatic on: Bool) {
     setAutomatic(on)
     defaults.set(true, forKey: Self.choiceMade)
+    hasAnswered = true
   }
 
+  /// DIVERGES from armada, which builds the controller with `startingUpdater: true`. Sparkle
+  /// then reports a refusal to start (a feed or key it finds invalid, as the placeholder
+  /// `SUPublicEDKey` is until Phase 2) with an alert of its own, and leaves behind a
+  /// controller whose updater never runs: `isStarted` read true, Check Now waited on its
+  /// spinner for a callback that never came, and a "yes" brought the alert back at every
+  /// launch. Starting it here keeps a refusal to one log line and a sentence in the pane, and
+  /// the controller nil, so the next Check Now asks again.
   private func start() {
     guard controller == nil else { return }
-    controller = SPUStandardUpdaterController(
-      startingUpdater: true, updaterDelegate: self, userDriverDelegate: self)
+    let candidate = SPUStandardUpdaterController(
+      startingUpdater: false, updaterDelegate: self, userDriverDelegate: self)
+    do {
+      try candidate.updater.start()
+    } catch {
+      Self.log.error("updater not started: \(error.localizedDescription, privacy: .public)")
+      startFailure = error.localizedDescription
+      return
+    }
+    startFailure = nil
+    controller = candidate
   }
+
+  private static let log = Logger(subsystem: "io.mgcrea.Drakar", category: "updates")
 }
 
 extension UpdateController: SPUUpdaterDelegate {
@@ -160,10 +182,14 @@ extension UpdateController: SPUStandardUserDriverDelegate {
 /// The moment Drakar can open a connection of its own at all, the person running their
 /// agents through it is the one who decides.
 struct UpdateConsentCard: View {
-  @State private var answered = UpdateController.shared.hasAnswered
+  /// DIVERGES from armada, whose card copies `hasAnswered` into `@State` when it appears:
+  /// armada's popover is rebuilt at each opening, but Home stays on screen, and an answer
+  /// given in Settings meanwhile must take the card away rather than leave it to overwrite
+  /// that answer.
+  private var updates: UpdateController { .shared }
 
   var body: some View {
-    if !answered {
+    if !updates.hasAnswered {
       VStack(alignment: .leading, spacing: 8) {
         Label("Should Drakar check for updates?", systemImage: "arrow.down.circle")
           .font(.subheadline).bold()
@@ -197,8 +223,7 @@ struct UpdateConsentCard: View {
   }
 
   private func answer(_ automatic: Bool) {
-    UpdateController.shared.answer(automatic: automatic)
-    answered = true
+    updates.answer(automatic: automatic)
   }
 }
 
@@ -207,8 +232,7 @@ struct UpdateConsentCard: View {
 /// Drakar's only connection of its own is this one, so the footer says what the check
 /// sends in plain terms.
 struct UpdatesPane: View {
-  @State private var automatic = UpdateController.shared.automatic
-  private var updates = UpdateController.shared
+  private var updates: UpdateController { .shared }
 
   var body: some View {
     Form {
@@ -226,13 +250,13 @@ struct UpdatesPane: View {
       }
 
       Section {
-        Toggle(isOn: $automatic) {
+        // Answering here is answering the consent card too. Leaving it armed would ask
+        // again about a decision already made in this pane. A binding on the controller
+        // rather than armada's `@State` copy, so an answer given at the card shows here.
+        Toggle(
+          isOn: Binding(get: { updates.automatic }, set: { updates.answer(automatic: $0) })
+        ) {
           Text("Check for updates automatically")
-        }
-        .onChange(of: automatic) { _, on in
-          // Answering here is answering the consent card too. Leaving it armed would ask
-          // again about a decision already made in this pane.
-          updates.answer(automatic: on)
         }
       } footer: {
         Text(
@@ -255,7 +279,12 @@ struct UpdatesPane: View {
   ///
   /// DIVERGES from armada's `.clockRelative`, a screenshot-mode format Drakar does not
   /// have: the plain relative format every other "when" in Drakar uses.
+  ///
+  /// A refusal to start says so in the same place, since it is why nothing was checked.
   private var lastCheck: String {
+    if let failure = updates.startFailure {
+      return String(localized: "Couldn't start the update check. \(failure)")
+    }
     guard let last = updates.lastCheck else { return String(localized: "Not checked yet") }
     return String(localized: "Last checked \(last.formatted(.relative(presentation: .named)))")
   }
