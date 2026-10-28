@@ -388,6 +388,63 @@ struct AgentSessionTests {
     #expect(runs.last?.contains("--fork-session") == false)
   }
 
+  /// A session started here has no target to resume: its cards find its subagents' files
+  /// by the transcript its process writes, located by the id `system/init` gave while the
+  /// first turn runs, and saved once it ends.
+  @Test func aNewSessionsCardsFindItsTranscript() async throws {
+    let script = folder.appending(path: "claude-turn")
+    let initLine =
+      #"{"type":"system","subtype":"init","cwd":"/tmp","session_id":"s-new","model":"m"}"#
+    let resultLine =
+      #"{"type":"result","subtype":"success","is_error":false,"result":"ok","session_id":"s-new"}"#
+    // The turn ends once the test says so, with a file beside the script.
+    let go = script.appendingPathExtension("go")
+    try Data(
+      "#!/bin/sh\nprintf '%s\\n' '\(initLine)'\nwhile [ ! -f \"$0.go\" ]; do sleep 0.1; done\nprintf '%s\\n' '\(resultLine)'\ncat > /dev/null\n"
+        .utf8
+    ).write(to: script)
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script.path)
+    let account = folder.appending(path: ".claude-new", directoryHint: .isDirectory)
+    let project = account.appending(path: "projects/-tmp", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+    let file = project.appending(path: "s-new.jsonl")
+    try Data(
+      #"{"type":"user","message":{"role":"user","content":"one"}}"#.appending("\n").utf8
+    ).write(to: file)
+
+    let session = AgentSession(folder: folder)
+    session.executableOverride = script
+    session.accounts = { [ClaudeAccount(directory: account, isDefault: false)] }
+    #expect(session.tasks.resolvedTranscriptFile() == nil)
+    session.send("one")
+    for _ in 0..<50 where session.sessionID != "s-new" {
+      try await Task.sleep(for: .milliseconds(100))
+    }
+    defer { session.stop() }
+    // Found without being kept, so what follows shows the session set it.
+    #expect(session.tasks.locateTranscript()?.standardizedFileURL == file.standardizedFileURL)
+    #expect(session.tasks.transcriptFile == nil)
+    try Data().write(to: go)
+    for _ in 0..<50 where session.transcript.turnEnd == nil {
+      try await Task.sleep(for: .milliseconds(100))
+    }
+    #expect(session.transcript.turnEnd == .completed)
+    #expect(session.savedTarget != nil)
+    // Set by the session itself once saved, not only found by a card that asked.
+    #expect(session.tasks.transcriptFile?.standardizedFileURL == file.standardizedFileURL)
+  }
+
+  /// A Codex session has no subagent files to look for: its cards list no folder.
+  @Test func aCodexSessionsCardsLookForNoFile() {
+    let target = ResumeTarget(
+      sessionID: "t-1", cwd: folder.path(percentEncoded: false),
+      file: folder.appending(path: "t-1.jsonl").path(percentEncoded: false),
+      accountDirectory: "/h", accountIsDefault: true, agent: .codex)
+    let session = AgentSession(folder: folder, resuming: target)
+    #expect(session.tasks.transcriptFile == nil)
+    #expect(session.tasks.resolvedTranscriptFile() == nil)
+  }
+
   /// A session started here and resumed by another process follows what that one writes,
   /// from where this window's process stopped: its own turns, already shown, aren't read
   /// again.

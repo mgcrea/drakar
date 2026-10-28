@@ -13,7 +13,8 @@ final class TaskControls {
   /// The session is driven and its agent controls tasks. Read through `availability`, so a
   /// view reading it observes the session's own properties.
   var isAvailable: Bool { availability() }
-  /// The session's transcript, for subagent files; set for every session, driven or not.
+  /// The session's transcript, for subagent files; set for every Claude Code session, driven
+  /// or not, once it has one.
   var transcriptFile: URL?
   /// Task ids a stop was sent for, until it is answered, the process ends or `timeout`.
   private(set) var stopping: Set<String> = []
@@ -32,6 +33,9 @@ final class TaskControls {
   /// Settable so that a session can hand closures over itself once it exists.
   @ObservationIgnored var availability: () -> Bool
   @ObservationIgnored var send: (AgentCommand) -> Void
+  /// The transcript of a session that knows its id but saved no target yet (a new one in
+  /// its first turn), looked for without saving anything.
+  @ObservationIgnored var locateTranscript: () -> URL? = { nil }
   @ObservationIgnored private let timeout: Duration
   /// Bumped by each request for an id: a timeout clears a wait only if no later request
   /// for that id started one of its own.
@@ -62,6 +66,14 @@ final class TaskControls {
     backgroundOutcomes[toolUseID] = nil
     send(.backgroundCall(toolUseID: toolUseID))
     expire("background-\(toolUseID)") { $0.moving.remove(toolUseID) }
+  }
+
+  /// `transcriptFile`, else the one `locateTranscript` finds, kept once found.
+  func resolvedTranscriptFile() -> URL? {
+    if let transcriptFile { return transcriptFile }
+    guard let located = locateTranscript() else { return nil }
+    transcriptFile = located
+    return located
   }
 
   /// Paced by whoever asks: each call sends one request.

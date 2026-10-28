@@ -179,10 +179,16 @@ struct AgentCallView: View {
   }
 
   /// Reads the file once, then every second while the task runs and its window is visible.
+  /// A new session's first turn saved no transcript yet: it is looked for until found.
   private func follow() async {
     guard isExpanded else { return }
-    guard let transcriptFile = controls?.transcriptFile else {
+    guard let transcriptFile = controls?.resolvedTranscriptFile() else {
       self.feed = nil
+      guard state == .running, isWindowVisible else { return }
+      // Found, it changes the trigger, and the run that replaces this one reads it.
+      while !Task.isCancelled, controls?.resolvedTranscriptFile() == nil {
+        try? await Task.sleep(for: .seconds(1))
+      }
       return
     }
     let feed: SubagentFeed

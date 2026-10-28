@@ -184,4 +184,21 @@ struct TaskControlsTests {
     controls.readEndedOutput(taskID: "u", file: nil)
     #expect(sent.commands == [.taskOutput(taskID: "t"), .taskOutput(taskID: "u")])
   }
+
+  /// A new session's subagent files are found while its first turn runs, before it saved
+  /// a target; once found, the file is kept.
+  @Test func theTranscriptIsLocatedOnce() {
+    var located = 0
+    let controls = TaskControls()
+    let file = URL(filePath: "/p/s.jsonl")
+    controls.locateTranscript = {
+      located += 1
+      return located > 1 ? file : nil
+    }
+    #expect(controls.resolvedTranscriptFile() == nil)
+    #expect(controls.resolvedTranscriptFile() == file)
+    #expect(controls.resolvedTranscriptFile() == file)
+    #expect(located == 2)
+    #expect(controls.transcriptFile == file)
+  }
 }

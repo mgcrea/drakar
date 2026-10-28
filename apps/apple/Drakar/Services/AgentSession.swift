@@ -24,7 +24,7 @@ final class AgentSession {
   /// What this session continues; nil for a new one. Becomes the session's own target
   /// once it has one, so that a prompt after the process ended resumes it.
   private(set) var resuming: ResumeTarget? {
-    didSet { tasks.transcriptFile = resuming?.transcriptFile }
+    didSet { syncTranscriptFile() }
   }
   /// Stop, Run in background and task output for the cards: sent straight to the process,
   /// never noted, so a replay never sends one again.
@@ -50,7 +50,9 @@ final class AgentSession {
   private(set) var reportedContext: ContextUsageReply?
   /// What reopening the window resumes: known from the start for a resumed session, and
   /// from its first finished turn for a new one or a fork, once its transcript exists.
-  private(set) var savedTarget: ResumeTarget?
+  private(set) var savedTarget: ResumeTarget? {
+    didSet { syncTranscriptFile() }
+  }
   /// The transcript's history was read into `transcript`.
   private(set) var hasLoadedHistory = false
   /// The agent's wire format: how it starts, what its lines mean, how a command is written.
@@ -205,7 +207,12 @@ final class AgentSession {
     self.backend = backend ?? (agent ?? resuming?.agentKind ?? .claude).makeBackend()
     savedTarget = resuming?.forks == true ? nil : resuming
     isLoadingHistory = resuming != nil
-    tasks.transcriptFile = resuming?.transcriptFile
+    syncTranscriptFile()
+    tasks.locateTranscript = { [weak self] in
+      // As `ownTarget()` finds it, without saving it.
+      guard let self, self.features.controlsTasks else { return nil }
+      return self.locateTarget()?.transcriptFile
+    }
     tasks.availability = { [weak self] in self?.controlsTasks ?? false }
     tasks.send = { [weak self] command in
       // Not `write` nor `sendNoted`: a control the process cannot take changes nothing else,
@@ -407,8 +414,21 @@ final class AgentSession {
 
   /// A card can stop its task or move its call, as `canQueue` reads a driven session.
   private var controlsTasks: Bool {
-    features.controlsTasks && !isReadOnly && !isMoving && !isReconnecting && !waitsForHost
-      && !isOutOfReach && process != nil
+    features.controlsTasks && !isReadOnly && !isMoving && !historyFailed && !isReconnecting
+      && !waitsForHost && !isOutOfReach && process != nil
+  }
+
+  /// Where the cards look for subagent files: beside this session's own transcript once it
+  /// saved one, else beside the one it continues (a fork's original, whose folder its own
+  /// sits beside). A new session's first turn has neither: `tasks.locateTranscript` finds it.
+  /// Claude Code's only: no Codex card lists a folder. A target looked for and not found
+  /// leaves the file the cards found.
+  private func syncTranscriptFile() {
+    guard features.controlsTasks else {
+      tasks.transcriptFile = nil
+      return
+    }
+    if let file = (savedTarget ?? resuming)?.transcriptFile { tasks.transcriptFile = file }
   }
 
   /// The mode the pill shows: the process's while it runs, else what the next start takes.
