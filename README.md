@@ -9,6 +9,12 @@ Codex's `app-server`, the second agent being added, is mapped in [docs/codex-app
 Distributed directly (Developer ID, Sparkle), never through the Mac App Store: it spawns
 processes that work on your files, which App Sandbox forbids.
 
+Drakar opens one network socket, a listener on 127.0.0.1 that answers only a client
+holding this launch's token, and makes no connection of its own. Its session host listens
+on one Unix socket, which only your own Drakar can reach. Everything that reaches the
+network is the `claude` you installed, or Sparkle, once you said yes to update checks.
+[SECURITY.md](SECURITY.md) says how to check that yourself, and how to report a hole.
+
 Settings › General picks which `claude` runs when more than one is installed, and the
 account (`CLAUDE_CONFIG_DIR`) a new session starts under. The footer warns when the CLI is
 outside the versions Drakar was tested with, since the protocol it speaks is undocumented.
@@ -35,8 +41,9 @@ selection so the next one can be added beside it.
 
 `make audit` checks the network claim against the sources (one loopback listener, on
 127.0.0.1 and token-gated, for the IDE bridge; one Unix socket for the session host, that
-only your own Drakar can reach; nothing outgoing), and `make audit-running` against the
-running app.
+only your own Drakar can reach; nothing outgoing), `make audit-running` against the
+running app, and `make audit-release` against the built bundle (every Mach-O swept for URL
+loading, DNS and TLS, Sparkle the one allowance; no entitlements).
 
 ## Layout
 

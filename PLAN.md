@@ -50,7 +50,8 @@ Core promises, in priority order:
 3. Your Claude Code, not ours. The `claude` you installed, your settings, hooks, skills,
    MCP servers and accounts, unchanged. Sessions resume from either side (§2.3).
 4. Drakar itself reaches nothing: its one socket listens on 127.0.0.1 for terminal
-   sessions holding its token, and it opens no connection (§5, the checkable claim).
+   sessions holding its token, and it opens no connection but Sparkle's, once you said
+   yes to update checks (§5, the checkable claim).
 
 ## 2. How it drives Claude
 
@@ -202,7 +203,8 @@ The fourth Developer ID app in the fleet, after armada, bastion and cupertino. I
 - **Not sandboxed, no entitlements file.** It spawns your `claude`, which runs your tools
   over your files and reads your `~/.claude`; under App Sandbox every child inherits the
   container and none of that works. Bastion's precedent: no `CODE_SIGN_ENTITLEMENTS` at
-  all, asserted by the audit, rather than an empty file. Hardened runtime on.
+  all, asserted by the audit (in the project, and with `--app` in every signature), rather
+  than an empty file. Hardened runtime on.
 - **Out of the store for good.** Guideline 2.5.2 (executing code the app does not ship)
   and the sandbox both rule the Mac App Store out, which is why Zed, Cursor, VS Code and
   Nova are all distributed directly.
@@ -212,13 +214,18 @@ the release job, the appcast and the site redirects, the licence and trial, the 
 Worker (copied from **armada's**, whose price guard fails closed, not bastion's), and the
 audit script.
 
-**The checkable claim:** *Drakar opens one socket, a listener on 127.0.0.1 that answers
-only a client holding this launch's token, and makes no connection of its own; everything
-that reaches the network is the `claude` you installed, or Sparkle.* `make audit` asserts
-the sources half and `make audit-running` the live half since phase 3; the binary sweep
-below arrives with Sparkle. That is
-cupertino's `audit-network.sh` model: an `nm -u`/`otool -L` sweep over every Mach-O in
-the bundle, with Sparkle the one named allowance. Phase 3's WebSocket is a listening
+**The checkable claim:** *Drakar opens one network socket, a listener on 127.0.0.1 that
+answers only a client holding this launch's token, and makes no connection of its own. Its
+session host listens on one Unix socket, which only your own Drakar can reach. Everything
+that reaches the network is the `claude` you installed, or Sparkle, once you said yes to
+update checks.* `make audit` asserts the sources, `make audit-running` the live process
+since phase 3, and `make audit-release` the built bundle since Sparkle landed. The last is
+cupertino's `audit-network.sh` model, by way of armada's: an `nm -u`/`otool -L` sweep over
+every Mach-O in the bundle, with Sparkle the one named allowance (exactly the three
+URL-loading classes it was measured to use), Drakar's own executable allowed its
+Network.framework link for the listener and no outgoing API, Sparkle's defaults read off
+the shipped Info.plist, and no entitlements in any signature. [SECURITY.md](SECURITY.md)
+says how to run it on the bundle you downloaded. Phase 3's WebSocket is a listening
 socket on loopback, and lands with its own Loopback check in the same commit, as
 armada's did.
 

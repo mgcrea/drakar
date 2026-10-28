@@ -4,22 +4,52 @@
 #   Drakar opens one network socket, a listener on 127.0.0.1 that answers only a client
 #   holding this launch's token, and makes no connection of its own. Its session host
 #   listens on one Unix socket, which only your own Drakar can reach. Everything that
-#   reaches the network is the `claude` you installed.
+#   reaches the network is the `claude` you installed, or Sparkle, once you said yes to
+#   update checks.
 #
 # A marketing claim CI can check is the property worth keeping (bastion's
 # audit-listener.sh); this asserts the rules in Drakar/Services/IDEServer.swift's header,
 # and the session host's in DrakarKit's Host/UnixSocket.swift and HostServer.swift.
 # Static rules prove the code cannot be talked into misbehaving by a setting; --running
-# proves the live process does not.
+# proves the live process does not; --app proves the artifact does not carry what the
+# sources say they lack, so anyone can point it at the .app they downloaded and get the
+# answer CI got.
 #
 #   scripts/audit-network.sh            # sources
 #   scripts/audit-network.sh --running  # and the running app: lsof, lock files, the token,
 #                                       # the session host's socket
+#   scripts/audit-network.sh --app path/to/Drakar.app
+#                                       # and the built bundle: every Mach-O swept for URL
+#                                       # loading, DNS and TLS, Sparkle the one allowance;
+#                                       # its defaults; no entitlements
+#
+# Since Sparkle landed, the sources no longer hold all the code that ships: one binary
+# dependency does networking on purpose, and a symbol table is the only place that shows.
+# That is why the Bundle section discovers what to audit rather than being told, and
+# spells its allowance out symbol by symbol (cupertino's audit-network.sh, by way of
+# armada's).
 #
 # Portable on purpose (BSD and GNU tools): it runs on CI as well as on this Mac. No
 # `set -e`: a check that fails must be counted and reported, not end the script early
 # and green, which is the silent death cupertino's audit once recorded.
 set -uo pipefail
+
+usage() { echo "usage: scripts/audit-network.sh [--running] [--app path/to/Drakar.app]" >&2; exit 2; }
+running=0
+app=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --running) running=1 ;;
+    --app)
+      [ $# -ge 2 ] && [ -n "$2" ] || usage
+      app="$2"
+      shift ;;
+    *) usage ;;
+  esac
+  shift
+done
+# Made absolute before the cd below, so a path given from anywhere still names the bundle.
+case "$app" in "" | /*) ;; *) app="$PWD/$app" ;; esac
 
 cd "$(dirname "$0")/.."
 SOURCES="apps/apple/Drakar apps/apple/DrakarHost apps/apple/Packages/DrakarKit/Sources"
@@ -75,7 +105,197 @@ outgoing=$(code 'URLSession|NWConnection\((host|to):|NWBrowser|CFStreamCreatePai
 [ "$outgoing" -eq 0 ] && pass "no outgoing networking API in Drakar's sources" \
   || fail "$outgoing outgoing networking call(s)"
 
-if [ "${1:-}" = "--running" ]; then
+# No entitlements, by construction rather than by an empty file (Bastion's precedent,
+# PLAN.md §5). A project that cannot be read has not been checked, so it fails.
+project=apps/apple/Drakar.xcodeproj/project.pbxproj
+files=$(find apps/apple \( -name .build -o -name Vendor \) -prune -o -name '*.entitlements' -print)
+if [ ! -f "$project" ]; then
+  fail "no $project to read"
+elif grep -q CODE_SIGN_ENTITLEMENTS "$project" || [ -n "$files" ]; then
+  fail "an entitlements file is named or present: $(grep -o 'CODE_SIGN_ENTITLEMENTS = [^;]*' "$project" | sort -u) $files"
+else
+  pass "no entitlements file, none named in the project"
+fi
+
+# ─── Bundle ──────────────────────────────────────────────────────────────────
+# Armada's binary sweep: `nm -u` and `otool -L` over every Mach-O in the bundle, against
+# networking that no local path needs, with each exception a named row below.
+#
+# What it does NOT deny, deliberately: `socket`, `bind`, `connect`, `listen`. The session
+# host's Unix socket shares those syscalls with anything that reaches the internet, so they
+# could never be the test; the address family is, and "Sources" above asserts it (no
+# AF_INET, exactly one AF_UNIX). Nor the IDE bridge's NWListener, which "Sources" pins to
+# one, on 127.0.0.1, token-gated; here it is the one row for Drakar's own executable.
+
+# High-level networking only. Every one of these implies an intent no local path has:
+# loading a URL, resolving a name, negotiating TLS.
+#
+# DIVERGES from armada: the last three alternatives are Network.framework's outgoing
+# Swift API, its NWConnection initialisers (`…cfC`/`…cfc` after a lowercase argument
+# label; `NWConnection.ContentContext`'s is a nested type, upper case, and is not one),
+# NWBrowser and NWConnectionGroup. Armada links no Network.framework of its own, so its
+# list stops at the C API (`_nw_`). Drakar's executable has to link it, for the listener,
+# and a pardon for the link without these would be a pardon for the whole framework.
+DENY='URLSession|URLConnection|URLRequest|URLDownload|^_nw_|_CFHTTP|_CFURLRequest|CFReadStreamCreateForHTTP|_getaddrinfo|_gethostby|_res_9_|_SSLHandshake|_SSLCreateContext|_curl_'
+DENY="$DENY"'|^_\$s7Network12NWConnectionC[0-9]+[a-z][A-Za-z0-9_]*cf[Cc]$|^_\$s7Network9NWBrowserC|^_\$s7Network17NWConnectionGroupC'
+
+# The exceptions, in one place. Adding a line here is the whole decision, and it is a
+# diff a stranger can read.
+#
+# Measured 2026-10-28 against the Release bundle `make bundle ALLOW_PLACEHOLDER_KEYS=1`
+# builds (Sparkle 2.9.6, universal), with both rows empty, by:
+#
+#   find "$app/Contents" -type f | while read -r f; do
+#     case "$(file -b "$f")" in *Mach-O*)
+#       echo "== $f"
+#       { nm -u "$f" | grep -E "$DENY"; otool -L "$f" | grep -E 'CFNetwork|/Network\.framework'; } |
+#         sed 's/^[[:space:]]*//; s/ (compatibility version.*//' | sort -u ;;
+#     esac
+#   done
+#
+# which found five Mach-Os and hits in two: Sparkle's framework binary, exactly the three
+# classes below, and Drakar's executable, exactly the Network.framework link. Sparkle's
+# Autoupdate and Updater.app, and DrakarHost, have none, so they have no row and are swept
+# like any other binary: a network symbol in one of them fails.
+
+# Sparkle is the update checker: the one thing in this bundle that opens a connection to
+# the internet. It is not even constructed until you say yes to update checks or press
+# Check Now (Services/Updates.swift, UpdateController), and the claim above admits it.
+SPARKLE_BIN='Contents/Frameworks/Sparkle.framework/Versions/B/Sparkle'
+
+# And exactly which symbols it may have: the three cupertino measured and armada carries,
+# measured again here. A Sparkle that starts resolving names itself, negotiates TLS by
+# hand or links CFNetwork directly fails this line rather than inheriting the allowance
+# the previous version earned.
+SPARKLE_ALLOWED='^_OBJC_CLASS_\$_(NSURLSession|NSURLSessionConfiguration|NSMutableURLRequest)$'
+
+# Set to 0 for a deliberately Sparkle-free build. Left at 1, a bundle that has lost
+# Sparkle is a failure rather than a quiet pass: see the stale-allowance check below.
+SPARKLE_EXPECTED="${SPARKLE_EXPECTED:-1}"
+
+# DIVERGES from armada, which has no row for its own executable: Drakar's links
+# Network.framework, for the IDE bridge's NWListener and nothing else. The link line, its
+# version numbers dropped (they move with the OS), and not one denied symbol: an outgoing
+# NWConnection, a name lookup or a URL load in Drakar itself still fails.
+DRAKAR_BIN='Contents/MacOS/Drakar'
+DRAKAR_ALLOWED='/System/Library/Frameworks/Network.framework/Versions/A/Network'
+
+FEED_URL='https://drakar.mgcrea.io/appcast.xml'
+
+# Every Mach-O in the bundle, FOUND rather than listed: a framework or helper that nobody
+# remembered to add to a hand-written list is precisely what this gate exists to catch.
+mach_o_paths() {
+  find "$1/Contents" -type f -print0 2>/dev/null |
+    while IFS= read -r -d '' f; do
+      case "$(file -b "$f" 2>/dev/null)" in
+        *Mach-O*) printf '%s\n' "${f#"$1/"}" ;;
+      esac
+    done | LC_ALL=C sort
+}
+
+# sort -u because nm lists undefined symbols once per architecture slice, and a universal
+# binary would otherwise report every hit twice.
+scan() {
+  {
+    nm -u "$1" 2>/dev/null | grep -E "$DENY"
+    otool -L "$1" 2>/dev/null | grep -E 'CFNetwork|/Network\.framework'
+  } | sed 's/^[[:space:]]*//; s/ (compatibility version.*//' | grep -v '^$' | sort -u
+}
+
+if [ -n "$app" ]; then
+  echo "Bundle"
+  if [ ! -d "$app/Contents" ]; then
+    fail "no bundle at $app (make bundle builds one)"
+  else
+    binaries=0
+    saw_sparkle=0
+    while IFS= read -r rel; do
+      [ -n "$rel" ] || continue
+      binaries=$((binaries + 1))
+      hits=$(scan "$app/$rel")
+      # The allowance is exact, not a blanket pardon for a path.
+      case "$rel" in
+        "$SPARKLE_BIN")
+          saw_sparkle=1
+          unexpected=$(printf '%s\n' "$hits" | grep -v '^$' | grep -vE "$SPARKLE_ALLOWED")
+          allowed="reaches the network: the update check, once you said yes" ;;
+        "$DRAKAR_BIN")
+          unexpected=$(printf '%s\n' "$hits" | grep -v '^$' | grep -vxF "$DRAKAR_ALLOWED")
+          allowed="links Network.framework for the loopback listener, and opens nothing outgoing" ;;
+        *)
+          unexpected=$hits
+          allowed="" ;;
+      esac
+      if [ -n "$unexpected" ]; then
+        n=$(printf '%s\n' "$unexpected" | wc -l | tr -d ' ')
+        fail "$rel reaches the network ($n symbol(s)):"
+        printf '%s\n' "$unexpected" | head -8 | sed 's/^/          /'
+        [ "$n" -gt 8 ] && printf '          … and %s more\n' "$((n - 8))"
+      elif [ -n "$hits" ]; then
+        pass "$rel $allowed"
+      else
+        pass "$rel: no URL loading, no DNS, no TLS"
+      fi
+    done <<EOF
+$(mach_o_paths "$app")
+EOF
+
+    # A gate that passed having swept nothing is not a gate: no Mach-O means no build.
+    [ "$binaries" -gt 0 ] || fail "no Mach-O found under $app"
+
+    # A pardon that outlives the thing it pardons is a hole waiting for whatever lands at
+    # that path next. If Sparkle is ever dropped, the allowance has to go with it, and the
+    # way to guarantee that is to fail until it does.
+    if [ "$SPARKLE_EXPECTED" = 1 ] && [ "$saw_sparkle" -eq 0 ]; then
+      fail "$SPARKLE_BIN: the allowance names a binary this bundle does not contain"
+    fi
+
+    # The sweep says the capability exists. These say it is switched off and points where
+    # the claim says, which turns "once you said yes" from a promise in a settings pane into
+    # something the release refuses to ship without.
+    if [ "$saw_sparkle" -eq 1 ]; then
+      plist="$app/Contents/Info.plist"
+      # Absent is not the same as false: an ABSENT SUEnableAutomaticChecks is what makes
+      # Sparkle ask on its own, in its own words, which the consent card on Home replaces.
+      for pair in SUEnableAutomaticChecks=false SUAutomaticallyUpdate=false \
+        SUSendProfileInfo=false "SUFeedURL=$FEED_URL"; do
+        key=${pair%%=*}
+        want=${pair#*=}
+        got=$(/usr/libexec/PlistBuddy -c "Print :$key" "$plist" 2>/dev/null)
+        [ "$got" = "$want" ] && pass "$key is $want" || fail "$key is ${got:-absent}, must be $want"
+      done
+      # DIVERGES from armada: SUPublicEDKey's shape is not asserted here. It is about which
+      # update Sparkle trusts, not whether Drakar reaches the network, and `make sign`
+      # already refuses a bundle without a real one (ALLOW_PLACEHOLDER_KEYS=1 aside, the
+      # rehearsal this audit also has to read).
+
+      # Sandbox-only, and Drakar is not sandboxed. Stripped by `make sparkle` because each
+      # one is another binary that would need pardoning here.
+      [ -d "$app/Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices" ] \
+        && fail "Sparkle's sandbox-only XPC services ship" || pass "Sparkle's XPC services stripped"
+    fi
+
+    # DIVERGES from armada, whose one entitlement is the microphone: Drakar ships none, on
+    # anything (Bastion's precedent; `make sign` refuses while an .entitlements file
+    # exists). Read off every Mach-O the sweep found, not just the app, since a helper's
+    # signature grants its own. An unsigned or ad-hoc build has none to show, which is the
+    # claim, so unlike armada's this needs no skip.
+    granted=0
+    while IFS= read -r rel; do
+      [ -n "$rel" ] || continue
+      keys=$(codesign -d --entitlements - --xml "$app/$rel" 2>/dev/null | grep -o '<key>[^<]*</key>')
+      [ -z "$keys" ] && continue
+      granted=$((granted + 1))
+      fail "$rel carries entitlements:"
+      printf '%s\n' "$keys" | sed 's/^/          /'
+    done <<EOF
+$(mach_o_paths "$app")
+EOF
+    [ "$granted" -eq 0 ] && pass "no entitlements in any signature"
+  fi
+fi
+
+if [ "$running" -eq 1 ]; then
   echo "Running app"
   pid=$(pgrep -x Drakar | head -1)
   if [ -z "$pid" ]; then
@@ -127,7 +347,7 @@ if [ "${1:-}" = "--running" ]; then
   fi
 fi
 
-if [ "${1:-}" = "--running" ]; then
+if [ "$running" -eq 1 ]; then
   echo "Session host"
   # Started on demand, so often not running; when it is, its socket must be the user's alone.
   socket="$HOME/Library/Application Support/io.mgcrea.Drakar/host/host-v1.sock"
