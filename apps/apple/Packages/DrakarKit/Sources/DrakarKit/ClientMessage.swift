@@ -40,6 +40,16 @@ public enum ClientMessage: Sendable, Equatable {
   case renameSession(requestID: String, title: String, sessionID: String)
   /// The person's answer to an `elicitation`, which the CLI passes to the server unchanged.
   case answerElicitation(requestID: String, ElicitationAnswer)
+  /// Stop a running task: a shell, a Monitor or a subagent. Answered with an empty success,
+  /// even for a task that has ended or never was (docs/claude-stream-json.md, "Task
+  /// controls").
+  case stopTask(requestID: String, taskID: String)
+  /// Move a foreground tool call to the background, as Ctrl+B does. Answered with
+  /// `{"backgrounded": …}`, or an error when the session has background tasks turned off
+  /// (`BackgroundOutcome`).
+  case backgroundCall(requestID: String, toolUseID: String)
+  /// A shell or Monitor task's output so far, its tail when long (`TaskOutput`).
+  case taskOutput(requestID: String, taskID: String)
   /// The answer to a request Drakar cannot serve, so that the CLI stops waiting on it.
   case refuse(requestID: String, error: String)
 
@@ -113,6 +123,14 @@ public enum ClientMessage: Sendable, Equatable {
           "response": answer.json,
         ]),
       ])
+    case .stopTask(let id, let taskID):
+      Self.controlRequest(id, ["subtype": .string("stop_task"), "task_id": .string(taskID)])
+    case .backgroundCall(let id, let toolUseID):
+      Self.controlRequest(
+        id, ["subtype": .string("background_tasks"), "tool_use_id": .string(toolUseID)])
+    case .taskOutput(let id, let taskID):
+      Self.controlRequest(
+        id, ["subtype": .string("get_task_output"), "task_id": .string(taskID)])
     case .refuse(let id, let error):
       .object([
         "type": .string("control_response"),

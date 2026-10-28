@@ -48,6 +48,22 @@ struct ClientMessageTests {
         + "\n")
   }
 
+  /// Stop, Run in background and the output read, as the extension sends them (2.1.312).
+  @Test func taskControlsEncode() throws {
+    #expect(
+      try text(.stopTask(requestID: "r-stop", taskID: "b8cffcoy7"))
+        == #"{"request":{"subtype":"stop_task","task_id":"b8cffcoy7"},"request_id":"r-stop","type":"control_request"}"#
+        + "\n")
+    #expect(
+      try text(.backgroundCall(requestID: "r-bg", toolUseID: "toolu_1"))
+        == #"{"request":{"subtype":"background_tasks","tool_use_id":"toolu_1"},"request_id":"r-bg","type":"control_request"}"#
+        + "\n")
+    #expect(
+      try text(.taskOutput(requestID: "r-out", taskID: "b8cffcoy7"))
+        == #"{"request":{"subtype":"get_task_output","task_id":"b8cffcoy7"},"request_id":"r-out","type":"control_request"}"#
+        + "\n")
+  }
+
   @Test func encodesAPrompt() throws {
     #expect(
       try text(.prompt("Run it"))
