@@ -1,0 +1,27 @@
+{
+  "$schema": "./node_modules/oxfmt/configuration_schema.json",
+  "sortImports": {
+    "enabled": true
+  },
+  "ignorePatterns": [
+    "dist",
+    "pnpm-lock.yaml",
+    ".idea",
+    ".claude",
+    ".superpowers",
+    "docs",
+    "design",
+    "apps/apple",
+    "**/*.icon",
+    "**/*.xcassets",
+    "**/worker-configuration.d.ts"
+  ],
+  "overrides": [
+    {
+      "files": ["**/*.json", "**/*.jsonc"],
+      "options": {
+        "trailingComma": "none"
+      }
+    }
+  ]
+}

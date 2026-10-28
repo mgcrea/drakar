@@ -29,12 +29,12 @@ one.
 
 ## 1. Positioning
 
-| | Claude Code in VS Code | `claude` in a terminal | Zed's agent panel | This app |
-| --- | --- | --- | --- | --- |
-| Shell | Electron + webview | your terminal | native (gpui) | native (SwiftUI + AppKit) |
-| Agent | bundled `claude` | `claude` | any agent over ACP | your installed `claude` |
-| Weight | an editor you may not want | none | an editor you must want | the agent first, an editor later |
-| Protocol fidelity | full | full | ACP's common denominator | full (stream-json) |
+|                   | Claude Code in VS Code     | `claude` in a terminal | Zed's agent panel        | This app                         |
+| ----------------- | -------------------------- | ---------------------- | ------------------------ | -------------------------------- |
+| Shell             | Electron + webview         | your terminal          | native (gpui)            | native (SwiftUI + AppKit)        |
+| Agent             | bundled `claude`           | `claude`               | any agent over ACP       | your installed `claude`          |
+| Weight            | an editor you may not want | none                   | an editor you must want  | the agent first, an editor later |
+| Protocol fidelity | full                       | full                   | ACP's common denominator | full (stream-json)               |
 
 The wedge: **the agent is the primary object, not a panel in something else.** People who
 live in Claude Code open VS Code to get its UI, not to edit. Drakar gives them that UI
@@ -129,27 +129,27 @@ not in advance.
 ## 4. Phases
 
 0. **Protocol core.** DrakarKit decodes every message type in the spike's captures and
-   encodes `initialize`, a prompt and a permission answer. *Done 2026-10-03.*
+   encodes `initialize`, a prompt and a permission answer. _Done 2026-10-03._
 1. **One session, one window.** Pick a folder, spawn `claude`, stream text and thinking,
    tool calls as collapsible cards with their results, the permission prompt as a sheet
-   with its suggestions, interrupt, cost and context in a footer. *Done 2026-10-03*,
+   with its suggestions, interrupt, cost and context in a footer. _Done 2026-10-03_,
    except context usage. Block Markdown (headings, lists, fences, quotes, tables) and
    summarized thinking followed the same day.
 2. **Sessions.** The list from disk, resume, several windows, Edit and Write calls shown
-   as diffs to accept or reject. *Done 2026-10-03.* The list reads every account
+   as diffs to accept or reject. _Done 2026-10-03._ The list reads every account
    (`~/.claude`, `~/.claude-*`) and marks sessions live in another process from the CLI's
    own registry; those open as a fork (`--fork-session`), never as a second writer, and a
    session already in an Drakar window brings that window forward. Not yet: following a
    rewound branch of a transcript (history is read in file order), and watching the list
    for changes (it refreshes on demand).
-3. **The IDE bridge.** The lock file and the MCP-over-WebSocket server (§2.4). *Done
-   2026-10-03*, spiked first against a fake editor (`docs/claude-ide-bridge.md`): a
+3. **The IDE bridge.** The lock file and the MCP-over-WebSocket server (§2.4). _Done
+   2026-10-03_, spiked first against a fake editor (`docs/claude-ide-bridge.md`): a
    terminal `claude --ide` in a folder Drakar has open sends its edits to a Review Changes
    window, Accept writes and Reject does not (both verified), several terminals at once.
    Lock files per account, swept after a crash; `scripts/audit-network.sh` landed with the
    socket. Headless sessions never connect, so Drakar's own windows keep their sheet. Not
    yet: editing the proposal before accepting it, diagnostics, selections.
-4. **The editor.** *Done 2026-10-03.* A session window is the folder's files in the
+4. **The editor.** _Done 2026-10-03._ A session window is the folder's files in the
    sidebar, open files as tabs over a plain-text editor, and the session beside them. The
    folder is watched (FSEvents): a file the agent edits reloads in its tab, and one the user
    has edited too asks which version to keep. Save writes in place, through links, keeping
@@ -170,7 +170,7 @@ not in advance.
    selected. ⌥K pins the selection to the next prompt, so one prompt can carry several;
    ⌘⌥K sends `at_mentioned` to a terminal `claude`. A proposal can be edited before it is
    accepted. Not yet: diagnostics, find-and-replace across files.
-5. **Project windows.** *Built 2026-10-04; the live checks below are still to do.*
+5. **Project windows.** _Built 2026-10-04; the live checks below are still to do._
    (`docs/superpowers/specs/2026-10-04-project-windows-design.md`). A window is a folder
    and every session in it and below: the window's own, those live in a terminal, VS Code
    or another window (read-only, forkable), and those that ended. Each row says what the
@@ -215,12 +215,12 @@ the release job, the appcast and the site redirects, the licence and trial, the 
 Worker (copied from **armada's**, whose price guard fails closed, not bastion's). The
 audit script's bundle sweep has landed (§5).
 
-**The checkable claim:** *Drakar listens on one network socket, on 127.0.0.1, which
+**The checkable claim:** _Drakar listens on one network socket, on 127.0.0.1, which
 answers only a client holding this launch's token, and its session host on one Unix
 socket, which only your own Drakar can reach. The only connections Drakar opens of its own
 are Sparkle's, to check for and fetch updates, and only once you said yes to update
 checks. Everything else that reaches the network is the `claude` or `codex` you
-installed.* `make audit` asserts the sources, `make audit-running` the live process since
+installed._ `make audit` asserts the sources, `make audit-running` the live process since
 phase 3, and `make audit-release` the built bundle since Sparkle landed. The last is
 cupertino's `audit-network.sh` model, by way of armada's: an `nm -u`/`otool -L` sweep over
 every Mach-O in the bundle, failing on any binary it could not read, with two named
