@@ -56,7 +56,7 @@ audit-running: ## The same, plus the running app: its sockets, lock files and to
 # The same script against the artifact that ships. No `bundle` prerequisite on purpose:
 # rebuilding here would replace the signed, stapled bundle it exists to inspect with an
 # unsigned one. RELEASE_APP is defined below; recipes expand late, so it is set by then.
-audit-release: ## The same, plus the built Release bundle: every Mach-O, its defaults, no entitlements
+audit-release: ## The same, plus the built Release bundle: every Mach-O, Sparkle's defaults, the signatures
 	@SPARKLE_EXPECTED=1 scripts/audit-network.sh --app "$(RELEASE_APP)"
 
 extension-diff: ## What the installed VS Code extension changed since the reviewed snapshot

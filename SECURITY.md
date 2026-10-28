@@ -1,8 +1,8 @@
 # Security
 
-Drakar runs the `claude` you installed on your files, with your accounts, and answers the
-terminal `claude` sessions that ask it for your editor's selection. A hole in it is a hole
-in everything those sessions can touch. Reports are welcome and answered.
+Drakar runs the `claude` or `codex` you installed on your files, with your accounts, and
+answers the terminal `claude` sessions that ask it for your editor's selection. A hole in it
+is a hole in everything those sessions can touch. Reports are welcome and answered.
 
 ## Reporting
 
@@ -15,10 +15,11 @@ else's is not needed and not wanted.
 
 ## What Drakar claims
 
-Drakar opens one network socket, a listener on 127.0.0.1 that answers only a client
-holding this launch's token, and makes no connection of its own. Its session host listens
-on one Unix socket, which only your own Drakar can reach. Everything that reaches the
-network is the `claude` you installed, or Sparkle, once you said yes to update checks.
+Drakar listens on one network socket, on 127.0.0.1, which answers only a client holding
+this launch's token, and its session host on one Unix socket, which only your own Drakar
+can reach. The only connections Drakar opens of its own are Sparkle's, to check for and
+fetch updates, and only once you said yes to update checks. Everything else that reaches
+the network is the `claude` or `codex` you installed.
 
 In detail:
 
@@ -30,13 +31,17 @@ In detail:
   Drakar's team.
 - **The update check is Sparkle's**, and it does not exist until you answer yes on Home or
   in Settings › Updates, or press Check Now there: before that the updater is never
-  constructed. It reads one file, `drakar.mgcrea.io/appcast.xml`, and sends no identifier
-  with it: not your licence key, not a machine id. Automatic installs and profile
-  reporting are off in the shipped Info.plist.
+  constructed. A check reads one file, `drakar.mgcrea.io/appcast.xml`, and sends no
+  identifier with it: not your licence key, not a machine id. When it finds a release and
+  you choose to install it, Sparkle downloads that release's `Drakar.zip` from GitHub
+  (`github.com/mgcrea/drakar/releases/download/…`), and installs it only if it carries
+  Drakar's own EdDSA signature. Automatic installs and profile reporting are off in the
+  shipped Info.plist.
 - **No licence call.** A licence key is checked on this Mac, against a public key built
   into the app, and the trial is counted on this Mac too.
-- **No entitlements, no sandbox.** Drakar spawns `claude`, which works on your files and
-  reads your `~/.claude`, and App Sandbox would hand every child its container. So it ships
+- **No entitlements, no sandbox.** Drakar spawns `claude` and `codex`, which work on your
+  files and read their own settings in your home folder, and App Sandbox would hand every
+  child its container. So it ships
   with the hardened runtime and no entitlements at all, on the app or on any helper.
 
 ## Checking it yourself
@@ -59,13 +64,16 @@ scripts/audit-network.sh --running                # and the Drakar running now
   `NWConnection` to a host, `NWBrowser`, `getaddrinfo`); no entitlements file.
 - **The bundle** (`make audit-release` on the release build): every Mach-O in it, found
   rather than listed, swept with `nm -u` and `otool -L` for URL loading, name lookup and
-  TLS, and for Network.framework's outgoing API. The exceptions are named in the script,
-  each with exactly the symbols it was measured to use: Sparkle's framework, the three
-  URL-loading classes it needs to fetch the appcast; and Drakar's own executable, its
-  link to Network.framework for the listener and nothing outgoing. A bundle that has lost
-  Sparkle fails rather than keeping the pardon. Then Sparkle's defaults in the shipped
-  Info.plist (no automatic checks, no automatic installs, no profile, that one feed), its
-  sandbox-only XPC services stripped, and no entitlements in any signature.
+  TLS, and for Network.framework's outgoing API. A binary the tools could not read fails,
+  and so does a Mac without the Command Line Tools, rather than reading as clean. The two
+  exceptions are named in the script, each matched exactly both ways against the symbols
+  it was measured to use: Sparkle's framework, the three URL-loading classes it needs to
+  fetch the appcast and the update; and Drakar's own executable, its link to
+  Network.framework for the listener and nothing outgoing. A bundle that has lost Sparkle
+  or Drakar's executable fails rather than keeping the pardon. Then Sparkle's defaults in
+  the shipped Info.plist (no automatic checks, no automatic installs, no profile, that one
+  feed), its sandbox-only XPC services stripped, no entitlements in any signature, and the
+  hardened runtime on every binary.
 - **The running app** (`make audit-running`): it listens only on `127.0.0.1`; its lock
   files are 0600 in a folder no one else can write; the upgrade is refused without the
   token or with a wrong one, and accepted with it; the session host's socket is 0600, in a
@@ -78,6 +86,9 @@ A failure in any of them is the claim being false, and worth a report.
 - **What `claude` does.** It talks to Anthropic, and to whatever your MCP servers and
   tools reach, on your own sign-in: that is the program's job. Drakar spawns it unmodified
   and reads its answers. This audits Drakar, not the program it runs.
+- **What `codex` does.** The same, for OpenAI: Drakar starts your own `codex app-server`
+  for a Codex session, unmodified, and reads its answers. It talks to OpenAI, and to
+  whatever your MCP servers and tools reach, on your own sign-in.
 - **Other programs running as you.** They can already read every transcript and rewrite
   every config directly, so nothing in Drakar changes their reach.
 

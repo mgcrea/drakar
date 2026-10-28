@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # Falsify Drakar's network claim:
 #
-#   Drakar opens one network socket, a listener on 127.0.0.1 that answers only a client
-#   holding this launch's token, and makes no connection of its own. Its session host
-#   listens on one Unix socket, which only your own Drakar can reach. Everything that
-#   reaches the network is the `claude` you installed, or Sparkle, once you said yes to
-#   update checks.
+#   Drakar listens on one network socket, on 127.0.0.1, which answers only a client
+#   holding this launch's token, and its session host on one Unix socket, which only your
+#   own Drakar can reach. The only connections Drakar opens of its own are Sparkle's, to
+#   check for and fetch updates, and only once you said yes to update checks. Everything
+#   else that reaches the network is the `claude` or `codex` you installed.
 #
 # A marketing claim CI can check is the property worth keeping (bastion's
 # audit-listener.sh); this asserts the rules in Drakar/Services/IDEServer.swift's header,
@@ -20,14 +20,17 @@
 #                                       # the session host's socket
 #   scripts/audit-network.sh --app path/to/Drakar.app
 #                                       # and the built bundle: every Mach-O swept for URL
-#                                       # loading, DNS and TLS, Sparkle the one allowance;
-#                                       # its defaults; no entitlements
+#                                       # loading, DNS and TLS, with two exact allowances
+#                                       # (Sparkle's URL loading, Drakar's Network.framework
+#                                       # link); Sparkle's defaults; no entitlements; the
+#                                       # hardened runtime
 #
 # Since Sparkle landed, the sources no longer hold all the code that ships: one binary
 # dependency does networking on purpose, and a symbol table is the only place that shows.
 # That is why the Bundle section discovers what to audit rather than being told, and
-# spells its allowance out symbol by symbol (cupertino's audit-network.sh, by way of
-# armada's).
+# spells its allowances out symbol by symbol (cupertino's audit-network.sh, by way of
+# armada's). It also fails on what it could not read: a sweep whose tools printed nothing
+# would otherwise pass every binary.
 #
 # Portable on purpose (BSD and GNU tools): it runs on CI as well as on this Mac. No
 # `set -e`: a check that fails must be counted and reported, not end the script early
@@ -41,7 +44,9 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --running) running=1 ;;
     --app)
-      [ $# -ge 2 ] && [ -n "$2" ] || usage
+      # A path, not the next flag: `--app --running` would otherwise audit "./--running".
+      [ $# -ge 2 ] || usage
+      case "$2" in "" | --*) usage ;; esac
       app="$2"
       shift ;;
     *) usage ;;
@@ -163,20 +168,32 @@ DENY="$DENY"'|^_\$s7Network12NWConnectionC[0-9]+[a-z][A-Za-z0-9_]*cf[Cc]$|^_\$s7
 # Check Now (Services/Updates.swift, UpdateController), and the claim above admits it.
 SPARKLE_BIN='Contents/Frameworks/Sparkle.framework/Versions/B/Sparkle'
 
-# And exactly which symbols it may have: the three cupertino measured and armada carries,
-# measured again here. A Sparkle that starts resolving names itself, negotiates TLS by
-# hand or links CFNetwork directly fails this line rather than inheriting the allowance
-# the previous version earned.
-SPARKLE_ALLOWED='^_OBJC_CLASS_\$_(NSURLSession|NSURLSessionConfiguration|NSMutableURLRequest)$'
+# And exactly which symbols it has: the three cupertino measured and armada carries,
+# measured again here, one per line. Exact both ways. A Sparkle that starts resolving
+# names itself, negotiates TLS by hand or links CFNetwork directly fails this row rather
+# than inheriting the allowance the previous version earned; and a row that no longer
+# sees what it allows fails as stale, which is also what an `nm` that read nothing looks
+# like.
+#
+# DIVERGES from armada, whose regex is a ceiling: a Sparkle with none of the three passed
+# there, and so did a sweep whose tools printed nothing at all.
+SPARKLE_ALLOWED=$(
+  cat <<'SYMBOLS'
+_OBJC_CLASS_$_NSMutableURLRequest
+_OBJC_CLASS_$_NSURLSession
+_OBJC_CLASS_$_NSURLSessionConfiguration
+SYMBOLS
+)
 
 # Set to 0 for a deliberately Sparkle-free build. Left at 1, a bundle that has lost
 # Sparkle is a failure rather than a quiet pass: see the stale-allowance check below.
 SPARKLE_EXPECTED="${SPARKLE_EXPECTED:-1}"
 
-# DIVERGES from armada, which has no row for its own executable: Drakar's links
-# Network.framework, for the IDE bridge's NWListener and nothing else. The link line, its
-# version numbers dropped (they move with the OS), and not one denied symbol: an outgoing
-# NWConnection, a name lookup or a URL load in Drakar itself still fails.
+# The second row. DIVERGES from armada, which has no row for its own executable: Drakar's
+# links Network.framework, for the IDE bridge's NWListener and nothing else. The link
+# line, its version numbers dropped (they move with the OS), and not one denied symbol:
+# an outgoing NWConnection, a name lookup or a URL load in Drakar itself still fails. Exact
+# both ways too, so an `otool` that read nothing fails here.
 DRAKAR_BIN='Contents/MacOS/Drakar'
 DRAKAR_ALLOWED='/System/Library/Frameworks/Network.framework/Versions/A/Network'
 
@@ -193,13 +210,29 @@ mach_o_paths() {
     done | LC_ALL=C sort
 }
 
-# sort -u because nm lists undefined symbols once per architecture slice, and a universal
-# binary would otherwise report every hit twice.
+# The hits for one binary, or, when `nm` or `otool` could not read it, the tool's first
+# line of complaint and a non-zero status. Without the status an unreadable binary and a
+# clean one print the same nothing, and on a Mac without the Command Line Tools every
+# binary would pass. sort -u because nm lists undefined symbols once per architecture
+# slice, and a universal binary would otherwise report every hit twice.
 scan() {
+  syms=$(nm -u "$1" 2>/dev/null) || { echo "nm -u: $(nm -u "$1" 2>&1 >/dev/null | head -1)"; return 1; }
+  libs=$(otool -L "$1" 2>/dev/null) || { echo "otool -L: $(otool -L "$1" 2>&1 >/dev/null | head -1)"; return 1; }
   {
-    nm -u "$1" 2>/dev/null | grep -E "$DENY"
-    otool -L "$1" 2>/dev/null | grep -E 'CFNetwork|/Network\.framework'
+    printf '%s\n' "$syms" | grep -E "$DENY"
+    printf '%s\n' "$libs" | grep -E 'CFNetwork|/Network\.framework'
   } | sed 's/^[[:space:]]*//; s/ (compatibility version.*//' | grep -v '^$' | sort -u
+  return 0
+}
+
+# The lines of $1 that are not lines of $2, exactly. An empty $2 holds nothing, so all of
+# $1 comes back: `grep -F` with an empty pattern would match every line instead.
+lines_not_in() {
+  if [ -z "$2" ]; then
+    printf '%s\n' "$1" | grep -v '^$'
+  else
+    printf '%s\n' "$1" | grep -v '^$' | grep -vxF "$2"
+  fi
 }
 
 if [ -n "$app" ]; then
@@ -207,47 +240,74 @@ if [ -n "$app" ]; then
   if [ ! -d "$app/Contents" ]; then
     fail "no bundle at $app (make bundle builds one)"
   else
-    binaries=0
+    paths=$(mach_o_paths "$app")
+    binaries=$(printf '%s\n' "$paths" | grep -c .)
     saw_sparkle=0
-    while IFS= read -r rel; do
-      [ -n "$rel" ] || continue
-      binaries=$((binaries + 1))
-      hits=$(scan "$app/$rel")
-      # The allowance is exact, not a blanket pardon for a path.
-      case "$rel" in
-        "$SPARKLE_BIN")
-          saw_sparkle=1
-          unexpected=$(printf '%s\n' "$hits" | grep -v '^$' | grep -vE "$SPARKLE_ALLOWED")
-          allowed="reaches the network: the update check, once you said yes" ;;
-        "$DRAKAR_BIN")
-          unexpected=$(printf '%s\n' "$hits" | grep -v '^$' | grep -vxF "$DRAKAR_ALLOWED")
-          allowed="links Network.framework for the loopback listener, and opens nothing outgoing" ;;
-        *)
-          unexpected=$hits
-          allowed="" ;;
-      esac
-      if [ -n "$unexpected" ]; then
-        n=$(printf '%s\n' "$unexpected" | wc -l | tr -d ' ')
-        fail "$rel reaches the network ($n symbol(s)):"
-        printf '%s\n' "$unexpected" | head -8 | sed 's/^/          /'
-        [ "$n" -gt 8 ] && printf '          … and %s more\n' "$((n - 8))"
-      elif [ -n "$hits" ]; then
-        pass "$rel $allowed"
-      else
-        pass "$rel: no URL loading, no DNS, no TLS"
-      fi
-    done <<EOF
-$(mach_o_paths "$app")
-EOF
+    saw_drakar=0
+    printf '%s\n' "$paths" | grep -xF "$SPARKLE_BIN" >/dev/null && saw_sparkle=1
+    printf '%s\n' "$paths" | grep -xF "$DRAKAR_BIN" >/dev/null && saw_drakar=1
 
     # A gate that passed having swept nothing is not a gate: no Mach-O means no build.
     [ "$binaries" -gt 0 ] || fail "no Mach-O found under $app"
 
     # A pardon that outlives the thing it pardons is a hole waiting for whatever lands at
     # that path next. If Sparkle is ever dropped, the allowance has to go with it, and the
-    # way to guarantee that is to fail until it does.
+    # way to guarantee that is to fail until it does. Drakar's own executable has no
+    # switch: a bundle without it is not Drakar.
     if [ "$SPARKLE_EXPECTED" = 1 ] && [ "$saw_sparkle" -eq 0 ]; then
       fail "$SPARKLE_BIN: the allowance names a binary this bundle does not contain"
+    fi
+    [ "$saw_drakar" -eq 1 ] || fail "$DRAKAR_BIN: not in this bundle"
+
+    # The tools, tried once on a binary every Mac has, before anything is read with them.
+    # On a Mac without the Command Line Tools, `nm` and `otool` are shims that print
+    # "xcrun: error: invalid active developer path" and exit non-zero; read with 2>/dev/null
+    # they would say every binary was clean.
+    probe=/bin/ls
+    if nm -u "$probe" 2>/dev/null | grep '^_' >/dev/null \
+      && otool -L "$probe" 2>/dev/null | grep 'libSystem' >/dev/null; then
+      tools=1
+    else
+      tools=0
+      fail "nm and otool cannot read $probe ($( { nm -u "$probe" || otool -L "$probe"; } 2>&1 >/dev/null | head -1)): install the Command Line Tools (xcode-select --install); the sweep was not run"
+    fi
+
+    if [ "$tools" -eq 1 ]; then while IFS= read -r rel; do
+      [ -n "$rel" ] || continue
+      if ! hits=$(scan "$app/$rel"); then
+        fail "$rel could not be read, so it was not checked: $hits"
+        continue
+      fi
+      # The allowance is exact, not a blanket pardon for a path, and not a ceiling either.
+      case "$rel" in
+        "$SPARKLE_BIN")
+          allowed=$SPARKLE_ALLOWED
+          what="reaches the network: Sparkle's updates, once you said yes" ;;
+        "$DRAKAR_BIN")
+          allowed=$DRAKAR_ALLOWED
+          what="links Network.framework for the loopback listener, and opens nothing outgoing" ;;
+        *)
+          allowed=""
+          what="" ;;
+      esac
+      unexpected=$(lines_not_in "$hits" "$allowed")
+      stale=$(lines_not_in "$allowed" "$hits")
+      if [ -n "$unexpected" ]; then
+        n=$(printf '%s\n' "$unexpected" | wc -l | tr -d ' ')
+        fail "$rel reaches the network ($n symbol(s)):"
+        printf '%s\n' "$unexpected" | head -8 | sed 's/^/          /'
+        [ "$n" -gt 8 ] && printf '          … and %s more\n' "$((n - 8))"
+      elif [ -n "$stale" ]; then
+        fail "$rel no longer has what its allowance names (a stale row, or a tool that read nothing):"
+        printf '%s\n' "$stale" | sed 's/^/          /'
+      elif [ -n "$what" ]; then
+        pass "$rel $what"
+      else
+        pass "$rel: no URL loading, no DNS, no TLS"
+      fi
+    done <<EOF
+$paths
+EOF
     fi
 
     # The sweep says the capability exists. These say it is switched off and points where
@@ -277,21 +337,48 @@ EOF
 
     # DIVERGES from armada, whose one entitlement is the microphone: Drakar ships none, on
     # anything (Bastion's precedent; `make sign` refuses while an .entitlements file
-    # exists). Read off every Mach-O the sweep found, not just the app, since a helper's
-    # signature grants its own. An unsigned or ad-hoc build has none to show, which is the
-    # claim, so unlike armada's this needs no skip.
+    # exists). Read off every Mach-O found, not just the app, since a helper's signature
+    # grants its own. An unsigned binary has none to show, which is the claim, so that
+    # reads as none (the hardened-runtime check below fails it); any other error from
+    # codesign is a signature that was not read, and fails.
+    #
+    # And the hardened runtime, on every one: `make sign` passes `--options runtime`, and
+    # SECURITY.md says it ships on. Not in armada's audit, which leaves it to its sign step.
     granted=0
+    unread=0
+    hardened=0
     while IFS= read -r rel; do
       [ -n "$rel" ] || continue
-      keys=$(codesign -d --entitlements - --xml "$app/$rel" 2>/dev/null | grep -o '<key>[^<]*</key>')
-      [ -z "$keys" ] && continue
-      granted=$((granted + 1))
-      fail "$rel carries entitlements:"
-      printf '%s\n' "$keys" | sed 's/^/          /'
+      if out=$(codesign -d --entitlements - --xml "$app/$rel" 2>&1); then
+        keys=$(printf '%s\n' "$out" | grep -o '<key>[^<]*</key>')
+        if [ -n "$keys" ]; then
+          granted=$((granted + 1))
+          fail "$rel carries entitlements:"
+          printf '%s\n' "$keys" | sed 's/^/          /'
+        fi
+      else
+        case "$out" in
+          *"not signed at all"*) ;;
+          *)
+            unread=$((unread + 1))
+            fail "$rel: codesign could not read its entitlements: $(printf '%s\n' "$out" | tail -1)" ;;
+        esac
+      fi
+      # Read whole, then matched: `codesign | grep -q` under pipefail reads as a failure
+      # whenever grep stops early and codesign takes the SIGPIPE.
+      info=$(codesign -dv "$app/$rel" 2>&1)
+      if printf '%s\n' "$info" | grep -E 'flags=0x[0-9a-f]*\([^)]*runtime' >/dev/null; then
+        hardened=$((hardened + 1))
+      else
+        fail "$rel is not signed with the hardened runtime"
+      fi
     done <<EOF
-$(mach_o_paths "$app")
+$paths
 EOF
-    [ "$granted" -eq 0 ] && pass "no entitlements in any signature"
+    [ "$granted" -eq 0 ] && [ "$unread" -eq 0 ] && [ "$binaries" -gt 0 ] \
+      && pass "no entitlements in any signature"
+    [ "$hardened" -gt 0 ] && [ "$hardened" -eq "$binaries" ] \
+      && pass "hardened runtime on all $hardened"
   fi
 fi
 

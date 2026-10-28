@@ -49,9 +49,10 @@ Core promises, in priority order:
    permission prompts with their "always allow" suggestions, plan mode, todos.
 3. Your Claude Code, not ours. The `claude` you installed, your settings, hooks, skills,
    MCP servers and accounts, unchanged. Sessions resume from either side (§2.3).
-4. Drakar itself reaches nothing: its one socket listens on 127.0.0.1 for terminal
-   sessions holding its token, and it opens no connection but Sparkle's, once you said
-   yes to update checks (§5, the checkable claim).
+4. Drakar itself reaches nothing you did not ask for: its one network socket listens on
+   127.0.0.1 for terminal sessions holding its token, and the only connections it opens
+   of its own are Sparkle's, once you said yes to update checks (§5, the checkable
+   claim).
 
 ## 2. How it drives Claude
 
@@ -211,20 +212,22 @@ The fourth Developer ID app in the fleet, after armada, bastion and cupertino. I
 
 Still to land, in the order `fleet-direct-conventions` gives: Sparkle (vendored 2.9.6),
 the release job, the appcast and the site redirects, the licence and trial, the Stripe
-Worker (copied from **armada's**, whose price guard fails closed, not bastion's), and the
-audit script.
+Worker (copied from **armada's**, whose price guard fails closed, not bastion's). The
+audit script's bundle sweep has landed (§5).
 
-**The checkable claim:** *Drakar opens one network socket, a listener on 127.0.0.1 that
-answers only a client holding this launch's token, and makes no connection of its own. Its
-session host listens on one Unix socket, which only your own Drakar can reach. Everything
-that reaches the network is the `claude` you installed, or Sparkle, once you said yes to
-update checks.* `make audit` asserts the sources, `make audit-running` the live process
-since phase 3, and `make audit-release` the built bundle since Sparkle landed. The last is
+**The checkable claim:** *Drakar listens on one network socket, on 127.0.0.1, which
+answers only a client holding this launch's token, and its session host on one Unix
+socket, which only your own Drakar can reach. The only connections Drakar opens of its own
+are Sparkle's, to check for and fetch updates, and only once you said yes to update
+checks. Everything else that reaches the network is the `claude` or `codex` you
+installed.* `make audit` asserts the sources, `make audit-running` the live process since
+phase 3, and `make audit-release` the built bundle since Sparkle landed. The last is
 cupertino's `audit-network.sh` model, by way of armada's: an `nm -u`/`otool -L` sweep over
-every Mach-O in the bundle, with Sparkle the one named allowance (exactly the three
-URL-loading classes it was measured to use), Drakar's own executable allowed its
-Network.framework link for the listener and no outgoing API, Sparkle's defaults read off
-the shipped Info.plist, and no entitlements in any signature. [SECURITY.md](SECURITY.md)
+every Mach-O in the bundle, failing on any binary it could not read, with two named
+allowances, each exact both ways: Sparkle's framework, the three URL-loading classes it
+was measured to use, and Drakar's own executable, its Network.framework link for the
+listener and no outgoing API. Then Sparkle's defaults read off the shipped Info.plist, no
+entitlements in any signature, and the hardened runtime on every binary. [SECURITY.md](SECURITY.md)
 says how to run it on the bundle you downloaded. Phase 3's WebSocket is a listening
 socket on loopback, and lands with its own Loopback check in the same commit, as
 armada's did.
