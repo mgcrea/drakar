@@ -137,7 +137,8 @@ final class ClaudeBackend: AgentBackend {
         output.signals.append(
           .settingsApplied(
             effort: EffortLevel.applied(fromSettings: response.response),
-            model: ModelName.applied(fromSettings: response.response)))
+            model: ModelName.applied(fromSettings: response.response),
+            autoModeDisabled: AutoMode.isDisabled(bySettings: response.response)))
       }
       return output
     case .controlResponse(let response) where response.requestID.hasPrefix("context-"):

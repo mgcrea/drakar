@@ -131,18 +131,24 @@ struct SessionPills {
   }
 
   /// Codex's own list. Claude Code's: Ask, Edit and Plan always; Auto for a model that says
-  /// it takes it; Bypass while allowed.
+  /// it takes it, unless settings turn it off; Bypass while allowed.
   static func offeredModes(_ session: AgentSession, models: [ModelOption]?) -> [PermissionMode] {
     if session.agent == .codex {
       return CodexPolicy.offeredModes(allowsBypass: session.offersBypass)
     }
     return PermissionMode.allCases.filter { mode in
       switch mode {
-      case .auto: option(for: session, in: models)?.supportsAutoMode == true
+      case .auto:
+        offersAuto(option(for: session, in: models), turnedOff: session.autoModeDisabled)
       case .bypass: session.offersBypass
       default: true
       }
     }
+  }
+
+  /// Auto for a model that takes it, while settings leave it on, as the extension decides.
+  static func offersAuto(_ model: ModelOption?, turnedOff: Bool) -> Bool {
+    !turnedOff && model?.supportsAutoMode == true
   }
 
   /// The levels the session's model takes; none for one without effort, or while the list

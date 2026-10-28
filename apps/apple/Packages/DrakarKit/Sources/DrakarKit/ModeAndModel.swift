@@ -142,3 +142,15 @@ public enum EffortLevel {
     reply?["applied"]?["effort"]?.stringValue
   }
 }
+
+/// Whether settings turn auto mode off. `initialize` still marks every model as taking it
+/// then (2.1.312), so only the settings say; the extension reads the same two keys.
+public enum AutoMode {
+  /// From a `get_settings` reply: `disableAutoMode: "disable"` in its `effective` settings,
+  /// under `permissions` or at the top.
+  public static func isDisabled(bySettings reply: JSONValue?) -> Bool {
+    let effective = reply?["effective"]
+    return [effective?["permissions"]?["disableAutoMode"], effective?["disableAutoMode"]]
+      .contains { $0?.stringValue == "disable" }
+  }
+}

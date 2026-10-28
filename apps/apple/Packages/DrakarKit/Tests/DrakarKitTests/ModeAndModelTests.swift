@@ -96,6 +96,30 @@ struct ModeAndModelTests {
   }
 
   /// `get_settings`' `applied`: the model the process runs, whatever was asked of it.
+  /// Settings can turn auto mode off while every model still says it takes it: the reply to
+  /// `get_settings` says so in its `effective` settings, under `permissions` or at the top, as
+  /// the extension reads them (2.1.312, 2026-10-28, a project `settings.json` holding
+  /// `{"permissions":{"disableAutoMode":"disable"}}`).
+  @Test func readsWhetherSettingsTurnAutoModeOff() throws {
+    let off = try JSONValue.parse(
+      Data(
+        #"{"effective":{"permissions":{"disableAutoMode":"disable"}},"applied":{"model":"claude-opus-5-5","effort":"high"}}"#
+          .utf8))
+    #expect(AutoMode.isDisabled(bySettings: off))
+    #expect(
+      AutoMode.isDisabled(
+        bySettings: .object(["effective": .object(["disableAutoMode": .string("disable")])])))
+    #expect(
+      !AutoMode.isDisabled(
+        bySettings: .object(["effective": .object(["permissions": .object([:])])])))
+    #expect(
+      !AutoMode.isDisabled(
+        bySettings: .object([
+          "effective": .object(["permissions": .object(["disableAutoMode": .string("enable")])])
+        ])))
+    #expect(!AutoMode.isDisabled(bySettings: nil))
+  }
+
   @Test func readsTheModelTheProcessRuns() throws {
     let reply = try JSONValue.parse(
       Data(#"{"applied":{"model":"claude-haiku-4-5-20251001","effort":null}}"#.utf8))

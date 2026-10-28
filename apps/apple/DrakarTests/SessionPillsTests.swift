@@ -31,6 +31,15 @@ struct SessionPillsTests {
     try await ClaudeChoice.$testSuite.withValue(suite, operation: body)
   }
 
+  /// Settings that turn auto mode off win over a model that takes it, as in the extension.
+  @Test func autoNotWhileSettingsTurnItOff() {
+    let opus = models[0]
+    #expect(SessionPills.offersAuto(opus, turnedOff: false))
+    #expect(!SessionPills.offersAuto(opus, turnedOff: true))
+    #expect(!SessionPills.offersAuto(models[1], turnedOff: false))
+    #expect(!SessionPills.offersAuto(nil, turnedOff: false))
+  }
+
   @Test func autoOnlyForAModelThatTakesIt() {
     scoped {
       let session = AgentSession(folder: folder)

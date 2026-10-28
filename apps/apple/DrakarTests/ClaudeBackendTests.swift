@@ -22,6 +22,22 @@ struct ClaudeBackendTests {
     return process
   }
 
+  /// The settings reply says whether settings turn auto mode off, beside what it applies.
+  @Test func settingsSayWhetherAutoModeIsOff() throws {
+    let backend = ClaudeBackend()
+    let process = try process()
+    defer { process.terminate() }
+    let output = backend.receive(
+      try line(
+        #"{"type":"control_response","response":{"subtype":"success","request_id":"settings-1","response":{"effective":{"permissions":{"disableAutoMode":"disable"}},"applied":{"model":"claude-opus-5-5","effort":"high"}}}}"#
+      ),
+      from: process, at: .now)
+    #expect(
+      output.signals == [
+        .settingsApplied(effort: "high", model: "claude-opus-5-5", autoModeDisabled: true)
+      ])
+  }
+
   @Test func initializeAnswersWithModelsAndTheMode() throws {
     let backend = ClaudeBackend()
     let process = try process()

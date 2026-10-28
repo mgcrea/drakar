@@ -44,7 +44,7 @@ Protocol changes are the other half and have their own procedure (raising
 | --- | --- | --- | --- | --- |
 | `interrupt_claude` | has | Stop the running turn | `apps/apple/Drakar/Services/AgentSession.swift:950` | |
 | `set_model` | has | Change the session's model | `apps/apple/Drakar/Services/AgentSession.swift:500` | |
-| `set_permission_mode` | has | Change the permission mode (Drakar offers auto whenever the model supports it; the extension also hides it when settings set `disableAutoMode: "disable"`, and the CLI then refuses the switch) | `apps/apple/Drakar/Services/AgentSession.swift:480` | |
+| `set_permission_mode` | has | Change the permission mode (Auto only for a model that takes it, and not while settings set `disableAutoMode: "disable"`, as the extension decides) | `apps/apple/Drakar/Services/AgentSession.swift:480` | |
 | `persist_session_permission_mode` | has | Remember a session's permission mode | `apps/apple/Drakar/Services/SessionMeta.swift:11` | |
 | `set_thinking_level` | partial | Turn extended thinking on or off (Drakar: an effort level picker) | `apps/apple/Drakar/Views/SessionPills.swift:98` | differ: the effort picker |
 | `get_context_usage` | has | Context window usage breakdown (/context) | `apps/apple/Drakar/Services/ClaudeBackend.swift:143` | |

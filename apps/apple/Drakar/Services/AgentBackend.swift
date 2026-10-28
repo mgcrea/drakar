@@ -84,7 +84,7 @@ enum SessionSignal: Equatable {
   case commandsChanged(JSONValue)
   case models([ModelOption])
   case modeAdopted(String)
-  case settingsApplied(effort: String?, model: String?)
+  case settingsApplied(effort: String?, model: String?, autoModeDisabled: Bool)
   case contextReported(ContextUsageReply)
   case rateLimit(JSONValue)
   /// A mode, model or effort change was answered: `refusal` nil when it took.

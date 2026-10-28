@@ -76,6 +76,9 @@ final class AgentSession {
   /// The model the process says it runs (`get_settings`' `applied.model`), after its start
   /// and after each switch; nil without a process.
   private(set) var appliedModel: String?
+  /// Settings turn auto mode off (`get_settings`), though the model takes it. As last
+  /// reported: false until a process has said.
+  private(set) var autoModeDisabled = false
   /// The running process started with `--allow-dangerously-skip-permissions`.
   private(set) var launchedWithBypass = false
   /// Why the last change was refused, or that it takes from the next turn, until the next
@@ -1288,9 +1291,10 @@ final class AgentSession {
       }
     case .commandsChanged(let commands):
       if isReplaying { replayedCommands = commands } else { onCommandsChanged?(commands) }
-    case .settingsApplied(let effort, let model):
+    case .settingsApplied(let effort, let model, let autoModeDisabled):
       appliedEffort = effort
       appliedModel = model
+      self.autoModeDisabled = autoModeDisabled
     case .contextReported(let reply):
       reportedContext = reply
     case .changeAnswered(let id, let refusal):
