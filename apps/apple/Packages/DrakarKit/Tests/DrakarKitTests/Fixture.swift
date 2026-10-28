@@ -78,6 +78,37 @@ enum Fixture: String {
   /// `elicitation_complete` that followed its `{"action":"accept"}`. The lines between are
   /// cut (the second call, its `can_use_tool`); the lines kept are whole.
   case elicitation = "elicitation"
+  /// The task controls on Claude Code 2.1.312 (2026-10-28, `haiku` 4.5), lines 1-43 from one
+  /// process and 44-49 from a second, in scenario order (docs/claude-stream-json.md, "Task
+  /// controls"):
+  /// 1. A foreground `python3 -c 'import time; time.sleep(30)'` (`b8cffcoy7`): its
+  ///    `task_started` (`is_backgrounded: false`), then `background_tasks` (`r-bg`): the call
+  ///    moves (`task_updated` `patch.is_backgrounded`), the reply is `backgrounded: true`, and
+  ///    the tool result "Command was manually backgrounded by user…" follows.
+  /// 2. `get_task_output` while it runs (`r-out-running`, empty), the turn's end (the model's
+  ///    own polling between is cut), the task's `completed` lines, `get_task_output` after them
+  ///    (`r-out-ended`), and the turn the CLI starts for the notification.
+  /// 3. A second foreground sleep (`beszynucf`) stopped with `stop_task` (`r-stop-bash`):
+  ///    `task_updated` `killed`, `task_notification` `stopped`, an empty success, the result
+  ///    "Exit code 137", and the turn going on.
+  /// 4. A foreground `general-purpose` `Agent` (`a7b2244ac3d1175c6`) whose Bash
+  ///    (`b03hcqfs3`) sleeps, stopped with `stop_task` (`r-stop-agent`): the same two
+  ///    statuses for the agent, `stopped` for its Bash, and both calls' results.
+  /// 5. `stop_task` for an unknown ID (`r-stop-unknown`, an empty success) and
+  ///    `background_tasks` for scenario 1's finished call (`r-bg-finished`, `backgrounded:
+  ///    false`).
+  /// 6. A process with `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1`: a foreground sleep with no
+  ///    `task_*` lines, and `background_tasks` on it (`r-bg-disabled`) refused.
+  /// Stream events, thinking, status, rate limit and `can_use_tool` lines dropped; inits cut
+  /// to a few keys; ids and paths scrubbed.
+  case taskControls = "task-controls"
+  /// Scenario 4's subagent file from `task-controls` (2.1.312, 2026-10-28),
+  /// `subagents/agent-a7b2244ac3d1175c6.jsonl`: its prompt, an `api-request` line (no
+  /// `isSidechain`, unlike every other line), its Bash call, the rejection the stop gave it,
+  /// and `[Request interrupted by user for tool use]`. Stopped, so it has no closing text.
+  /// Attachments, request shapes and blobs, and the thinking line dropped; paths and ids
+  /// scrubbed.
+  case subagentFile = "subagent-file"
   /// The transcript line Claude Code 2.1.288 wrote for a prompt sent with a 64×64 red PNG
   /// and a text document `notes.txt` (2026-10-06): blocks kept as sent, keys trimmed.
   case historyWithAttachments = "history-with-attachments"

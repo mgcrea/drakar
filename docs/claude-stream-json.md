@@ -293,6 +293,74 @@ Drakar's todo card and strip only show for 4.x models.
   what runs in the background.
 - A **fork** (`subagent_type: "fork"`, 2.1.302 and later) behaves differently: see "2.1.308".
 
+## Task controls (verified 2026-10-28, 2.1.312)
+
+Captured live on `claude-haiku-4-5-20251001` with Drakar's arguments plus `--setting-sources
+project`, in a scratch folder, from an environment with no `CLAUDE*` variables but
+`CLAUDE_CONFIG_DIR` (fixtures `task-controls` and `subagent-file`; every `can_use_tool` was
+answered `allow`). Three control requests, all answered at once, none of them starting a turn:
+
+| Request | Case | Reply |
+| --- | --- | --- |
+| `{subtype: "background_tasks", tool_use_id}` | a running foreground Bash | `success`, `{backgrounded: true}` |
+| | a call that already finished | `success`, `{backgrounded: false}` |
+| | a session with `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1` | `error`, "Background tasks are disabled in this session." |
+| `{subtype: "get_task_output", task_id}` | a background Bash still sleeping | `success`, `{output: "", total_bytes: 0, truncated: false}` |
+| | the same after its `task_notification` | `success`, `{output: "\n[exited with code 0]\n", total_bytes: 22, truncated: false}` |
+| `{subtype: "stop_task", task_id}` | a running foreground Bash, a running foreground `Agent` | `success`, `{}` |
+| | an unknown ID (`bnotatask`) | `success`, `{}` |
+
+- **When a foreground Bash becomes a task.** Its `task_started` (`is_backgrounded: false`,
+  `task_type: local_bash`) comes about 3 s after the command starts: 3.0 to 3.1 s after the
+  permission answer for all three in the captured run, a subagent's Bash among them, and the
+  same in an earlier run. Before then there is no task to stop or move, so a command that
+  ends sooner never gets one. A subagent's Bash has `owned_by_subagent: true` and
+  `parent_task_id`.
+- **Moving a call.** `background_tasks_changed` (listing it) and `task_updated` with
+  `patch: {is_backgrounded: true}` arrive with the reply. The tool result is not at once: it
+  follows about 1 s later, and the turn goes on. Its text is "Command was manually
+  backgrounded by user with ID: `<task_id>`. Output is being written to:
+  `<tasks folder>/<task_id>.output`. If it is still running after 30m in the background, it
+  will be stopped and you will be notified.", and its structured result has
+  `backgroundTaskId` and `backgroundedByUser: true`. When the command ends, `task_updated`
+  (`status: completed`), `task_notification` (`completed`, summary "Background command
+  "…" completed (exit code 0)") and an empty `background_tasks_changed` arrive, then a turn
+  nobody prompted (`system/init`, a reply, a `result` with `origin.kind:
+  task-notification`), as for a fork.
+- **Task output.** The tail of the task's `.output` file, which the CLI ends with
+  `[exited with code N]` once the command exits. A command that prints nothing reads empty
+  while it runs.
+- **A stopped task** reports two statuses: `task_updated` has `patch.status: "killed"` (with
+  `end_time`), then `task_notification` has `status: "stopped"`, both before the empty
+  success. The same for a Bash and an `Agent`. The Bash inside a stopped `Agent` gets only a
+  `task_notification` `stopped` (`output_file: ""`). The turn is not interrupted: the call
+  gets its result and the model replies, ending on an ordinary `success` result. A stopped
+  Bash's result is `is_error`, "Exit code 137\n\n[killed]"; a stopped `Agent`'s is
+  `is_error`, "[Request interrupted by user for tool use]" (`tool_result_meta`
+  `non_execution_kind: interrupted`), and its subagent's Bash gets the usual "The user
+  doesn't want to proceed…" rejection.
+- **Refusals.** The only one seen is the disabled one above. `stop_task` treats an ID it can't
+  find, or a task that already ended, as done: its handler swallows those two errors and
+  answers an empty success. So the extension's "The agent could not be stopped. It may have
+  finished already." needs a rarer error, read from the binary and not seen: a task owned by
+  another agent, a type that can't be stopped, an ambiguous ID. The other refusals, also
+  read and not seen: "stop_task: task_id must be a string", "background_tasks: tool_use_id
+  must be a string", "get_task_output: task_id must be a string", and "get_task_output: no
+  shell or Monitor task with that task_id in this session" (an ID that is neither a shell
+  task of this session nor shaped like one).
+- **With background tasks disabled** a foreground Bash gets no `task_*` lines at all (none in
+  8 s of a 10 s sleep), and the model's Bash input has no `run_in_background`. The
+  extension's condition for "Run in background" (a foreground `task_started`) is then never
+  met; the refusal comes only to a request sent anyway.
+- **The subagent's file.** `<session transcript minus .jsonl>/subagents/agent-<agentId>.jsonl`,
+  and the stream's `task_id` is that `agentId` (`a7b2244ac3d1175c6` in both). Its
+  conversation lines (prompt, attachments, assistant, tool results) all have `isSidechain:
+  true`, but the request lines written since 2.1.300 (`api-request-shape`,
+  `api-request-blob`, `api-request`) have no `isSidechain` key. The `.meta.json` beside it
+  has `toolUseId`, `agentType`, `requestShape: foreground` and, after a stop,
+  `stoppedByUser: true`. A stopped subagent's file ends on the rejected call and
+  `[Request interrupted by user for tool use]`, with no closing text.
+
 ## Prompts sent mid-turn, and the command list (verified 2026-10-06, 2.1.288)
 
 Captured live on `haiku` (fixture `queued-prompts`).
