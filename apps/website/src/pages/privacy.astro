@@ -1,0 +1,155 @@
+---
+/**
+ * What leaves your Mac, and what does not.
+ *
+ * Written as an inventory rather than a policy, as armada's and bastion's are,
+ * because for this app the honest version is short.
+ *
+ * CLAIM is the network claim word for word as README.md, PLAN.md §5 and
+ * SECURITY.md state it, and scripts/audit-network.sh checks it. If they and this
+ * page disagree, they are right and this page is stale: change all of them in one
+ * commit, and move the date.
+ *
+ * The update check section says what Sparkle 2.9.6 sends with the Info.plist
+ * apps/apple ships (SUSendProfileInfo false) and the delegate Updates.swift
+ * implements (no feed parameters, no extra headers): its default User-Agent,
+ * `<CFBundleName>/<CFBundleShortVersionString> Sparkle/<version>`
+ * (SPUUserAgent+Private.m), and a feed URL with no query, since a parameter list
+ * left empty returns the bare feed URL (SPUUpdater.m, parameterizedFeedURL).
+ * Turning the profile on, or adding feed parameters, changes this page.
+ *
+ * DIVERGES from armada, whose page also covers a purchase (nothing is on sale
+ * here yet), its feedback form (this site has none) and its MCP endpoint and
+ * voice (Drakar has neither).
+ */
+import {
+  APP_NAME,
+  DOCS,
+  DOWNLOAD,
+  REPO_URL,
+  SECURITY_EMAIL,
+  SECURITY_EMAIL_HREF,
+  SITE_URL,
+  SUPPORT_EMAIL,
+  SUPPORT_EMAIL_HREF,
+} from "../config";
+import Layout from "../layouts/Layout.astro";
+
+/** Set by hand when the page changes, never `new Date()`, which shows the deploy date. */
+const updated = "29 October 2026";
+
+const h2 = "m-0 font-display text-[22px] font-semibold tracking-[-0.03em]";
+const lead = "mt-5 mb-0 max-w-[62ch] text-[15px] leading-[1.65] text-pretty text-fg-dim";
+const prose = "mt-4 mb-0 max-w-[62ch] text-[15px] leading-[1.65] text-pretty text-fg-dim";
+const link = "text-accent underline underline-offset-2 hover:text-accent-hi";
+const code = "[&_code]:font-mono [&_code]:text-[0.9em] [&_code]:break-words [&_code]:text-fg/80";
+---
+
+<Layout
+  title={`Privacy · ${APP_NAME}`}
+  description="What leaves your Mac and what does not: one update check you turn on yourself, no telemetry, and a licence checked offline."
+>
+  <main id="main" tabindex="-1" class:list={["wrap py-20", code]}>
+    <div class="mono text-accent">Privacy</div>
+    <h1 class="mt-3 mb-0 font-display text-[clamp(28px,4.4vw,40px)] font-semibold tracking-[-0.04em]">
+      Privacy
+    </h1>
+    <p class="mono mt-3 mb-0">Last updated {updated}</p>
+
+    <section class="mt-12">
+      <h2 class={h2}>What Drakar claims</h2>
+      <p class={lead}>
+        Drakar listens on one network socket, on 127.0.0.1, which answers only a client holding
+        this launch's token, and its session host on one Unix socket, which only your own Drakar
+        can reach. The only connections Drakar opens of its own are Sparkle's, to check for and
+        fetch updates, and only once you said yes to update checks. Everything else that reaches
+        the network is the <code>claude</code> or <code>codex</code> you installed.
+      </p>
+      <p class={prose}>
+        There is no analytics, no telemetry, no crash reporter and no first-run ping.
+        <a href={DOCS.security} rel="noopener" class={link}>SECURITY.md</a> lists each part of that
+        claim and how <a href={DOCS.audit} rel="noopener" class={link}>scripts/audit-network.sh</a>
+        checks it, against the source, the app you downloaded, and the copy running on your Mac.
+      </p>
+    </section>
+
+    <section class="mt-14">
+      <h2 class={h2}>The update check</h2>
+      <p class={lead}>
+        It is off until you answer yes on Home or in Settings › Updates, or press Check Now there.
+        Before that, Drakar never builds the updater, so it opens no connection at all.
+      </p>
+      <p class={prose}>
+        A check reads one file, <code>{DOWNLOAD.appcast}</code>, which redirects to the latest
+        release on GitHub. With automatic checks on, that happens about once a day.
+      </p>
+      <p class={prose}>
+        The request carries Sparkle's default <code>User-Agent</code> header, which names the app,
+        its version and Sparkle's version, for example <code>Drakar/1.0.0 Sparkle/2.9.6</code>.
+        That is all it sends about you or your Mac. Sparkle can add a system profile with your macOS
+        version, Mac model, processor, memory and language, but Drakar ships with it turned off. No
+        licence key and no machine id go with it either.
+      </p>
+      <p class={prose}>
+        If a newer release exists and you choose to install it, Sparkle downloads that release's
+        <code>Drakar.zip</code> from GitHub with the same header, and installs it only if it carries
+        Drakar's own signature. It never installs without asking. As with any download, the servers
+        that answer see your IP address.
+      </p>
+    </section>
+
+    <section class="mt-14">
+      <h2 class={h2}>The programs it runs</h2>
+      <p class={lead}>
+        A session runs the <code>claude</code> or <code>codex</code> you installed, unmodified, on
+        your own sign-in. Those programs talk to Anthropic or OpenAI, and to whatever your MCP
+        servers and tools reach, under those companies' terms. What they send is between you and
+        them.
+      </p>
+    </section>
+
+    <section class="mt-14">
+      <h2 class={h2}>Your licence</h2>
+      <p class={lead}>
+        A licence key is checked on your Mac, against a public key built into the app, and the
+        trial is counted on your Mac too. Drakar never calls a licence server. Nothing is on sale
+        yet, so this site holds no purchase records.
+      </p>
+    </section>
+
+    <section class="mt-14">
+      <h2 class={h2}>This site</h2>
+      <p class={lead}>
+        Static files on Cloudflare, with no cookies, no forms and no third-party embeds. It loads no
+        fonts or images from anywhere else, and its content security policy refuses requests to
+        origins it does not name. Cloudflare keeps its own request logs, as any host does.
+      </p>
+      <p class={prose}>
+        It counts page views with Cloudflare Web Analytics, which Cloudflare adds to every site on
+        mgcrea.io. That sets no cookie and stores nothing on your device. It records the page
+        address, the referring page, your browser and operating system, your screen size, how long
+        the page took to load, and the country the request came from. It never receives your IP
+        address, and no identifier links one visit to another or to you. Any content blocker stops
+        it, and the page works the same without it.
+      </p>
+      <p class={prose}>
+        The download links redirect to
+        <a href={`${REPO_URL}/releases`} rel="noopener" class={link}>Drakar's releases on GitHub</a>,
+        and GitHub's own privacy terms cover what happens there.
+      </p>
+    </section>
+
+    <section class="mt-14">
+      <h2 class={h2}>Asking</h2>
+      <p class={lead}>
+        Questions go to <a href={SUPPORT_EMAIL_HREF} class={link}>{SUPPORT_EMAIL}</a>. If you find
+        Drakar doing something this page says it does not, that is a security report: write to
+        <a href={SECURITY_EMAIL_HREF} class={link}>{SECURITY_EMAIL}</a>.
+      </p>
+      <p class={prose}>
+        If this page changes, the date at the top moves. The canonical copy lives at
+        <a href={`${SITE_URL}/privacy/`} class={link}>{SITE_URL}/privacy/</a>.
+      </p>
+    </section>
+  </main>
+</Layout>

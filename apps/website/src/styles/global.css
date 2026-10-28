@@ -1,0 +1,62 @@
+/* Tokens first, then Tailwind. The order is load-bearing; see tokens.css. */
+@import "./tokens.css";
+@import "tailwindcss";
+
+@theme inline {
+  --color-bg: var(--color-bg);
+  --color-bg-2: var(--color-bg-2);
+  --color-bg-3: var(--color-bg-3);
+  --color-fg: var(--color-fg);
+  --color-fg-dim: var(--color-fg-dim);
+  --color-fg-muted: var(--color-fg-muted);
+  --color-rule: var(--color-rule);
+  --color-rule-2: var(--color-rule-2);
+  --color-accent: var(--color-accent);
+  --color-accent-hi: var(--color-accent-hi);
+  --color-accent-ink: var(--color-accent-ink);
+}
+
+@theme {
+  /* The system stack, deliberately, as on the siblings. On the Macs this app is
+     for, the system stack is SF Pro, and it keeps `font-src 'self'` honest by
+     downloading nothing. */
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+  --font-display:
+    -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", system-ui, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-fg);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+::selection {
+  background: var(--color-accent);
+  color: var(--color-accent-ink);
+}
+
+@utility wrap {
+  max-width: 760px;
+  margin-inline: auto;
+  padding-inline: clamp(20px, 4vw, 40px);
+}
+
+@utility mono {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-fg-muted);
+}

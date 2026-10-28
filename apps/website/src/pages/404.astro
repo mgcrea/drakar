@@ -1,0 +1,24 @@
+---
+import { APP_NAME, SITE_DOMAIN } from "../config";
+import Layout from "../layouts/Layout.astro";
+---
+
+<Layout
+  title={`Not found · ${APP_NAME}`}
+  description={`That page does not exist on ${SITE_DOMAIN}.`}
+  noindex
+>
+  <main
+    id="main"
+    tabindex="-1"
+    class="wrap flex min-h-[70vh] flex-col items-start justify-center gap-5 py-24"
+  >
+    <div class="mono text-accent">404</div>
+    <h1 class="m-0 font-display text-[clamp(30px,4.4vw,44px)] leading-[1.06] font-semibold tracking-[-0.04em]">
+      That page does not exist.
+    </h1>
+    <a href="/" class="text-[15px] text-accent underline underline-offset-2 hover:text-accent-hi">
+      Back to {APP_NAME}
+    </a>
+  </main>
+</Layout>

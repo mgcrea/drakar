@@ -1,0 +1,27 @@
+# Cross-Origin-Opener-Policy: same-origin gives every page a browsing context
+# group of its own. Nothing here needs a handle across that line: external links
+# already carry rel="noopener", and /download is a plain link that redirects to
+# GitHub in the same tab, not a popup reporting back through window.opener.
+#
+# No Content-Security-Policy here, deliberately. It is hash-based and emitted per
+# build as a meta tag (astro.config.mjs), so a static copy in this file would
+# block the inline scripts of the next build, whose hashes differ.
+#
+# No `preload` on Strict-Transport-Security. The preload list takes registrable
+# domains only, so on drakar.mgcrea.io the token would do nothing except suggest
+# the site was on the list. Preloading belongs on mgcrea.io itself, if anywhere.
+/*
+  Strict-Transport-Security: max-age=31536000; includeSubDomains
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: camera=(), microphone=(), geolocation=()
+  Cross-Origin-Opener-Policy: same-origin
+
+# Everything under /_astro/ carries a content hash in its filename, so the URL
+# changes whenever the bytes do. Without this, Workers Assets serves them with
+# the same `max-age=0, must-revalidate` as the HTML, which puts a conditional
+# request on the render-blocking stylesheet on *every* refresh: the round-trip
+# that gave armada's buttons time to paint unstyled. See src/styles/tokens.css.
+/_astro/*
+  Cache-Control: public, max-age=31536000, immutable

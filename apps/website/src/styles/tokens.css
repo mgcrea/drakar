@@ -1,0 +1,40 @@
+/* ── Tokens ──────────────────────────────────────────────────────────────────
+   Imported *before* `tailwindcss` in global.css, and that order is the reason
+   this file exists. Every colour utility Tailwind emits is a reference, such as
+   `color: var(--color-fg)`, not a literal. Left at the bottom of global.css these
+   definitions land after every utility that reads them, so a browser painting
+   from a partially parsed stylesheet resolves them all to
+   invalid-at-computed-value-time and the buttons paint in the UA link blue.
+   Defined first, the tokens are in the first kilobyte. (Found on cupertino.)
+
+   The neutrals are armada's, bastion's and cupertino's to the digit, so the
+   direct-sale sites read as one family. Dark is the base, and there is one
+   theme, as on all three.
+
+   DIVERGES from armada in the accent, which is Drakar's own, and in what is
+   left: armada's session-state, window-chrome and paper colours belonged to
+   its drawings, which this site does not have. */
+:root {
+  --color-bg: #0b0c0f;
+  --color-bg-2: #131419;
+  --color-bg-3: #191a1d;
+  --color-fg: #f4f2ef;
+  --color-fg-dim: #9b9a96;
+  --color-fg-muted: #6e7076;
+  --color-rule: #22242a;
+  --color-rule-2: #2e3037;
+
+  /* The accent, set once, here. It comes from design/drakar-icon.svg: the
+     violet stop of the glass blades' film gradient, which sits between the
+     plate's two ends (#007AFF and #AF52DE). Neither plate end will do as
+     type: each is under 5:1 on this ground. This is 9.3:1, so one accent
+     covers links and fills, as armada's does.
+
+     apps/api/src/pages.ts colours /thanks with the same value by hand, since a
+     Worker bundle cannot import this file. Change one, change both. */
+  --color-accent: #b9a6ff;
+  /* Hover and link lift: the same colour a quarter of the way to white. */
+  --color-accent-hi: #cbbcff;
+  /* Sits on an accent fill, 8.1:1. Near-black, as on the siblings. */
+  --color-accent-ink: #1b1c1f;
+}

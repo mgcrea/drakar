@@ -1,0 +1,48 @@
+---
+/**
+ * One screen: what Drakar is, where to get it, where its source is.
+ *
+ * DIVERGES from armada, whose home page is twenty marketing sections. This one
+ * is the skeleton drakar.mgcrea.io needs to serve updates (_redirects is the
+ * part the app depends on); the pitch, screenshots and pricing come later.
+ *
+ * No price: nothing is on sale while LicenceLinks.isSelling is false in
+ * apps/apple, so the page says what is true today, that it is free in beta.
+ */
+import { APP_NAME, DOWNLOAD, MIN_MACOS, REPO_URL, TAGLINE } from "../config";
+import Layout from "../layouts/Layout.astro";
+
+const button =
+  "inline-flex items-center justify-center rounded-md px-5 py-3 text-[15px] font-medium transition-colors";
+---
+
+<Layout>
+  <main
+    id="main"
+    tabindex="-1"
+    class="wrap flex min-h-[86vh] flex-col items-start justify-center gap-6 py-20"
+  >
+    <img src="/favicon.svg" alt="" width="88" height="88" class="rounded-[20px]" />
+    <h1
+      class="m-0 font-display text-[clamp(40px,7vw,64px)] leading-none font-semibold tracking-[-0.04em]"
+    >
+      {APP_NAME}
+    </h1>
+    <p class="m-0 max-w-[40ch] text-[clamp(18px,2.4vw,21px)] leading-[1.5] text-pretty text-fg-dim">
+      {TAGLINE}
+    </p>
+    <div class="mt-2 flex flex-wrap gap-3">
+      <a href={DOWNLOAD.zip} class:list={[button, "bg-accent text-accent-ink hover:bg-accent-hi"]}>
+        Download for {MIN_MACOS}
+      </a>
+      <a
+        href={REPO_URL}
+        rel="noopener"
+        class:list={[button, "border border-rule-2 text-fg hover:border-accent hover:text-accent-hi"]}
+      >
+        Source on GitHub
+      </a>
+    </div>
+    <p class="mono m-0">Free while in beta</p>
+  </main>
+</Layout>

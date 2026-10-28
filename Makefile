@@ -10,8 +10,9 @@
 # Command-line variables reach the sub-make through MAKEFLAGS, so `make run
 # ARGS='-drakar.settingsPane about'` works from here.
 #
-# No deploy block yet: there is no apps/website half. When one arrives, fleet-ship-conventions
-# owns what goes below.
+# It also deploys what this repo serves, both halves, from the blocks fleet-ship-conventions
+# owns: the licence Worker (apps/api, `api-deploy`) and the website (apps/website,
+# `site-deploy`). `make deploy` runs the two in that order.
 
 APPLE := apps/apple
 
@@ -518,6 +519,35 @@ license-check: ## Prove a minted licence key verifies in the app's own verifier
 
 .PHONY: revocations license-check
 
+# ── Website ───────────────────────────────────────────────────────────────────
+#
+# drakar.mgcrea.io: the vanity redirects the app depends on (/appcast.xml is SUFeedURL),
+# a landing page and the privacy page. Armada's block.
+#
+# `pnpm -C apps/website release`, the line every sibling's recipe carries, so a
+# fix reads across from any of them. Never a bare `pnpm deploy`: `deploy` is a
+# pnpm builtin that exits 0 and ships nothing, which is why the package script is
+# called `release` fleet-wide.
+# The curl is the part that proves a deploy happened rather than that a command
+# returned, and `--max-time` is api-deploy's: a host that accepts the connection
+# and never answers would otherwise hold the recipe, and a CI job, until the job's
+# own timeout.
+SITE_URL := https://drakar.mgcrea.io/
+
+# DIVERGES from armada, which has no build-only target: this is the one that touches
+# nothing outside the tree, so CI's verify job and a check of dist/_redirects can run it
+# with no Cloudflare token.
+site-build: ## Build the website into apps/website/dist, deploying nothing
+	pnpm -C apps/website build
+
+site-deploy: ## Build and publish the website to Cloudflare
+	pnpm -C apps/website release
+	@# `wrangler deploy` exiting 0 is not proof the site moved. This is.
+	@curl -fsS --max-time 20 -o /dev/null $(SITE_URL)
+	@echo "deployed $(SITE_URL)"
+
+.PHONY: site-build site-deploy
+
 # ── API ───────────────────────────────────────────────────────────────────────
 #
 # The licence Worker at api.drakar.mgcrea.io: Stripe's webhook in, a signed key out by
@@ -553,7 +583,15 @@ api-deploy: ## Build and publish the licence Worker, refusing on unapplied migra
 api-test: ## Run the licence Worker's tests (vitest, workerd, a local D1)
 	@pnpm -C apps/api test
 
-.PHONY: api-deploy api-test
+# Sequential sub-makes rather than prerequisites: under -j they may run in parallel, and
+# the Worker the site's /buy flow will land on has to be live first. Until Phase 2 creates
+# the database, api-deploy refuses (see above) and this stops there; `make site-deploy`
+# publishes the site on its own.
+deploy: ## Deploy both halves: the licence Worker, then the website
+	@$(MAKE) --no-print-directory api-deploy
+	@$(MAKE) --no-print-directory site-deploy
+
+.PHONY: api-deploy api-test deploy
 
 # Explicit targets rather than a `%:` catch-all. A match-anything rule prints "'X' is up to
 # date" instead of forwarding whenever the goal happens to name a file or directory at the

@@ -8,9 +8,9 @@
 // The palette is by hand. It cannot import a design token file: this is a Worker
 // bundle, and a build step to inline three hex values would cost more than it
 // saves. The one thing to keep true is the accent, which has to be the site's
-// --color-accent in apps/website/src/styles/tokens.css. Drakar's site does not
-// exist yet, so these are armada's values, #f2895c included; when the site
-// lands, its accent and this one are made to agree.
+// --color-accent in apps/website/src/styles/tokens.css, #b9a6ff, taken from the
+// icon. Change one, change both. The neutrals are armada's, close to the site's
+// without needing to match.
 
 const escapeHtml = (text: string): string =>
   text
@@ -34,7 +34,7 @@ const shell = (title: string, inner: string): string => `<!doctype html>
   code { display: block; overflow-wrap: anywhere; background: #17171a;
     border: 1px solid #2a2a2e; border-radius: 10px; padding: 14px;
     font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; color: #e8e6e3; }
-  a { color: #f2895c; }
+  a { color: #b9a6ff; }
 </style>
 </head><body><main>${inner}</main></body></html>
 `;

@@ -1,0 +1,29 @@
+# The stable vanity URLs. Cloudflare's static-assets runtime reads this file from
+# the build output; Astro copies public/ into dist/ verbatim.
+#
+# 302 throughout, never 301: every destination here is expected to move (a
+# different host, a mirror, a new payment link), and a browser caches a permanent
+# redirect long after the decision behind it has changed. These paths are the
+# stable half; what they point at is not.
+
+# The update feed. This one is not a convenience: the app's update check reads
+# drakar.mgcrea.io/appcast.xml (SUFeedURL in apps/apple/Drakar-Info.plist), and
+# that URL is compiled into every binary ever shipped, so it has to be one we can
+# repoint without asking anyone to update first. `latest/download` also means
+# publishing a release never needs a site deploy.
+/appcast.xml  https://github.com/mgcrea/drakar/releases/latest/download/appcast.xml  302
+
+# The one download URL, on the same reasoning. It points at `latest/download`
+# rather than a versioned asset, which only works because the release asset is
+# named Drakar.zip with no version in it.
+/download     https://github.com/mgcrea/drakar/releases/latest/download/Drakar.zip  302
+/checksum     https://github.com/mgcrea/drakar/releases/latest/download/Drakar.zip.sha256  302
+/releases     https://github.com/mgcrea/drakar/releases  302
+
+# DIVERGES from armada, whose /buy line sits here. No /buy until Phase 4: nothing
+# is on sale while LicenceLinks.isSelling is false, and a redirect to a payment
+# link that does not exist yet would be one more thing to keep true. When it
+# lands, it goes here as a 302 for the same reason as the rest: the app's licence
+# pane links to drakar.mgcrea.io/buy (LicenceLinks.buy), and a Stripe URL
+# compiled into a shipped binary could never be repointed. Until then /buy
+# answers with the 404 page.

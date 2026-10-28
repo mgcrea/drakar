@@ -1,0 +1,86 @@
+---
+import { APP_NAME, TAGLINE } from "../config";
+import "../styles/global.css";
+
+export interface Props {
+  title?: string;
+  description?: string;
+  /**
+   * Keep the page out of search results. The 404 passes it: it is served for
+   * every URL that does not exist, and an indexed copy stands in for all of them.
+   */
+  noindex?: boolean;
+}
+
+const {
+  title = `${APP_NAME}: Claude Code in a native Mac window`,
+  description = TAGLINE,
+  noindex = false,
+} = Astro.props;
+
+const canonicalHref = new URL(Astro.url.pathname, Astro.site).href;
+
+/*
+ * DIVERGES from armada, whose head also carries an og:image card, a touch icon,
+ * a PNG favicon, Twitter handles and a JSON-LD graph. This site has no card
+ * generator yet, and a declared image with no file behind it shares as a blank
+ * card, so the head names only what exists: the SVG favicon, copied from
+ * design/drakar-icon.svg. Social cards come with the full site.
+ *
+ * The 404 gets no canonical: it is served for every missing URL, and a canonical
+ * there would claim each of them is the 404 page itself.
+ */
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="generator" content={Astro.generator} />
+    <!-- One value: the page is dark in both system themes, by design. -->
+    <meta name="theme-color" content="#0b0c0f" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    {noindex && <meta name="robots" content="noindex" />}
+    {!noindex && <link rel="canonical" href={canonicalHref} />}
+
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content={canonicalHref} />
+    <meta property="og:site_name" content={APP_NAME} />
+    <meta name="twitter:card" content="summary" />
+  </head>
+  <body>
+    <a
+      href="#main"
+      class="sr-only focus:not-sr-only focus:fixed focus:top-4 focus:left-4 focus:z-100 focus:rounded-lg focus:bg-fg focus:px-4 focus:py-2 focus:text-sm focus:text-bg"
+    >
+      Skip to content
+    </a>
+    <slot />
+    <footer class="wrap pb-12">
+      <nav
+        aria-label="Site"
+        class="flex flex-wrap gap-x-6 gap-y-2 border-t border-rule pt-6 text-[13px] text-fg-muted"
+      >
+        <a href="/" class="hover:text-accent-hi">{APP_NAME}</a>
+        <a href="/privacy/" class="hover:text-accent-hi">Privacy</a>
+        <a href="/releases" class="hover:text-accent-hi">Releases</a>
+        <a href="https://mg-crea.com" target="_blank" rel="noopener" class="hover:text-accent-hi">
+          Magenta Creations
+        </a>
+      </nav>
+    </footer>
+    {/* Cloudflare Web Analytics is not rendered here. The beacon is injected at the
+        edge for the whole mgcrea.io zone, so a second one in this HTML would report
+        the same visit twice, under two different site tags.
+
+        The content security policy must still name static.cloudflareinsights.com. The
+        injected script is subject to it exactly as a local one would be, so dropping the
+        entry as "unused" would silently stop counting this site. */}
+  </body>
+</html>
