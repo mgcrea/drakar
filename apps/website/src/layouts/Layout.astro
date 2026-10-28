@@ -27,8 +27,8 @@ const canonicalHref = new URL(Astro.url.pathname, Astro.site).href;
  * card, so the head names only what exists: the SVG favicon, copied from
  * design/drakar-icon.svg. Social cards come with the full site.
  *
- * The 404 gets no canonical: it is served for every missing URL, and a canonical
- * there would claim each of them is the 404 page itself.
+ * The 404 gets no canonical and no og:url: it is served for every missing URL,
+ * and either would claim each of them is the 404 page itself.
  */
 ---
 
@@ -50,7 +50,7 @@ const canonicalHref = new URL(Astro.url.pathname, Astro.site).href;
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
     <meta property="og:type" content="website" />
-    <meta property="og:url" content={canonicalHref} />
+    {!noindex && <meta property="og:url" content={canonicalHref} />}
     <meta property="og:site_name" content={APP_NAME} />
     <meta name="twitter:card" content="summary" />
   </head>

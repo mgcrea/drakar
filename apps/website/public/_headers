@@ -10,7 +10,13 @@
 # No `preload` on Strict-Transport-Security. The preload list takes registrable
 # domains only, so on drakar.mgcrea.io the token would do nothing except suggest
 # the site was on the list. Preloading belongs on mgcrea.io itself, if anywhere.
+#
+# X-Robots-Tag: noindex until the first release. Before Phase 3 publishes one,
+# /download leads to a GitHub 404, so the site is kept out of search results even
+# though robots.txt and the sitemap stay as they will be at launch. This line
+# comes out in the Phase 3 release commit. DIVERGES from armada, which is live.
 /*
+  X-Robots-Tag: noindex
   Strict-Transport-Security: max-age=31536000; includeSubDomains
   X-Content-Type-Options: nosniff
   X-Frame-Options: DENY

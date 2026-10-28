@@ -18,6 +18,16 @@
  * left empty returns the bare feed URL (SPUUpdater.m, parameterizedFeedURL).
  * Turning the profile on, or adding feed parameters, changes this page.
  *
+ * Scoped to what Drakar and Sparkle add. The request goes through the in-process
+ * URL loading system (SUEnableDownloaderService is false), which adds headers of
+ * its own, Accept-Language among them, as it does for every request; the page
+ * says so in general terms rather than listing them, so it stays true without a
+ * capture.
+ *
+ * SUAllowsAutomaticUpdates is not set, so Sparkle's update window offers to
+ * download and install updates automatically. The install sentence says so;
+ * setting that key to false in the plist would let it say "never" instead.
+ *
  * DIVERGES from armada, whose page also covers a purchase (nothing is on sale
  * here yet), its feedback form (this site has none) and its MCP endpoint and
  * voice (Drakar has neither).
@@ -84,17 +94,22 @@ const code = "[&_code]:font-mono [&_code]:text-[0.9em] [&_code]:break-words [&_c
         release on GitHub. With automatic checks on, that happens about once a day.
       </p>
       <p class={prose}>
-        The request carries Sparkle's default <code>User-Agent</code> header, which names the app,
-        its version and Sparkle's version, for example <code>Drakar/1.0.0 Sparkle/2.9.6</code>.
-        That is all it sends about you or your Mac. Sparkle can add a system profile with your macOS
-        version, Mac model, processor, memory and language, but Drakar ships with it turned off. No
-        licence key and no machine id go with it either.
+        Sparkle adds one thing to the request: its default <code>User-Agent</code> header, which
+        names the app, its version and Sparkle's version, for example
+        <code>Drakar/1.0.0 Sparkle/2.9.6</code>. It adds no licence key and no machine id. Sparkle
+        can also add a system profile with your macOS version, Mac model, processor, memory and
+        language, but Drakar ships with that turned off.
+      </p>
+      <p class={prose}>
+        Like any request your Mac makes, the check also carries your IP address and the standard
+        headers macOS sends with every web request, such as your preferred languages.
       </p>
       <p class={prose}>
         If a newer release exists and you choose to install it, Sparkle downloads that release's
-        <code>Drakar.zip</code> from GitHub with the same header, and installs it only if it carries
-        Drakar's own signature. It never installs without asking. As with any download, the servers
-        that answer see your IP address.
+        <code>Drakar.zip</code> from GitHub the same way, and installs it only if it carries Drakar's
+        own signature. It asks before installing, unless you tick the option in Sparkle's update
+        window to download and install updates automatically. With that on, updates download in the
+        background and install the next time Drakar quits.
       </p>
     </section>
 
