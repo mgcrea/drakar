@@ -156,6 +156,14 @@ struct AgentTaskTests {
     #expect(agent.taskType == "local_agent")
   }
 
+  /// A call moved to the background is said so by `task_updated`'s patch alone
+  /// (task-controls.jsonl:5): its task reads as background from there.
+  @Test func aMovedCallIsBackgrounded() throws {
+    let bash = "toolu_01Hriqem1KWjxUocjn2j6NJC"
+    #expect(try taskControls(upTo: 4).agentTasks[bash]?.isBackgrounded == false)
+    #expect(try taskControls(upTo: 5).agentTasks[bash]?.isBackgrounded == true)
+  }
+
   /// A stop reads as one, whether the CLI says `killed` (`task_updated`) or `stopped`
   /// (`task_notification`), for a Bash, an agent, and the agent's own Bash.
   @Test func aStoppedTaskIsStopped() throws {

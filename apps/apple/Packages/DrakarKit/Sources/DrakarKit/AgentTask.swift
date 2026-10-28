@@ -17,6 +17,7 @@ public struct TaskEvent: Sendable, Equatable {
   /// `local_agent`, `local_bash`… (2.1.312), as the CLI writes it.
   public var taskType: String?
   public var description: String?
+  /// From `patch.is_backgrounded` on `task_updated`, which is how a moved call says so.
   public var isBackgrounded: Bool?
   /// `completed`, `failed`, `stopped`…; from `patch.status` on `task_updated`.
   public var status: String?
@@ -35,7 +36,7 @@ public struct TaskEvent: Sendable, Equatable {
     toolUseID = json["tool_use_id"]?.stringValue
     taskType = json["task_type"]?.stringValue
     description = json["description"]?.stringValue
-    isBackgrounded = json["is_backgrounded"]?.boolValue
+    isBackgrounded = (json["is_backgrounded"] ?? json["patch"]?["is_backgrounded"])?.boolValue
     status = (json["status"] ?? json["patch"]?["status"])?.stringValue
     summary = json["summary"]?.stringValue
     lastToolName = json["last_tool_name"]?.stringValue

@@ -140,4 +140,31 @@ struct TaskControlViewsTests {
         result: done, task: task(background: true, status: .completed), isBackground: true)
         == .done)
   }
+
+  /// The kit's `task-controls` capture, folded up to its `count`th line, read from the repo.
+  private func taskControls(upTo count: Int) throws -> ClaudeFeed {
+    let fixture = URL(fileURLWithPath: #filePath)
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+      .appending(path: "Packages/DrakarKit/Tests/DrakarKitTests/Fixtures/task-controls.jsonl")
+    let lines = try String(contentsOf: fixture, encoding: .utf8).split(separator: "\n")
+    var feed = ClaudeFeed()
+    feed.addPrompt("Run it")
+    for line in lines.prefix(count) { feed.apply(try StreamMessage(line: Data(line.utf8))) }
+    return feed
+  }
+
+  /// A foreground Bash moved by Run in background (task-controls.jsonl:5) gets its Output,
+  /// and no longer the move.
+  @Test func aMovedCallOffersItsOutput() throws {
+    let id = "toolu_01Hriqem1KWjxUocjn2j6NJC"
+    let feed = try taskControls(upTo: 7)
+    let call = try #require(
+      feed.entries.lazy.compactMap { entry -> Transcript.ToolCall? in
+        if case .tool(let call) = entry.kind, call.id == id { return call }
+        return nil
+      }.first)
+    let offer = TaskOffer.of(call: call, task: feed.agentTasks[id], controls: controls())
+    #expect(offer == TaskOffer(stop: true, runInBackground: false, output: true))
+  }
 }
