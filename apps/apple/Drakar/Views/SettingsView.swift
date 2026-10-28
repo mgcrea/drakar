@@ -5,10 +5,10 @@ import SwiftUI
 // MARK: - Settings
 
 /// The panes, and the order they sit in: General, Transcript, Theme, Attention, Updates,
-/// What's New, About.
+/// Licence, What's New, About.
 ///
-/// An entitlement pane joins only when something is actually sold: before a StoreKit
-/// product is registered it would be a button that fails.
+/// Licence follows Updates. It is there before anything is sold, saying so and taking a
+/// key, and offers nothing to buy until `LicenceLinks.isSelling`.
 ///
 /// What's New sits beside About: both answer what this build is rather than how it behaves.
 /// DIVERGES from armada, which puts the two in an `.information` section of their own:
@@ -20,6 +20,7 @@ enum SettingsPane: String, SupportKitSettings.SettingsPane {
   case theme
   case attention
   case updates
+  case licence
   case whatsNew
   case about
 
@@ -30,6 +31,7 @@ enum SettingsPane: String, SupportKitSettings.SettingsPane {
     case .theme: "Theme"
     case .attention: "Attention"
     case .updates: "Updates"
+    case .licence: "Licence"
     case .whatsNew: "What's New"
     case .about: "About"
     }
@@ -42,6 +44,7 @@ enum SettingsPane: String, SupportKitSettings.SettingsPane {
     case .theme: "paintpalette"
     case .attention: "bell.badge"
     case .updates: "arrow.triangle.2.circlepath"
+    case .licence: "key"
     case .whatsNew: "sparkles"
     case .about: "info.circle"
     }
@@ -314,6 +317,7 @@ struct SettingsView: View {
       case .theme: ThemePane()
       case .attention: AttentionPane()
       case .updates: UpdatesPane()
+      case .licence: LicensePane()
       case .whatsNew: WhatsNewPane()
       case .about:
         AboutSettingsPane(app: Support.app, preferIssueTracker: Support.preferIssueTracker)

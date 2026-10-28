@@ -403,9 +403,14 @@ final class AgentSession {
     hosted.setMeta(bytes)
   }
 
+  /// The licence gate is the last term here and in `canQueue`, and nowhere else: every
+  /// prompt goes through `send`, which reads them (`EntitlementMonitor`). What answers a
+  /// turn already running (`answer`, `interrupt`, `stop`, the task controls) reads neither,
+  /// so a trial that ends mid-turn refuses only the next prompt.
   var canSend: Bool {
     !isReadOnly && !isMoving && !historyFailed && !isReconnecting && !waitsForHost
       && !isOutOfReach && !transcript.isRunning && phase != .starting
+      && EntitlementMonitor.allowsWorkNow
   }
 
   /// A prompt typed while a turn runs goes now, and waits in the CLI until it can be taken:
@@ -413,9 +418,11 @@ final class AgentSession {
   var canQueue: Bool {
     !isReadOnly && !isMoving && !historyFailed && !isReconnecting && !waitsForHost
       && !isOutOfReach && transcript.isRunning && process != nil
+      && EntitlementMonitor.allowsWorkNow
   }
 
-  /// A card can stop its task or move its call, as `canQueue` reads a driven session.
+  /// A card can stop its task or move its call, as `canQueue` reads a driven session, but
+  /// without the licence gate: stopping work already running is never refused.
   private var controlsTasks: Bool {
     features.controlsTasks && !isReadOnly && !isMoving && !historyFailed && !isReconnecting
       && !waitsForHost && !isOutOfReach && process != nil

@@ -89,10 +89,10 @@ nonisolated enum Trial {
 
 /// What this Mac may do right now, as one answer with the reason attached.
 ///
-/// Several places ask: the composer's gate in `EntitlementMonitor`, the locked card, the
-/// IDE bridge and the licence pane. Joining a key and a trial window at each of them
-/// separately is how a card ends up saying "unlicensed" above a composer that is happily
-/// sending.
+/// Several places ask: the gate on sending (`AgentSession.canSend` and `canQueue`, through
+/// `EntitlementMonitor`), the locked card, the IDE bridge and the licence pane. Joining a
+/// key and a trial window at each of them separately is how a card ends up saying
+/// "unlicensed" above a composer that is happily sending.
 nonisolated enum Entitlement {
   case licensed(License)
   case trial
@@ -121,12 +121,4 @@ nonisolated enum Entitlement {
     if case .refused = self { return false }
     return true
   }
-}
-
-/// A stand-in until the gate lands: `Trial.expire()` calls `apply()` so that the end of a
-/// window refuses the next prompt, and there is nothing to refuse yet. Task 6 replaces it
-/// with the real monitor, in its own file.
-@MainActor final class EntitlementMonitor {
-  static let shared = EntitlementMonitor()
-  func apply() {}
 }

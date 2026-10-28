@@ -109,49 +109,60 @@ struct SessionView: View {
               .padding(.bottom, 6)
               .frame(maxWidth: .infinity)
           }
-          let toMarked = project.sendsToMarked
-          ComposerView(
-            text: $item.draft,
-            canSend: toMarked ? project.canSendToMarked : session.canSend || session.canQueue,
-            isRunning: session.transcript.isRunning, agentName: session.agent.shortName,
-            context: workspace.selection, pinned: workspace.pinned,
-            unpin: { selection in workspace.pinned.removeAll { $0 == selection } },
-            send: { text, context in
-              if project.sendsToMarked {
-                project.broadcast(text, context: context, attachments: item.attachments)
-              } else {
-                project.takeOver(item)
-                session.send(text, context: context, attachments: item.attachments)
-              }
-              workspace.pinned = []
-              item.attachments = []
-              item.attachmentNote = nil
-            },
-            stop: { session.interrupt() },
-            sessionFolder: session.folder, projectFolder: project.folder,
-            takesFocus: project.focusesComposer,
-            hint: item.composerHint, focusRequest: item.focusRequest,
-            focused: { workspace.focusedPane = .composer },
-            pills: SessionPills(session: session, folder: project.folder, account: account),
-            cycleMode: { SessionPills.cycle(session, account: account) },
-            commands: project.slashCommands(for: session),
-            pickCommand: { command in
-              let text = "/\(command.name) "
-              item.draft = text
-              item.prefill =
-                command.takesArguments ? SkillPrefill(text: text, hint: command.argumentHint) : nil
-            },
-            attachments: item.attachments, attachmentNote: item.attachmentNote,
-            removeAttachment: { attachment in item.attachments.removeAll { $0.id == attachment.id }
-            },
-            attach: item.attach,
-            broadcast: project.broadcastLabel.map { label in
-              BroadcastChip(label: label) { project.clearMarks() }
+          if !EntitlementMonitor.allowsWorkNow {
+            // The licence gate: the card in the composer's place, the draft kept in `item`.
+            // A read-only session never gets here, its banner stands in instead.
+            Docked {
+              LockedComposerCard(
+                isRunning: session.transcript.isRunning, stop: { session.interrupt() })
             }
-          )
-          // The menu's list comes from a short probe, read once the first `/` is typed.
-          .onChange(of: item.draft.hasPrefix("/")) { _, typed in
-            if typed { project.loadSlashCommands(for: session) }
+          } else {
+            let toMarked = project.sendsToMarked
+            ComposerView(
+              text: $item.draft,
+              canSend: toMarked ? project.canSendToMarked : session.canSend || session.canQueue,
+              isRunning: session.transcript.isRunning, agentName: session.agent.shortName,
+              context: workspace.selection, pinned: workspace.pinned,
+              unpin: { selection in workspace.pinned.removeAll { $0 == selection } },
+              send: { text, context in
+                if project.sendsToMarked {
+                  project.broadcast(text, context: context, attachments: item.attachments)
+                } else {
+                  project.takeOver(item)
+                  session.send(text, context: context, attachments: item.attachments)
+                }
+                workspace.pinned = []
+                item.attachments = []
+                item.attachmentNote = nil
+              },
+              stop: { session.interrupt() },
+              sessionFolder: session.folder, projectFolder: project.folder,
+              takesFocus: project.focusesComposer,
+              hint: item.composerHint, focusRequest: item.focusRequest,
+              focused: { workspace.focusedPane = .composer },
+              pills: SessionPills(session: session, folder: project.folder, account: account),
+              cycleMode: { SessionPills.cycle(session, account: account) },
+              commands: project.slashCommands(for: session),
+              pickCommand: { command in
+                let text = "/\(command.name) "
+                item.draft = text
+                item.prefill =
+                  command.takesArguments
+                  ? SkillPrefill(text: text, hint: command.argumentHint) : nil
+              },
+              attachments: item.attachments, attachmentNote: item.attachmentNote,
+              removeAttachment: { attachment in
+                item.attachments.removeAll { $0.id == attachment.id }
+              },
+              attach: item.attach,
+              broadcast: project.broadcastLabel.map { label in
+                BroadcastChip(label: label) { project.clearMarks() }
+              }
+            )
+            // The menu's list comes from a short probe, read once the first `/` is typed.
+            .onChange(of: item.draft.hasPrefix("/")) { _, typed in
+              if typed { project.loadSlashCommands(for: session) }
+            }
           }
         }
         let _ = (picks, settingsAccount)

@@ -209,14 +209,17 @@ private struct ForkSessionCommand: View {
   }
 }
 
-/// Starts the editor bridge at launch and takes its lock files down at quit: a lock left
-/// behind beside a live one stops `claude --ide` from connecting to either.
+/// Starts the editor bridge at launch, through the licence gate, and takes its lock files
+/// down at quit: a lock left behind beside a live one stops `claude --ide` from connecting
+/// to either.
 final class AppDelegate: NSObject, NSApplicationDelegate {
   func applicationDidFinishLaunching(_ notification: Notification) {
     // Before any view reads `Changelog.hasUnseen`, or a fresh install draws the
     // What's New count on its very first launch.
     Changelog.markSeenIfUnset()
-    IDEBridge.shared.start()
+    // Starts the editor bridge when entitled, as armada starts its watchers here; while
+    // nothing is sold that is always, exactly as before the gate.
+    EntitlementMonitor.shared.apply()
     // Set at launch, not at the first post: a click on a notification delivered before a
     // relaunch must still land. Setting it does not prompt.
     UNUserNotificationCenter.current().delegate = Attention.shared

@@ -610,11 +610,13 @@ final class Project {
     return item
   }
 
-  /// Whether a skill can go to `target`: a new session always can; the shown one only when
-  /// it takes slash commands and could take a prompt now (not read-only, not mid-turn).
+  /// Whether a skill can go to `target`: a new session whenever work may be sent (the
+  /// licence gate, checked here too so a refused prompt leaves no row made for nothing);
+  /// the shown one only when it takes slash commands and could take a prompt now (not
+  /// read-only, not mid-turn).
   func canRun(in target: SkillTarget) -> Bool {
     switch target {
-    case .newSession: true
+    case .newSession: EntitlementMonitor.allowsWorkNow
     case .current:
       selected?.session.features.slashCommands == true && selected?.session.canSend == true
     }
@@ -711,7 +713,9 @@ final class Project {
     _ skill: SkillEntry, folders: [URL], arguments: String, mode: PermissionMode?, limit: Int?,
     account: ClaudeAccount? = nil
   ) {
-    guard !folders.isEmpty else { return }
+    // Before any row is made: each `send` below would be refused anyway, and a batch whose
+    // sessions never start would wait for ever.
+    guard !folders.isEmpty, EntitlementMonitor.allowsWorkNow else { return }
     let agent = skillsAgent
     if agent == .claude { capabilityMarks.skills.remove(skill.name) }
     let id = UUID()

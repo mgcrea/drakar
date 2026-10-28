@@ -34,9 +34,9 @@ nonisolated enum LicenseCheck {
 /// identity.
 ///
 /// Nor is any of this a tamper defence. The gate it feeds is a few readable lines
-/// in `AgentSession` (`canSend`, `canQueue`) and the source is public, so removing
-/// it is minutes of work for exactly the audience this sells to, and no amount of
-/// hardening changes that. This buys a key that cannot be forged. It does not buy —
+/// (`EntitlementMonitor.allowsWork`, read by `AgentSession.canSend` and `canQueue`) and
+/// the source is public, so removing it is minutes of work for exactly the audience
+/// this sells to, and no amount of hardening changes that. This buys a key that cannot be forged. It does not buy —
 /// and must not pretend to buy — a binary that cannot be modified.
 ///
 /// Armada's verifier (bastion's before it), copied: the direct-distribution apps
