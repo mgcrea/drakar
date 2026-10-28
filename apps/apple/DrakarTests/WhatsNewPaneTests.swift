@@ -17,11 +17,16 @@ struct WhatsNewPaneTests {
     #expect(WhatsNewPane.dateLine(for: release(dated: "")) == "Unreleased")
   }
 
-  @Test @MainActor func showsADatedReleaseAsAnAbsoluteDate() throws {
-    let date = try Date("2026-09-14", strategy: .iso8601.year().month().day().dateSeparator(.dash))
+  /// The day the CHANGELOG names, in every time zone. The expected value is built from
+  /// the components, not by the pane's own parse and format, which would agree with
+  /// itself a day early anywhere west of UTC.
+  @Test @MainActor func showsADatedReleaseOnTheDayItNames() throws {
+    var gmt = Calendar(identifier: .gregorian)
+    gmt.timeZone = .gmt
+    let day = try #require(gmt.date(from: DateComponents(year: 2026, month: 9, day: 14)))
     #expect(
       WhatsNewPane.dateLine(for: release(dated: "2026-09-14"))
-        == date.formatted(date: .abbreviated, time: .omitted))
+        == day.formatted(Date.FormatStyle(date: .abbreviated, time: .omitted, timeZone: .gmt)))
   }
 
   /// A date the parse cannot read is shown as written rather than dropped.

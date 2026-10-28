@@ -3,9 +3,10 @@ import Foundation
 /// Who this copy of Drakar is: its version and build.
 ///
 /// Armada's, copied, keeping `major`, which the licence reads, and `version`, which the
-/// Updates pane shows. DIVERGES from armada, which also carries `shortVersion`, `commit`,
-/// `buildLine`, `supportDirectory` and `LoginItem`: nothing in Drakar calls them, and the
-/// About pane is the package's. Each comes over with whatever first needs it.
+/// Updates pane shows. DIVERGES from armada, which also carries `developmentSuffix`,
+/// `shortVersion`, `commit`, `buildLine`, `supportDirectory` and `LoginItem`: nothing in
+/// Drakar calls them, and the About pane is the package's. Each comes over with whatever
+/// first needs it.
 enum AppInfo {
   /// The marketing version and the build, `"1.0.0 (60)"`, for showing a person.
   static var version: String {

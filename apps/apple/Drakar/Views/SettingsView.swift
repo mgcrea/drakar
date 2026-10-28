@@ -10,9 +10,10 @@ import SwiftUI
 /// An entitlement pane joins only when something is actually sold: before a StoreKit
 /// product is registered it would be a button that fails.
 ///
-/// What's New sits beside About, as in armada: both answer what this build is rather than
-/// how it behaves. About stays last, because it answers a question you only ask with a bug
-/// report open.
+/// What's New sits beside About: both answer what this build is rather than how it behaves.
+/// DIVERGES from armada, which puts the two in an `.information` section of their own:
+/// Drakar's panes are one ungrouped list until something is sold. About stays last, because
+/// it answers a question you only ask with a bug report open.
 enum SettingsPane: String, SupportKitSettings.SettingsPane {
   case general
   case transcript

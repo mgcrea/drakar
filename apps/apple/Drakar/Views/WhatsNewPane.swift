@@ -142,13 +142,17 @@ extension WhatsNewPane {
   /// DIVERGES from armada, whose every release has a date: a version written down
   /// before its tag (`## [1.0.0] - Unreleased`) arrives with an empty one, and an
   /// empty date beside a version reads as a missing fact rather than a pending one.
+  ///
+  /// Formatted in GMT, because the parse reads `"2026-09-14"` as midnight GMT: in the
+  /// local zone that instant is still the 13th anywhere west of UTC. DIVERGES from
+  /// armada, which formats it locally and shows the day before there.
   static func dateLine(for release: Changelog.Release) -> String {
     if release.date.isEmpty { return String(localized: "Unreleased") }
     guard
       let date = try? Date(
         release.date, strategy: .iso8601.year().month().day().dateSeparator(.dash))
     else { return release.date }
-    return date.formatted(date: .abbreviated, time: .omitted)
+    return date.formatted(Date.FormatStyle(date: .abbreviated, time: .omitted, timeZone: .gmt))
   }
 }
 
