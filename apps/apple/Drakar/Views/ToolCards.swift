@@ -12,6 +12,8 @@ private struct CardFrame: ViewModifier {
       .frame(maxWidth: .infinity, alignment: .leading)
       .background(.background.secondary, in: RoundedRectangle(cornerRadius: 8))
       .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(.separator))
+      // A container, so the controls inside keep their own identifiers.
+      .accessibilityElement(children: .contain)
       .accessibilityIdentifier("tool.\(id)")
   }
 }
@@ -24,24 +26,13 @@ struct AgentCallView: View {
   let task: AgentTask?
   let children: [Transcript.Entry]
   @State private var isExpanded = false
+  @Environment(\.taskControls) private var controls
 
   private var report: AgentReport? { call.result?.agentReport }
   private var isBackground: Bool { report?.isBackgrounded == true || task?.isBackgrounded == true }
 
-  private enum State { case running, done, failed, stopped }
-
-  private var state: State {
-    // A stopped foreground agent's result is an error, the interrupt's: the stop says more.
-    if let task, task.status == .stopped || isBackground || call.result == nil {
-      switch task.status {
-      case .running: return .running
-      case .completed: return .done
-      case .stopped: return .stopped
-      case .failed, .ended: return .failed
-      }
-    }
-    guard let result = call.result else { return .running }
-    return result.isError ? .failed : .done
+  private var state: TaskCardState {
+    TaskCardState.of(result: call.result, task: task, isBackground: isBackground)
   }
 
   /// Under the description: its progress while it runs, else what it used.
@@ -68,6 +59,7 @@ struct AgentCallView: View {
   }
 
   var body: some View {
+    let offer = TaskOffer.of(call: call, task: task, controls: controls)
     DisclosureGroup(isExpanded: $isExpanded) {
       VStack(alignment: .leading, spacing: 10) {
         if let prompt = task?.prompt ?? call.input["prompt"]?.stringValue {
@@ -88,35 +80,34 @@ struct AgentCallView: View {
       }
       .padding(.top, 6)
     } label: {
-      HStack(spacing: 8) {
-        statusIcon
-        Text(call.name).fontWeight(.semibold)
-        VStack(alignment: .leading, spacing: 1) {
-          Text(call.summary)
-            .lineLimit(1)
-            .truncationMode(.tail)
-          if let detail {
-            Text(detail)
-              .font(.caption.monospacedDigit())
-              .foregroundStyle(.secondary)
+      VStack(alignment: .leading, spacing: 4) {
+        HStack(spacing: 8) {
+          TaskStatusIcon(state: state)
+          Text(call.name).fontWeight(.semibold)
+          VStack(alignment: .leading, spacing: 1) {
+            Text(call.summary)
               .lineLimit(1)
+              .truncationMode(.tail)
+            if let detail {
+              Text(detail)
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+            }
+          }
+          if offer.stop, let taskID = task?.taskID {
+            Spacer(minLength: 8)
+            StopTaskButton(taskID: taskID)
           }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+        .onTapGesture { withAnimation(.snappy) { isExpanded.toggle() } }
+        if offer.runInBackground { RunInBackgroundLine(toolUseID: call.id) }
+        if let taskID = task?.taskID { StopFailureNote(taskID: taskID) }
       }
-      .frame(maxWidth: .infinity, alignment: .leading)
-      .contentShape(Rectangle())
-      .onTapGesture { withAnimation(.snappy) { isExpanded.toggle() } }
     }
     .modifier(CardFrame(id: call.id))
-  }
-
-  @ViewBuilder private var statusIcon: some View {
-    switch state {
-    case .running: ProgressView().controlSize(.mini)
-    case .failed: Image(systemName: "xmark.circle.fill").foregroundStyle(.red)
-    case .done: Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
-    case .stopped: Image(systemName: "stop.circle").foregroundStyle(.secondary)
-    }
   }
 }
 

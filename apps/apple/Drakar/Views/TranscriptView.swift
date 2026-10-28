@@ -260,7 +260,7 @@ struct EntryView: View, Equatable {
   let entry: Transcript.Entry
   /// On a subagent's call, the entries it wrote, drawn inside its card.
   var children: [Transcript.Entry] = []
-  /// On a subagent's call, what the CLI reported of it.
+  /// On a call the CLI runs as a task (a subagent, a long Bash), what it reported of it.
   var task: AgentTask?
   /// On a call, that a request about it waits on the person now.
   var isAsked = false
@@ -301,7 +301,7 @@ struct EntryView: View, Equatable {
         if case .mcp = call.kind {
           MCPCallView(call: call)
         } else {
-          ToolCallView(call: call)
+          ToolCallView(call: call, task: task)
         }
       case .notice(let text):
         // The CLI brackets its own notes ("[Request interrupted by user]").
@@ -373,48 +373,85 @@ private struct ThinkingView: View {
   }
 }
 
-/// A tool call as a card: name and what it acts on, collapsed; input and result inside.
+/// A tool call as a card: name and what it acts on, collapsed; input and result inside. One
+/// the CLI runs as a task gets its controls, and reads as background while it runs there.
 struct ToolCallView: View {
   let call: Transcript.ToolCall
+  /// What the CLI reported of the task it runs the call as, if it made one.
+  var task: AgentTask? = nil
   @State private var isExpanded = false
+  @Environment(\.taskControls) private var controls
+
+  private var state: TaskCardState {
+    TaskCardState.of(result: call.result, task: task, isBackground: task?.isBackgrounded == true)
+  }
+
+  /// Under the header: what its task's state says that its result would not.
+  private var detail: String? {
+    switch state {
+    case .stopped: String(localized: "Stopped")
+    case .running where task?.isBackgrounded == true:
+      String(localized: "Running in the background")
+    default: nil
+    }
+  }
 
   var body: some View {
-    DisclosureGroup(isExpanded: $isExpanded) {
-      VStack(alignment: .leading, spacing: 8) {
-        // After the fact a Write's previous content is gone, so it shows as all added.
-        if case .fileChange(_, let edits) = call.kind, !FileChange.each(edits: edits).isEmpty {
-          ForEach(FileChange.each(edits: edits), id: \.path) { change in
-            FileChangeView(change: change)
+    let offer = TaskOffer.of(call: call, task: task, controls: controls)
+    VStack(alignment: .leading, spacing: 6) {
+      DisclosureGroup(isExpanded: $isExpanded) {
+        VStack(alignment: .leading, spacing: 8) {
+          // After the fact a Write's previous content is gone, so it shows as all added.
+          if case .fileChange(_, let edits) = call.kind, !FileChange.each(edits: edits).isEmpty {
+            ForEach(FileChange.each(edits: edits), id: \.path) { change in
+              FileChangeView(change: change)
+            }
+          } else if case .shell = call.kind, !call.summary.isEmpty {
+            // The whole command, which the one-line header cuts short.
+            CodeBlock(text: call.summary)
+          } else {
+            CodeBlock(text: call.input.prettyPrinted)
           }
-        } else if case .shell = call.kind, !call.summary.isEmpty {
-          // The whole command, which the one-line header cuts short.
-          CodeBlock(text: call.summary)
-        } else {
-          CodeBlock(text: call.input.prettyPrinted)
+          if let result = call.result {
+            CodeBlock(
+              text: result.content.isEmpty ? "(no output)" : result.content,
+              isCopyable: !result.content.isEmpty
+            )
+            .foregroundStyle(result.isError ? .red : .primary)
+          }
         }
-        if let result = call.result {
-          CodeBlock(
-            text: result.content.isEmpty ? "(no output)" : result.content,
-            isCopyable: !result.content.isEmpty
-          )
-          .foregroundStyle(result.isError ? .red : .primary)
+        .padding(.top, 6)
+      } label: {
+        VStack(alignment: .leading, spacing: 4) {
+          HStack(spacing: 8) {
+            TaskStatusIcon(state: state)
+            Text(call.name).fontWeight(.semibold)
+            Text(displayedSummary)
+              .font(.callout.monospaced())
+              .foregroundStyle(.secondary)
+              .lineLimit(1)
+              .truncationMode(.middle)
+            if offer.stop, let taskID = task?.taskID {
+              Spacer(minLength: 8)
+              StopTaskButton(taskID: taskID)
+            }
+          }
+          // The whole row toggles, not only the chevron.
+          .frame(maxWidth: .infinity, alignment: .leading)
+          .contentShape(Rectangle())
+          .onTapGesture { withAnimation(.snappy) { isExpanded.toggle() } }
+          if let detail {
+            Text(detail)
+              .font(.caption)
+              .foregroundStyle(.secondary)
+          }
+          if offer.runInBackground { RunInBackgroundLine(toolUseID: call.id) }
+          if let taskID = task?.taskID { StopFailureNote(taskID: taskID) }
         }
       }
-      .padding(.top, 6)
-    } label: {
-      HStack(spacing: 8) {
-        statusIcon
-        Text(call.name).fontWeight(.semibold)
-        Text(displayedSummary)
-          .font(.callout.monospaced())
-          .foregroundStyle(.secondary)
-          .lineLimit(1)
-          .truncationMode(.middle)
+      if offer.output, let task, let taskID = task.taskID {
+        TaskOutputSection(taskID: taskID, isRunning: task.status == .running)
       }
-      // The whole row toggles, not only the chevron.
-      .frame(maxWidth: .infinity, alignment: .leading)
-      .contentShape(Rectangle())
-      .onTapGesture { withAnimation(.snappy) { isExpanded.toggle() } }
     }
     .padding(10)
     .background(.background.secondary, in: RoundedRectangle(cornerRadius: 8))
@@ -424,6 +461,8 @@ struct ToolCallView: View {
         Button("Open in Editor") { openInEditor(URL(filePath: path)) }
       }
     }
+    // A container, so the controls inside keep their own identifiers.
+    .accessibilityElement(children: .contain)
     .accessibilityIdentifier("tool.\(call.id)")
   }
 
@@ -439,15 +478,6 @@ struct ToolCallView: View {
     let prefix = base.hasSuffix("/") ? base : base + "/"
     return call.summary.hasPrefix(prefix)
       ? String(call.summary.dropFirst(prefix.count)) : call.summary
-  }
-
-  @ViewBuilder private var statusIcon: some View {
-    switch call.result {
-    case nil: ProgressView().controlSize(.mini)
-    case let result? where result.isError:
-      Image(systemName: "xmark.circle.fill").foregroundStyle(.red)
-    case _?: Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
-    }
   }
 }
 

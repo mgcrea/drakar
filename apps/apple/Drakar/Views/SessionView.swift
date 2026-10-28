@@ -28,6 +28,7 @@ struct SessionView: View {
       cancelQueued: session.features.cancelsQueued ? { session.cancelQueued($0) } : nil
     )
     .environment(\.askedQuestion, askedQuestion)
+    .environment(\.taskControls, session.tasks)
     // The card takes the keys when its question arrives or the session is shown, asked from
     // here: run after the update that made the card, the request reaches a card already up.
     .task(id: askedQuestion?.callID) {
