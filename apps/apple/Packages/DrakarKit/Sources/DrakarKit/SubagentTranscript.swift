@@ -38,6 +38,31 @@ public enum SubagentTranscript {
     return isFile(file) ? file : nil
   }
 
+  /// The agent its `Agent` call started, by the call's id: the `agent-<id>.meta.json` under
+  /// `<transcript minus .jsonl>/subagents/` whose `toolUseId` is `toolUseID`. For a subagent
+  /// still running in a session read from its file, which has neither its task's lines nor
+  /// its report. The session's own folder only, since a fork's calls have ended. A meta file
+  /// that doesn't parse is skipped, and one whose name isn't a plain ID is refused.
+  public static func agentID(forToolUseID toolUseID: String, transcriptFile: URL) -> String? {
+    let folder = transcriptFile.deletingPathExtension().appending(component: "subagents")
+    let files =
+      (try? FileManager.default.contentsOfDirectory(
+        atPath: folder.path(
+          percentEncoded: false))) ?? []
+    let prefix = "agent-"
+    let suffix = ".meta.json"
+    for name in files.sorted() where name.hasPrefix(prefix) && name.hasSuffix(suffix) {
+      let id = String(name.dropFirst(prefix.count).dropLast(suffix.count))
+      guard isName(id),
+        let data = try? Data(contentsOf: folder.appending(component: name)),
+        let json = try? JSONValue.parse(data),
+        json["toolUseId"]?.stringValue == toolUseID
+      else { continue }
+      return id
+    }
+    return nil
+  }
+
   /// The extension's rule for an agent ID, `^[A-Za-z0-9_-]{1,128}$`: nothing that could
   /// leave the folder it is joined to.
   static func isName(_ id: String) -> Bool {

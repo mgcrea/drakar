@@ -135,6 +135,22 @@ struct SubagentFeedTests {
     #expect(feed.transcript == read)
   }
 
+  /// A running subagent of a session read from its file has no task and no report yet: its
+  /// call's id finds the agent once its meta file is written.
+  @Test func findsTheAgentByItsCallOnceItsMetaIsThere() throws {
+    defer { cleanUp() }
+    let feed = SubagentFeed(agentID: nil, toolUseID: "toolu_1", transcriptFile: transcriptFile)
+    feed.refresh()
+    #expect(feed.transcript == nil)
+    try plant("s/subagents/agent-x.jsonl", try Self.fixtureLines())
+    let meta = try plant("s/subagents/agent-x.meta.json", [])
+    try Data(#"{"agentType":"general-purpose","toolUseId":"toolu_1","spawnDepth":1}"#.utf8)
+      .write(to: meta)
+    feed.refresh()
+    #expect(feed.agentID == "x")
+    #expect(feed.transcript?.entries.count == 3)
+  }
+
   /// No path is built from an ID that is not a plain name, on any refresh.
   @Test func refusesAnIDThatIsNotAName() throws {
     defer { cleanUp() }

@@ -1,3 +1,5 @@
+import AppKit
+import Combine
 import DrakarKit
 import SwiftUI
 
@@ -32,10 +34,14 @@ struct AgentCallView: View {
   @State private var isExpanded = false
   /// Made when the card is first opened, never for one kept closed.
   @State private var feed: SubagentFeed?
+  /// The window the card is in, by identity, and whether any of it is on screen.
+  @State private var window: ObjectIdentifier?
+  @State private var isWindowVisible = false
   @Environment(\.taskControls) private var controls
 
   /// What the file is named by: the task's id while it is reported, its report's after a
-  /// reload.
+  /// reload. Neither, while it runs in a session read from its file: the feed finds it by the
+  /// call's id.
   private var agentID: String? { task?.taskID ?? report?.agentID }
 
   private var report: AgentReport? { call.result?.agentReport }
@@ -137,42 +143,59 @@ struct AgentCallView: View {
       }
     }
     .modifier(CardFrame(id: call.id))
+    .background(
+      WindowReader { found in
+        // Not during the update that put the view in its window.
+        Task { @MainActor in
+          window = ObjectIdentifier(found)
+          isWindowVisible = found.occlusionState.contains(.visible)
+        }
+      }
+    )
+    .onReceive(
+      NotificationCenter.default.publisher(for: NSWindow.didChangeOcclusionStateNotification)
+    ) { notification in
+      guard let changed = notification.object as? NSWindow, ObjectIdentifier(changed) == window
+      else { return }
+      isWindowVisible = changed.occlusionState.contains(.visible)
+    }
     .task(
       id: FeedTrigger(
         isOpen: isExpanded, agentID: agentID, transcriptFile: controls?.transcriptFile,
-        isRunning: state == .running)
+        isRunning: state == .running, isWindowVisible: isWindowVisible)
     ) {
       await follow()
     }
   }
 
-  /// What starts, restarts or stops following the file: a card closed, or a task that
-  /// ended, cancels the loop, and the run that replaces it reads once more.
+  /// What starts, restarts or stops following the file: a card closed, a task that ended,
+  /// or its window hidden cancels the loop, and the run that replaces it reads once more.
   private struct FeedTrigger: Equatable {
     let isOpen: Bool
     let agentID: String?
     let transcriptFile: URL?
     let isRunning: Bool
+    let isWindowVisible: Bool
   }
 
-  /// Reads the file once, then every second while the task runs.
+  /// Reads the file once, then every second while the task runs and its window is visible.
   private func follow() async {
     guard isExpanded else { return }
-    guard let agentID, let transcriptFile = controls?.transcriptFile else {
+    guard let transcriptFile = controls?.transcriptFile else {
       self.feed = nil
       return
     }
     let feed: SubagentFeed
-    if let current = self.feed, current.agentID == agentID,
-      current.transcriptFile == transcriptFile
+    if let current = self.feed, current.transcriptFile == transcriptFile,
+      agentID == nil || current.agentID == agentID
     {
       feed = current
     } else {
-      feed = SubagentFeed(agentID: agentID, transcriptFile: transcriptFile)
+      feed = SubagentFeed(agentID: agentID, toolUseID: call.id, transcriptFile: transcriptFile)
       self.feed = feed
     }
     feed.refresh()
-    guard state == .running else { return }
+    guard state == .running, isWindowVisible else { return }
     while !Task.isCancelled {
       try? await Task.sleep(for: .seconds(1))
       guard !Task.isCancelled else { return }

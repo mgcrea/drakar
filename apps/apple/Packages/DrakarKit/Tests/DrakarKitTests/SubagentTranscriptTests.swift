@@ -134,6 +134,63 @@ struct SubagentTranscriptTests {
     }
   }
 
+  /// Writes a 2.1.312 meta file for `toolUseID` at `path` under `folder`.
+  private func meta(_ path: String, toolUseID: String, in folder: URL) throws {
+    let file = try plant(path, in: folder)
+    let json =
+      #"{"agentType":"general-purpose","description":"Sleep","toolUseId":"\#(toolUseID)","spawnDepth":1,"requestShape":"background","requestNonInteractive":true,"model":"sonnet","finished":true}"#
+    try Data(json.utf8).write(to: file)
+  }
+
+  /// A running subagent of a session read from its file: its agent ID by its call's id.
+  @Test func findsTheAgentOfACall() throws {
+    try inProjects { projects in
+      let transcript = try plant("a.jsonl", in: projects)
+      try meta("a/subagents/agent-w.meta.json", toolUseID: "toolu_other", in: projects)
+      try meta("a/subagents/agent-x.meta.json", toolUseID: "toolu_1", in: projects)
+      #expect(
+        SubagentTranscript.agentID(forToolUseID: "toolu_1", transcriptFile: transcript) == "x")
+    }
+  }
+
+  /// The session's own folder only: a fork's finished calls carry their agent ID.
+  @Test func noCallMatchIsNil() throws {
+    try inProjects { projects in
+      let transcript = try plant("a.jsonl", in: projects)
+      try meta("a/subagents/agent-w.meta.json", toolUseID: "toolu_other", in: projects)
+      try meta("b/subagents/agent-x.meta.json", toolUseID: "toolu_1", in: projects)
+      #expect(
+        SubagentTranscript.agentID(forToolUseID: "toolu_1", transcriptFile: transcript) == nil)
+      #expect(
+        SubagentTranscript.agentID(
+          forToolUseID: "toolu_1",
+          transcriptFile: projects.appending(
+            path: "none.jsonl")) == nil)
+    }
+  }
+
+  @Test func skipsAMalformedMetaFile() throws {
+    try inProjects { projects in
+      let transcript = try plant("a.jsonl", in: projects)
+      let broken = try plant("a/subagents/agent-v.meta.json", in: projects)
+      try Data(#"{"toolUseId":"toolu_1""#.utf8).write(to: broken)
+      try meta("a/subagents/agent-x.meta.json", toolUseID: "toolu_1", in: projects)
+      #expect(
+        SubagentTranscript.agentID(forToolUseID: "toolu_1", transcriptFile: transcript) == "x")
+    }
+  }
+
+  /// A meta file whose name holds no plain agent ID gives none, even for the right call.
+  @Test func refusesAMetaFileNotNamedByAnID() throws {
+    try inProjects { projects in
+      let transcript = try plant("a.jsonl", in: projects)
+      try meta("a/subagents/agent-x.y.meta.json", toolUseID: "toolu_1", in: projects)
+      try meta("a/subagents/agent-.meta.json", toolUseID: "toolu_1", in: projects)
+      #expect(
+        SubagentTranscript.agentID(forToolUseID: "toolu_1", transcriptFile: transcript) == nil)
+    }
+  }
+
   @Test func nothingIsNil() throws {
     try inProjects { projects in
       let transcript = try plant("a.jsonl", in: projects)
