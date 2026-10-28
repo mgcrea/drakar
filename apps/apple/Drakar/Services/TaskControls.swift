@@ -26,6 +26,8 @@ final class TaskControls {
   private(set) var backgroundDisabled = false
   /// Task id to its last output read.
   private(set) var outputs: [String: TaskOutput] = [:]
+  /// Ended tasks whose last output was read: never read again.
+  @ObservationIgnored private var endedReads: Set<String> = []
 
   /// Settable so that a session can hand closures over itself once it exists.
   @ObservationIgnored var availability: () -> Bool
@@ -66,6 +68,20 @@ final class TaskControls {
   func fetchOutput(taskID: String) {
     guard isAvailable else { return }
     send(.taskOutput(taskID: taskID))
+  }
+
+  /// The task's output now: the tail of its output file when it is known, which reaches
+  /// neither the process nor the session host's log, read anywhere; else asked of the
+  /// process (`fetchOutput`). A file that cannot be read leaves the last tail shown.
+  func readOutput(taskID: String, file: URL?) {
+    guard let file else { return fetchOutput(taskID: taskID) }
+    if let output = TaskOutput(tailOf: file) { outputs[taskID] = output }
+  }
+
+  /// An ended task's last output, read the first time it is asked for and never after.
+  func readEndedOutput(taskID: String, file: URL?) {
+    guard endedReads.insert(taskID).inserted else { return }
+    readOutput(taskID: taskID, file: file)
   }
 
   /// A reply the session received; every other signal is ignored. One that comes after

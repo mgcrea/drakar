@@ -138,10 +138,13 @@ struct RunInBackgroundLine: View {
 }
 
 /// A background shell task's output, closed until opened. Open, it is read every second
-/// while the task runs and its window is visible, and once more when the task ends.
+/// while the task runs and its window is visible, and once when the task ended. Read from the
+/// task's output file when it is known, else asked of the process.
 struct TaskOutputSection: View {
   let taskID: String
   let isRunning: Bool
+  /// From the call's result, or the notification that the task ended.
+  let outputFile: URL?
   @Environment(\.taskControls) private var controls
   @State private var isExpanded = false
   /// The window the section is in, by identity, and whether any of it is on screen.
@@ -154,6 +157,7 @@ struct TaskOutputSection: View {
     var isRunning: Bool
     var isWindowVisible: Bool
     var isAvailable: Bool
+    var outputFile: URL?
   }
 
   var body: some View {
@@ -176,7 +180,7 @@ struct TaskOutputSection: View {
       }
       .padding(.top, 4)
     } label: {
-      Text("Output")
+      Text(String(localized: "Output"))
         .font(.callout)
         .foregroundStyle(.secondary)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -203,19 +207,21 @@ struct TaskOutputSection: View {
     .task(
       id: Reading(
         isExpanded: isExpanded, isRunning: isRunning, isWindowVisible: isWindowVisible,
-        isAvailable: controls?.isAvailable == true)
+        isAvailable: controls?.isAvailable == true, outputFile: outputFile)
     ) {
       await read()
     }
   }
 
   private func read() async {
-    guard isExpanded, let controls, controls.isAvailable else { return }
-    // Ended: its last output, once.
-    guard isRunning else { return controls.fetchOutput(taskID: taskID) }
-    guard isWindowVisible else { return }
+    guard isExpanded, let controls else { return }
+    // Ended: its last output, once for the task, whatever changes after.
+    guard isRunning else {
+      return controls.readEndedOutput(taskID: taskID, file: outputFile)
+    }
+    guard isWindowVisible, outputFile != nil || controls.isAvailable else { return }
     while !Task.isCancelled {
-      controls.fetchOutput(taskID: taskID)
+      controls.readOutput(taskID: taskID, file: outputFile)
       try? await Task.sleep(for: .seconds(1))
     }
   }

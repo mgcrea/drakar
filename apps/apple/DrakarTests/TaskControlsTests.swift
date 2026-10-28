@@ -134,4 +134,54 @@ struct TaskControlsTests {
     controls.answered(.queueChanged)
     #expect(controls.stopping == ["t"])
   }
+
+  private func outputFile(_ text: String) throws -> URL {
+    let file = FileManager.default.temporaryDirectory.appending(
+      path: "drakar-task-\(UUID().uuidString).output")
+    try Data(text.utf8).write(to: file)
+    return file
+  }
+
+  /// With the task's file known, its tail is read from there: nothing goes to the process,
+  /// so nothing lands in the session host's log.
+  @Test func aKnownFileIsReadNotAsked() throws {
+    let (controls, sent) = controls()
+    let file = try outputFile("hi\n")
+    defer { try? FileManager.default.removeItem(at: file) }
+    controls.readOutput(taskID: "t", file: file)
+    #expect(sent.commands.isEmpty)
+    #expect(controls.outputs["t"]?.text == "hi\n")
+    // Read anywhere, as the file is: a session that stopped driving it still reads it.
+    let (unavailable, none) = self.controls(available: { false })
+    unavailable.readOutput(taskID: "t", file: file)
+    #expect(none.commands.isEmpty)
+    #expect(unavailable.outputs["t"]?.text == "hi\n")
+  }
+
+  /// Without one, the process is asked, as before.
+  @Test func noFileAsksTheProcess() {
+    let (controls, sent) = controls()
+    controls.readOutput(taskID: "t", file: nil)
+    #expect(sent.commands == [.taskOutput(taskID: "t")])
+  }
+
+  /// A file that went leaves the last tail shown.
+  @Test func aMissingFileKeepsTheLastTail() throws {
+    let (controls, _) = controls()
+    let file = try outputFile("hi")
+    controls.readOutput(taskID: "t", file: file)
+    try FileManager.default.removeItem(at: file)
+    controls.readOutput(taskID: "t", file: file)
+    #expect(controls.outputs["t"]?.text == "hi")
+  }
+
+  /// An ended task's output is read once, whatever changes after.
+  @Test func anEndedTaskIsReadOnce() {
+    let (controls, sent) = controls()
+    controls.readEndedOutput(taskID: "t", file: nil)
+    controls.readEndedOutput(taskID: "t", file: nil)
+    #expect(sent.commands == [.taskOutput(taskID: "t")])
+    controls.readEndedOutput(taskID: "u", file: nil)
+    #expect(sent.commands == [.taskOutput(taskID: "t"), .taskOutput(taskID: "u")])
+  }
 }

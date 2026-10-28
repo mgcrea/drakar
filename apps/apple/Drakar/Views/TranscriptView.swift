@@ -450,7 +450,9 @@ struct ToolCallView: View {
         }
       }
       if offer.output, let task, let taskID = task.taskID {
-        TaskOutputSection(taskID: taskID, isRunning: task.status == .running)
+        TaskOutputSection(
+          taskID: taskID, isRunning: task.status == .running,
+          outputFile: task.outputFile ?? TaskOutput.outputFile(inResult: call.result?.content))
       }
     }
     .padding(10)
