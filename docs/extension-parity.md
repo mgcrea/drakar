@@ -49,10 +49,10 @@ Protocol changes are the other half and have their own procedure (raising
 | `set_thinking_level` | partial | Turn extended thinking on or off (Drakar: an effort level picker) | `apps/apple/Drakar/Views/SessionPills.swift:98` | differ: the effort picker |
 | `get_context_usage` | has | Context window usage breakdown (/context) | `apps/apple/Drakar/Services/ClaudeBackend.swift:143` | |
 | `side_question` | no | Ask a side question without derailing the session | | adopt: one CLI request each |
-| `run_in_background` | no | Move a running tool call to the background | | adopt: `background_tasks` |
-| `stop_subagent` | no | Stop a running subagent or background task | | adopt: subagents promise |
-| `get_subagent_transcript` | partial | Read a subagent's own transcript (Drakar: live child calls inside the card only) | `apps/apple/Drakar/Views/ToolCards.swift:22` | adopt: subagents promise, after a reload too |
-| `get_task_output` | no | Read a background task's output | | adopt: subagents promise |
+| `run_in_background` | has | Move a running tool call to the background (Drakar: a line on the call's card) | `apps/apple/Drakar/Views/TaskControlViews.swift:114` | adopt: `background_tasks` |
+| `stop_subagent` | has | Stop a running subagent or background task (Drakar: on the task's card, not an agent map) | `apps/apple/Drakar/Views/TaskControlViews.swift:80` | adopt: subagents promise |
+| `get_subagent_transcript` | has | Read a subagent's own transcript (Drakar: reads the file itself, inside the card) | `apps/apple/Drakar/Services/SubagentFeed.swift:15` | adopt: subagents promise, after a reload too |
+| `get_task_output` | has | Read a background task's output (Drakar: background Bash tasks only) | `apps/apple/Drakar/Views/TaskControlViews.swift:142` | adopt: subagents promise |
 | `rewind_code` | no | Revert file edits back to a chosen message | | adopt: `rewind_files`, dry run first |
 | `fork_conversation` | partial | Fork a session, optionally from a chosen message (Drakar: whole session only) | `apps/apple/Drakar/Services/Project.swift:1119` | adopt: from a chosen message, with rewind |
 | `export_conversation` | no | Export the conversation as text (/export) | | adopt: one CLI request each |
@@ -254,7 +254,7 @@ the SDK sends outside this path.
 | request | status | used by | notes | decision |
 | --- | --- | --- | --- | --- |
 | `apply_flag_settings` | sends | `launch_claude` | Focus view at launch; Drakar sends the effort level with it | |
-| `background_tasks` | no | `run_in_background` | | |
+| `background_tasks` | sends | `run_in_background` | | |
 | `cancel_async_message` | sends | unused | Drakar cancels a queued prompt with it | |
 | `channel_enable` | no | unused | SDK `enableChannel` | |
 | `claim_session` | no | unused | SDK `claimSession` | |
@@ -273,7 +273,7 @@ the SDK sends outside this path.
 | `get_settings` | sends | `get_applied_settings`, `get_output_style`, `refresh_claude_settings`, `refresh_remote_control_lock` | | |
 | `get_skills_dialog` | no | `get_skills_dialog`, `set_skill_state` | | |
 | `get_status` | no | `get_status` | | |
-| `get_task_output` | no | `get_task_output` | | |
+| `get_task_output` | sends | `get_task_output` | | |
 | `get_usage` | no | `get_usage` | The SDK names its method `usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET` | |
 | `interrupt` | sends | `interrupt_claude` | | |
 | `list_permission_rules` | no | `list_permission_rules`, `add_permission_rules`, `remove_permission_rule` | | |
@@ -303,7 +303,7 @@ the SDK sends outside this path.
 | `set_permission_mode` | sends | `set_permission_mode` | | |
 | `set_prompt_suggestions_paused` | no | unused | | |
 | `side_question` | no | `side_question` | | |
-| `stop_task` | no | `stop_subagent` | Takes a `task_id` | |
+| `stop_task` | sends | `stop_subagent` | Takes a `task_id` | |
 | `submit_feedback` | no | `submit_feedback` | | |
 | `submit_survey_feedback` | no | `submit_feedback` | | |
 | `ultrareview_launch` | no | unused | | |

@@ -29,10 +29,11 @@ are in the 2.1.308, 2.1.311 and 2.1.312 binaries (`strings`); `ClaudeVersion.tes
 | Subagent transcript | none: the host reads a file | | "Open transcript", from the agent map. It follows the file while the agent runs. |
 
 The subagent's file is `<session transcript without .jsonl>/subagents/agent-<agentId>.jsonl`.
-Every line in it has `isSidechain: true`. Its `agentId` is the stream's `task_id` (both
-fixtures, `subagent-and-todos` and `fork-subagent`). In history it is the `Agent` call's
-`toolUseResult.agentId`. The `agent-<id>.meta.json` beside it names the call (`toolUseId`).
-All checked on disk on 2026-10-28.
+Every line in it has `isSidechain: true`, except the `api-request*` lines, which on 2.1.312
+carry no `isSidechain` key (history skips those types). Its `agentId` is the stream's
+`task_id` (both fixtures, `subagent-and-todos` and `fork-subagent`). In history it is the
+`Agent` call's `toolUseResult.agentId`. The `agent-<id>.meta.json` beside it names the call
+(`toolUseId`). All checked on disk on 2026-10-28.
 
 ## Goals
 
