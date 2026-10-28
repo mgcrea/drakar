@@ -14,6 +14,8 @@ public struct TaskEvent: Sendable, Equatable {
   public var kind: Kind
   public var taskID: String
   public var toolUseID: String?
+  /// `local_agent`, `local_bash`… (2.1.312), as the CLI writes it.
+  public var taskType: String?
   public var description: String?
   public var isBackgrounded: Bool?
   /// `completed`, `failed`, `stopped`…; from `patch.status` on `task_updated`.
@@ -31,6 +33,7 @@ public struct TaskEvent: Sendable, Equatable {
     self.kind = kind
     self.taskID = taskID
     toolUseID = json["tool_use_id"]?.stringValue
+    taskType = json["task_type"]?.stringValue
     description = json["description"]?.stringValue
     isBackgrounded = json["is_backgrounded"]?.boolValue
     status = (json["status"] ?? json["patch"]?["status"])?.stringValue
@@ -45,6 +48,8 @@ public struct TaskEvent: Sendable, Equatable {
   var update: AgentTaskUpdate {
     var update = AgentTaskUpdate()
     update.isStart = kind == .started
+    update.taskID = taskID
+    update.taskType = taskType
     update.description = description
     update.isBackgrounded = isBackgrounded
     update.status = status
@@ -80,11 +85,15 @@ extension Transcript {
   }
 }
 
-/// A subagent, by the `Agent` call that started it.
+/// A subagent, or another task the CLI runs for a call (a foreground Bash becomes one after a
+/// few seconds), by the call that started it.
 public struct AgentTask: Sendable, Equatable {
   public enum Status: Sendable, Equatable {
     case running, completed, failed
-    /// Stopped, killed, or a status this build does not know.
+    /// Stopped by a `stop_task`: `killed` on `task_updated`, `stopped` on
+    /// `task_notification` (2.1.312).
+    case stopped
+    /// A status this build does not know, or the session ending under it.
     case ended(String)
 
     init(_ status: String) {
@@ -92,12 +101,17 @@ public struct AgentTask: Sendable, Equatable {
       case "running", "pending": self = .running
       case "completed": self = .completed
       case "failed": self = .failed
+      case "stopped", "killed": self = .stopped
       default: self = .ended(status)
       }
     }
   }
 
   public var status: Status = .running
+  /// The stream's `task_id`; for a subagent, its `agentId`.
+  public var taskID: String?
+  /// `local_agent`, `local_bash`…, as the CLI writes it.
+  public var taskType: String?
   public var description: String?
   /// What it was asked, forwarded from inside it while it runs in the foreground.
   public var prompt: String?
@@ -131,6 +145,8 @@ public struct AgentTask: Sendable, Equatable {
     if let description = update.description, update.isStart || self.description == nil {
       self.description = description
     }
+    taskID = taskID ?? update.taskID
+    taskType = taskType ?? update.taskType
     if let isBackgrounded = update.isBackgrounded { self.isBackgrounded = isBackgrounded }
     if let status = update.status { self.status = Status(status) }
     if let summary = update.summary { self.summary = summary }
@@ -147,6 +163,8 @@ public struct AgentTask: Sendable, Equatable {
 public struct AgentReport: Sendable, Equatable {
   /// `completed`, or `async_launched` for one sent to the background.
   public var status: String
+  /// The subagent's `agentId`, which is its task's `task_id`.
+  public var agentID: String?
   public var text: String?
   public var totalTokens: Int?
   public var toolUses: Int?
@@ -159,6 +177,7 @@ public struct AgentReport: Sendable, Equatable {
       return nil
     }
     self.status = status
+    agentID = json["agentId"]?.stringValue
     let texts = (json["content"]?.arrayValue ?? []).compactMap { $0["text"]?.stringValue }
     text = texts.isEmpty ? nil : texts.joined(separator: "\n\n")
     totalTokens = json["totalTokens"]?.intValue

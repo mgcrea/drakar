@@ -214,6 +214,10 @@ public struct TurnSummary: Sendable, Equatable {
 public struct AgentTaskUpdate: Sendable, Equatable {
   /// The first word of it: its description wins over one guessed earlier.
   public var isStart = false
+  /// The stream's `task_id`; for a subagent, its `agentId`.
+  public var taskID: String?
+  /// `local_agent`, `local_bash`…, as the CLI writes it.
+  public var taskType: String?
   public var description: String?
   public var isBackgrounded: Bool?
   public var status: String?

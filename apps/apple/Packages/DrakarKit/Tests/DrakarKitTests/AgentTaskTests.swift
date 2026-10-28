@@ -1,6 +1,7 @@
-import DrakarKit
 import Foundation
 import Testing
+
+@testable import DrakarKit
 
 /// A subagent, as the CLI reports it: `task_*` lines keyed by the `Agent` call that started
 /// it, and, for one in the foreground, its prompt and tool calls under that call's id.
@@ -133,5 +134,50 @@ struct AgentTaskTests {
           #"{"type":"system","subtype":"task_updated","task_id":"t9","patch":{"status":"failed"},"session_id":"s"}"#
             .utf8)))
     #expect(transcript.agentTasks["bg"]?.status == .failed)
+  }
+
+  /// `task-controls`, folded up to its `count`th line, the prompt sent first.
+  private func taskControls(upTo count: Int? = nil) throws -> ClaudeFeed {
+    var transcript = ClaudeFeed()
+    transcript.addPrompt("Run it")
+    let messages = try Fixture.taskControls.messages
+    for message in messages.prefix(count ?? messages.count) { transcript.apply(message) }
+    return transcript
+  }
+
+  /// A task keeps the stream's ID for it and its type: a foreground Bash is a `local_bash`.
+  @Test func aTaskKeepsItsIDAndType() throws {
+    let transcript = try taskControls()
+    let bash = try #require(transcript.agentTasks["toolu_01Hriqem1KWjxUocjn2j6NJC"])
+    #expect(bash.taskID == "b8cffcoy7")
+    #expect(bash.taskType == "local_bash")
+    let agent = try #require(transcript.agentTasks["toolu_014NzQkqSJ86DigdoFkAABoZ"])
+    #expect(agent.taskID == "a7b2244ac3d1175c6")
+    #expect(agent.taskType == "local_agent")
+  }
+
+  /// A stop reads as one, whether the CLI says `killed` (`task_updated`) or `stopped`
+  /// (`task_notification`), for a Bash, an agent, and the agent's own Bash.
+  @Test func aStoppedTaskIsStopped() throws {
+    #expect(AgentTask.Status("killed") == .stopped)
+    #expect(AgentTask.Status("stopped") == .stopped)
+    let bash = "toolu_01QvikCtLJZ1DmHZnT84msYU"
+    // Up to and including its `task_updated` `killed`.
+    #expect(try taskControls(upTo: 21).agentTasks[bash]?.status == .stopped)
+    let transcript = try taskControls()
+    #expect(transcript.agentTasks[bash]?.status == .stopped)
+    #expect(transcript.agentTasks["toolu_014NzQkqSJ86DigdoFkAABoZ"]?.status == .stopped)
+    #expect(transcript.agentTasks["toolu_01Ak2ftyoHCTnMr2dWQvwd3F"]?.status == .stopped)
+  }
+
+  /// An `Agent` result names the subagent it ran.
+  @Test func aReportKeepsItsAgentID() throws {
+    let transcript = try transcript()
+    let call = try #require(
+      transcript.entries.lazy.compactMap { entry -> Transcript.ToolCall? in
+        if case .tool(let call) = entry.kind, call.id == self.agentID { return call }
+        return nil
+      }.first)
+    #expect(call.result?.agentReport?.agentID == "a408679160ffa9e01")
   }
 }

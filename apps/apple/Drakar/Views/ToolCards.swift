@@ -28,13 +28,15 @@ struct AgentCallView: View {
   private var report: AgentReport? { call.result?.agentReport }
   private var isBackground: Bool { report?.isBackgrounded == true || task?.isBackgrounded == true }
 
-  private enum State { case running, done, failed }
+  private enum State { case running, done, failed, stopped }
 
   private var state: State {
-    if let task, isBackground || call.result == nil {
+    // A stopped foreground agent's result is an error, the interrupt's: the stop says more.
+    if let task, task.status == .stopped || isBackground || call.result == nil {
       switch task.status {
       case .running: return .running
       case .completed: return .done
+      case .stopped: return .stopped
       case .failed, .ended: return .failed
       }
     }
@@ -44,6 +46,7 @@ struct AgentCallView: View {
 
   /// Under the description: its progress while it runs, else what it used.
   private var detail: String? {
+    if state == .stopped { return String(localized: "Stopped") }
     if state == .running, isBackground, task?.progressLine == nil {
       return String(localized: "Running in the background")
     }
@@ -112,6 +115,7 @@ struct AgentCallView: View {
     case .running: ProgressView().controlSize(.mini)
     case .failed: Image(systemName: "xmark.circle.fill").foregroundStyle(.red)
     case .done: Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+    case .stopped: Image(systemName: "stop.circle").foregroundStyle(.secondary)
     }
   }
 }
