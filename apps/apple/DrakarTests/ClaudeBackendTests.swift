@@ -60,4 +60,87 @@ struct ClaudeBackendTests {
       from: process, at: .now)
     #expect(output.signals == [.queueChanged])
   }
+
+  @Test func taskControlsEncodeWithTheirOwnIDs() throws {
+    let backend = ClaudeBackend()
+    let process = try process()
+    defer { process.terminate() }
+    let id = try #require(try backend.send(.stopTask(taskID: "t"), to: process))
+    #expect(id.hasPrefix("stop-"))
+    #expect(UUID(uuidString: String(id.dropFirst("stop-".count))) != nil)
+    let background = try #require(
+      try backend.send(.backgroundCall(toolUseID: "toolu_1"), to: process))
+    #expect(background.hasPrefix("background-"))
+    #expect(UUID(uuidString: String(background.dropFirst("background-".count))) != nil)
+    let output = try #require(try backend.send(.taskOutput(taskID: "t"), to: process))
+    #expect(output.hasPrefix("output-"))
+    #expect(UUID(uuidString: String(output.dropFirst("output-".count))) != nil)
+  }
+
+  /// Replies come back in any order, and each names the task or call it was sent for.
+  @Test func eachTaskReplyNamesItsOwnTask() throws {
+    let backend = ClaudeBackend()
+    let process = try process()
+    defer { process.terminate() }
+    let first = try #require(try backend.send(.stopTask(taskID: "t1"), to: process))
+    let second = try #require(try backend.send(.stopTask(taskID: "t2"), to: process))
+    let background = try #require(
+      try backend.send(.backgroundCall(toolUseID: "toolu_1"), to: process))
+    let output = try #require(try backend.send(.taskOutput(taskID: "t3"), to: process))
+    // Fixture.taskControls' refusal (task-controls.jsonl:46), its request id put back: that
+    // fixture lives in DrakarKit's test target, out of this one's reach.
+    let disabled = backend.receive(
+      try line(
+        #"{"type":"control_response","response":{"subtype":"error","request_id":"\#(background)","error":"Background tasks are disabled in this session."}}"#
+      ),
+      from: process, at: .now)
+    #expect(disabled.signals == [.backgroundAnswered(toolUseID: "toolu_1", .disabled)])
+    #expect(disabled.events.isEmpty)
+    let refused = backend.receive(
+      try line(
+        #"{"type":"control_response","response":{"subtype":"error","request_id":"\#(second)","error":"No such task"}}"#
+      ),
+      from: process, at: .now)
+    #expect(refused.signals == [.taskStopAnswered(taskID: "t2", error: "No such task")])
+    let stopped = backend.receive(
+      try line(
+        #"{"type":"control_response","response":{"subtype":"success","request_id":"\#(first)","response":{}}}"#
+      ),
+      from: process, at: .now)
+    #expect(stopped.signals == [.taskStopAnswered(taskID: "t1", error: nil)])
+    let read = backend.receive(
+      try line(
+        #"{"type":"control_response","response":{"subtype":"success","request_id":"\#(output)","response":{"output":"hi\n","total_bytes":3,"truncated":false}}}"#
+      ),
+      from: process, at: .now)
+    let expected = TaskOutput(
+      .object(["output": .string("hi\n"), "total_bytes": .number(3), "truncated": .bool(false)]))
+    #expect(read.signals == [.taskOutputAnswered(taskID: "t3", expected)])
+    // Answered once: the same id again, or one never sent, says nothing.
+    let again = backend.receive(
+      try line(
+        #"{"type":"control_response","response":{"subtype":"success","request_id":"\#(first)","response":{}}}"#
+      ),
+      from: process, at: .now)
+    #expect(again.signals.isEmpty)
+    let unknown = backend.receive(
+      try line(
+        #"{"type":"control_response","response":{"subtype":"success","request_id":"stop-unknown","response":{}}}"#
+      ),
+      from: process, at: .now)
+    #expect(unknown.signals.isEmpty)
+  }
+
+  /// A refusal with no error still reads as one.
+  @Test func aStopRefusedWithoutAnErrorStillFails() throws {
+    let backend = ClaudeBackend()
+    let process = try process()
+    defer { process.terminate() }
+    let id = try #require(try backend.send(.stopTask(taskID: "t"), to: process))
+    let output = backend.receive(
+      try line(
+        #"{"type":"control_response","response":{"subtype":"error","request_id":"\#(id)"}}"#),
+      from: process, at: .now)
+    #expect(output.signals == [.taskStopAnswered(taskID: "t", error: "")])
+  }
 }

@@ -195,6 +195,30 @@ struct SessionReplayTests {
     #expect(transport.owed.isEmpty)
   }
 
+  /// A stop goes straight to the process, with no note for a replay to send again, and
+  /// waits no longer once the process is gone.
+  @Test func aTaskControlIsSentUnnoted() async throws {
+    let (live, recorder) = try await liveTurn()
+    defer { live.stop() }
+    #expect(live.tasks.isAvailable)
+    live.tasks.stop(taskID: "t")
+    #expect(live.tasks.stopping == ["t"])
+    let records = recorder.records
+    #expect(
+      records.contains {
+        $0.kind == .in && String(decoding: $0.bytes, as: UTF8.self).contains("stop_task")
+      })
+    #expect(
+      !records.contains {
+        $0.kind == .note && String(decoding: $0.bytes, as: UTF8.self).contains("stopTask")
+      })
+    let replayed = await AgentSession(replaying: records, meta: meta)
+    #expect(try #require(replayed.process as? ReplayTransport).owed.isEmpty)
+    live.stop()
+    #expect(live.tasks.stopping.isEmpty)
+    #expect(!live.tasks.isAvailable)
+  }
+
   /// A rate limit the log kept is a reading from when its line came, not from the replay:
   /// one from hours ago never passes for the account's latest.
   @Test func aReplayedRateLimitIsReadWhenItsLineCame() async throws {

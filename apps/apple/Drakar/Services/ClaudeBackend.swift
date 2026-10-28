@@ -12,6 +12,9 @@ final class ClaudeBackend: AgentBackend {
   /// The process's too: a replay's new backend counts from one, and reads the log's ids as
   /// its own only if they were counted the same way.
   private var requestCount = 0
+  /// Task controls sent and not yet answered: request id to the task or call it names. Their
+  /// ids are UUIDs, off `requestCount`, since they are never noted for a replay to count.
+  private var taskRequests: [String: String] = [:]
 
   var notFoundMessage: String { ClaudeLaunch.notFound }
   let features = AgentFeatures.claude
@@ -42,6 +45,7 @@ final class ClaudeBackend: AgentBackend {
   func started(_ process: any ProcessTransport, then first: AgentCommand?) throws {
     translator = ClaudeTranslator()
     requestCount = 0
+    taskRequests.removeAll()
     try process.send(.initialize(requestID: nextRequestID("init")))
     askAppliedSettings(process)
     if let first { try send(first, to: process) }
@@ -84,6 +88,15 @@ final class ClaudeBackend: AgentBackend {
       return (
         .renameSession(requestID: nextRequestID("rename"), title: title, sessionID: sessionID), nil
       )
+    case .stopTask(let taskID):
+      let id = taskRequestID("stop", for: taskID)
+      return (.stopTask(requestID: id, taskID: taskID), id)
+    case .backgroundCall(let toolUseID):
+      let id = taskRequestID("background", for: toolUseID)
+      return (.backgroundCall(requestID: id, toolUseID: toolUseID), id)
+    case .taskOutput(let taskID):
+      let id = taskRequestID("output", for: taskID)
+      return (.taskOutput(requestID: id, taskID: taskID), id)
     }
   }
 
@@ -130,6 +143,28 @@ final class ClaudeBackend: AgentBackend {
     case .controlResponse(let response) where response.requestID.hasPrefix("context-"):
       if response.isSuccess, let reply = ContextUsageReply(response.response) {
         output.signals.append(.contextReported(reply))
+      }
+      return output
+    case .controlResponse(let response)
+    where ["stop-", "background-", "output-"].contains(where: response.requestID.hasPrefix):
+      // One never sent by this backend, or answered already, says nothing.
+      guard let target = taskRequests.removeValue(forKey: response.requestID) else {
+        return output
+      }
+      if response.requestID.hasPrefix("stop-") {
+        output.signals.append(
+          .taskStopAnswered(
+            taskID: target, error: response.isSuccess ? nil : response.error ?? ""))
+      } else if response.requestID.hasPrefix("background-") {
+        output.signals.append(
+          .backgroundAnswered(
+            toolUseID: target,
+            BackgroundOutcome(
+              isSuccess: response.isSuccess, response: response.response, error: response.error)))
+      } else {
+        output.signals.append(
+          .taskOutputAnswered(
+            taskID: target, response.isSuccess ? TaskOutput(response.response) : nil))
       }
       return output
     case .system(.initialized(let info)):
@@ -180,6 +215,12 @@ final class ClaudeBackend: AgentBackend {
   /// change, since a model without effort (Haiku) applies none.
   private func askAppliedSettings(_ process: any ProcessTransport) {
     try? process.send(.getSettings(requestID: nextRequestID("settings")))
+  }
+
+  private func taskRequestID(_ prefix: String, for target: String) -> String {
+    let id = "\(prefix)-\(UUID().uuidString)"
+    taskRequests[id] = target
+    return id
   }
 
   private func nextRequestID(_ prefix: String) -> String {

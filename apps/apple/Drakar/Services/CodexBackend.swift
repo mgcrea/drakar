@@ -108,6 +108,8 @@ final class CodexBackend: AgentBackend {
     case .setModel(let model): .setModel(model)
     case .setEffort(let level): .setEffort(level)
     case .rename(let title, _): .rename(title)
+    // `features.controlsTasks` is false: nothing offers them.
+    case .stopTask, .backgroundCall, .taskOutput: nil
     }
   }
 }

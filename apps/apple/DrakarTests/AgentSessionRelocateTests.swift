@@ -37,6 +37,18 @@ struct AgentSessionRelocateTests {
       accountIsDefault: false)
   }
 
+  /// The cards find a subagent's file beside the session's transcript, wherever it moved.
+  @Test func theTaskControlsKnowTheTranscript() {
+    let old = root.appending(path: ".claude-a/projects/-p/s1.jsonl")
+    let new = root.appending(path: ".claude-b/projects/-p/s1.jsonl")
+    let session = AgentSession(folder: root, resuming: target(old, account: root))
+    #expect(session.tasks.transcriptFile == old)
+    #expect(!session.tasks.isAvailable)
+    session.relocate(to: target(new, account: root))
+    #expect(session.tasks.transcriptFile == new)
+    #expect(AgentSession(folder: root).tasks.transcriptFile == nil)
+  }
+
   /// A session watched read-only keeps following its transcript at the new place: the move
   /// keeps the file whole, so what was read stays read.
   @Test func aWatchedSessionFollowsItsTranscriptToTheNewAccount() async throws {

@@ -23,7 +23,12 @@ final class AgentSession {
   let folder: URL
   /// What this session continues; nil for a new one. Becomes the session's own target
   /// once it has one, so that a prompt after the process ended resumes it.
-  private(set) var resuming: ResumeTarget?
+  private(set) var resuming: ResumeTarget? {
+    didSet { tasks.transcriptFile = resuming?.transcriptFile }
+  }
+  /// Stop, Run in background and task output for the cards: sent straight to the process,
+  /// never noted, so a replay never sends one again.
+  @ObservationIgnored let tasks = TaskControls()
   private(set) var transcript = Transcript()
   private(set) var phase: Phase = .idle
   /// The binary this session runs, for the footer and for bug reports.
@@ -121,7 +126,10 @@ final class AgentSession {
   @ObservationIgnored private var turnEndDeferred = false
 
   /// The process, or after a replay the `ReplayTransport` it wrote to.
-  @ObservationIgnored private(set) var process: (any ProcessTransport)?
+  @ObservationIgnored private(set) var process: (any ProcessTransport)? {
+    // What the one before was asked will not be answered.
+    didSet { if oldValue != nil, process !== oldValue { tasks.processEnded() } }
+  }
   /// What a spawn runs on; nil for the session host's, or an `AgentProcess` when there is no
   /// host to have. Tests give a recorder.
   @ObservationIgnored var makeTransport:
@@ -197,6 +205,14 @@ final class AgentSession {
     self.backend = backend ?? (agent ?? resuming?.agentKind ?? .claude).makeBackend()
     savedTarget = resuming?.forks == true ? nil : resuming
     isLoadingHistory = resuming != nil
+    tasks.transcriptFile = resuming?.transcriptFile
+    tasks.availability = { [weak self] in self?.controlsTasks ?? false }
+    tasks.send = { [weak self] command in
+      // Not `write` nor `sendNoted`: a control the process cannot take changes nothing else,
+      // and a note would have a replay send it again.
+      guard let self, let process = self.process else { return }
+      _ = try? self.backend.send(command, to: process)
+    }
   }
 
   /// The session a process's log rebuilds: the history from before the process, then
@@ -387,6 +403,12 @@ final class AgentSession {
   var canQueue: Bool {
     !isReadOnly && !isMoving && !historyFailed && !isReconnecting && !waitsForHost
       && !isOutOfReach && transcript.isRunning && process != nil
+  }
+
+  /// A card can stop its task or move its call, as `canQueue` reads a driven session.
+  private var controlsTasks: Bool {
+    features.controlsTasks && !isReadOnly && !isMoving && !isReconnecting && !waitsForHost
+      && !isOutOfReach && process != nil
   }
 
   /// The mode the pill shows: the process's while it runs, else what the next start takes.
@@ -1257,6 +1279,8 @@ final class AgentSession {
       break
     case .skillsChanged:
       CodexSkillStore.shared.skills(for: folder).refreshIfLoaded()
+    case .taskStopAnswered, .backgroundAnswered, .taskOutputAnswered:
+      tasks.answered(signal)
     case .unusable(let message):
       stop()
       phase = .failed(message)

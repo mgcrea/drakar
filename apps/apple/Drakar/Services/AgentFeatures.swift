@@ -53,16 +53,19 @@ struct AgentFeatures: Equatable {
   /// A mode, model or effort pick reaches a running process at once; Codex's wait for the
   /// next turn.
   var picksApplyAtOnce: Bool
+  /// A running task can be stopped, a foreground call moved to the background, and a shell
+  /// task's output read (`TaskControls`).
+  var controlsTasks: Bool
 
   var name: String { agent.name }
 
   static let claude = AgentFeatures(
     agent: .claude, cancelsQueued: true, slashCommands: true, forks: true, moves: true,
     showsAccount: true, showsPromptCache: true, acceptsPDF: true, usesSettingsDefaults: true,
-    picksApplyAtOnce: true)
+    picksApplyAtOnce: true, controlsTasks: true)
 
   static let codex = AgentFeatures(
     agent: .codex, cancelsQueued: false, slashCommands: true, forks: false, moves: false,
     showsAccount: false, showsPromptCache: false, acceptsPDF: false,
-    usesSettingsDefaults: false, picksApplyAtOnce: false)
+    usesSettingsDefaults: false, picksApplyAtOnce: false, controlsTasks: false)
 }

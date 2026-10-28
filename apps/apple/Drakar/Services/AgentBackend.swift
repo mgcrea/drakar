@@ -65,6 +65,10 @@ enum AgentCommand: Codable, Equatable {
   case setModel(String)
   case setEffort(String)
   case rename(title: String, sessionID: String)
+  /// Task controls (`TaskControls`), sent without a note: a replay never sees them.
+  case stopTask(taskID: String)
+  case backgroundCall(toolUseID: String)
+  case taskOutput(taskID: String)
 }
 
 struct BackendOutput {
@@ -92,4 +96,10 @@ enum SessionSignal: Equatable {
   case unusable(String)
   /// The agent's skills changed: a list read before is stale.
   case skillsChanged
+  /// A `stopTask` was answered: `error` nil when it took. Claude Code answers success for a
+  /// task that had already ended too; the task's own lines say it stopped.
+  case taskStopAnswered(taskID: String, error: String?)
+  case backgroundAnswered(toolUseID: String, BackgroundOutcome)
+  /// Nil for a reply that holds no output.
+  case taskOutputAnswered(taskID: String, TaskOutput?)
 }
