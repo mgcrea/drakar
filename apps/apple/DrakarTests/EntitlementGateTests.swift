@@ -137,11 +137,7 @@ struct EntitlementGateTests {
   }
 
   @Test func fanOutRefusedWhenNotEntitled() async throws {
-    let parent = folder.appending(path: "parent", directoryHint: .isDirectory)
-    let folders = ["alpha", "beta"].map { parent.appending(path: $0, directoryHint: .isDirectory) }
-    for folder in folders {
-      try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-    }
+    let (parent, folders) = try subfolders()
     let project = Project(folder: parent)
     project.executableOverride = fake
     defer { project.stopAll() }
@@ -153,6 +149,90 @@ struct EntitlementGateTests {
     #expect(project.fanOuts.isEmpty)
     try await Task.sleep(for: .milliseconds(300))
     #expect(receivedText().isEmpty)
+  }
+
+  /// Three subfolders under `folder`, made.
+  private func subfolders() throws -> (URL, [URL]) {
+    let parent = folder.appending(path: "parent", directoryHint: .isDirectory)
+    let folders = ["alpha", "beta", "gamma"].map {
+      parent.appending(path: $0, directoryHint: .isDirectory)
+    }
+    for folder in folders {
+      try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    }
+    return (parent, folders)
+  }
+
+  /// A fan-out one at a time, started entitled, whose first turn ends after the trial did:
+  /// the next is refused and waits again, rather than counting as running.
+  private func refusedMidBatch() throws -> (Project, [ProjectSession], FanOutBatch) {
+    let (parent, folders) = try subfolders()
+    let project = Project(folder: parent)
+    project.executableOverride = fake
+    EntitlementMonitor.$forced.withValue(true) {
+      project.runInSubfolders(check, folders: folders, arguments: "", mode: nil, limit: 1)
+    }
+    let items = Array(project.sessions.prefix(3))
+    let batch = try #require(project.fanOuts.first)
+    #expect(items.map { prompts($0).count } == [1, 0, 0])
+    EntitlementMonitor.$forced.withValue(false) { items[0].session.onTurnEnded?() }
+    return (project, items, batch)
+  }
+
+  @Test func aRefusedFanOutWaitsAndResumes() throws {
+    let (project, items, batch) = try refusedMidBatch()
+    defer { project.stopAll() }
+    #expect(batch.queue.count(.running) == 0)
+    #expect(batch.queue.count(.waiting) == 2)
+    #expect(project.fanOuts.count == 1)
+    #expect(prompts(items[1]).isEmpty)
+
+    // Still refused: nothing moves.
+    EntitlementMonitor.$forced.withValue(false) { project.resumeFanOuts() }
+    #expect(batch.queue.count(.waiting) == 2)
+
+    // A trial started or a key entered: the next waiting one goes, in order.
+    EntitlementMonitor.$forced.withValue(true) { project.resumeFanOuts() }
+    #expect(prompts(items[1]) == ["/check"])
+    #expect(prompts(items[2]).isEmpty)
+    #expect(batch.queue.count(.running) == 1)
+    #expect(batch.queue.count(.waiting) == 1)
+  }
+
+  @Test func cancelClearsARefusedFanOut() throws {
+    let (project, items, batch) = try refusedMidBatch()
+    defer { project.stopAll() }
+    project.cancelFanOut(batch)
+    #expect(project.fanOuts.isEmpty)
+    for item in items.dropFirst() { #expect(prompts(item).isEmpty) }
+  }
+
+  /// A resume that sends a prompt is refused too: Session > Answer Yes on a session that
+  /// ended on a yes-or-no question writes nothing, and leaves the draft.
+  @Test func answerYesIsRefusedWhenNotEntitled() throws {
+    let project = Project(folder: folder)
+    project.executableOverride = fake
+    defer { project.stopAll() }
+    let item = project.attach(
+      ResumeTarget(
+        sessionID: "a", cwd: folder.path(percentEncoded: false),
+        file: folder.appending(path: "a.jsonl").path(percentEncoded: false),
+        accountDirectory: folder.path(percentEncoded: false), accountIsDefault: false))
+    var summary = SessionSummary(
+      sessionID: "a", account: ClaudeAccount(directory: folder, isDefault: false),
+      file: folder.appending(path: "a.jsonl"), modified: .now, size: 1)
+    summary.closingAsk = ClosingAsk(kind: .question, text: "Ship it?", isYesOrNo: true)
+    summary.closingMessageID = "m1"
+    item.preview = summary
+    item.draft = "half a thought"
+    #expect(EntitlementMonitor.$forced.withValue(true) { project.yesOrNoSelected != nil })
+    EntitlementMonitor.$forced.withValue(false) {
+      #expect(project.yesOrNoSelected == nil)
+      project.answerYesSelected()
+    }
+    #expect(item.session.transcript.entries.isEmpty)
+    #expect(item.session.process == nil)
+    #expect(item.draft == "half a thought")
   }
 
   // MARK: - What is never refused

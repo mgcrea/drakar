@@ -56,9 +56,10 @@ final class IDEBridge {
   @ObservationIgnored private lazy var review = ReviewWindowController(bridge: self)
 
   /// Sweeps the locks a crashed Drakar left (they would stop `claude --ide` connecting to
-  /// anything), then listens and advertises.
+  /// anything), then listens and advertises. After `stopListening`, listens again on the
+  /// same server, whose connections never closed.
   func start() {
-    guard server == nil else { return }
+    if server?.isListening == true { return }
     for account in ClaudeAccount.discover() {
       let directory = IDELockFile.directory(for: account)
       for stale in IDELockFile.stale(
@@ -67,9 +68,11 @@ final class IDEBridge {
         try? FileManager.default.removeItem(at: stale)
       }
     }
-    let server = IDEServer(
-      onMessage: { [weak self] connection, message in self?.handle(message, from: connection) },
-      onClose: { [weak self] connection in self?.closed(connection) })
+    let server =
+      self.server
+      ?? IDEServer(
+        onMessage: { [weak self] connection, message in self?.handle(message, from: connection) },
+        onClose: { [weak self] connection in self?.closed(connection) })
     do {
       try server.start(
         ready: { [weak self] port in
@@ -84,7 +87,17 @@ final class IDEBridge {
     }
   }
 
-  /// Removes the lock files; called as the app quits.
+  /// The licence gate's stop (`EntitlementMonitor.apply()`): the lock files go and the
+  /// listener with them, so no new `claude --ide` finds or reaches Drakar. A `claude`
+  /// already connected keeps its editor, and the diffs it waits on can still be answered,
+  /// until it disconnects.
+  func stopListening() {
+    removeLocks()
+    port = nil
+    server?.stopListening()
+  }
+
+  /// Removes the lock files and hangs up on every `claude`: the app is quitting.
   func stop() {
     removeLocks()
     server?.stop()

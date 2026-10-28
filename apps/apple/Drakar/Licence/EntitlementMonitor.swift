@@ -62,17 +62,26 @@ final class EntitlementMonitor {
 
   /// Bring the IDE bridge in line with the entitlement, as armada brings its MCP server:
   /// an unlicensed Drakar advertises itself to no terminal `claude`. Idempotent both ways:
-  /// `start()` returns early when already listening and `stop()` when stopped.
+  /// `start()` returns early when already listening and `stopListening()` when not.
+  ///
+  /// DIVERGES from armada, whose server stops outright: refused, the bridge only stops
+  /// listening and takes its lock files down. A `claude` already connected keeps its
+  /// editor, and a diff it is waiting on can still be accepted or rejected, for the same
+  /// reason a running turn finishes. Quitting still hangs up on everyone (`stop()`).
+  ///
+  /// Entitled again, the fan-outs a refusal left waiting carry on in every open window.
   ///
   /// The bridge reads the unforced answer: it is one per process, and a test's task-local
-  /// refusal must not take it down under every other suite. Only `shared` touches it.
+  /// refusal must not take it down under every other suite. Only `shared` touches it, or
+  /// the windows.
   func apply() {
     current = entitlement()
     guard self === Self.shared else { return }
     if isEntitled {
       IDEBridge.shared.start()
+      for project in OpenSessions.shared.projects.values { project.resumeFanOuts() }
     } else {
-      IDEBridge.shared.stop()
+      IDEBridge.shared.stopListening()
     }
   }
 

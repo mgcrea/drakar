@@ -980,15 +980,30 @@ final class Project {
     fanOuts.removeAll { $0.queue.isDone }
   }
 
-  /// Sends `batch`'s prompt to `ids`; one closed meanwhile passes its slot on.
+  /// Sends `batch`'s prompt to `ids`; one closed meanwhile passes its slot on. One that
+  /// cannot take it (the licence gate, after a trial ended) waits again rather than counting
+  /// as running for a turn that never started: Cancel can clear it, and `resumeFanOuts`
+  /// sends it once work may be sent.
   private func send(_ ids: [UUID], in batch: FanOutBatch) {
     for id in ids {
       guard let item = sessions.first(where: { $0.id == id }) else {
         send(batch.queue.finished(id), in: batch)
         continue
       }
+      guard item.session.canSend || item.session.canQueue else {
+        batch.queue.refused(id)
+        continue
+      }
       item.session.send(batch.prompt)
     }
+  }
+
+  /// The batches' waiting sessions, sent into the slots free now: what a refusal left
+  /// waiting goes once a trial starts or a key is entered (`EntitlementMonitor.apply()`).
+  func resumeFanOuts() {
+    guard EntitlementMonitor.allowsWorkNow else { return }
+    for batch in fanOuts { send(batch.queue.start(), in: batch) }
+    fanOuts.removeAll { $0.queue.isDone }
   }
 
   /// Hiding the inspector on its Skills & MCP tab: everything marked was seen.

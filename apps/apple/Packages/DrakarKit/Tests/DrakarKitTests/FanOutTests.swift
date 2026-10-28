@@ -50,6 +50,31 @@ struct FanOutTests {
     #expect(batch.finished(1) == [2])
   }
 
+  /// A refused send waits again and frees its slot; a later start sends it, in order. A
+  /// refusal for one not running changes nothing.
+  @Test func aRefusedOneWaitsAgain() {
+    var batch = FanOut(ids: [1, 2, 3], limit: 2)
+    #expect(batch.start() == [1, 2])
+    batch.refused(1)
+    batch.refused(2)
+    batch.refused(3)
+    #expect(batch.count(.running) == 0)
+    #expect(batch.count(.waiting) == 3)
+    #expect(batch.summary == "3 waiting")
+    #expect(batch.start() == [1, 2])
+    #expect(batch.finished(1) == [3])
+  }
+
+  /// Refused ones are waiting, so Cancel takes them and the batch is done.
+  @Test func cancelTakesTheRefused() {
+    var batch = FanOut(ids: [1, 2], limit: nil)
+    _ = batch.start()
+    batch.refused(1)
+    batch.refused(2)
+    #expect(batch.cancel() == [1, 2])
+    #expect(batch.isDone)
+  }
+
   /// Cancel returns the waiting ones only; the running ones keep running.
   @Test func cancelReturnsTheWaiting() {
     var batch = FanOut(ids: [1, 2, 3], limit: 1)

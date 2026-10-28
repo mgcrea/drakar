@@ -43,7 +43,8 @@ public struct FanOut<ID: Hashable & Sendable>: Sendable {
     .joined(separator: " · ")
   }
 
-  /// The ones to send now: all, or the first `limit`.
+  /// The ones to send now: all, or the first `limit`. Again later, the waiting ones the free
+  /// slots take, so a batch whose sends were refused carries on from where it stood.
   public mutating func start() -> [ID] { next() }
 
   /// `id` is done with its turn, or stopped. Returns the one to send in its place, if it held
@@ -52,6 +53,14 @@ public struct FanOut<ID: Hashable & Sendable>: Sendable {
     guard let state = states[id], state == .running || state == .waiting else { return [] }
     states[id] = .finished
     return state == .running ? next() : []
+  }
+
+  /// `id` was handed out to run and its session refused the prompt (the licence gate, or a
+  /// session that could not take one): it waits again, holding no slot, for the next
+  /// `start()`. Anything not running is left as it is.
+  public mutating func refused(_ id: ID) {
+    guard states[id] == .running else { return }
+    states[id] = .waiting
   }
 
   /// The waiting ones, which will not be sent now. The running ones go on.

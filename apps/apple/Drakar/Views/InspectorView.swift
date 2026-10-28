@@ -128,7 +128,7 @@ private struct SkillsPane: View {
         } else {
           List {
             ForEach(shown) { skill in
-              SkillRow(skill: skill, isMarked: marks.contains(skill.name))
+              SkillRow(skill: skill, isMarked: marks.contains(skill.name), refused: refusedHelp)
                 .pressableRow { clicked(skill) }
                 .accessibilityAddTraits(.isButton)
                 .accessibilityAction { clicked(skill) }
@@ -151,9 +151,18 @@ private struct SkillsPane: View {
     .task(id: codex.map(ObjectIdentifier.init)) { codex?.loadIfNeeded() }
   }
 
+  /// What a skill's row says while the licence gate refuses work, which a click on it would
+  /// otherwise do nothing about; nil otherwise.
+  private var refusedHelp: String? {
+    project.canRun(in: .newSession)
+      ? nil : String(localized: "Running a skill needs a licence or a trial (Settings › Licence)")
+  }
+
   /// A click runs the skill in a new session, but not again as the second click of a
-  /// double-click: that would make two sessions and send it in both.
+  /// double-click: that would make two sessions and send it in both. Nothing while the
+  /// licence gate refuses work.
   private func clicked(_ skill: SkillEntry) {
+    guard project.canRun(in: .newSession) else { return }
     let click = SkillClick(name: skill.name, time: ProcessInfo.processInfo.systemUptime)
     guard click.runs(after: lastRun, within: NSEvent.doubleClickInterval) else { return }
     lastRun = click
@@ -164,6 +173,7 @@ private struct SkillsPane: View {
     Button("Run in Current Session") { project.run(skill, in: .current) }
       .disabled(!project.canRun(in: .current))
     Button("Run in New Session") { project.run(skill, in: .newSession) }
+      .disabled(!project.canRun(in: .newSession))
     Button("Run in Each Subfolder…") { project.fanOutRequest = FanOutRequest(skill: skill) }
     Divider()
     Button("Copy Name") {
@@ -207,6 +217,8 @@ struct SkillClick: Equatable {
 private struct SkillRow: View {
   let skill: SkillEntry
   let isMarked: Bool
+  /// Why a click runs nothing now, said in place of the description's tooltip.
+  var refused: String? = nil
 
   var body: some View {
     VStack(alignment: .leading, spacing: 2) {
@@ -226,7 +238,7 @@ private struct SkillRow: View {
     }
     // The whole row takes the click, as a session row does, not only its text.
     .frame(maxWidth: .infinity, alignment: .leading)
-    .modifier(Tooltip(text: help))
+    .modifier(Tooltip(text: refused ?? help))
     .accessibilityElement(children: .combine)
   }
 

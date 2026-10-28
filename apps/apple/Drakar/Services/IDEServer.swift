@@ -43,10 +43,15 @@ final class IDEServer {
   /// Every connected `claude` that has finished its handshake.
   var clients: [IDEConnection] { connections.values.filter(\.isInitialized) }
 
-  /// Starts listening on a free loopback port; `ready` gets the port.
+  /// Whether a new `claude` can connect: between `start` and `stopListening` or `stop`.
+  var isListening: Bool { listener != nil }
+
+  /// Starts listening on a free loopback port; `ready` gets the port. Again after
+  /// `stopListening`, a new port, the same token and the connections kept.
   func start(
     ready: @escaping @MainActor (UInt16) -> Void, failed: @escaping @MainActor (String) -> Void
   ) throws {
+    guard listener == nil else { return }
     let token = token
     let webSocket = NWProtocolWebSocket.Options()
     webSocket.autoReplyPing = true
@@ -88,9 +93,16 @@ final class IDEServer {
     self.listener = listener
   }
 
-  func stop() {
+  /// No new connection is accepted; the ones made go on until they close. Cancelling an
+  /// `NWListener` leaves the connections it accepted alone.
+  func stopListening() {
     listener?.cancel()
     listener = nil
+  }
+
+  /// Stops listening and hangs up on every connection.
+  func stop() {
+    stopListening()
     for connection in connections.values { connection.close() }
     connections = [:]
   }

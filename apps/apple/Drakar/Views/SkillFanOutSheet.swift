@@ -143,6 +143,13 @@ private struct FanOutForm: View {
           .accessibilityIdentifier("fanout.limit")
       }
       HStack {
+        // Disabled rather than refused on the click: a refused start would close the sheet
+        // and lose the arguments typed into it.
+        if !EntitlementMonitor.allowsWorkNow {
+          Text("Starting sessions needs a licence or a trial.")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
         Spacer()
         Button("Cancel", role: .cancel, action: dismiss).keyboardShortcut(.cancelAction)
         Button("Start \(draft.chosen.count) Sessions") {
@@ -150,7 +157,7 @@ private struct FanOutForm: View {
           dismiss()
         }
         .keyboardShortcut(.defaultAction)
-        .disabled(draft.chosen.isEmpty)
+        .disabled(draft.chosen.isEmpty || !EntitlementMonitor.allowsWorkNow)
         .accessibilityIdentifier("fanout.start")
       }
     }
