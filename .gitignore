@@ -11,10 +11,14 @@ node_modules/
 *.xcodeproj/project.xcworkspace/xcuserdata/
 *.xcodeproj/xcuserdata/
 
-# Cloudflare
+# Cloudflare. The Worker's secrets are staged in apps/api/.<env>.vars before
+# scripts/push-worker-secrets.mjs pushes them; their .example templates are tracked,
+# the files never are. Globbed rather than listed, armada's and bastion's lesson: a
+# list naming .dev.vars and .prod.vars missed .test.vars, which carries the signing
+# key too.
 .wrangler/
-.dev.vars
-.prod.vars
+*.vars
+!*.vars.example
 
 # Direct distribution. Vendor/ is fetched and checksummed by `make sparkle` rather than
 # committed. The rest is key material: the Sparkle private key exported for CI is one

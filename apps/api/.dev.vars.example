@@ -1,0 +1,20 @@
+# Local secrets for `wrangler dev`. Copy to `.dev.vars`, which is gitignored.
+# In production these are set with `pnpm secrets:prod`, never committed.
+
+# The licence signing key, same value as the repo-root .env. Using the real one
+# locally means keys minted here verify against the public key already compiled
+# into the app, which is what makes an end-to-end test meaningful.
+LICENSE_SIGNING_KEY=
+
+# From the Stripe dashboard, or printed by `stripe listen` when testing locally.
+# Used verbatim, `whsec_` prefix and all, as the HMAC key.
+STRIPE_WEBHOOK_SECRET=
+
+# OPTIONAL, and normally unset. The price paid arrives as `price_id` in the
+# Payment Link's metadata, which Stripe copies onto every session it creates, so
+# the Worker reads it out of the webhook it is already verifying. This key is the
+# fallback for a session created some other way. Like armada's, and unlike
+# bastion's and cupertino's, this Worker refuses a sale whose price it cannot
+# resolve, so a Payment Link without `price_id` metadata needs this key set or
+# its sales are not fulfilled.
+STRIPE_SECRET_KEY=

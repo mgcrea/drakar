@@ -44,7 +44,7 @@ help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(firstword $(MAKEFILE_LIST)) \
 		| awk 'BEGIN {FS = ":.*?## "}; {printf "    \033[36m%-18s\033[0m %s\n", $$1, $$2}'
 	@echo ""
-	@echo "  \033[1mapp\033[0m — forwarded to $(APPLE), so 'make test' here is 'make test' there"
+	@echo "  \033[1mapp\033[0m — forwarded to $(APPLE), so 'make build' here is 'make build' there"
 	@$(MAKE) --no-print-directory -C $(APPLE) help
 
 audit: ## Check the network claim against the sources (scripts/audit-network.sh)
@@ -83,7 +83,7 @@ changelog-check: ## Fail if Changelog.swift is stale against CHANGELOG.md
 
 # node:test for scripts/: the CHANGELOG parse the appcast, the release body and the
 # What's New pane share, and the Sparkle signature check `appcast` will run. Not called
-# `test`, which is apps/apple's and forwarded.
+# `test`, which runs this and every other suite (below).
 #
 # DIVERGES from armada: package.json's `test:scripts` skips one test by name, the
 # fleet's "accepts the SUPublicEDKey committed in this repository's Info.plist". That
@@ -93,6 +93,23 @@ changelog-check: ## Fail if Changelog.swift is stale against CHANGELOG.md
 # the skip.
 test-scripts: ## Run the Node tests under scripts/
 	@pnpm test:scripts
+
+# Every suite that runs offline: scripts/, the licence Worker (in workerd, against a local
+# D1), and DrakarKit (apps/apple `test`). Root-level because two of the three are not
+# apps/apple's, and it carries a `## ` comment, so ROOT_TARGETS drops `test` from
+# APPLE_TARGETS: forwarded, it would run only the package suite under a name that promises
+# all of them.
+#
+# DIVERGES from armada, whose `test` runs apps/apple's `unit` and then its package `test`.
+# Drakar's apps/apple has no `unit`; its hosted suite is `test-app`, which needs Xcode and
+# launches the app, so it stays out of here as it stays out of apps/apple's own `test`.
+#
+# Cheapest first, and it stops at the first failure. `license-check` is not here: it
+# needs a signing key, which a clone does not have.
+test: ## Run every offline suite: scripts, the licence Worker, DrakarKit
+	@pnpm test:scripts
+	@pnpm -C apps/api test
+	@$(MAKE) --no-print-directory -C $(APPLE) test
 
 # ── Release ───────────────────────────────────────────────────────────────────
 #
@@ -501,6 +518,43 @@ license-check: ## Prove a minted licence key verifies in the app's own verifier
 
 .PHONY: revocations license-check
 
+# ── API ───────────────────────────────────────────────────────────────────────
+#
+# The licence Worker at api.drakar.mgcrea.io: Stripe's webhook in, a signed key out by
+# email and on /thanks. Armada's target, which is bastion's with its one hard lesson.
+#
+# Nothing here has run against Cloudflare yet. Until Phase 2 creates drakar-licenses and
+# puts its id in apps/api/wrangler.jsonc, `wrangler d1 migrations list` has no database to
+# read, the grep below finds no "No migrations to apply", and api-deploy refuses.
+
+API_URL := https://api.drakar.mgcrea.io/health
+
+# Wrangler's d1 subcommands do not take `account_id` from wrangler.jsonc the way `deploy`
+# does, and the token reaches three accounts, so without an explicit one they stop to ask,
+# which inside a recipe is just a failure. The same value as wrangler.jsonc, which already
+# documents it as public.
+CF_ACCOUNT_ID := 0121e8859874c6fc0d674676e17d9f18
+
+api-deploy: ## Build and publish the licence Worker, refusing on unapplied migrations
+	@# Code expecting a table the database has not got deploys green and then fails
+	@# on the first webhook: bastion's Worker spent four days answering 500 to
+	@# every checkout that way, while the /health check below stayed 200. This
+	@# refuses rather than applies; `pnpm -C apps/api migrate` stays deliberate.
+	@CLOUDFLARE_ACCOUNT_ID=$(CF_ACCOUNT_ID) pnpm -C apps/api exec wrangler d1 migrations list drakar-licenses --remote 2>&1 \
+		| grep -q 'No migrations to apply' \
+		|| { echo 'refusing to deploy: unapplied migrations in apps/api - run: pnpm -C apps/api migrate'; exit 1; }
+	pnpm -C apps/api release
+	@# A green `wrangler deploy` does not prove the Worker answers. This does.
+	@curl -fsS --max-time 20 -o /dev/null $(API_URL)
+	@echo "deployed $(API_URL)"
+
+# The Worker's suite on its own: Node for the minter and the schemas, workerd with a local
+# D1 for the handlers. No Cloudflare account, no database id, no network.
+api-test: ## Run the licence Worker's tests (vitest, workerd, a local D1)
+	@pnpm -C apps/api test
+
+.PHONY: api-deploy api-test
+
 # Explicit targets rather than a `%:` catch-all. A match-anything rule prints "'X' is up to
 # date" instead of forwarding whenever the goal happens to name a file or directory at the
 # root — and apps/ and docs/ are both real paths. Silent success is the one failure a
@@ -509,7 +563,7 @@ $(APPLE_TARGETS):
 	@$(MAKE) --no-print-directory -C $(APPLE) $@
 
 .PHONY: help audit audit-running audit-release extension-diff extension-accept changelog changelog-check \
-	test-scripts $(APPLE_TARGETS)
+	test-scripts test $(APPLE_TARGETS)
 
 # ─── directory goals ─────────────────────────────────────────────────────────
 # A goal naming an existing directory is a target make considers already built, so

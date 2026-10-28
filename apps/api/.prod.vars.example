@@ -1,0 +1,22 @@
+# Production secrets. Copy to `.prod.vars`, which is gitignored, fill it in,
+# and push it with `pnpm secrets:prod` (scripts/push-worker-secrets.mjs at the
+# repo root, which validates the file and runs `wrangler secret bulk`). Never
+# committed, never read by `wrangler dev`, which reads `.dev.vars`.
+
+# The licence signing key, same value as the repo-root .env. It has to be: the
+# public half is compiled into the app, and a key signed with anything else is
+# refused by every build.
+LICENSE_SIGNING_KEY=
+
+# From the LIVE Stripe dashboard, shown once when the webhook endpoint is created.
+# Used verbatim, `whsec_` prefix and all, as the HMAC key.
+STRIPE_WEBHOOK_SECRET=
+
+# OPTIONAL, and normally unset. The price paid arrives as `price_id` in the
+# Payment Link's metadata, which Stripe copies onto every session it creates, so
+# the Worker reads it out of the webhook it is already verifying. This key is the
+# fallback for a session created some other way. Like armada's, and unlike
+# bastion's and cupertino's, this Worker refuses a sale whose price it cannot
+# resolve, so a Payment Link without `price_id` metadata needs this key set or
+# its sales are not fulfilled.
+STRIPE_SECRET_KEY=
