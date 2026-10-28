@@ -72,6 +72,13 @@ changelog-check: ## Fail if Changelog.swift is stale against CHANGELOG.md
 # node:test for scripts/: the CHANGELOG parse the appcast, the release body and the
 # What's New pane share, and the Sparkle signature check `appcast` will run. Not called
 # `test`, which is apps/apple's and forwarded.
+#
+# DIVERGES from armada: package.json's `test:scripts` skips one test by name, the
+# fleet's "accepts the SUPublicEDKey committed in this repository's Info.plist". That
+# file is byte-identical across the fleet, so the skip lives outside it. The test reads
+# apps/apple/*-Info.plist, which Drakar has no copy of until Task 3 moves its plist there,
+# and even then the key is the placeholder until Phase 2. The commit that lands the real
+# key drops the skip.
 test-scripts: ## Run the Node tests under scripts/
 	@pnpm test:scripts
 
