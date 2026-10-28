@@ -22,6 +22,8 @@ public struct TaskEvent: Sendable, Equatable {
   /// `completed`, `failed`, `stopped`…; from `patch.status` on `task_updated`.
   public var status: String?
   public var summary: String?
+  /// Where a shell task's output went, from `task_notification` (2.1.312); none when empty.
+  public var outputFile: String?
   public var lastToolName: String?
   public var toolUses: Int?
   public var totalTokens: Int?
@@ -39,6 +41,7 @@ public struct TaskEvent: Sendable, Equatable {
     isBackgrounded = (json["is_backgrounded"] ?? json["patch"]?["is_backgrounded"])?.boolValue
     status = (json["status"] ?? json["patch"]?["status"])?.stringValue
     summary = json["summary"]?.stringValue
+    outputFile = json["output_file"]?.stringValue.flatMap { $0.isEmpty ? nil : $0 }
     lastToolName = json["last_tool_name"]?.stringValue
     toolUses = json["usage"]?["tool_uses"]?.intValue
     totalTokens = json["usage"]?["total_tokens"]?.intValue
@@ -55,6 +58,7 @@ public struct TaskEvent: Sendable, Equatable {
     update.isBackgrounded = isBackgrounded
     update.status = status
     update.summary = summary
+    update.outputFile = outputFile
     update.lastToolName = lastToolName
     update.toolUses = toolUses
     update.totalTokens = totalTokens
@@ -123,6 +127,8 @@ public struct AgentTask: Sendable, Equatable {
   public var durationMS: Int?
   /// Its report, from the notification that it ended.
   public var summary: String?
+  /// Where a shell task's output went, named once it ended.
+  public var outputFile: URL?
 
   public init() {}
 
@@ -151,6 +157,9 @@ public struct AgentTask: Sendable, Equatable {
     if let isBackgrounded = update.isBackgrounded { self.isBackgrounded = isBackgrounded }
     if let status = update.status { self.status = Status(status) }
     if let summary = update.summary { self.summary = summary }
+    if let outputFile = update.outputFile, outputFile.hasPrefix("/") {
+      self.outputFile = URL(filePath: outputFile)
+    }
     if let prompt = update.prompt { self.prompt = prompt }
     lastToolName = update.lastToolName ?? lastToolName
     toolUses = update.toolUses ?? toolUses

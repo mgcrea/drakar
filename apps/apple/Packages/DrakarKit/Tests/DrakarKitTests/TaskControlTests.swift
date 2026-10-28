@@ -101,4 +101,75 @@ struct TaskControlTests {
       try output("x", totalBytes: 12288, truncated: true).note == "Showing the end of 12 kB")
     #expect(try output("x", totalBytes: 12288, truncated: false).note == nil)
   }
+
+  /// The backgrounded call's result names the file its output goes to
+  /// (task-controls.jsonl:7).
+  @Test func theResultNamesTheOutputFile() throws {
+    var feed = ClaudeFeed()
+    feed.addPrompt("Run it")
+    for message in try Fixture.taskControls.messages.prefix(7) { feed.apply(message) }
+    let result = feed.entries.lazy.compactMap { entry -> String? in
+      if case .tool(let call) = entry.kind, call.id == "toolu_01Hriqem1KWjxUocjn2j6NJC" {
+        return call.result?.content
+      }
+      return nil
+    }.first
+    #expect(
+      TaskOutput.outputFile(inResult: try #require(result))
+        == URL(filePath: "/p/tasks/b8cffcoy7.output"))
+    // At the end of the text, and on a line of its own.
+    #expect(
+      TaskOutput.outputFile(inResult: "Output is being written to: /a b/t.output.")
+        == URL(filePath: "/a b/t.output"))
+    #expect(
+      TaskOutput.outputFile(inResult: "Output is being written to: /t.output\nmore")
+        == URL(filePath: "/t.output"))
+    #expect(TaskOutput.outputFile(inResult: "(Bash completed with no output)") == nil)
+    #expect(TaskOutput.outputFile(inResult: "Output is being written to: relative.output.") == nil)
+    #expect(TaskOutput.outputFile(inResult: nil) == nil)
+  }
+
+  private func temporaryFile(_ bytes: Data) throws -> URL {
+    let file = FileManager.default.temporaryDirectory.appending(
+      path: "drakar-output-\(UUID().uuidString).output")
+    try bytes.write(to: file)
+    return file
+  }
+
+  /// A file under the CLI's cap reads whole, as `get_task_output` would answer.
+  @Test func aShortFileReadsWhole() throws {
+    let file = try temporaryFile(Data("line one\nline two\n".utf8))
+    defer { try? FileManager.default.removeItem(at: file) }
+    let output = try #require(TaskOutput(tailOf: file))
+    #expect(output.text == "line one\nline two\n")
+    #expect(output.totalBytes == 18)
+    #expect(!output.isTruncated)
+    #expect(output.note == nil)
+  }
+
+  /// Over it, its last 8192 bytes, shown from their first whole line, the note saying how
+  /// much there is.
+  @Test func aLongFileReadsItsTail() throws {
+    let lines = (0..<2000).map { "line \($0)\n" }.joined()
+    let file = try temporaryFile(Data(lines.utf8))
+    defer { try? FileManager.default.removeItem(at: file) }
+    let output = try #require(TaskOutput(tailOf: file))
+    #expect(output.text.utf8.count == 8192)
+    #expect(output.totalBytes == lines.utf8.count)
+    #expect(output.isTruncated)
+    #expect(lines.hasSuffix(output.text))
+    #expect(output.displayText.hasPrefix("line "))
+    #expect(output.displayText.hasSuffix("line 1999\n"))
+    #expect(output.note != nil)
+  }
+
+  /// An empty file is no output yet; a file not there is no reading at all.
+  @Test func anEmptyOrMissingFile() throws {
+    let file = try temporaryFile(Data())
+    defer { try? FileManager.default.removeItem(at: file) }
+    #expect(TaskOutput(tailOf: file)?.text == "")
+    #expect(
+      TaskOutput(tailOf: FileManager.default.temporaryDirectory.appending(path: "no-such.output"))
+        == nil)
+  }
 }

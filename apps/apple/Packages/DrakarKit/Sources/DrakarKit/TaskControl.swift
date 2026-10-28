@@ -38,9 +38,13 @@ public enum BackgroundOutcome: Sendable, Equatable {
   }
 }
 
-/// A `get_task_output` reply (`ClientMessage.taskOutput`): a shell or Monitor task's output,
-/// its tail when the whole is too long.
+/// A shell task's output, its tail when the whole is too long: read from the task's own
+/// output file (`init(tailOf:)`), or a `get_task_output` reply (`ClientMessage.taskOutput`)
+/// where the file is not known.
 public struct TaskOutput: Sendable, Equatable {
+  /// The most of the end that is read, as `get_task_output` caps it (2.1.312).
+  public static let tailLimit = 8192
+
   /// As the reply has it: escapes, carriage returns and a cut first line included.
   public var text: String
   /// The whole output's size, of which `text` may be the end.
@@ -56,6 +60,37 @@ public struct TaskOutput: Sendable, Equatable {
     self.text = text
     self.totalBytes = totalBytes
     self.isTruncated = isTruncated
+  }
+
+  /// The last `tailLimit` bytes of `file`, as `get_task_output` would answer for it: nil when
+  /// it cannot be read. Only the tail is read, however long the file.
+  public init?(tailOf file: URL) {
+    guard let handle = try? FileHandle(forReadingFrom: file) else { return nil }
+    defer { try? handle.close() }
+    guard let size = try? handle.seekToEnd() else { return nil }
+    let start = size > UInt64(Self.tailLimit) ? size - UInt64(Self.tailLimit) : 0
+    guard (try? handle.seek(toOffset: start)) != nil,
+      let data = try? handle.read(upToCount: Int(size - start)) ?? Data()
+    else { return nil }
+    // A sequence the cut went through decodes to replacement characters, which
+    // `displayText` skips.
+    text = String(decoding: data, as: UTF8.self)
+    totalBytes = Int(size)
+    isTruncated = start > 0
+  }
+
+  /// The file a backgrounded shell call's output goes to, from its result: "… Output is being
+  /// written to: <path>. …" (2.1.312). Nil without that sentence or an absolute path.
+  public static func outputFile(inResult text: String?) -> URL? {
+    let marker = "Output is being written to: "
+    guard let text, let range = text.range(of: marker) else { return nil }
+    var path = Substring(
+      text[range.upperBound...].prefix { $0 != "\n" && $0 != "\r" })
+    // The sentence goes on after the path's full stop.
+    if let end = path.range(of: ". ") { path = path[..<end.lowerBound] }
+    if path.hasSuffix(".") { path = path.dropLast() }
+    guard path.hasPrefix("/") else { return nil }
+    return URL(filePath: String(path))
   }
 
   /// `text` to show: a truncated tail starts on its first whole line, or past the

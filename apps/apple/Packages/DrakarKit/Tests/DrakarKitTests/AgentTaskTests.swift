@@ -164,6 +164,16 @@ struct AgentTaskTests {
     #expect(try taskControls(upTo: 5).agentTasks[bash]?.isBackgrounded == true)
   }
 
+  /// The notification that a task ended names its output file; an empty name is none
+  /// (task-controls.jsonl:12, :37).
+  @Test func anEndedTaskNamesItsOutputFile() throws {
+    let transcript = try taskControls()
+    #expect(
+      transcript.agentTasks["toolu_01Hriqem1KWjxUocjn2j6NJC"]?.outputFile
+        == URL(filePath: "/p/tasks/b8cffcoy7.output"))
+    #expect(transcript.agentTasks["toolu_01Ak2ftyoHCTnMr2dWQvwd3F"]?.outputFile == nil)
+  }
+
   /// A stop reads as one, whether the CLI says `killed` (`task_updated`) or `stopped`
   /// (`task_notification`), for a Bash, an agent, and the agent's own Bash.
   @Test func aStoppedTaskIsStopped() throws {

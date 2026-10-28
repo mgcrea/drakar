@@ -222,6 +222,8 @@ public struct AgentTaskUpdate: Sendable, Equatable {
   public var isBackgrounded: Bool?
   public var status: String?
   public var summary: String?
+  /// Where a shell task's output went, as the CLI names the file.
+  public var outputFile: String?
   public var lastToolName: String?
   public var toolUses: Int?
   public var totalTokens: Int?
