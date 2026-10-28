@@ -110,7 +110,10 @@ person said.
   history isn't parsed for it.
 - **Output is live only.** It shows while the session is driven and the task ran in this
   process. The last tail stays on the card until the window closes. Output is not read from
-  the task's output file, which is temporary.
+  the task's output file, which is temporary. Reversed after the final review: Output reads
+  the tail of that file (its path from the call's result or `output_file`), with
+  `get_task_output` as the fallback, because every poll and its reply landed in the session
+  host's log, which a relaunch replays.
 - **Forks.** The subagent file is looked up under the session's own folder, then under the
   other session folders beside it in the same project folder. Agent IDs are random and
   unique, so a match there is the original's. `Transcript` does not keep the `sessionId` of

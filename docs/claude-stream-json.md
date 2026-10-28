@@ -327,9 +327,13 @@ answered `allow`). Three control requests, all answered at once, none of them st
   "…" completed (exit code 0)") and an empty `background_tasks_changed` arrive, then a turn
   nobody prompted (`system/init`, a reply, a `result` with `origin.kind:
   task-notification`), as for a fork.
-- **Task output.** The tail of the task's `.output` file, which the CLI ends with
-  `[exited with code N]` once the command exits. A command that prints nothing reads empty
-  while it runs.
+- **Task output.** The tail of the task's `.output` file, at most its last 8192 bytes
+  (`truncated` past that), which the CLI ends with `[exited with code N]` once the command
+  exits. A command that prints nothing reads empty while it runs. The file's path is in the
+  backgrounded call's result ("Output is being written to: <path>.") and in the task's
+  `task_notification` `output_file`. Drakar reads that file's tail itself, the same 8192
+  bytes, and sends `get_task_output` only when it knows no path: every request and its reply
+  would otherwise land in the session host's log, once a second.
 - **A stopped task** reports two statuses: `task_updated` has `patch.status: "killed"` (with
   `end_time`), then `task_notification` has `status: "stopped"`, both before the empty
   success. The same for a Bash and an `Agent`. The Bash inside a stopped `Agent` gets only a

@@ -51,8 +51,8 @@ Protocol changes are the other half and have their own procedure (raising
 | `side_question` | no | Ask a side question without derailing the session | | adopt: one CLI request each |
 | `run_in_background` | has | Move a running tool call to the background (Drakar: a line on the call's card) | `apps/apple/Drakar/Views/TaskControlViews.swift:114` | adopt: `background_tasks` |
 | `stop_subagent` | has | Stop a running subagent or background task (Drakar: on the task's card, not an agent map) | `apps/apple/Drakar/Views/TaskControlViews.swift:80` | adopt: subagents promise |
-| `get_subagent_transcript` | has | Read a subagent's own transcript (Drakar: reads the file itself, inside the card) | `apps/apple/Drakar/Services/SubagentFeed.swift:15` | adopt: subagents promise, after a reload too |
-| `get_task_output` | has | Read a background task's output (Drakar: background Bash tasks only) | `apps/apple/Drakar/Views/TaskControlViews.swift:142` | adopt: subagents promise |
+| `get_subagent_transcript` | has | Read a subagent's own transcript (Drakar: reads the file itself, inside the card) | `apps/apple/Drakar/Services/SubagentFeed.swift:18` | adopt: subagents promise, after a reload too |
+| `get_task_output` | has | Read a background task's output (Drakar: background Bash tasks only; reads the tail of the task's output file, `get_task_output` as the fallback when the file is not known) | `apps/apple/Drakar/Services/TaskControls.swift:88` | adopt: subagents promise |
 | `rewind_code` | no | Revert file edits back to a chosen message | | adopt: `rewind_files`, dry run first |
 | `fork_conversation` | partial | Fork a session, optionally from a chosen message (Drakar: whole session only) | `apps/apple/Drakar/Services/Project.swift:1119` | adopt: from a chosen message, with rewind |
 | `export_conversation` | no | Export the conversation as text (/export) | | adopt: one CLI request each |
@@ -273,7 +273,7 @@ the SDK sends outside this path.
 | `get_settings` | sends | `get_applied_settings`, `get_output_style`, `refresh_claude_settings`, `refresh_remote_control_lock` | | |
 | `get_skills_dialog` | no | `get_skills_dialog`, `set_skill_state` | | |
 | `get_status` | no | `get_status` | | |
-| `get_task_output` | sends | `get_task_output` | | |
+| `get_task_output` | sends | `get_task_output` | fallback only: Drakar reads the task's output file when its path is known | |
 | `get_usage` | no | `get_usage` | The SDK names its method `usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET` | |
 | `interrupt` | sends | `interrupt_claude` | | |
 | `list_permission_rules` | no | `list_permission_rules`, `add_permission_rules`, `remove_permission_rule` | | |
