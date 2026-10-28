@@ -1,0 +1,11 @@
+packages:
+  - "apps/*"
+
+allowBuilds:
+  esbuild: true
+  sharp: true
+  workerd: true
+
+# DIVERGES from armada, which excludes @mgcrea/feedback-contract@0.3.0 from the release-age
+# wait for its website's feedback form. Drakar depends on no such package, and an exclusion
+# naming one is a hole in the wait with nothing behind it.

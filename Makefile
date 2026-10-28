@@ -53,6 +53,28 @@ extension-diff: ## What the installed VS Code extension changed since the review
 extension-accept: ## Make the installed extension the reviewed snapshot (ledger updated first)
 	@scripts/extension-surface.sh --accept
 
+# ── Changelog ─────────────────────────────────────────────────────────────────
+#
+# CHANGELOG.md → Changelog.swift, the What's New pane's data. Root-level because the
+# source is at the root and the output is in apps/apple. `changelog-check` is the CI
+# gate: a stale Changelog.swift fails there rather than shipping notes that describe a
+# different build.
+#
+# DIVERGES from armada, whose two targets also render its website's release cards.
+# Drakar has no website half yet, so they write and check Changelog.swift alone.
+
+changelog: ## Regenerate Changelog.swift from CHANGELOG.md
+	@node scripts/generate-changelog.mjs
+
+changelog-check: ## Fail if Changelog.swift is stale against CHANGELOG.md
+	@node scripts/generate-changelog.mjs --check
+
+# node:test for scripts/: the CHANGELOG parse the appcast, the release body and the
+# What's New pane share, and the Sparkle signature check `appcast` will run. Not called
+# `test`, which is apps/apple's and forwarded.
+test-scripts: ## Run the Node tests under scripts/
+	@pnpm test:scripts
+
 # Explicit targets rather than a `%:` catch-all. A match-anything rule prints "'X' is up to
 # date" instead of forwarding whenever the goal happens to name a file or directory at the
 # root — and apps/ and docs/ are both real paths. Silent success is the one failure a
@@ -60,7 +82,8 @@ extension-accept: ## Make the installed extension the reviewed snapshot (ledger 
 $(APPLE_TARGETS):
 	@$(MAKE) --no-print-directory -C $(APPLE) $@
 
-.PHONY: help audit audit-running extension-diff extension-accept $(APPLE_TARGETS)
+.PHONY: help audit audit-running extension-diff extension-accept changelog changelog-check \
+	test-scripts $(APPLE_TARGETS)
 
 # ─── directory goals ─────────────────────────────────────────────────────────
 # A goal naming an existing directory is a target make considers already built, so

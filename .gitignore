@@ -15,3 +15,10 @@ node_modules/
 .wrangler/
 .dev.vars
 .prod.vars
+
+# Direct distribution. Vendor/ is fetched and checksummed by `make sparkle` rather than
+# committed. The rest is key material: the Sparkle private key exported for CI is one
+# `git add -A` away from being published with the repository.
+Vendor/
+sparkle_key.pem
+*.pem
