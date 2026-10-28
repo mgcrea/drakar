@@ -600,6 +600,60 @@ match 2.1.296 line for line. What changed:
   `--permission-prompt-tool stdio`: `can_use_tool` requests and their answers (Bash, Write,
   `ExitPlanMode`) are unchanged.
 
+## 2.1.312 (checked 2026-10-28)
+
+The 2.1.308 scenarios were run again on 2.1.308 and 2.1.312 with Drakar's arguments, from an
+environment with no `CLAUDE*`, `ANTHROPIC*` or `MCP_*` variable but `CLAUDE_CONFIG_DIR`
+(the transcripts say `entrypoint: sdk-cli`): a tool turn with a permission, Esc and Stop with
+a prompt queued, two prompts queued as content blocks, model and mode changes
+(`bypassPermissions` refused as `bypass_not_launched`), `get_context_usage` before and
+between turns, `rename_session`, a foreground `general-purpose` subagent, a fork and its
+notification turn, and plan mode's `ExitPlanMode`, four times on each. Both decode with no
+new message type and no new `system` subtype: fed through `StreamMessage` and
+`ClaudeTranslator`, nothing landed as `.unknown`, and the only `.other` were the `system`
+subtypes 2.1.308 already sends (`thinking_tokens`, `background_tasks_changed`,
+`session_title_changed`); no content block, stream event, delta or control request did. The
+`initialize` reply (its `models` and `commands` entries too), every control reply,
+`can_use_tool`, `command_lifecycle`, the `task_*` lines, the interrupts' `still_queued` and
+`cancelled`, and the fork's `origin` have the same keys on both. The transcripts fold
+alike: the same kinds of entries (their counts differ only where the model did), the
+rename's title, the last prompt, and a context reading from the tail. The requests in "Task
+controls" were captured on 2.1.312 only; their subtypes are in the 2.1.308 binary too. What
+changed is additive and Drakar ignores it:
+
+- `result` has `model_usage_since_last_result`, shaped as `modelUsage`, and each
+  `modelUsage` entry splits its cache writes into `cacheCreationEphemeral5mInputTokens` and
+  `cacheCreationEphemeral1hInputTokens`.
+- `rate_limit_event`'s `unifiedWindows.five_hour` and `seven_day` each carry their own
+  `status`, and `surpassedThreshold` once past one. `AccountUsage` reads `utilization`,
+  `resetsAt` and the top-level `status` and `rateLimitType`, which are unchanged.
+- Transcripts have `tools-used` lines (`{type, tools, sessionId}`, the names of the tools
+  used so far, written again as the list grows). History, `SessionIndex` and
+  `TranscriptTail` skip the type.
+- New literals in the binary, none of them seen on stdout in these runs: a `post_turn_memory`
+  task type (the background memory save, "saving memories", now run as a task; its `task_*`
+  lines would name no `tool_use_id`, and Drakar keeps only task lines it can tie to a call);
+  `system` `inherited_asks_settled` (remote transport only) and `turn_began_before_init`
+  (the runner's activity tee, under `CLAUDE_CODE_TEE_SDK_STDOUT`); a `ui_prompt_paint` host
+  request beside `ui_prompt_fill` and `ui_prompt_suggest`, for clients that register prompt
+  surfaces (Drakar would refuse it as any request it does not serve); `submit_survey_feedback`,
+  a request an SDK client sends; and a `project_doc_reads` transcript attachment.
+- **Not a change, but seen once:** in one plan-mode run of four on 2.1.312, the model wrote
+  its plan to a file it named itself in `<config>/plans/` instead of the path the
+  `plan_mode` attachment gave it, so the write was asked (`decision_reason_type: mode`) and
+  `ExitPlanMode` came with `input: {}`. The CLI fills `plan` and `planFilePath` from the
+  session's plan file, and there was none; the result was "User has approved exiting plan
+  mode. You can now proceed.", with `plan: null` in the structured result. The other runs, on
+  both versions, wrote to the path given and carried `plan`. The reminder and that empty-plan
+  result are in both binaries, so this is the model, not the release; Drakar's plan card
+  then has no plan to show.
+- Between the two, npm published 2.1.309 to 2.1.311; on 2026-10-28 2.1.312 was `latest` and
+  `next`, 2.1.308 still `stable`. Of their changelog items, 2.1.311's "`claude -p` and SDK
+  sessions saving transcript messages out of order" touches what Drakar reads; the transcripts
+  above were in order on both. `make extension-diff` against the 2.1.311 snapshot shows only
+  nine settings for auto mode (`autoMode.*`, `permissions.disableAutoMode`,
+  `skipAutoPermissionPrompt`, `useAutoModeDuringPlan`); its requests and strings are unchanged.
+
 ## Raw captures
 
 The captures this was written from are trimmed into
@@ -607,7 +661,7 @@ The captures this was written from are trimmed into
 payload's tool and server lists, and local paths were cut; the shapes were not.
 
 Checking a new release before raising `ClaudeVersion.tested` (done for 2.1.296 on
-2026-10-12 and 2.1.308 on 2026-10-22): the installer keeps earlier versions in `~/.local/share/claude/versions/`, so
+2026-10-12, 2.1.308 on 2026-10-22 and 2.1.312 on 2026-10-28): the installer keeps earlier versions in `~/.local/share/claude/versions/`, so
 `strings` the old and new binaries and diff their `subtype:"…"` and `type:"…"` literals for
 what is new. Then run the same scripted scenarios on both with `ClaudeCommand`'s arguments
 plus a pinned `--model claude-haiku-4-5-20251001` and `--setting-sources project`, in a

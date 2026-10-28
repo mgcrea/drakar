@@ -30,7 +30,7 @@ public struct ClaudeVersion: Comparable, Sendable, CustomStringConvertible {
 
   /// The versions the fixtures and the documents in `docs/` were captured from. Raise the
   /// upper bound after capturing again on a newer one, not before.
-  public static let tested = ClaudeVersion("2.1.284")!...ClaudeVersion("2.1.308")!
+  public static let tested = ClaudeVersion("2.1.284")!...ClaudeVersion("2.1.312")!
 
   public enum Drift: Sendable {
     /// Older than anything tested: it may lack what Drakar sends.
