@@ -464,6 +464,37 @@ sparkle-key-shred: ## Overwrite and remove an exported sparkle_key.pem
 .PHONY: bundle sign notarize build-release checksum appcast install-release sparkle-keys \
 	sparkle-key-shred
 
+# ── Licence ───────────────────────────────────────────────────────────────────
+#
+# The other half of the money loop. A refund or a lost chargeback marks the row in the
+# Worker's D1; nothing reaches the app until this bakes the list into the next build,
+# because the app is not allowed to ask anyone anything at runtime. Until Phase 2 creates
+# the database there is nothing to read, and the generator says so and keeps the list
+# empty.
+revocations: ## Rewrite the baked-in revocation list from the Worker's D1
+	@node scripts/generate-revocations.mjs
+
+# JavaScript mints the keys and Swift accepts them, so the disagreement that would cost
+# money lives between the two — and neither side's own tests can see it. This compiles the
+# real License.swift and feeds it keys signed with the real private key from .env, which is
+# also what proves that key matches the public one compiled in.
+#
+# DIVERGES from armada: until Phase 2 the compiled key is the placeholder, so the check
+# runs against a throwaway pair passed on the command line, which proves the two languages
+# agree and nothing about .env:
+#   node scripts/mint-license.mjs --keygen
+#   LICENSE_SIGNING_KEY=… LICENSE_PUBLIC_KEY=… make license-check
+# scripts/license-check.mjs refuses LICENSE_PUBLIC_KEY once a real key is compiled in.
+license-check: ## Prove a minted licence key verifies in the app's own verifier
+	@mkdir -p apps/apple/.build
+	@swiftc -O -o apps/apple/.build/license-check \
+		apps/apple/Drakar/Licence/License.swift apps/apple/Drakar/Licence/Revocations.swift \
+		scripts/license-check.swift
+	@node --env-file-if-exists=.env scripts/license-check.mjs \
+		| apps/apple/.build/license-check
+
+.PHONY: revocations license-check
+
 # Explicit targets rather than a `%:` catch-all. A match-anything rule prints "'X' is up to
 # date" instead of forwarding whenever the goal happens to name a file or directory at the
 # root — and apps/ and docs/ are both real paths. Silent success is the one failure a
