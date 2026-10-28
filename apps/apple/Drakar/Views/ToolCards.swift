@@ -31,6 +31,8 @@ struct AgentCallView: View {
   let call: Transcript.ToolCall
   let task: AgentTask?
   let children: [Transcript.Entry]
+  /// What the CLI reported of the tasks its calls run as (a long Bash of its own), by call.
+  var childTasks: [String: AgentTask] = [:]
   @State private var isExpanded = false
   /// Made when the card is first opened, never for one kept closed.
   @State private var feed: SubagentFeed?
@@ -46,10 +48,6 @@ struct AgentCallView: View {
 
   private var report: AgentReport? { call.result?.agentReport }
 
-  private var fileOpensWithPrompt: Bool {
-    if case .prompt? = feed?.transcript?.entries.first?.kind { return true }
-    return false
-  }
   private var isBackground: Bool { report?.isBackgrounded == true || task?.isBackgrounded == true }
 
   private var state: TaskCardState {
@@ -83,28 +81,25 @@ struct AgentCallView: View {
     let offer = TaskOffer.of(call: call, task: task, controls: controls)
     DisclosureGroup(isExpanded: $isExpanded) {
       VStack(alignment: .leading, spacing: 10) {
-        // The file opens with the prompt, drawn among its entries.
-        if !fileOpensWithPrompt,
-          let prompt = task?.prompt ?? call.input["prompt"]?.stringValue
-        {
+        // Not the file's, which it opens with: that one is not drawn among its entries.
+        if let prompt = task?.prompt ?? call.input["prompt"]?.stringValue {
           Text(prompt)
             .font(.callout)
             .foregroundStyle(.secondary)
             .textSelection(.enabled)
             .lineLimit(8)
         }
-        if let own = feed?.transcript {
-          let groups = own.grouped()
-          ForEach(groups.top) { entry in
+        if let own = feed?.transcript, let drawn = feed?.drawn {
+          ForEach(drawn.top) { entry in
             EntryView(
-              entry: entry, children: groups.children[entry.id] ?? [],
-              task: own.agentTasks[entry.id]
+              entry: entry, children: drawn.children[entry.id] ?? [],
+              task: own.agentTasks[entry.id] ?? childTasks[entry.id]
             )
             .equatable()
           }
         } else {
           ForEach(children) { child in
-            EntryView(entry: child).equatable()
+            EntryView(entry: child, task: childTasks[child.id]).equatable()
           }
         }
         if let reportText {
@@ -200,12 +195,12 @@ struct AgentCallView: View {
       feed = SubagentFeed(agentID: agentID, toolUseID: call.id, transcriptFile: transcriptFile)
       self.feed = feed
     }
-    feed.refresh()
+    await feed.refresh()
     guard state == .running, isWindowVisible else { return }
     while !Task.isCancelled {
       try? await Task.sleep(for: .seconds(1))
       guard !Task.isCancelled else { return }
-      feed.refresh()
+      await feed.refresh()
     }
   }
 }

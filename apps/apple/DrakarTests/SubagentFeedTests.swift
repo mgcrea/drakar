@@ -56,12 +56,12 @@ struct SubagentFeedTests {
   private static let prompt =
     "Run exactly this command with the Bash tool in the foreground (run_in_background: false): python3 -c 'import time; time.sleep(90)' and then reply done."
 
-  @Test func readsTheFile() throws {
+  @Test func readsTheFile() async throws {
     defer { cleanUp() }
     try plant("s/subagents/agent-x.jsonl", try Self.fixtureLines())
     let feed = SubagentFeed(agentID: "x", transcriptFile: transcriptFile)
     #expect(feed.transcript == nil)
-    feed.refresh()
+    await feed.refresh()
     let kinds = feed.transcript?.entries.map(\.kind) ?? []
     #expect(kinds.count == 3)
     guard kinds.count == 3 else { return }
@@ -73,92 +73,105 @@ struct SubagentFeedTests {
     #expect(call.name == "Bash")
     #expect(call.result?.isError == true)
     #expect(kinds[2] == .notice("Request interrupted by user for tool use"))
+    // The prompt it opens with is the card's own, cut short: it is not drawn again.
+    #expect(feed.drawn?.top.map(\.kind) == Array(kinds.dropFirst()))
   }
 
-  @Test func followsAppendedLines() throws {
+  /// A file holding only its prompt has nothing the card does not show already.
+  @Test func aPromptAloneIsNotDrawn() async throws {
+    defer { cleanUp() }
+    try plant("s/subagents/agent-x.jsonl", Array(try Self.fixtureLines().prefix(2)))
+    let feed = SubagentFeed(agentID: "x", transcriptFile: transcriptFile)
+    await feed.refresh()
+    #expect(feed.transcript == nil)
+    #expect(feed.drawn == nil)
+  }
+
+  @Test func followsAppendedLines() async throws {
     defer { cleanUp() }
     let lines = try Self.fixtureLines()
     let file = try plant("s/subagents/agent-x.jsonl", Array(lines.dropLast()))
     let feed = SubagentFeed(agentID: "x", transcriptFile: transcriptFile)
-    feed.refresh()
+    await feed.refresh()
     #expect(feed.transcript?.entries.count == 2)
     try append(try #require(lines.last), to: file)
-    feed.refresh()
+    await feed.refresh()
     #expect(
       feed.transcript?.entries.last?.kind == .notice("Request interrupted by user for tool use"))
     #expect(feed.transcript?.entries.count == 3)
   }
 
-  @Test func noFileIsNil() throws {
+  @Test func noFileIsNil() async throws {
     defer { cleanUp() }
     let feed = SubagentFeed(agentID: "x", transcriptFile: transcriptFile)
-    feed.refresh()
+    await feed.refresh()
     #expect(feed.transcript == nil)
   }
 
   /// A file found is kept; the folders beside the session's are looked through once, on the
   /// first refresh (a fork's file is already there when its card opens), and after that only
   /// the session's own folder is looked at.
-  @Test func looksBesideTheSessionOnlyOnce() throws {
+  @Test func looksBesideTheSessionOnlyOnce() async throws {
     defer { cleanUp() }
     let lines = try Self.fixtureLines()
     let feed = SubagentFeed(agentID: "x", transcriptFile: transcriptFile)
-    feed.refresh()
+    await feed.refresh()
     #expect(feed.transcript == nil)
     try plant("t/subagents/agent-x.jsonl", lines)
-    feed.refresh()
+    await feed.refresh()
     #expect(feed.transcript == nil)
-    try plant("s/subagents/agent-x.jsonl", Array(lines.prefix(1)))
-    feed.refresh()
-    #expect(feed.transcript?.entries.map(\.kind) == [.prompt(Self.prompt)])
+    try plant("s/subagents/agent-x.jsonl", Array(lines.prefix(3)))
+    await feed.refresh()
+    #expect(feed.transcript?.entries.first?.kind == .prompt(Self.prompt))
+    #expect(feed.transcript?.entries.count == 2)
   }
 
   /// A fork's file, beside the session's folder, is found on the first refresh.
-  @Test func findsAForksFileOnTheFirstRefresh() throws {
+  @Test func findsAForksFileOnTheFirstRefresh() async throws {
     defer { cleanUp() }
     try plant("t/subagents/agent-x.jsonl", try Self.fixtureLines())
     let feed = SubagentFeed(agentID: "x", transcriptFile: transcriptFile)
-    feed.refresh()
+    await feed.refresh()
     #expect(feed.transcript?.entries.count == 3)
   }
 
   /// A file that can no longer be read leaves what was read on the card.
-  @Test func aReadErrorKeepsTheTranscript() throws {
+  @Test func aReadErrorKeepsTheTranscript() async throws {
     defer { cleanUp() }
     let file = try plant("s/subagents/agent-x.jsonl", try Self.fixtureLines())
     let feed = SubagentFeed(agentID: "x", transcriptFile: transcriptFile)
-    feed.refresh()
+    await feed.refresh()
     let read = feed.transcript
     #expect(read?.entries.count == 3)
     try FileManager.default.removeItem(at: file)
-    feed.refresh()
+    await feed.refresh()
     #expect(feed.transcript == read)
   }
 
   /// A running subagent of a session read from its file has no task and no report yet: its
   /// call's id finds the agent once its meta file is written.
-  @Test func findsTheAgentByItsCallOnceItsMetaIsThere() throws {
+  @Test func findsTheAgentByItsCallOnceItsMetaIsThere() async throws {
     defer { cleanUp() }
     let feed = SubagentFeed(agentID: nil, toolUseID: "toolu_1", transcriptFile: transcriptFile)
-    feed.refresh()
+    await feed.refresh()
     #expect(feed.transcript == nil)
     try plant("s/subagents/agent-x.jsonl", try Self.fixtureLines())
     let meta = try plant("s/subagents/agent-x.meta.json", [])
     try Data(#"{"agentType":"general-purpose","toolUseId":"toolu_1","spawnDepth":1}"#.utf8)
       .write(to: meta)
-    feed.refresh()
+    await feed.refresh()
     #expect(feed.agentID == "x")
     #expect(feed.transcript?.entries.count == 3)
   }
 
   /// No path is built from an ID that is not a plain name, on any refresh.
-  @Test func refusesAnIDThatIsNotAName() throws {
+  @Test func refusesAnIDThatIsNotAName() async throws {
     defer { cleanUp() }
     try plant("s/subagents/agent-../t/subagents/agent-x.jsonl", try Self.fixtureLines())
     try plant("t/subagents/agent-x.jsonl", try Self.fixtureLines())
     let feed = SubagentFeed(agentID: "../t/subagents/agent-x", transcriptFile: transcriptFile)
-    feed.refresh()
-    feed.refresh()
+    await feed.refresh()
+    await feed.refresh()
     #expect(feed.transcript == nil)
   }
 }

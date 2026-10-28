@@ -167,4 +167,15 @@ struct TaskControlViewsTests {
     let offer = TaskOffer.of(call: call, task: feed.agentTasks[id], controls: controls())
     #expect(offer == TaskOffer(stop: true, runInBackground: false, output: true))
   }
+
+  /// A subagent's inner calls get their own tasks, which its card hands down.
+  @Test func aSubagentsCallsGetTheirTasks() throws {
+    let feed = try taskControls(upTo: 33)
+    let agent = "toolu_014NzQkqSJ86DigdoFkAABoZ"
+    let children = feed.grouped().children[agent] ?? []
+    let tasks = EntryView.tasks(of: children, in: feed.agentTasks)
+    #expect(Set(tasks.keys) == ["toolu_01Ak2ftyoHCTnMr2dWQvwd3F"])
+    #expect(tasks["toolu_01Ak2ftyoHCTnMr2dWQvwd3F"]?.taskID == "b03hcqfs3")
+    #expect(EntryView.tasks(of: [], in: feed.agentTasks).isEmpty)
+  }
 }

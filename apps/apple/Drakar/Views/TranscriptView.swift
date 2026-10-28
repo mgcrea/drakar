@@ -50,9 +50,11 @@ struct TranscriptView: View {
         let groups = transcript.grouped()
         let asked = Set(transcript.pendingPermissions.compactMap(\.request.toolUseID))
         ForEach(groups.top) { entry in
+          let children = groups.children[entry.id] ?? []
           EntryView(
-            entry: entry, children: groups.children[entry.id] ?? [],
-            task: transcript.agentTasks[entry.id], isAsked: asked.contains(entry.id)
+            entry: entry, children: children, task: transcript.agentTasks[entry.id],
+            childTasks: EntryView.tasks(of: children, in: transcript.agentTasks),
+            isAsked: asked.contains(entry.id)
           )
           .equatable()
           // Inside the row, so a jump to the prompt stops short of its bubble.
@@ -262,8 +264,21 @@ struct EntryView: View, Equatable {
   var children: [Transcript.Entry] = []
   /// On a call the CLI runs as a task (a subagent, a long Bash), what it reported of it.
   var task: AgentTask?
+  /// On a subagent's call, the same for the calls it made, by call.
+  var childTasks: [String: AgentTask] = [:]
   /// On a call, that a request about it waits on the person now.
   var isAsked = false
+
+  /// The tasks `children`'s calls run as, out of a transcript's: only theirs, so a task
+  /// elsewhere changing leaves the row as it is.
+  static func tasks(of children: [Transcript.Entry], in tasks: [String: AgentTask])
+    -> [String: AgentTask]
+  {
+    guard !tasks.isEmpty else { return [:] }
+    var found: [String: AgentTask] = [:]
+    for child in children { found[child.id] = tasks[child.id] }
+    return found
+  }
 
   var body: some View {
     Group {
@@ -296,7 +311,7 @@ struct EntryView: View, Equatable {
       case .tool(let call) where call.kind == .todos:
         TodoCallView(call: call)
       case .tool(let call) where call.kind.isSubagent:
-        AgentCallView(call: call, task: task, children: children)
+        AgentCallView(call: call, task: task, children: children, childTasks: childTasks)
       case .tool(let call):
         if case .mcp = call.kind {
           MCPCallView(call: call)
