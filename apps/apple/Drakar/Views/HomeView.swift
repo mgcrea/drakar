@@ -18,6 +18,9 @@ struct HomeView: View {
   @State private var order: [String] = []
   /// A session open in another process, waiting for the choice to fork it.
   @State private var openElsewhere: SessionSummary?
+  /// What the session host holds, read again whenever the registry changes: a window
+  /// handing its sessions over, or one ending, changes it.
+  @State private var held: [HeldProcess] = []
 
   private var monitor: SessionMonitor { .shared }
   private var list: ProjectList { .shared }
@@ -51,6 +54,7 @@ struct HomeView: View {
       return !folders.isEmpty
     }
     .onAppear { resort() }
+    .task(id: monitor.liveSessions) { held = await SessionHost.shared.heldIfRunning() }
     .onChange(of: query) { resort() }
     .onChange(of: list.tracked.paths) { resort() }
     .onChange(of: monitor.isLoaded) { resort() }
@@ -98,7 +102,8 @@ struct HomeView: View {
             } label: {
               ProjectRow(
                 entry: entry, stats: stats[entry.path] ?? ProjectStats(),
-                own: own[entry.path] ?? (0, 0), isOpen: openFolders.contains(entry.path))
+                own: own[entry.path] ?? (0, 0), background: background[entry.path] ?? 0,
+                isOpen: openFolders.contains(entry.path))
             }
             .buttonStyle(.plain)
             .contextMenu { menu(for: entry) }
@@ -169,6 +174,11 @@ struct HomeView: View {
       counts[owner, default: (0, 0)].running += project.runningCount
     }
     return counts
+  }
+
+  private var background: [String: Int] {
+    BackgroundSessions.count(
+      held: held, live: monitor.liveSessions, owners: ProjectPath.Owners(list.tracked.paths))
   }
 
   private var openFolders: Set<String> { Set(OpenSessions.shared.folders) }
@@ -261,6 +271,8 @@ private struct ProjectRow: View {
   let entry: TrackedProjects.Entry
   let stats: ProjectStats
   let own: (waiting: Int, running: Int)
+  /// Kept by the session host between turns, with no window showing them.
+  let background: Int
   let isOpen: Bool
 
   private var monitor: SessionMonitor { .shared }
@@ -291,11 +303,24 @@ private struct ProjectRow: View {
       }
       Spacer()
       HStack(spacing: 12) {
-        if waiting > 0 {
-          count(waiting, tint: .blue, help: "Waiting for you: \(waiting)")
-        }
-        if running > 0 {
-          count(running, tint: .green, help: "Running: \(running)")
+        HStack(spacing: 4) {
+          if waiting > 0 {
+            count(
+              waiting, symbol: "hand.raised.fill", tint: .blue,
+              help: "Waiting for you: \(waiting)")
+          }
+          if running > 0 {
+            count(
+              running, symbol: "arrow.triangle.2.circlepath", tint: .green,
+              help: "Running: \(running)")
+          }
+          if background > 0 {
+            count(
+              background, symbol: "tray.fill", tint: .gray,
+              help:
+                "In the background, no window showing them: \(background). Open the project to bring them back."
+            )
+          }
         }
         Text(
           stats.sessionCount == 0
@@ -339,13 +364,20 @@ private struct ProjectRow: View {
       messageModelID: summary.context?.modelID)
   }
 
-  private func count(_ value: Int, tint: Color, help: LocalizedStringKey) -> some View {
-    Text(value, format: .number)
-      .font(.caption.monospacedDigit().weight(.semibold))
-      .foregroundStyle(.white)
-      .padding(.horizontal, 6)
-      .background(tint, in: Capsule())
-      .help(help)
+  private func count(
+    _ value: Int, symbol: String, tint: Color, help: LocalizedStringKey
+  ) -> some View {
+    HStack(spacing: 3) {
+      Image(systemName: symbol).imageScale(.small)
+      Text(value, format: .number)
+    }
+    .font(.caption.monospacedDigit().weight(.semibold))
+    .foregroundStyle(.white)
+    .padding(.horizontal, 6)
+    .background(tint, in: Capsule())
+    .help(help)
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel(Text(help))
   }
 }
 

@@ -92,6 +92,8 @@ final class OpenSessions {
 
   func unregister(window: UUID) {
     projects[window] = nil
+    // What it handed to the session host is no window's now: listed, like another app's.
+    SessionMonitor.shared.hostedChanged()
     Attention.shared.refresh()
     IDEBridge.shared.refreshFolders()
   }

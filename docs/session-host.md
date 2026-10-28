@@ -217,6 +217,12 @@ close handed over at work. A window that closes while it takes a process back st
 session it rebuilt as it stops its rows, rather than leave the process attached to the app
 with no row.
 
+Home counts what no window shows. A window going away has the registry read again, so a
+session it handed over is listed like another app's: busy or waiting, it counts as running
+or waiting for you. Home also `list`s the host whenever the registry changes, and counts a
+running process no app is attached to, and which the registry does not report at work, as
+"in the background" under the project its `meta.windowFolder` belongs to.
+
 **Relaunch.** The app connects, `list`s, and for each process no app is attached to whose
 `meta` names a window, opens the window and rebuilds the session from `meta` (history from
 before the process: Claude Code's transcript file up to the length in `meta`, Codex's thread
