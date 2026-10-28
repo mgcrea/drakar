@@ -4,10 +4,14 @@ A native macOS app to drive Claude Code: the conversation, the tool calls, the p
 prompts and the diffs, in a window as light as Zed. It runs the `claude` you installed over
 its stream-json protocol, the same way the VS Code extension does. The product and technical
 plan is [PLAN.md](PLAN.md); the protocol is [docs/claude-stream-json.md](docs/claude-stream-json.md).
-Codex's `app-server`, the second agent being added, is mapped in [docs/codex-app-server.md](docs/codex-app-server.md).
+A session can run Codex instead, Drakar's second agent, through its `app-server`, mapped in
+[docs/codex-app-server.md](docs/codex-app-server.md).
 
-Distributed directly (Developer ID, Sparkle), never through the Mac App Store: it spawns
-processes that work on your files, which App Sandbox forbids.
+Open source under the [MIT licence](LICENSE), on GitHub at
+[mgcrea/drakar](https://github.com/mgcrea/drakar). Distributed directly (Developer ID,
+notarized, updated by Sparkle) from [drakar.mgcrea.io](https://drakar.mgcrea.io), never
+through the Mac App Store: it spawns processes that work on your files, which App Sandbox
+forbids. Free while in beta; nothing is on sale yet.
 
 Drakar listens on one network socket, on 127.0.0.1, which answers only a client holding
 this launch's token, and its session host on one Unix socket, which only your own Drakar
@@ -49,24 +53,43 @@ Network.framework link for the listener; no entitlements; the hardened runtime).
 
 ## Layout
 
-| Path         | What it is                                                                          |
-| ------------ | ----------------------------------------------------------------------------------- |
-| `apps/apple` | The app: one Xcode project, one macOS target, local SPM packages, driven by `make`. |
-| `docs/`      | Protocol spike, product documentation; dated competitive briefs in `marketing/`.    |
-| `design/`    | The brand marks: `drakar-icon.svg`, which `make icon` in `apps/apple` builds.       |
-
-`apps/website` (the marketing site) and `apps/api` (the licence Worker) arrive
-later, in the same places as every sibling under `~/Projects/apps`.
+| Path                 | What it is                                                                          |
+| -------------------- | ----------------------------------------------------------------------------------- |
+| `apps/apple`         | The app: one Xcode project, one macOS target, local SPM packages, driven by `make`. |
+| `apps/api`           | The licence Worker (Cloudflare Workers and D1): a Stripe payment in, a key out.     |
+| `apps/website`       | `drakar.mgcrea.io`: the landing page, privacy, and the update and download links.   |
+| `scripts/`           | The release path's helpers, the network audit, and their tests.                     |
+| `docs/`              | Protocol spike, product documentation, the release runbook; briefs in `marketing/`. |
+| `design/`            | The brand marks: `drakar-icon.svg`, which `make icon` in `apps/apple` builds.       |
+| `.github/workflows/` | CI: tests on every push, the release on an `app-v*` tag, deploys from `main`.       |
 
 ## Building
 
 ```sh
 make help          # every target, from the root or from apps/apple
 make build         # Debug
-make test          # DrakarKit: offline, no Xcode, under a second
+make test          # every offline suite: the scripts, the licence Worker, DrakarKit
 make test-all      # DrakarKit, then the app's hosted suite
 make run           # build, quit the old copy, launch the app
 ```
 
-The Swift half has no Node dependencies. Formatting is `xcrun swift-format` with the root
-`.swift-format`; `make format-swift-check` is the gate CI will run.
+The Swift half has no Node dependencies; the scripts, the Worker and the site need Node 24
+and pnpm (`pnpm install`). Formatting is `xcrun swift-format` with the root
+`.swift-format`, and oxfmt and oxlint for the rest; `make format-swift-check`,
+`pnpm format:check` and `pnpm lint` are the gates CI runs.
+
+A release is a commit, a signed `app-v<version>` tag, and CI's `release-app` job, which
+builds, signs, notarizes, verifies and publishes it; [docs/releasing.md](docs/releasing.md)
+is the runbook. The same targets rehearse it locally (while the public keys are still
+placeholders, `sign` refuses them; `ALLOW_PLACEHOLDER_KEYS=1 make bundle` signs a rehearsal
+anyway, with Apple Development, which can never be notarized):
+
+```sh
+make build-release   # build, sign (Developer ID, else Apple Development) and notarize
+make audit-release   # the network claim, against the built bundle
+make checksum        # Drakar.zip.sha256
+make appcast         # the signed one-item Sparkle feed
+make install-release # into /Applications; refuses while Drakar is running
+make site-build      # the website, deploying nothing
+make api-test        # the licence Worker's suite
+```

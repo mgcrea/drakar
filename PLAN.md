@@ -210,10 +210,25 @@ The fourth Developer ID app in the fleet, after armada, bastion and cupertino. I
   and the sandbox both rule the Mac App Store out, which is why Zed, Cursor, VS Code and
   Nova are all distributed directly.
 
-Still to land, in the order `fleet-direct-conventions` gives: Sparkle (vendored 2.9.6),
-the release job, the appcast and the site redirects, the licence and trial, the Stripe
-Worker (copied from **armada's**, whose price guard fails closed, not bastion's). The
-audit script's bundle sweep has landed (§5).
+Landed 2026-10-28/29, in the order `fleet-direct-conventions` gives
+(`docs/superpowers/specs/2026-10-28-direct-distribution-design.md`, armada the model
+throughout): the CHANGELOG pipeline and the What's New pane generated from it; Sparkle
+2.9.6, vendored and checksummed, with an Updates pane that constructs nothing until you
+say yes; the release targets in the root `Makefile` (`bundle`, `sign` inside out with no
+entitlements, `notarize`, `build-release`, `checksum`, `appcast` verified against the
+shipped key, `install-release`); the `drk1` licence, checked offline, with the 30-minute
+trial and the gate on sending work, open while nothing is sold; the audit's bundle sweep
+(`make audit-release`); the licence Worker in `apps/api`, copied from **armada's**, whose
+price guard fails closed, not bastion's; the site skeleton in `apps/website`, with the
+`/appcast.xml`, `/download` and `/checksum` redirects; and CI
+(`.github/workflows/ci.yml`: tests on every push, `release-app` on an `app-v*` tag,
+deploys from `main`) with its runbook, `docs/releasing.md`.
+
+Not yet done, each confirmed by the owner in turn: going public (a secret scan of the
+history, `mgcrea/drakar` created, the real Sparkle and licence keys in place of the
+`PLACEHOLDER-SET-IN-PHASE-2` both ship as today, the GitHub secrets, the D1 databases, the
+Worker and the site deployed); the first release, `app-v1.0.0`, free; and selling, when
+the owner opens the store.
 
 **The checkable claim:** _Drakar listens on one network socket, on 127.0.0.1, which
 answers only a client holding this launch's token, and its session host on one Unix
@@ -258,14 +273,21 @@ armada's did.
    holds that range: the footer's version turns orange outside it, and Settings says why
    beside the install it would run. Still open: the habit of re-capturing on every minor,
    and raising the range only after.
-4. **The Sparkle key.** The trio share one EdDSA key, and one leak updates all three. A
-   new app has no installed base, so its own key (`generate_keys --account drakar`) costs
-   nothing today and a rotation later. Recommended; the owner decides.
-5. **Price and trial.** The trio sell a one-time licence with a 30-minute in-memory trial.
-   Whether Drakar is sold, and when, is open; `LicenceLinks.isSelling` stays false until
-   it is.
-6. **The site.** `drakar.mgcrea.io` and the `mgcrea/support/drakar` tracker are wired into
-   `Support.swift` ahead of existing, as calque's were. Dead until the website lands;
-   `survey.sh drakar --net` before the first release.
+4. **The Sparkle key.** _Decided 2026-10-28: Drakar's own._ The trio share one EdDSA key,
+   and one leak updates all three. A new app has no installed base, so its own key costs
+   nothing today and a rotation later. Every `generate_keys` and `sign_update` call in the
+   `Makefile` passes `--account drakar`, the first in the fleet to; the key itself is
+   generated when the repository goes public, and `SUPublicEDKey` is a placeholder that
+   `make sign` refuses until then.
+5. **Price and trial.** _Decided 2026-10-28: $14.99, one-time,_ armada's price, with the
+   trio's 30-minute in-memory trial, started from a button and ended by quitting. Not sold
+   until the owner opens the store, after the first (free) release:
+   `LicenceLinks.isSelling` stays false, the Worker refuses every sale while
+   `EXPECTED_PRICE_ID` is empty, and the site says "Free while in beta".
+6. **The site.** The skeleton exists in `apps/website` (2026-10-28): a landing page,
+   `/privacy`, and the redirects the app depends on (`/appcast.xml` is `SUFeedURL`). Not
+   deployed yet: `drakar.mgcrea.io` and the `mgcrea/support/drakar` tracker, wired into
+   `Support.swift`, stay dead until the repository goes public and the site is deployed;
+   `survey.sh drakar --net` then, before the first release.
 7. **The name.** Not on the store, so the store-title check does not apply, but check the
    domain and GitHub `mgcrea/drakar` before the first public release.
