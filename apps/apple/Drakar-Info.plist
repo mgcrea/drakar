@@ -2,17 +2,58 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<!--
-	  Everything else is INFOPLIST_KEY_* build settings merged in at build time;
-	  GENERATE_INFOPLIST_FILE stays YES. This file is where Sparkle's keys land
-	  (SUFeedURL, SUPublicEDKey and the update defaults, present and false), because
-	  SUPublicEDKey has no INFOPLIST_KEY_ spelling. armada's Armada-Info.plist is the
-	  model, comments included.
+	<!-- Everything else about this app's Info.plist is INFOPLIST_KEY_* build
+	     settings merged in at build time — GENERATE_INFOPLIST_FILE stays YES. The
+	     keys here exist because none of them has an INFOPLIST_KEY_ spelling, or, for
+	     the category, because it sat here before they did.
 
-	  No ITSAppUsesNonExemptEncryption: that answers TestFlight's export-compliance
-	  question, and a Developer ID app never goes through TestFlight.
-	-->
+	     No ITSAppUsesNonExemptEncryption: that answers TestFlight's export-compliance
+	     question, and a Developer ID app never goes through TestFlight. -->
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.developer-tools</string>
+
+	<!-- The feed, on our own site, which 302s to the latest GitHub release. Never
+	     the release asset's own URL: this string is baked into every binary ever
+	     shipped, which is exactly why it must be one we can repoint without asking
+	     anyone to update first. -->
+	<key>SUFeedURL</key>
+	<string>https://drakar.mgcrea.io/appcast.xml</string>
+
+	<!-- The EdDSA public key every update is verified against.
+
+	     DIVERGES from armada, which shares one key with bastion and cupertino:
+	     Drakar's is its own keychain item, the `drakar` account every generate_keys
+	     and sign_update call names, so a leak of the fleet's key cannot push an
+	     update to Drakar and a leak of this one reaches no other app.
+
+	     A placeholder until Phase 2 generates the key. Sparkle will not start an
+	     updater whose key is not a valid EdDSA key, so a build carrying this can
+	     never install anything, and `sign` refuses to sign a bundle that carries
+	     it. To be matched against `generate_keys -p` for the drakar account before
+	     the first release. -->
+	<key>SUPublicEDKey</key>
+	<string>PLACEHOLDER-SET-IN-PHASE-2</string>
+
+	<!-- Present and false, never absent. An ABSENT SUEnableAutomaticChecks is what
+	     makes Sparkle show its own "check automatically?" prompt on second launch;
+	     set explicitly, that prompt never appears and Drakar asks in its own words
+	     instead, with UpdateConsentCard. -->
+	<key>SUEnableAutomaticChecks</key>
+	<false/>
+	<!-- Never install without being asked. This app runs agents with your
+	     permissions in your folders; a silent replacement of it is not something to
+	     enable by default. -->
+	<key>SUAutomaticallyUpdate</key>
+	<false/>
+	<key>SUSendProfileInfo</key>
+	<false/>
+	<!-- Not sandboxed, so the XPC services are stripped by `make sparkle`. Saying
+	     so here too means a framework that regrows them still goes unused. -->
+	<key>SUEnableInstallerLauncherService</key>
+	<false/>
+	<key>SUEnableDownloaderService</key>
+	<false/>
+	<key>SUScheduledCheckInterval</key>
+	<integer>86400</integer>
 </dict>
 </plist>

@@ -17,6 +17,8 @@
 		A67751313FD68891A2295F85 /* SupportKitSettings in Frameworks */ = {isa = PBXBuildFile; productRef = 4FE77CC5D1BB07D94B933CEF /* SupportKitSettings */; };
 		94D48F1EBCF8BBE9AB5FB3FF /* DrakarKit in Frameworks */ = {isa = PBXBuildFile; productRef = F178B41C2C2E859D9D6CA057 /* DrakarKit */; };
 		EF7EAC0B1BC134F525CD88FE /* DrakarHost in Copy Helpers */ = {isa = PBXBuildFile; fileRef = 79A4DE3982FADB7CFFEC5922 /* DrakarHost */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
+		6B92CDB6218E9F51660781CA /* Sparkle.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = ADE50A70A5B8AF2B2D076906 /* Sparkle.framework */; };
+		2F455B3E74E673B6342C9633 /* Sparkle.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = ADE50A70A5B8AF2B2D076906 /* Sparkle.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -48,12 +50,24 @@
 			name = "Copy Helpers";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		4AEECD23703EF88EA6CC1B3B /* Embed Frameworks */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 10;
+			files = (
+				2F455B3E74E673B6342C9633 /* Sparkle.framework in Embed Frameworks */,
+			);
+			name = "Embed Frameworks";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		47660703AFB87958CFE6D8C8 /* Drakar.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Drakar.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		951157530562D85D92CD3B43 /* DrakarTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = DrakarTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		79A4DE3982FADB7CFFEC5922 /* DrakarHost */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = DrakarHost; sourceTree = BUILT_PRODUCTS_DIR; };
+		ADE50A70A5B8AF2B2D076906 /* Sparkle.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Sparkle.framework; path = Vendor/Sparkle.framework; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -83,6 +97,7 @@
 				F1C9B657C93050E3F977D0BD /* SupportKit in Frameworks */,
 				64C74DC5A1E47ABDC1D6D619 /* SupportKitUI in Frameworks */,
 				C12D79D19C8932BB5DDA1C56 /* SupportKitSettings in Frameworks */,
+				6B92CDB6218E9F51660781CA /* Sparkle.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -114,8 +129,17 @@
 				85C043532B3431B2DFA5992B /* Drakar */,
 				B0DF679FF3CC2B9F8D85582F /* DrakarTests */,
 				BDD61564F71027E67C4D696C /* DrakarHost */,
+				BD4EB3FB5CD8005DA7F62B21 /* Frameworks */,
 				ACC88B4F5A33BC51C9AB99EE /* Products */,
 			);
+			sourceTree = "<group>";
+		};
+		BD4EB3FB5CD8005DA7F62B21 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				ADE50A70A5B8AF2B2D076906 /* Sparkle.framework */,
+			);
+			name = Frameworks;
 			sourceTree = "<group>";
 		};
 		ACC88B4F5A33BC51C9AB99EE /* Products */ = {
@@ -139,6 +163,7 @@
 				B4D6C6D4F9BB6D38D63CF9E2 /* Frameworks */,
 				AC4AC0C5308258E25AD22E5E /* Resources */,
 				58057292B8D7B32A1BE59EFA /* Copy Helpers */,
+				4AEECD23703EF88EA6CC1B3B /* Embed Frameworks */,
 			);
 			buildRules = (
 			);
@@ -321,6 +346,10 @@
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(SRCROOT)/Vendor",
+				);
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "Drakar-Info.plist";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
@@ -358,6 +387,10 @@
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(SRCROOT)/Vendor",
+				);
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "Drakar-Info.plist";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
@@ -507,6 +540,10 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 75QE9PRT3V;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(SRCROOT)/Vendor",
+				);
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				MARKETING_VERSION = 1.0;
@@ -527,6 +564,10 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 75QE9PRT3V;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(SRCROOT)/Vendor",
+				);
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				MARKETING_VERSION = 1.0;

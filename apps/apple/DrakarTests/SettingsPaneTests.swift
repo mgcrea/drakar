@@ -21,7 +21,7 @@ struct SettingsPaneTests {
   @Test func keepsPaneIdentifiersStable() {
     #expect(
       SettingsPane.allCases.map(\.rawValue) == [
-        "general", "transcript", "theme", "attention", "whatsNew", "about",
+        "general", "transcript", "theme", "attention", "updates", "whatsNew", "about",
       ])
   }
 

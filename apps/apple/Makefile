@@ -18,13 +18,61 @@ help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
 		| awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
 
+# ── Sparkle ───────────────────────────────────────────────────────────────────
+#
+# The updater, vendored rather than a Swift package, pinned by version AND digest
+# identically to bastion, cupertino and armada. Fetched, never committed: Vendor/ is
+# git-ignored, and a checkout reproduces the same framework from these two lines.
+#
+# Extracted into a throwaway directory and moved into place with `ditto`, then
+# stamped, which is bastion's form rather than cupertino's `unzip -qo` in place:
+# an interrupted in-place extraction leaves placeholder files where the
+# framework's symlinks belong, and a Sparkle.framework without them links and
+# then fails at launch. The stamp is what makes `make build` re-extract only on
+# a version bump.
+#
+# DIVERGES from bastion and cupertino on where the tools land: Vendor/bin rather than
+# .build/sparkle-cache/bin, as armada does. `make clean` removes .build but not the stamp,
+# so in their layout a clean leaves a stamp claiming an extraction whose sign_update is
+# gone — and `make appcast` is the target that needs it.
+#
+# XPCServices are stripped because they exist for sandboxed hosts and Drakar is
+# not one; each would be one more binary a release audit had to pardon.
+SPARKLE_VERSION   ?= 2.9.6
+SPARKLE_SHA256    := 8d5fb41d960b43f4a68aa14126bf62b098544ec8d191cdcc73eb14e63a8e7606
+SPARKLE_VENDOR    := Vendor
+SPARKLE_FRAMEWORK := $(SPARKLE_VENDOR)/Sparkle.framework
+SPARKLE_TOOLS     := $(SPARKLE_VENDOR)/bin
+SPARKLE_STAMP     := $(SPARKLE_VENDOR)/.sparkle-$(SPARKLE_VERSION)
+
+sparkle: $(SPARKLE_STAMP) ## Fetch the pinned Sparkle framework and verify its digest
+
+$(SPARKLE_STAMP):
+	@mkdir -p $(DERIVED_DATA)/sparkle-cache $(SPARKLE_VENDOR)
+	@zip="$(DERIVED_DATA)/sparkle-cache/Sparkle-$(SPARKLE_VERSION).zip"; \
+	[ -f "$$zip" ] || curl -fsSL -o "$$zip" \
+		"https://github.com/sparkle-project/Sparkle/releases/download/$(SPARKLE_VERSION)/Sparkle-for-Swift-Package-Manager.zip"; \
+	echo "$(SPARKLE_SHA256)  $$zip" | shasum -a 256 -c - >/dev/null \
+		|| { echo "  Sparkle checksum mismatch — refusing to build against it"; rm -f "$$zip"; exit 1; }; \
+	tmp=$$(mktemp -d "$${TMPDIR:-/tmp}/sparkle.XXXXXX") || exit 1; \
+	trap 'rm -rf "$$tmp"' EXIT INT TERM; \
+	ditto -x -k "$$zip" "$$tmp" || exit 1; \
+	rm -rf $(SPARKLE_FRAMEWORK) $(SPARKLE_TOOLS); \
+	mkdir -p $(SPARKLE_TOOLS); \
+	ditto "$$tmp/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework" $(SPARKLE_FRAMEWORK) || exit 1; \
+	ditto "$$tmp/bin" $(SPARKLE_TOOLS) || exit 1
+	@rm -rf $(SPARKLE_FRAMEWORK)/Versions/B/XPCServices
+	@rm -f $(SPARKLE_VENDOR)/.sparkle-*
+	@touch $(SPARKLE_STAMP)
+	@echo "  Sparkle $(SPARKLE_VERSION) in $(SPARKLE_FRAMEWORK), tools in $(SPARKLE_TOOLS)"
+
 # ── Build ─────────────────────────────────────────────────────────────────────
 
-build: ## Build the app in Debug
+build: sparkle ## Build the app in Debug
 	xcodebuild build -project $(PROJECT) -scheme $(SCHEME) \
 		-configuration Debug -destination '$(DESTINATION)' -derivedDataPath $(DERIVED_DATA)
 
-build-release: ## Build the app in Release
+build-release: sparkle ## Build the app in Release
 	xcodebuild build -project $(PROJECT) -scheme $(SCHEME) \
 		-configuration Release -destination '$(DESTINATION)' -derivedDataPath $(DERIVED_DATA)
 
@@ -40,7 +88,7 @@ test: ## Run the DrakarKit tests (offline, no network, no Xcode)
 # `xcodebuild test` on the app scheme does NOT run the local SPM test targets -- it reports
 # green while skipping them -- so `test-all` invokes each half explicitly. A suite that
 # silently stops running is worse than one that fails.
-test-app: ## Run the app target's tests
+test-app: sparkle ## Run the app target's tests
 	xcodebuild test -project $(PROJECT) -scheme $(SCHEME) -destination 'platform=macOS' \
 		-derivedDataPath $(DERIVED_DATA)
 
@@ -185,5 +233,5 @@ icon: ## Rebuild Drakar.icon from design/drakar-icon.svg
 clean: ## Remove build products
 	rm -rf $(DERIVED_DATA) $(KIT)/.build
 
-.PHONY: help build build-release test test-app test-all quit run \
+.PHONY: help sparkle build build-release test test-app test-all quit run \
 	swift-format-version format-swift format-swift-check blame-setup icon clean

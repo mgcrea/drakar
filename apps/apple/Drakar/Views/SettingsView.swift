@@ -4,8 +4,8 @@ import SwiftUI
 
 // MARK: - Settings
 
-/// The panes, and the order they sit in: General, Transcript, Theme, Attention, What's New,
-/// About.
+/// The panes, and the order they sit in: General, Transcript, Theme, Attention, Updates,
+/// What's New, About.
 ///
 /// An entitlement pane joins only when something is actually sold: before a StoreKit
 /// product is registered it would be a button that fails.
@@ -19,6 +19,7 @@ enum SettingsPane: String, SupportKitSettings.SettingsPane {
   case transcript
   case theme
   case attention
+  case updates
   case whatsNew
   case about
 
@@ -28,6 +29,7 @@ enum SettingsPane: String, SupportKitSettings.SettingsPane {
     case .transcript: "Transcript"
     case .theme: "Theme"
     case .attention: "Attention"
+    case .updates: "Updates"
     case .whatsNew: "What's New"
     case .about: "About"
     }
@@ -39,6 +41,7 @@ enum SettingsPane: String, SupportKitSettings.SettingsPane {
     case .transcript: "text.bubble"
     case .theme: "paintpalette"
     case .attention: "bell.badge"
+    case .updates: "arrow.triangle.2.circlepath"
     case .whatsNew: "sparkles"
     case .about: "info.circle"
     }
@@ -310,6 +313,7 @@ struct SettingsView: View {
       case .transcript: TranscriptPane()
       case .theme: ThemePane()
       case .attention: AttentionPane()
+      case .updates: UpdatesPane()
       case .whatsNew: WhatsNewPane()
       case .about:
         AboutSettingsPane(app: Support.app, preferIssueTracker: Support.preferIssueTracker)

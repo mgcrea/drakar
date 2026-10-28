@@ -311,3 +311,17 @@ them.
 Not covered by it: Codex reasoning items (the cheap models produced none), a resumed session
 (history cut at the transcript length), and the host's raw bytes (the test's recorder logs
 each line re-serialised after parsing).
+
+## A Sparkle update
+
+Install and Relaunch quits Drakar the way ⌘Q does, so the sessions are handed over as at
+any quit. Checked against Sparkle 2.9.6 as vendored (2026-10-28): its installer agent
+(`Updater.app`) asks the app to quit with `-[NSRunningApplication terminate]`, a quit Apple
+Event, and nothing in the framework, `Updater.app` or `Autoupdate` calls `forceTerminate` or
+`kill`. AppKit answers that event with `NSApp.terminate`, so `applicationShouldTerminate`
+runs (and may ask about unsaved tabs or the app's own running children) and then
+`applicationWillTerminate`, which stops every window's sessions, handing those at work to
+the host, and flushes the connection. `Autoupdate` replaces the bundle only once the app has
+gone; the host keeps running from its open inode, and the relaunched app reopens the held
+windows and replays (see Versions, and Relaunch above). If the person cancels the quit,
+nothing is lost: Sparkle offers to try again, and installs at the next quit otherwise.
