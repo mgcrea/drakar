@@ -117,6 +117,23 @@ struct SubagentTranscriptTests {
     }
   }
 
+  /// The session's own folder alone: a fork's file beside it is not looked for.
+  @Test func ownFileLooksOnlyInItsOwnFolder() throws {
+    try inProjects { projects in
+      let transcript = try plant("a.jsonl", in: projects)
+      try plant("b/subagents/agent-x.jsonl", in: projects)
+      #expect(SubagentTranscript.ownFile(agentID: "x", transcriptFile: transcript) == nil)
+      let agent = try plant("a/subagents/agent-x.jsonl", in: projects)
+      #expect(
+        SubagentTranscript.ownFile(agentID: "x", transcriptFile: transcript)?.standardizedFileURL
+          == agent.standardizedFileURL)
+      try plant("a/subagents/agent-../b/subagents/agent-x.jsonl", in: projects)
+      #expect(
+        SubagentTranscript.ownFile(
+          agentID: "../b/subagents/agent-x", transcriptFile: transcript) == nil)
+    }
+  }
+
   @Test func nothingIsNil() throws {
     try inProjects { projects in
       let transcript = try plant("a.jsonl", in: projects)

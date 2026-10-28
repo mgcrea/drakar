@@ -12,10 +12,9 @@ public enum SubagentTranscript {
   /// session id rather than the transcript it was read from.
   public static func file(agentID: String, transcriptFile: URL) -> URL? {
     guard isName(agentID) else { return nil }
+    if let file = ownFile(agentID: agentID, transcriptFile: transcriptFile) { return file }
     let name = "agent-\(agentID).jsonl"
     let own = transcriptFile.deletingPathExtension()
-    let ownFile = own.appending(components: "subagents", name)
-    if isFile(ownFile) { return ownFile }
     let folder = transcriptFile.deletingLastPathComponent()
     let siblings =
       (try? FileManager.default.contentsOfDirectory(
@@ -28,6 +27,15 @@ public enum SubagentTranscript {
       if isFile(file) { return file }
     }
     return nil
+  }
+
+  /// `<transcript minus .jsonl>/subagents/agent-<agentID>.jsonl` if it exists, without the
+  /// look through the folders beside it that `file` makes; nil for an ID that isn't a name.
+  public static func ownFile(agentID: String, transcriptFile: URL) -> URL? {
+    guard isName(agentID) else { return nil }
+    let file = transcriptFile.deletingPathExtension()
+      .appending(components: "subagents", "agent-\(agentID).jsonl")
+    return isFile(file) ? file : nil
   }
 
   /// The extension's rule for an agent ID, `^[A-Za-z0-9_-]{1,128}$`: nothing that could

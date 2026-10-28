@@ -21,14 +21,29 @@ private struct CardFrame: ViewModifier {
 /// A subagent: what it was asked and how far it has got while it works, its tool calls inside
 /// the card rather than among the session's, and its report once it ends. One sent to the
 /// background reads so until the notification that it ended, which may come a turn later.
+///
+/// Open, the card reads the subagent's own file when there is one, which holds its whole
+/// conversation (text and thinking a foreground subagent never streams, and all of it after a
+/// reload), in place of the lines streamed under its call.
 struct AgentCallView: View {
   let call: Transcript.ToolCall
   let task: AgentTask?
   let children: [Transcript.Entry]
   @State private var isExpanded = false
+  /// Made when the card is first opened, never for one kept closed.
+  @State private var feed: SubagentFeed?
   @Environment(\.taskControls) private var controls
 
+  /// What the file is named by: the task's id while it is reported, its report's after a
+  /// reload.
+  private var agentID: String? { task?.taskID ?? report?.agentID }
+
   private var report: AgentReport? { call.result?.agentReport }
+
+  private var fileOpensWithPrompt: Bool {
+    if case .prompt? = feed?.transcript?.entries.first?.kind { return true }
+    return false
+  }
   private var isBackground: Bool { report?.isBackgrounded == true || task?.isBackgrounded == true }
 
   private var state: TaskCardState {
@@ -62,15 +77,29 @@ struct AgentCallView: View {
     let offer = TaskOffer.of(call: call, task: task, controls: controls)
     DisclosureGroup(isExpanded: $isExpanded) {
       VStack(alignment: .leading, spacing: 10) {
-        if let prompt = task?.prompt ?? call.input["prompt"]?.stringValue {
+        // The file opens with the prompt, drawn among its entries.
+        if !fileOpensWithPrompt,
+          let prompt = task?.prompt ?? call.input["prompt"]?.stringValue
+        {
           Text(prompt)
             .font(.callout)
             .foregroundStyle(.secondary)
             .textSelection(.enabled)
             .lineLimit(8)
         }
-        ForEach(children) { child in
-          EntryView(entry: child).equatable()
+        if let own = feed?.transcript {
+          let groups = own.grouped()
+          ForEach(groups.top) { entry in
+            EntryView(
+              entry: entry, children: groups.children[entry.id] ?? [],
+              task: own.agentTasks[entry.id]
+            )
+            .equatable()
+          }
+        } else {
+          ForEach(children) { child in
+            EntryView(entry: child).equatable()
+          }
         }
         if let reportText {
           Divider()
@@ -108,6 +137,47 @@ struct AgentCallView: View {
       }
     }
     .modifier(CardFrame(id: call.id))
+    .task(
+      id: FeedTrigger(
+        isOpen: isExpanded, agentID: agentID, transcriptFile: controls?.transcriptFile,
+        isRunning: state == .running)
+    ) {
+      await follow()
+    }
+  }
+
+  /// What starts, restarts or stops following the file: a card closed, or a task that
+  /// ended, cancels the loop, and the run that replaces it reads once more.
+  private struct FeedTrigger: Equatable {
+    let isOpen: Bool
+    let agentID: String?
+    let transcriptFile: URL?
+    let isRunning: Bool
+  }
+
+  /// Reads the file once, then every second while the task runs.
+  private func follow() async {
+    guard isExpanded else { return }
+    guard let agentID, let transcriptFile = controls?.transcriptFile else {
+      self.feed = nil
+      return
+    }
+    let feed: SubagentFeed
+    if let current = self.feed, current.agentID == agentID,
+      current.transcriptFile == transcriptFile
+    {
+      feed = current
+    } else {
+      feed = SubagentFeed(agentID: agentID, transcriptFile: transcriptFile)
+      self.feed = feed
+    }
+    feed.refresh()
+    guard state == .running else { return }
+    while !Task.isCancelled {
+      try? await Task.sleep(for: .seconds(1))
+      guard !Task.isCancelled else { return }
+      feed.refresh()
+    }
   }
 }
 
