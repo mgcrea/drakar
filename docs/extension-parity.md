@@ -6,7 +6,7 @@ feature of its UI, and one per control request `claude` accepts (the last sectio
 extension and fails while a request has no row here, or a row names a request the
 extension stopped sending.
 
-Triaged against extension 2.1.311 on 2026-10-27, from Drakar's sources, not its docs.
+Triaged against extension 2.1.311 on 2026-10-27, from Drakar's sources, not its docs. Evidence re-anchored and the requests checked against 2.1.312 on 2026-10-28. Line numbers drift as the code moves: each cites the declaration that shows the feature, so search for it if a line has moved.
 
 **Status** is a fact about Drakar, checked in code:
 
@@ -42,9 +42,9 @@ Protocol changes are the other half and have their own procedure (raising
 
 | request | status | what | evidence | decision |
 | --- | --- | --- | --- | --- |
-| `interrupt_claude` | has | Stop the running turn | `apps/apple/Drakar/Services/AgentSession.swift:876` | |
-| `set_model` | has | Change the session's model | `apps/apple/Drakar/Services/AgentSession.swift:443` | |
-| `set_permission_mode` | has | Change the permission mode | `apps/apple/Drakar/Services/AgentSession.swift:423` | |
+| `interrupt_claude` | has | Stop the running turn | `apps/apple/Drakar/Services/AgentSession.swift:950` | |
+| `set_model` | has | Change the session's model | `apps/apple/Drakar/Services/AgentSession.swift:500` | |
+| `set_permission_mode` | has | Change the permission mode (Drakar offers auto whenever the model supports it; the extension also hides it when settings set `disableAutoMode: "disable"`, and the CLI then refuses the switch) | `apps/apple/Drakar/Services/AgentSession.swift:480` | |
 | `persist_session_permission_mode` | has | Remember a session's permission mode | `apps/apple/Drakar/Services/SessionMeta.swift:11` | |
 | `set_thinking_level` | partial | Turn extended thinking on or off (Drakar: an effort level picker) | `apps/apple/Drakar/Views/SessionPills.swift:98` | differ: the effort picker |
 | `get_context_usage` | has | Context window usage breakdown (/context) | `apps/apple/Drakar/Services/ClaudeBackend.swift:143` | |
@@ -54,7 +54,7 @@ Protocol changes are the other half and have their own procedure (raising
 | `get_subagent_transcript` | has | Read a subagent's own transcript (Drakar: reads the file itself, inside the card) | `apps/apple/Drakar/Services/SubagentFeed.swift:18` | adopt: subagents promise, after a reload too |
 | `get_task_output` | has | Read a background task's output (Drakar: background Bash tasks only; reads the tail of the task's output file, `get_task_output` as the fallback when the file is not known) | `apps/apple/Drakar/Services/TaskControls.swift:88` | adopt: subagents promise |
 | `rewind_code` | no | Revert file edits back to a chosen message | | adopt: `rewind_files`, dry run first |
-| `fork_conversation` | partial | Fork a session, optionally from a chosen message (Drakar: whole session only) | `apps/apple/Drakar/Services/Project.swift:1119` | adopt: from a chosen message, with rewind |
+| `fork_conversation` | partial | Fork a session, optionally from a chosen message (Drakar: whole session only) | `apps/apple/Drakar/Services/Project.swift:1136` | adopt: from a chosen message, with rewind |
 | `export_conversation` | no | Export the conversation as text (/export) | | adopt: one CLI request each |
 | `open_export_document` | no | Open an export in the editor to save it | | adopt: one CLI request each |
 | `message_rated` | no | Thumbs up or down on a response | | skip: Anthropic's feedback channel for its own UI |
@@ -75,15 +75,15 @@ Protocol changes are the other half and have their own procedure (raising
 | `accept_diff` | has | Accept an edit Claude proposes, shown as a diff | `apps/apple/Drakar/Views/PermissionSheet.swift:56` | |
 | `open_diff` | has | Show a proposed edit as a diff (Drakar: inline in the permission sheet) | `apps/apple/Drakar/Views/PermissionSheet.swift:30` | |
 | `open_file_diffs` | no | Review all of a session's file changes as diffs | | adopt: review a session's changes |
-| `open_file` | has | Open a file, at a location, in the editor | `apps/apple/Drakar/Views/TranscriptView.swift:419` | |
-| `open_content` | partial | Open tool input or content as a document (Drakar: inline in the card) | `apps/apple/Drakar/Views/TranscriptView.swift:388` | differ: inline in the card |
+| `open_file` | has | Open a file, at a location, in the editor | `apps/apple/Drakar/Views/TranscriptView.swift:478` | |
+| `open_content` | partial | Open tool input or content as a document (Drakar: inline in the card) | `apps/apple/Drakar/Views/TranscriptView.swift:428` | differ: inline in the card |
 | `open_url` | has | Open a link | `apps/apple/Drakar/Views/LinkText.swift:97` | |
 | `open_folder` | has | Pick and open a folder | `apps/apple/Drakar/DrakarApp.swift:75` | |
-| `open_folder_in_new_window` | has | Open a folder or worktree in a new window | `apps/apple/Drakar/Views/HomeView.swift:194` | |
+| `open_folder_in_new_window` | has | Open a folder or worktree in a new window | `apps/apple/Drakar/Views/HomeView.swift:204` | |
 | `create_worktree` | no | Create a git worktree to work in | | adopt: parallel sessions in one project |
 | `open_plan` | no | Open the session's plan file (/plan open) | | adopt: plan mode promise |
 | `open_markdown_preview` | partial | Plan preview with comments (Drakar: inline panel, no comments) | `apps/apple/Drakar/Views/PlanPanel.swift:30` | adopt: plan comments, plan mode promise |
-| `close_plan_preview` | partial | Close the plan preview once answered (Drakar: the inline panel goes away) | `apps/apple/Drakar/Views/SessionView.swift:59` | differ: the inline plan panel |
+| `close_plan_preview` | partial | Close the plan preview once answered (Drakar: the inline panel goes away) | `apps/apple/Drakar/Views/SessionView.swift:66` | differ: the inline plan panel |
 | `remove_plan_comment` | no | Delete a comment left on the plan | | adopt: plan comments, plan mode promise |
 
 ## Sessions
@@ -91,32 +91,32 @@ Protocol changes are the other half and have their own procedure (raising
 | request | status | what | evidence | decision |
 | --- | --- | --- | --- | --- |
 | `launch_claude` | has | Start or resume a session's CLI process | `apps/apple/Drakar/Services/ClaudeLaunch.swift:22` | |
-| `close_channel` | has | End a session's CLI process | `apps/apple/Drakar/Services/Project.swift:1469` | |
+| `close_channel` | has | End a session's CLI process | `apps/apple/Drakar/Services/Project.swift:1486` | |
 | `list_sessions_request` | has | List past sessions | `apps/apple/Packages/DrakarKit/Sources/DrakarKit/SessionIndex.swift:125` | |
 | `get_session_request` | has | Load a session's transcript to show or resume | `apps/apple/Packages/DrakarKit/Sources/DrakarKit/History.swift:74` | |
-| `resolve_session_request` | partial | Find which worktree a session's transcript lives in (Drakar: worktree sessions folded into the project) | `apps/apple/Drakar/Services/SessionMonitor.swift:193` | differ: worktrees folded into the project |
-| `open_held_session` | has | Open a session another process holds (Drakar: Move Here, or Fork a Copy) | `apps/apple/Drakar/Views/SessionView.swift:373` | |
+| `resolve_session_request` | partial | Find which worktree a session's transcript lives in (Drakar: worktree sessions folded into the project) | `apps/apple/Drakar/Services/SessionMonitor.swift:91` | differ: worktrees folded into the project |
+| `open_held_session` | has | Open a session another process holds (Drakar: Move Here, or Fork a Copy) | `apps/apple/Drakar/Views/SessionView.swift:428` | |
 | `rename_session` | has | Rename a session | `apps/apple/Drakar/Views/RenameSessionPrompt.swift:24` | |
-| `generate_session_title` | partial | Have the CLI generate a title (Drakar: shows the CLI's ai-title, never asks for one) | `apps/apple/Packages/DrakarKit/Sources/DrakarKit/Transcript.swift:397` | differ: the CLI's own title |
+| `generate_session_title` | partial | Have the CLI generate a title (Drakar: shows the CLI's ai-title, never asks for one) | `apps/apple/Packages/DrakarKit/Sources/DrakarKit/Transcript.swift:130` | differ: the CLI's own title |
 | `archive_session` | no | Archive a session out of the list | | skip for now: VS Code-private state; project windows cover it |
 | `unarchive_session` | no | Unarchive a session | | skip for now: VS Code-private state; project windows cover it |
 | `unarchive_sessions` | no | Unarchive several sessions | | skip for now: VS Code-private state; project windows cover it |
 | `set_session_unread` | no | Mark a session read or unread | | skip for now: VS Code-private state; project windows cover it |
 | `get_session_groups` | no | User-defined groups of sessions | | skip for now: VS Code-private state; project windows cover it |
 | `update_session_groups` | no | Edit user-defined session groups | | skip for now: VS Code-private state; project windows cover it |
-| `get_session_list_filter` | partial | Saved session-list filter, active and status (Drakar: search and sort, no status filter) | `apps/apple/Drakar/Views/HomeView.swift:41` | differ: search and sort |
-| `update_session_list_filter` | partial | Save the session-list filter (Drakar: search and sort only) | `apps/apple/Drakar/Views/HomeView.swift:41` | differ: search and sort |
+| `get_session_list_filter` | partial | Saved session-list filter, active and status (Drakar: search and sort, no status filter) | `apps/apple/Drakar/Views/HomeView.swift:44` | differ: search and sort |
+| `update_session_list_filter` | partial | Save the session-list filter (Drakar: search and sort only) | `apps/apple/Drakar/Views/HomeView.swift:44` | differ: search and sort |
 | `update_session_section_collapse_state` | partial | Collapse sections of the session list (Drakar: only the Ended section) | `apps/apple/Drakar/Views/ProjectSidebar.swift:158` | differ: search and sort |
-| `get_collapsed_panel_sections` | has | Remember which panel sections are collapsed (Drakar: inspector sections) | `apps/apple/Drakar/Views/InspectorView.swift:54` | |
-| `update_collapsed_panel_sections` | has | Save which panel sections are collapsed (Drakar: inspector sections) | `apps/apple/Drakar/Views/InspectorView.swift:54` | |
+| `get_collapsed_panel_sections` | has | Remember which panel sections are collapsed (Drakar: inspector sections) | `apps/apple/Drakar/Views/InspectorView.swift:59` | |
+| `update_collapsed_panel_sections` | has | Save which panel sections are collapsed (Drakar: inspector sections) | `apps/apple/Drakar/Views/InspectorView.swift:59` | |
 
 ## Settings and permissions
 
 | request | status | what | evidence | decision |
 | --- | --- | --- | --- | --- |
-| `get_applied_settings` | has | Read the settings the session actually applies | `apps/apple/Drakar/Services/ClaudeBackend.swift:177` | |
-| `apply_settings` | partial | Write settings at the user, local or flag layer (Drakar: only effort, as flag settings) | `apps/apple/Packages/DrakarKit/Sources/DrakarKit/ClientMessage.swift:94` | differ: the effort picker |
-| `refresh_claude_settings` | partial | Re-read the session's settings (Drakar: only after start and model or effort changes) | `apps/apple/Drakar/Services/ClaudeBackend.swift:176` | differ: refreshed without asking |
+| `get_applied_settings` | has | Read the settings the session actually applies | `apps/apple/Drakar/Services/ClaudeBackend.swift:217` | |
+| `apply_settings` | partial | Write settings at the user, local or flag layer (Drakar: only effort, as flag settings) | `apps/apple/Packages/DrakarKit/Sources/DrakarKit/ClientMessage.swift:104` | differ: the effort picker |
+| `refresh_claude_settings` | partial | Re-read the session's settings (Drakar: only after start and model or effort changes) | `apps/apple/Drakar/Services/ClaudeBackend.swift:216` | differ: refreshed without asking |
 | `open_config` | has | Open the extension's settings (Drakar: its own Settings window) | `apps/apple/Drakar/Views/SettingsView.swift:292` | |
 | `open_config_file` | no | Open a Claude config file (settings.json) in the editor | | adopt: in an editor tab |
 | `get_status` | partial | Status dialog, /status (Drakar: the inspector shows id, model, context) | `apps/apple/Drakar/Views/SessionInspector.swift:144` | differ: the inspector |
@@ -149,7 +149,7 @@ Protocol changes are the other half and have their own procedure (raising
 
 | request | status | what | evidence | decision |
 | --- | --- | --- | --- | --- |
-| `get_mcp_servers` | has | List MCP servers and their status (Drakar: from a per-project probe, not the live session) | `apps/apple/Drakar/Views/InspectorView.swift:255` | |
+| `get_mcp_servers` | has | List MCP servers and their status (Drakar: from a per-project probe, not the live session) | `apps/apple/Drakar/Views/InspectorView.swift:260` | |
 | `add_mcp_server` | no | Add an MCP server to the config | | skip: editors for files you own; Drakar opens the files |
 | `remove_mcp_server` | no | Remove an MCP server | | skip: editors for files you own; Drakar opens the files |
 | `set_mcp_server_enabled` | no | Enable or disable an MCP server | | adopt: a failed server is unfixable without it |
@@ -188,7 +188,7 @@ Protocol changes are the other half and have their own procedure (raising
 | --- | --- | --- | --- | --- |
 | `get_usage` | has | Plan usage limits, 5-hour and 7-day windows | `apps/apple/Drakar/Views/AccountToolbarItem.swift:40` | |
 | `open_account_usage` | has | Show detailed account usage (Drakar: toolbar popover) | `apps/apple/Drakar/Views/AccountToolbarItem.swift:120` | |
-| `request_usage_update` | partial | Refresh the usage figures (Drakar: updated passively from rate-limit events) | `apps/apple/Drakar/Services/AgentSession.swift:1192` | differ: refreshed without asking |
+| `request_usage_update` | partial | Refresh the usage figures (Drakar: updated passively from rate-limit events) | `apps/apple/Drakar/Services/AgentSession.swift:1272` | differ: refreshed without asking |
 | `request_admin_limit_increase` | no | Ask an org admin to raise the usage limit | | skip: accounts are `CLAUDE_CONFIG_DIR` and `/login` |
 | `sign_out` | no | Sign out of Claude | | skip: accounts are `CLAUDE_CONFIG_DIR` and `/login` |
 | `submit_oauth_code` | no | Paste the Claude login code | | skip: accounts are `CLAUDE_CONFIG_DIR` and `/login` |
