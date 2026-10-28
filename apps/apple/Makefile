@@ -72,9 +72,15 @@ build: sparkle ## Build the app in Debug
 	xcodebuild build -project $(PROJECT) -scheme $(SCHEME) \
 		-configuration Debug -destination '$(DESTINATION)' -derivedDataPath $(DERIVED_DATA)
 
-build-release: sparkle ## Build the app in Release
+# XCARGS reaches xcodebuild as extra build settings. The root's `bundle` switches signing off
+# through it (the root's `sign` signs, in one identity and one order), and CI's release job
+# sets MARKETING_VERSION and CURRENT_PROJECT_VERSION through it, as armada's does.
+XCARGS ?=
+
+build-release: sparkle ## Build the app in Release (the root's build-release is the signed, shippable one)
 	xcodebuild build -project $(PROJECT) -scheme $(SCHEME) \
-		-configuration Release -destination '$(DESTINATION)' -derivedDataPath $(DERIVED_DATA)
+		-configuration Release -destination '$(DESTINATION)' -derivedDataPath $(DERIVED_DATA) \
+		$(XCARGS)
 
 # ── Tests ─────────────────────────────────────────────────────────────────────
 #
