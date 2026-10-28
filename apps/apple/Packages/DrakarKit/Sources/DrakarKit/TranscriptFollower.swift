@@ -7,16 +7,22 @@ public struct TranscriptFollower: Sendable {
   /// Bytes read so far.
   public private(set) var offset: UInt64 = 0
   private var buffer = LineBuffer()
-  private var translator = ClaudeTranslator()
+  /// Kept for the translator a rewrite starts over with.
+  private let includesSidechains: Bool
+  private var translator: ClaudeTranslator
 
-  public init(file: URL) {
+  /// `includesSidechains` for a subagent's own file (`SubagentTranscript`), whose every
+  /// conversation line is one.
+  public init(file: URL, includesSidechains: Bool = false) {
     self.file = file
+    self.includesSidechains = includesSidechains
+    translator = ClaudeTranslator(includesSidechains: includesSidechains)
   }
 
   /// Reads `file` from `offset` on, the bytes before it taken as read: they must end on a
   /// line.
   public init(file: URL, from offset: UInt64) {
-    self.file = file
+    self.init(file: file)
     self.offset = offset
   }
 
@@ -43,7 +49,7 @@ public struct TranscriptFollower: Sendable {
     if size < offset {
       offset = 0
       buffer = LineBuffer()
-      translator = ClaudeTranslator()
+      translator = ClaudeTranslator(includesSidechains: includesSidechains)
       transcript = Transcript()
     }
     let end = min(size, length)

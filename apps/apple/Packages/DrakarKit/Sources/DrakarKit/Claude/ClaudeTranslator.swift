@@ -22,7 +22,13 @@ public struct ClaudeTranslator: Sendable {
   /// `task_updated` names only the task; this finds its call.
   private var agentCallByTask: [String: String] = [:]
 
-  public init() {}
+  /// Whether `history(_:)` keeps `isSidechain` lines: a subagent's own transcript is all
+  /// sidechain, a session's keeps its subagents' lines out.
+  private let includesSidechains: Bool
+
+  public init(includesSidechains: Bool = false) {
+    self.includesSidechains = includesSidechains
+  }
 
   /// `time` is when the line arrived or was written; nil for a history line that says not.
   public mutating func translate(_ message: StreamMessage, at time: Date?) -> [AgentEvent] {
@@ -211,10 +217,10 @@ extension ClaudeTranslator {
   }
 
   /// One transcript-file line (`<config>/projects/<encoded cwd>/<session id>.jsonl`).
-  /// Unknown entry types (attachments, snapshots, cost records) and subagent sidechains say
-  /// nothing.
+  /// Unknown entry types (attachments, snapshots, cost records) say nothing, and nor do
+  /// subagent sidechains unless `includesSidechains`.
   public mutating func history(_ json: JSONValue) -> [AgentEvent] {
-    guard json["isSidechain"]?.boolValue != true else { return [] }
+    guard includesSidechains || json["isSidechain"]?.boolValue != true else { return [] }
     var events: [AgentEvent] = []
     if let version = json["version"]?.stringValue, !version.isEmpty {
       events.append(.historyMeta(.writerVersion(version)))
