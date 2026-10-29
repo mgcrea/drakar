@@ -73,6 +73,43 @@ struct RewindsTests {
     #expect(sent.commands == [.rewindFiles(userMessageID: "u-a", dryRun: true)])
   }
 
+  /// A real rewind refused for want of a checkpoint says so too.
+  @Test func aRewindWithNoCheckpointSaysSo() {
+    let (rewinds, _) = rewinds()
+    rewinds.start(Self.request)
+    rewinds.answered(.rewindAnswered(userMessageID: "u-a", dryRun: true, Self.dryRun()))
+    rewinds.confirm()
+    rewinds.answered(
+      .rewindAnswered(
+        userMessageID: "u-a", dryRun: false,
+        RewindResult(refusal: "No file checkpoint found for this message.")))
+    #expect(rewinds.phase == .failed(RewindCopy.noCheckpoint))
+  }
+
+  /// A turn that starts while the sheet waits makes its list stale: no Rewind follows.
+  @Test func aTurnFailsTheSheet() {
+    let (rewinds, sent) = rewinds()
+    rewinds.start(Self.request)
+    rewinds.answered(.rewindAnswered(userMessageID: "u-a", dryRun: true, Self.dryRun()))
+    rewinds.turnStarted()
+    #expect(rewinds.phase == .failed(RewindCopy.failed))
+    rewinds.confirm()
+    #expect(sent.commands == [.rewindFiles(userMessageID: "u-a", dryRun: true)])
+    // A dry run still out: its late reply shows nothing either.
+    rewinds.start(Self.request)
+    rewinds.turnStarted()
+    rewinds.answered(.rewindAnswered(userMessageID: "u-a", dryRun: true, Self.dryRun()))
+    #expect(rewinds.phase == .failed(RewindCopy.failed))
+    // A rewind already sent is left to its reply.
+    rewinds.cancel()
+    rewinds.start(Self.request)
+    rewinds.answered(.rewindAnswered(userMessageID: "u-a", dryRun: true, Self.dryRun()))
+    rewinds.confirm()
+    rewinds.turnStarted()
+    rewinds.answered(.rewindAnswered(userMessageID: "u-a", dryRun: false, Self.rewound))
+    #expect(rewinds.phase == .done)
+  }
+
   /// Any other refusal is the plain failure line, the CLI's words kept beside it.
   @Test func anotherRefusalFailsWithItsWords() {
     let (rewinds, _) = rewinds()
@@ -175,27 +212,43 @@ struct RewindsTests {
     #expect(rewinds.shownPath("/p/a/x.swift") == "x.swift")
   }
 
-  /// A folder reached through a link (`/var` is `/private/var`): a path the CLI gives
-  /// either way is inside it.
+  /// A session folder reached through a link: a file the CLI names by the real folder is
+  /// inside it, a missing one (what a rewind restores) too, and the other way round.
   @Test func aLinkedFolderStillHoldsItsFiles() throws {
-    let folder = FileManager.default.temporaryDirectory.appending(
+    let scratch = FileManager.default.temporaryDirectory.appending(
       path: "drakar-rewind-\(UUID().uuidString)", directoryHint: .isDirectory)
-    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-    defer { try? FileManager.default.removeItem(at: folder) }
+    let real = scratch.appending(path: "real", directoryHint: .isDirectory)
+    let link = scratch.appending(path: "link", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: real, withIntermediateDirectories: true)
+    try FileManager.default.createSymbolicLink(at: link, withDestinationURL: real)
+    defer { try? FileManager.default.removeItem(at: scratch) }
+    try Data("a".utf8).write(to: real.appending(path: "a.txt"))
+    let realPath = real.path(percentEncoded: false)
+    let linkPath = link.path(percentEncoded: false)
     let (rewinds, _) = rewinds()
-    rewinds.folder = folder
-    let resolved = folder.resolvingSymlinksInPath().path(percentEncoded: false)
-    let plain = folder.path(percentEncoded: false)
-    #expect(rewinds.shownPath(plain + "a.txt") == "a.txt")
-    let real = resolved.hasSuffix("/") ? resolved : resolved + "/"
-    #expect(rewinds.shownPath(real + "a.txt") == "a.txt")
+    rewinds.folder = link
+    #expect(rewinds.shownPath(realPath + "a.txt") == "a.txt")
+    #expect(rewinds.shownPath(realPath + "gone/b.txt") == "gone/b.txt")
+    // `/var` is `/private/var`: the temporary folder is reached through a link too.
+    if realPath.hasPrefix("/var/") {
+      #expect(rewinds.shownPath("/private" + realPath + "gone.txt") == "gone.txt")
+    }
+    #expect(rewinds.shownPath(scratch.path(percentEncoded: false) + "c.txt").hasSuffix("/c.txt"))
+    rewinds.folder = real
+    #expect(rewinds.shownPath(linkPath + "gone.txt") == "gone.txt")
   }
 
   // MARK: Through a session
 
-  /// A stand-in `claude` that answers each `rewind_files` as a process started without
-  /// checkpoints does, and nothing else.
-  private func fakeClaude() throws -> URL {
+  private static let notEnabledReply =
+    #"{\"canRewind\":false,\"error\":\"File rewinding is not enabled.\"}"#
+  private static let filesReply =
+    #"{\"canRewind\":true,\"filesChanged\":[\"/p/a.txt\"],\"insertions\":0,\"deletions\":1}"#
+
+  /// A stand-in `claude` that answers each `rewind_files` with `reply` (by default as a
+  /// process started without checkpoints does), and nothing else. Every line it is sent goes
+  /// to `$0.stdin`.
+  private func fakeClaude(reply: String = notEnabledReply) throws -> URL {
     let folder = FileManager.default.temporaryDirectory.appending(
       path: "drakar-rewind-\(UUID().uuidString)", directoryHint: .isDirectory)
     try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -203,22 +256,23 @@ struct RewindsTests {
     let script = #"""
       #!/bin/sh
       while read -r line; do
+        printf '%s\n' "$line" >> "$0.stdin"
         case "$line" in
           *'"rewind_files"'*)
             id=${line#*\"request_id\":\"}; id=${id%%\"*}
-            printf '%s\n' "{\"type\":\"control_response\",\"response\":{\"subtype\":\"success\",\"request_id\":\"$id\",\"response\":{\"canRewind\":false,\"error\":\"File rewinding is not enabled.\"}}}"
+            printf '%s\n' "{\"type\":\"control_response\",\"response\":{\"subtype\":\"success\",\"request_id\":\"$id\",\"response\":REPLY}}"
             ;;
         esac
       done
 
-      """#
+      """#.replacingOccurrences(of: "REPLY", with: reply)
     try Data(script.utf8).write(to: fake)
     try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: fake.path)
     return fake
   }
 
-  private func session() throws -> AgentSession {
-    let fake = try fakeClaude()
+  private func session(reply: String = notEnabledReply) throws -> AgentSession {
+    let fake = try fakeClaude(reply: reply)
     let session = AgentSession(folder: fake.deletingLastPathComponent())
     session.executableOverride = fake
     session.accounts = { [] }
@@ -267,5 +321,27 @@ struct RewindsTests {
     session.send("hi")
     #expect(session.transcript.isRunning)
     #expect(!session.canRewindCode("u-a"))
+  }
+
+  /// A prompt sent while the sheet shows its list fails the sheet, and Rewind sends nothing.
+  @Test func aPromptFailsAReadySheet() async throws {
+    let session = try session(reply: Self.filesReply)
+    defer { session.stop() }
+    await session.spawn()
+    session.rewinds.start(Self.request)
+    try await waitFor { session.rewinds.phase != .checking }
+    guard case .ready = session.rewinds.phase else {
+      Issue.record("not ready: \(String(describing: session.rewinds.phase))")
+      return
+    }
+    session.send("hi")
+    #expect(session.rewinds.phase == .failed(RewindCopy.failed))
+    session.rewinds.confirm()
+    // Given time to arrive, the stand-in got the dry run alone.
+    try await Task.sleep(for: .milliseconds(300))
+    let fake = try #require(session.executableOverride)
+    let received =
+      (try? String(contentsOf: fake.appendingPathExtension("stdin"), encoding: .utf8)) ?? ""
+    #expect(received.components(separatedBy: "rewind_files").count - 1 == 1)
   }
 }

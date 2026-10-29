@@ -83,7 +83,8 @@ final class Rewinds {
     self.outstanding = nil
     attempt += 1
     guard let result, result.canRewind else {
-      if dryRun, result?.hasNoCheckpoint == true {
+      // Whichever request found it: the extension's line for a prompt with no snapshot.
+      if result?.hasNoCheckpoint == true {
         phase = .failed(RewindCopy.noCheckpoint)
       } else {
         fail(detail: result?.error)
@@ -101,24 +102,54 @@ final class Rewinds {
     fail(detail: nil)
   }
 
+  /// A turn started in the session: a dry run's list, out or shown, may no longer hold.
+  /// The sheet fails rather than rewind what the agent may be changing again. A rewind
+  /// already sent is left to its reply.
+  func turnStarted() {
+    switch phase {
+    case .checking, .ready:
+      outstanding = nil
+      attempt += 1
+      fail(detail: nil)
+    default:
+      break
+    }
+  }
+
   /// `path` relative to `folder` when it is inside it, else whole: a file outside the
   /// project (`~/.zshrc`) never looks like one of its own. Either side may name the folder
-  /// through a link (`/var` for `/private/var`), so each is read both ways.
+  /// through a link (`/var` for `/private/var`, a linked project), so each is read as given
+  /// and resolved (`resolved(_:)`).
   func shownPath(_ path: String) -> String {
     let file = URL(filePath: path)
     let whole = file.standardizedFileURL.path(percentEncoded: false)
     guard let folder else { return whole }
-    let files = [whole, file.resolvingSymlinksInPath().path(percentEncoded: false)]
-    let bases = [folder.standardizedFileURL, folder.resolvingSymlinksInPath()].map {
-      let base = $0.path(percentEncoded: false)
-      return base.hasSuffix("/") ? base : base + "/"
-    }
+    let files = [whole, Self.resolved(file)]
+    let bases = [folder.standardizedFileURL.path(percentEncoded: false), Self.resolved(folder)]
+      .map { $0.hasSuffix("/") ? $0 : $0 + "/" }
     for base in bases {
       for file in files where file.hasPrefix(base) && file.count > base.count {
         return String(file.dropFirst(base.count))
       }
     }
     return whole
+  }
+
+  /// `url` with its links resolved, through its deepest ancestor that exists: a file a
+  /// rewind restores may not exist yet, and `resolvingSymlinksInPath()` leaves a missing
+  /// path as it is.
+  private static func resolved(_ url: URL) -> String {
+    var existing = url.standardizedFileURL
+    var rest: [String] = []
+    while existing.pathComponents.count > 1,
+      !FileManager.default.fileExists(atPath: existing.path(percentEncoded: false))
+    {
+      rest.insert(existing.lastPathComponent, at: 0)
+      existing.deleteLastPathComponent()
+    }
+    var resolved = existing.resolvingSymlinksInPath()
+    for component in rest { resolved.append(path: component) }
+    return resolved.path(percentEncoded: false)
   }
 
   private func ask(dryRun: Bool) {

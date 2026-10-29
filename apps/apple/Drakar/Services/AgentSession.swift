@@ -745,6 +745,7 @@ final class AgentSession {
     }
     let answersTurn = !transcript.entries.isEmpty
     transcript.addPrompt(text, context: label, attachments: previews, uuid: uuid)
+    rewinds.turnStarted()
     onPromptSent?()
     if answersTurn { onReplied?() }
     if isLoadingHistory { promptsDuringLoad.append((text, label, previews, uuid)) }
@@ -1182,9 +1183,14 @@ final class AgentSession {
     let waiting = transcript.waitingCount
     var turnEnded = false
     let known = sessionID
+    var wasRunning = transcript.isRunning
     for event in output.events {
       transcript.apply(event, at: time)
       if case .turnEnded = event { turnEnded = true }
+      // A queued prompt taken once the turn ended starts one with no `send`, which may
+      // also end within these lines.
+      if !wasRunning, transcript.isRunning { rewinds.turnStarted() }
+      wasRunning = transcript.isRunning
     }
     // A new or forked session has no id until `system/init`: a registry read before it
     // listed this row's own process as another app's, and nothing else would read it again.
