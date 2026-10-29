@@ -125,9 +125,9 @@ const read = (database, query, extra = []) => {
 };
 
 // DIVERGES from armada, whose production database has existed since its first
-// sale: Drakar's has no id in wrangler.jsonc until Phase 2 creates it, and before
-// that there is no apps/api at all. With no database there has been no sale, so
-// there is nothing to revoke and the list is empty. That answer is refused below
+// sale: Drakar's had no id in wrangler.jsonc until it was created on 2026-10-29.
+// With no database there has been no sale, so there is nothing to revoke and the
+// list is empty. That answer is refused below
 // if the committed list is not empty: an id gone missing from wrangler.jsonc must
 // not quietly bring refunded keys back to life. `--local` reads the local D1,
 // which needs no id.

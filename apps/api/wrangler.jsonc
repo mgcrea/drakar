@@ -9,11 +9,10 @@
     {
       "binding": "DB",
       "database_name": "drakar-licenses",
-      // DIVERGES from armada, whose database exists: no `database_id` yet, because
-      // this one does not. Phase 2 creates it with `wrangler d1 create
-      // drakar-licenses` and pastes the id it prints in here, before the first
-      // `make api-deploy`. Until then `make revocations` reads nothing and says
-      // so, and the Worker tests run against a local D1 that needs no id.
+      // Created 2026-10-29 with `wrangler d1 create drakar-licenses` (WEUR). The id
+      // is pinned so a binding can never find some other database by name and
+      // slip past the migrations check `make api-deploy` makes.
+      "database_id": "91554856-8c79-4489-89fd-e329540fb92f",
       "migrations_dir": "./migrations"
     }
   ],
@@ -93,6 +92,7 @@
         {
           "binding": "DB",
           "database_name": "drakar-licenses-test",
+          "database_id": "c525e6a9-da4a-41f9-8387-6c372b2402ce",
           "migrations_dir": "./migrations"
         }
       ],

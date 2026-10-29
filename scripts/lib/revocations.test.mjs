@@ -7,10 +7,10 @@
 // read, and reading anyway would fail every run.
 //
 // DIVERGES from armada, whose assertions run against the wrangler.jsonc the
-// Worker deploys from: Drakar's two databases have no ids until Phase 2 creates
-// them, and apps/api may not be here at all yet. So they run against a fixture
-// shaped like that file, and the committed file, once there is one, is checked
-// to have the same two bindings, so the fixture cannot drift from it unnoticed.
+// Worker deploys from: Drakar's two databases had no ids until 2026-10-29. So
+// they run against a fixture shaped like that file, with and without ids, and the
+// committed file is checked to have the same two bindings, so the fixture cannot
+// drift from it unnoticed.
 
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";

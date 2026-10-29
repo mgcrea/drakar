@@ -495,9 +495,7 @@ jobs:
 
   # api.drakar.mgcrea.io, on every push to main. `make api-deploy` rather than the
   # pnpm line it wraps, so this and a laptop deploy cannot drift: the recipe refuses
-  # on unapplied migrations and curls /health itself. Until Phase 2 creates the D1
-  # database and puts its id in apps/api/wrangler.jsonc, that refusal is what a
-  # token here would hit.
+  # on unapplied migrations and curls /health itself.
   #
   # `needs:` names ubuntu jobs only, never `app`, so the Worker never waits behind
   # the macOS queue, and a Swift compile error it has no part in never holds it back.

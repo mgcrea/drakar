@@ -490,9 +490,7 @@ sparkle-key-shred: ## Overwrite and remove an exported sparkle_key.pem
 #
 # The other half of the money loop. A refund or a lost chargeback marks the row in the
 # Worker's D1; nothing reaches the app until this bakes the list into the next build,
-# because the app is not allowed to ask anyone anything at runtime. Until Phase 2 creates
-# the database there is nothing to read, and the generator says so and keeps the list
-# empty.
+# because the app is not allowed to ask anyone anything at runtime.
 revocations: ## Rewrite the baked-in revocation list from the Worker's D1
 	@node scripts/generate-revocations.mjs
 
@@ -550,10 +548,6 @@ site-deploy: ## Build and publish the website to Cloudflare
 #
 # The licence Worker at api.drakar.mgcrea.io: Stripe's webhook in, a signed key out by
 # email and on /thanks. Armada's target, which is bastion's with its one hard lesson.
-#
-# Nothing here has run against Cloudflare yet. Until Phase 2 creates drakar-licenses and
-# puts its id in apps/api/wrangler.jsonc, `wrangler d1 migrations list` has no database to
-# read, the grep below finds no "No migrations to apply", and api-deploy refuses.
 
 API_URL := https://api.drakar.mgcrea.io/health
 
@@ -582,8 +576,7 @@ api-test: ## Run the licence Worker's tests (vitest, workerd, a local D1)
 	@pnpm -C apps/api test
 
 # Sequential sub-makes rather than prerequisites: under -j they may run in parallel, and
-# the Worker the site's /buy flow will land on has to be live first. Until Phase 2 creates
-# the database, api-deploy refuses (see above) and this stops there; `make site-deploy`
+# the Worker the site's /buy flow will land on has to be live first; `make site-deploy`
 # publishes the site on its own.
 deploy: ## Deploy both halves: the licence Worker, then the website
 	@$(MAKE) --no-print-directory api-deploy

@@ -249,8 +249,7 @@ its site, which Drakar's has no page for.
 
 **`make revocations` is not optional.** The app is not allowed to ask anything at runtime, so a
 refund or a lost chargeback since the last release is honoured only by a build that re-ran it.
-It needs wrangler to be logged in, and fails loudly rather than skipping. Until Phase 2 creates
-`drakar-licenses` there is nothing to read, and it says so and keeps the list empty.
+It needs wrangler to be logged in, and fails loudly rather than skipping.
 
 It reads D1 and nothing else, so a key exists to it only once it has a row. The Worker records
 every key it mints, and so does `scripts/mint-license.mjs` unless told `--no-record`. A comp or a

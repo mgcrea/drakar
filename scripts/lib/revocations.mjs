@@ -10,8 +10,8 @@
  * a flat object with no braces inside it, comments included.
  *
  * DIVERGES from armada, which asks this of its test database alone: Drakar's
- * production database has no id either until Phase 2 creates it, and the generator
- * asks the same question of both.
+ * production database had no id either until it was created on 2026-10-29, and the
+ * generator asks the same question of both.
  */
 export function databaseConfigured(wrangler, name) {
   const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
