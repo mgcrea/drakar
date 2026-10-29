@@ -464,7 +464,7 @@ sparkle-keys: ## Assert the keychain's drakar EdDSA key is the one the app ships
 	@echo ""
 	@echo "  To give CI the private key:"
 	@echo "    $(SPARKLE_TOOLS)/generate_keys --account $(SPARKLE_ACCOUNT) -x sparkle_key.pem   # -x EXPORTS; without it you get a NEW key"
-	@echo "    gh secret set SPARKLE_ED_PRIVATE_KEY -R mgcrea/drakar < sparkle_key.pem"
+	@echo "    gh secret set SPARKLE_ED_PRIVATE_KEY -R mgcrea/drakar --env release < sparkle_key.pem   # the release environment, as ci.yml's release-app reads it"
 	@echo "    make sparkle-key-shred"
 
 # Not `rm -P`: that flag is BSD-only, and a Mac with Homebrew's coreutils ahead of /bin on
@@ -475,12 +475,16 @@ sparkle-keys: ## Assert the keychain's drakar EdDSA key is the one the app ships
 # DIVERGES from armada: the byte count goes through `tr -d ' '`. BSD `wc -c` pads it with
 # spaces, so armada's unquoted `bs=$$(wc -c < ...)` splits into `bs=` and the number on
 # CI's Macs, dd fails into /dev/null, and the key is unlinked without being overwritten.
+# And dd's status is checked: a dd that fails for any other reason (an unreadable or empty
+# file, whose zero byte count dd refuses) leaves the key where it is and fails loudly,
+# rather than reporting an overwrite that never happened.
 sparkle-key-shred: ## Overwrite and remove an exported sparkle_key.pem
 	@if [ ! -f sparkle_key.pem ]; then \
 		echo "  no sparkle_key.pem here — nothing to shred"; \
 	else \
 		dd if=/dev/urandom of=sparkle_key.pem bs=$$(wc -c < sparkle_key.pem | tr -d ' ') count=1 \
-			conv=notrunc 2>/dev/null; \
+			conv=notrunc 2>/dev/null \
+			|| { echo "  !! could not overwrite sparkle_key.pem; it was not removed" >&2; exit 1; }; \
 		/bin/rm -f sparkle_key.pem; \
 		echo "  sparkle_key.pem overwritten and removed — the keychain copy is untouched"; \
 	fi
