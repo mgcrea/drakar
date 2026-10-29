@@ -110,10 +110,10 @@ enum Fixture: String {
   /// scrubbed.
   case subagentFile = "subagent-file"
   /// `rewind_files` and `--resume-session-at` on Claude Code 2.1.312 (2026-10-29, `haiku` 4.5),
-  /// with `CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING=true` unless said otherwise, in scenario
-  /// order (docs/claude-stream-json.md, "Rewind"). Prompts were sent with the uuids `aaaaaaaa-…`
-  /// (A), `bbbbbbbb-…` (B), `cccccccc-…` (C), `dddddddd-…` (D) and `eeeeeeee-…` (E), which come
-  /// back as `command_lifecycle`'s `command_uuid`; the request ids name each request.
+  /// with `CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING=true` unless said otherwise, in the order
+  /// they ran (docs/claude-stream-json.md, "Rewind"). Prompts were sent with the uuids
+  /// `aaaaaaaa-…` (A), `bbbbbbbb-…` (B), `cccccccc-…` (C), `dddddddd-…` (D) and `eeeeeeee-…` (E),
+  /// which come back as `command_lifecycle`'s `command_uuid`; the request ids name each request.
   /// 1. Lines 1-18, session `…0001`: A writes `a.txt` = "one"; B rewrites it to "two" and
   ///    creates `b.txt` (each prompt's lifecycle, `init`, Write calls, results, "Done.").
   /// 2. Lines 19-23: dry run and rewind for A (`rewind-a-dry` lists both files, `rewind-a`
@@ -134,6 +134,10 @@ enum Fixture: String {
   /// 10. Line 69: the same at an unknown uuid: the only line, an `error_during_execution`
   ///    result whose `errors` says "No message found with message.uuid of: …"; the process
   ///    exits 1.
+  /// Against the doc's seven answers: item 1 is answer 2 (`result` lines 7 and 17 echo A's and
+  /// B's uuids); 2 is answer 1 and "Where a rewind goes"; 3 and 7 are answers 1 and 4; 4 to 6
+  /// are answer 3; 8 and 9 are answer 5, the cut before B and at it; 10 is answer 6. Answer 7,
+  /// the fork's own transcript, is in neither fixture.
   /// Stream events, thinking, status, `thinking_tokens`, rate limit, `can_use_tool` and the
   /// `initialize` reply dropped; inits cut to a few keys; other ids zeroed, paths cut to `/p`.
   case rewind = "rewind"

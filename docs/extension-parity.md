@@ -53,8 +53,8 @@ Protocol changes are the other half and have their own procedure (raising
 | `stop_subagent` | has | Stop a running subagent or background task (Drakar: on the task's card, not an agent map) | `apps/apple/Drakar/Views/TaskControlViews.swift:80` | adopt: subagents promise |
 | `get_subagent_transcript` | has | Read a subagent's own transcript (Drakar: reads the file itself, inside the card) | `apps/apple/Drakar/Services/SubagentFeed.swift:18` | adopt: subagents promise, after a reload too |
 | `get_task_output` | has | Read a background task's output (Drakar: background Bash tasks only; reads the tail of the task's output file, `get_task_output` as the fallback when the file is not known) | `apps/apple/Drakar/Services/TaskControls.swift:88` | adopt: subagents promise |
-| `rewind_code` | no | Revert file edits back to a chosen message | | adopt: `rewind_files`, dry run first |
-| `fork_conversation` | partial | Fork a session, optionally from a chosen message (Drakar: whole session only) | `apps/apple/Drakar/Services/Project.swift:1136` | adopt: from a chosen message, with rewind |
+| `rewind_code` | has | Revert file edits back to a chosen message (Drakar: a prompt's undo arrow, a dry-run sheet before any file is written) | `apps/apple/Drakar/Views/RewindViews.swift:174` | adopt: `rewind_files`, dry run first |
+| `fork_conversation` | has | Fork a session, optionally from a chosen message (Drakar: from a prompt's undo arrow, or the whole session) | `apps/apple/Drakar/Services/Project.swift:1179` | adopt: from a chosen message, with rewind |
 | `export_conversation` | no | Export the conversation as text (/export) | | adopt: one CLI request each |
 | `open_export_document` | no | Open an export in the editor to save it | | adopt: one CLI request each |
 | `message_rated` | no | Thumbs up or down on a response | | skip: Anthropic's feedback channel for its own UI |
@@ -292,7 +292,7 @@ the SDK sends outside this path.
 | `reload_skills` | no | unused | | |
 | `remote_control` | no | `toggle_remote_control` | | |
 | `rename_session` | sends | `rename_session` | | |
-| `rewind_files` | no | `rewind_code` | Takes a `user_message_id` and `dry_run` | |
+| `rewind_files` | sends | `rewind_code` | Takes a `user_message_id` and `dry_run`; `ClientMessage.rewindFiles` (`apps/apple/Packages/DrakarKit/Sources/DrakarKit/ClientMessage.swift:56`) | |
 | `seed_read_state` | no | unused | | |
 | `select_chrome_browser` | no | `select_chrome_browser` | | |
 | `set_chrome_browser_hints` | no | unused | | |

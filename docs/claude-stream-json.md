@@ -401,8 +401,9 @@ Seven answers:
 2. **A live prompt keeps the uuid it was sent with.** Its transcript `user` line has that
    `uuid` (`aaaaaaaa-…`), and so does the `file-history-snapshot` written after it
    (`messageId`). On stdout it comes back as `command_lifecycle`'s `command_uuid` (`queued`,
-   `started`, `completed`), `status`'s `user_message_uuids` and `thinking_tokens`'
-   `user_message_uuid`.
+   `started`, `completed`) and the turn's `result`'s `user_message_uuid` and
+   `user_message_uuids` (`rewind` lines 7 and 17). `status`'s `user_message_uuids` and
+   `thinking_tokens`' `user_message_uuid` carried it too, live; the fixture drops both lines.
 3. **A resumed process can rewind to prompts from before it, even before its own first
    prompt.** A process started with `--resume=<id>` answered dry runs for A and B before any
    prompt, and after its own prompt C for A, B and C; the rewind for C worked. It rebuilds the
@@ -422,9 +423,10 @@ Seven answers:
    B's two Writes again before answering. The first prompt's `parentUuid` is null: there is
    nothing to keep.
 6. **Both forms work.** `--resume-session-at=<uuid>` (as the SDK passes it) and
-   `--resume-session-at <uuid>` gave the same fork. It works under stream-json, despite the
-   binary's "Ignored outside print mode" for a related flag. An unknown uuid ends the process
-   before the `initialize` reply, with exit status 1: one `result` (`error_during_execution`,
+   `--resume-session-at <uuid>` gave the same fork. It works under stream-json without
+   `--print`, though the binary's help for `--resume-drops-turn` says it is "Ignored outside
+   print mode, like --resume-session-at". An unknown uuid ends the process before the
+   `initialize` reply, with exit status 1: one `result` (`error_during_execution`,
    `is_error`, `errors: ["No message found with message.uuid of: <uuid>"]`), the same text on
    stderr, and no transcript.
 7. **The fork's transcript.** With `--resume=<id> --fork-session --resume-session-at=<uuid>`
@@ -432,17 +434,21 @@ Seven answers:
    then: a fork that is never prompted leaves no transcript, though a `file-history/<new id>/`
    folder appears (as it does for the unknown uuid in answer 6). The file opens with `mode`,
    `atis-latch`, `tools-used` and a `file-history-snapshot` for every prompt of the original,
-   those after the cut included (C), then a copy of every kept line: the same `uuid` and
-   `parentUuid`, `sessionId` rewritten, one new `promptId` for all of them, no
-   `turnAttributionKey` on the copied prompts. Then the new prompt, whose `parentUuid` is the
-   cut. The original's transcript is not touched, and the fork's backups are hard links to
-   the original's. The fork can rewind its copied prompts too: a dry run for A in an
-   unprompted fork listed `a.txt` and `b.txt`.
+   those after the cut included (C), then two `queue-operation` lines, then a copy of every
+   kept line: the same `uuid` and `parentUuid`, `sessionId` rewritten, one `promptId` for all
+   of them (the new prompt's own), no `turnAttributionKey` on the copied prompts. Then the new
+   prompt, whose `parentUuid` is the cut. The original's transcript is not touched, and the
+   fork's backups are hard links to the original's. The fork can rewind its copied prompts
+   too: a dry run for A in an unprompted fork listed `a.txt` and `b.txt`.
 
 - **Where a rewind goes.** To the files as they were just before that prompt ran. Rewinding
-  to A (which created `a.txt`) deleted `a.txt` and `b.txt`; rewinding to B brought `a.txt`
-  back to "one" and deleted `b.txt`. A file the checkpoint had not yet seen is deleted. That
+  to A (which created `a.txt`) deleted `a.txt` and `b.txt`; rewinding to B after that brought
+  `a.txt` back to "one", and `b.txt`, already gone, stayed gone (`rewind-b-dry` lists only
+  `a.txt`, 1 insertion, 0 deletions). A file the checkpoint had not yet seen is deleted. That
   is the point a fork from the same prompt ends at (answer 5).
+- **The fixtures' ids.** Sent prompt uuids are kept as sent; every other uuid is zeroed in
+  each fixture on its own, so the same line can have two: A's "Done." is `…0106` in `rewind`
+  and `…0224` in `rewind-history`, where the CLI wrote one uuid.
 - **What is tracked.** Files the edit tools wrote (Write, here; the extension warns that Bash
   changes to other files are not undone). Each prompt gets a `file-history-snapshot` line
   (`messageId`, `trackedFileBackups` by relative path, each with `backupFileName`, `version`,

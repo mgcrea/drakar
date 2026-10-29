@@ -14,24 +14,30 @@ safety net. Without it, a bad edit in Drakar is undone by hand or with git.
 
 ## What the CLI and the extension do
 
-Read from extension 2.1.312 and the 2.1.312 binary on 2026-10-28. None of it has been
-captured live yet: slice 1 captures it.
+Read from extension 2.1.312 and the 2.1.312 binary on 2026-10-28; the CLI's side captured
+live by slice 1 on 2026-10-29 ("Rewind (verified 2026-10-29, 2.1.312)" in
+`docs/claude-stream-json.md`).
 
 - **Checkpoints must be on.** The extension starts the CLI with
-  `CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING=true` in its environment, and Drakar does not.
-  Without it the CLI answers "File rewinding is not enabled.". `CLAUDE_CODE_DISABLE_FILE_CHECKPOINTING`
-  and the `fileCheckpointingEnabled` setting turn it off.
+  `CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING=true` in its environment, as Drakar now does
+  (Goal 1). Without it the CLI answers "File rewinding is not enabled.".
+  `CLAUDE_CODE_DISABLE_FILE_CHECKPOINTING` and the `fileCheckpointingEnabled` setting turn it
+  off.
 - **Code.** `control_request` `{subtype: "rewind_files", user_message_id, dry_run}`. The reply
   is `{canRewind: Bool, error?, filesChanged?: [path], insertions?, deletions?, skippedLinks?}`.
   `dry_run: true` reports what would change without writing anything. The CLI refuses with
-  "No file checkpoint found for this message." for a prompt it has no checkpoint for, and with
-  "rewindFiles: no turn received yet" in a process that has not run a turn of its own: a
-  resumed process cannot rewind before its first prompt.
+  "No file checkpoint found for this message." for a prompt it has no checkpoint for. A
+  refused dry run is a `success` with `canRewind: false` and `error`; a refused real rewind
+  is a control `error` with the same string, no `canRewind`. "rewindFiles: no turn received
+  yet" is in the binary but not on the stream-json path: a resumed process can rewind before
+  its first prompt, to prompts of earlier processes too (stream-json "Rewind", answers 1, 3
+  and 4).
 - **Conversation.** The extension forks: its host writes a new session that ends at the
   chosen prompt (`forkSession(fromSession, resumeSessionAt)`), with no control request. The
-  CLI takes `--resume-session-at <message uuid>` (in the 2.1.312 binary), which beside
-  `--fork-session` should do the same. The prompt's own text goes back into the composer, as
-  the extension does (`promptText`).
+  CLI takes `--resume-session-at <message uuid>`, which beside `--fork-session` does the same.
+  It keeps the message it is given, so a fork ending before a prompt passes that prompt's
+  `parentUuid`; the first prompt's is null (stream-json "Rewind", answer 5). The prompt's own
+  text goes back into the composer, as the extension does (`promptText`).
 - **Extension UI.** An undo arrow on each of your prompts opens a menu: "Fork conversation
   from here", and when the code can be rewound, "Rewind code to here" and "Fork conversation
   and rewind code". A sheet then confirms. Its title is "Rewind code" or "Fork and rewind";
@@ -48,7 +54,7 @@ captured live yet: slice 1 captures it.
 2. **The menu.** Each prompt bubble Drakar shows gets an undo arrow (on hover, and in its
    context menu). It offers "Fork conversation from here" on any session that can be forked,
    and "Rewind code to here" and "Fork conversation and rewind code" while Drakar drives the
-   session's process and that process has run a turn.
+   session's process and that process has not said rewinding is not enabled.
 3. **The sheet.** Choosing a code rewind first sends a dry run, then shows the files it would
    change (paths relative to the session's folder), "+N −M", the warning, and Rewind / Never
    mind. A dry run that says no checkpoint shows the extension's failure line and no Rewind
@@ -73,9 +79,9 @@ captured live yet: slice 1 captures it.
 - A file changes without the person seeing the dry run's list and pressing Rewind.
 - A rewind while a turn runs. The agent may be writing the same files; Rewind waits for the
   turn to end.
-- A rewind offered where it is known to fail: a process that has run no turn, one that said
-  rewinding is not enabled, a session Drakar does not drive. (A prompt with no checkpoint is
-  only known by asking: the dry run asks.)
+- A rewind offered where it is known to fail: a process that said rewinding is not enabled,
+  a session Drakar does not drive. (A prompt with no checkpoint is only known by asking: the
+  dry run asks.)
 - The fork drops the person's text: the prompt they forked from is in the composer, unsent.
 
 ## Decided
@@ -89,21 +95,29 @@ captured live yet: slice 1 captures it.
 
 Each came out of the builder check. Each is the writer's call, not something the person said.
 
-- **Which prompts offer a code rewind.** Every prompt in the transcript, once Drakar drives
-  the process and the process has run a turn. The dry run, sent when the person picks "Rewind
-  code to here" (never on hover), is the authority: "No file checkpoint found" shows the
-  extension's failure line and no Rewind button. Slice 1 finds out whether a resumed process
-  can rewind to prompts from earlier processes (the transcript keeps `file-history-snapshot`
-  lines); if it cannot, the menu offers code only for prompts this process ran, and the plan
-  says how it knows them. Once a process answers "File rewinding is not enabled." (a setting
-  turned it off, or a process the session host started before this shipped), that process
-  offers no code rewind again.
-- **During a turn.** The menu's items are disabled while a turn runs, the fork included,
-  as `canFork` refuses mid-turn today. Nothing is queued: a queued rewind would write files
-  the person approved before the agent changed them again.
+- **Which prompts offer a code rewind.** Every prompt in the transcript, while Drakar drives
+  a live process that has not said "File rewinding is not enabled." and no turn runs. There
+  is no "has run a turn" rule: a resumed process answers before its first prompt, for
+  prompts of earlier processes too, from the transcript's `file-history-snapshot` lines
+  (stream-json "Rewind", answer 3). The dry run, sent when the person picks "Rewind code to
+  here" (never on hover), is the authority: "No file checkpoint found" shows the extension's
+  failure line and no Rewind button. Once a process answers "File rewinding is not enabled."
+  (a setting turned it off, or a process the session host started before this shipped), that
+  process offers no code rewind again.
+- **During a turn.** The menu's items are shown disabled while a turn runs, the fork
+  included, not hidden. Nothing is queued: a queued rewind would write files the person
+  approved before the agent changed them again.
+- **A turn while the sheet waits.** A turn starting while the sheet checks or shows the dry
+  run's list fails the sheet: the list may no longer hold. A rewind already sent is left to
+  its reply.
+- **The sheet's buttons.** Return never presses Rewind; Esc is Never mind. Never mind is
+  disabled while the real rewind runs, since it may already be writing.
+- **Nothing to rewind.** A plain "Rewind code" whose dry run lists no files shows "No files
+  to rewind." with only Never mind.
 - **The first prompt.** "Fork conversation from here" on the first prompt starts a plain new
-  session in the same folder, with the session's mode and model picks and the prompt's text
-  in the composer. There is no history before it to resume.
+  session in the same folder, under the source session's account, with its mode and model
+  picks and the prompt's text in the composer. Nothing else is copied: there is no history
+  before it to resume.
 - **Fork and rewind.** The rewind runs first. If it fails, nothing is forked and the failure
   shows. If the dry run lists no files, the sheet says so and Continue forks without a rewind.
 - **Versions.** No version gate. `--resume-session-at`, `rewind_files` and
@@ -116,9 +130,9 @@ Each came out of the builder check. Each is the writer's call, not something the
 
 - How a prompt entry carries the CLI's message uuid. Today it is `prompt#N`. In history the
   user line has `uuid`. Live, Drakar sends each prompt with a `uuid` of its own (the queue
-  uses it), and whether the CLI writes the same uuid on its transcript line is for slice 1
-  to find out.
-- Where the "process has run a turn" fact lives, and how the menu learns it.
+  uses it), and the CLI writes that uuid on its transcript line (stream-json "Rewind",
+  answer 2).
+- How the menu learns that a process said rewinding is not enabled.
 - The sheet's layout, within the extension's words.
 
 ## Slices
@@ -145,5 +159,7 @@ In the running app, relaunched by the person (never `make run`):
    prompt's text in its composer. Fork from the first prompt: a plain new session, the text
    in its composer.
 3. Fork and rewind: both.
-4. A resumed session before its first new prompt: only the fork is offered.
+4. A resumed session before its first new prompt: the fork and the code items are all
+   offered, and a dry run for an earlier prompt answers rather than refusing (stream-json
+   "Rewind", answer 3).
 5. During a running turn: Rewind waits.
