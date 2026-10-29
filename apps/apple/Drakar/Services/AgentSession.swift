@@ -463,7 +463,11 @@ final class AgentSession {
   /// Whether the prompt has a checkpoint only the dry run says.
   func canRewindCode(_ messageID: String) -> Bool { rewindsCode }
 
-  private var rewindsCode: Bool { controlsTasks && !rewindNotEnabled && !transcript.isRunning }
+  /// As `canRewindCode` but for the turn: a prompt's menu shows the code items through a
+  /// turn, disabled, rather than taking them away.
+  var offersCodeRewind: Bool { controlsTasks && !rewindNotEnabled }
+
+  private var rewindsCode: Bool { offersCodeRewind && !transcript.isRunning }
 
   /// Where the cards look for subagent files: beside this session's own transcript once it
   /// saved one, else beside the one it continues (a fork's original, whose folder its own
@@ -1370,7 +1374,10 @@ final class AgentSession {
     case .rewindAnswered(_, _, let result):
       // A dry run's refusal or a rewind's: either says it of the whole process.
       if result?.isNotEnabled == true { rewindNotEnabled = true }
+      let wasDone = rewinds.phase == .done
       rewinds.answered(signal)
+      // The extension's line, left in the conversation once the sheet closes.
+      if !wasDone, rewinds.phase == .done { transcript.addNotice(RewindCopy.succeeded) }
     case .unusable(let message):
       stop()
       phase = .failed(message)

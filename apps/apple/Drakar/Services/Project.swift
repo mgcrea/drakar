@@ -1161,9 +1161,11 @@ final class Project {
   /// Whether `item` has a transcript to copy and no turn writing it: a fork taken mid-turn
   /// would copy a history that can end on a tool call with no result.
   func canFork(_ item: ProjectSession) -> Bool {
-    item.session.features.forks
-      && (item.session.resuming ?? item.session.savedTarget) != nil
-      && !item.session.transcript.isRunning
+    hasForkableTranscript(item) && !item.session.transcript.isRunning
+  }
+
+  private func hasForkableTranscript(_ item: ProjectSession) -> Bool {
+    item.session.features.forks && (item.session.resuming ?? item.session.savedTarget) != nil
   }
 
   var canForkSelected: Bool { selected.map(canFork) ?? false }
@@ -1205,7 +1207,13 @@ final class Project {
   /// Whether `item` can be forked from one of its prompts: as `canFork`, and only Claude
   /// Code's, whose prompts carry the CLI's message uuids (a Codex prompt's is Drakar's own).
   func canForkFrom(_ item: ProjectSession) -> Bool {
-    canFork(item) && item.session.agent == .claude
+    offersForkFrom(item) && !item.session.transcript.isRunning
+  }
+
+  /// As `canForkFrom` but for the turn: a prompt's menu shows the fork through a turn,
+  /// disabled, rather than taking it away.
+  func offersForkFrom(_ item: ProjectSession) -> Bool {
+    hasForkableTranscript(item) && item.session.agent == .claude
   }
 
   /// Whether `item` can take a name: not while another process has it, or its files move.

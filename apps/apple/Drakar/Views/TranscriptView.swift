@@ -299,6 +299,10 @@ struct EntryView: View, Equatable {
               .background(.quaternary.opacity(0.6), in: RoundedRectangle(cornerRadius: 8))
           }
         }
+        // A subagent's prompt is not one of the session's own: nothing to fork or rewind to.
+        .rewindMenu(
+          entryID: entry.id, messageID: entry.parentToolUseID == nil ? entry.messageID : nil,
+          text: text)
       case .text(let text):
         MarkdownView(text: text)
       case .thinking(let text):

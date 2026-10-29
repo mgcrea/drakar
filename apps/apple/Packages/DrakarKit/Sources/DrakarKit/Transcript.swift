@@ -268,7 +268,8 @@ public struct Transcript: Sendable, Equatable {
     turnEnd = nil
   }
 
-  mutating func addNotice(_ text: String, parent: String? = nil) {
+  /// A note of the client's in the conversation, as the CLI's bracketed ones read.
+  public mutating func addNotice(_ text: String, parent: String? = nil) {
     addNote(.notice(text), parent: parent)
   }
 

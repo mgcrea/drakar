@@ -323,6 +323,33 @@ struct RewindsTests {
     #expect(!session.canRewindCode("u-a"))
   }
 
+  /// A rewind that took leaves the extension's line in the transcript, once.
+  @Test func aRewindThatTookLeavesANote() async throws {
+    let session = try session(reply: Self.filesReply)
+    defer { session.stop() }
+    await session.spawn()
+    session.rewinds.start(Self.request)
+    try await waitFor { session.rewinds.phase != .checking }
+    session.rewinds.confirm()
+    try await waitFor { session.rewinds.phase == .done }
+    #expect(session.rewinds.phase == .done)
+    let notes = session.transcript.entries.filter { $0.kind == .notice(RewindCopy.succeeded) }
+    #expect(notes.count == 1)
+  }
+
+  /// The code items stay offered through a turn, for the menu to show them disabled.
+  @Test func aTurnKeepsTheCodeOffered() async throws {
+    let session = try session()
+    defer { session.stop() }
+    #expect(!session.offersCodeRewind)
+    await session.spawn()
+    #expect(session.offersCodeRewind)
+    // The stand-in never ends the turn.
+    session.send("hi")
+    #expect(session.offersCodeRewind)
+    #expect(!session.canRewindCode("u-a"))
+  }
+
   /// A prompt sent while the sheet shows its list fails the sheet, and Rewind sends nothing.
   @Test func aPromptFailsAReadySheet() async throws {
     let session = try session(reply: Self.filesReply)

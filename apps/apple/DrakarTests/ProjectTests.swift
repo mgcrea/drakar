@@ -295,6 +295,8 @@ struct ProjectTests {
     attached.session.send("hello")
     #expect(attached.session.transcript.isRunning)
     #expect(!project.canForkFrom(attached))
+    // Still offered, for the prompt's menu to show it disabled.
+    #expect(project.offersForkFrom(attached))
     #expect(await project.fork(attached, from: "p-2", text: "Second") == nil)
     #expect(project.sessions.count == 1)
   }
@@ -316,6 +318,7 @@ struct ProjectTests {
     let project = Project(folder: folder)
     let item = project.attach(codex)
     #expect(!project.canForkFrom(item))
+    #expect(!project.offersForkFrom(item))
   }
 
   @Test func theWindowIndexFindsASessionAndItsOwner() {
