@@ -262,25 +262,16 @@ and debug prompts.
 
 ---
 
-## Phase 2: Going public (owner-confirmed, one step at a time)
+## Phases 2–4: going public, the first release, selling
 
-Not for an implementer subagent. The executing session asks before each item.
+Not for an implementer subagent. The executing session asks the owner before each step.
 
-- [ ] Secret scan over the full history: `brew install gitleaks` (ask first), then `gitleaks git --log-opts="--all" -v`. Any finding stops this phase.
-- [ ] The owner reads `git ls-files docs/marketing .claude` and says what stays. A removal is a normal commit; a history rewrite only if the owner asks for one.
-- [ ] Create `mgcrea/drakar` (public), set it as `origin`, keep GitLab as the owner decides, push `main`.
-- [ ] `Vendor/bin/generate_keys --account drakar`: put the public key in `Info.plist`, then export with `-x`, `gh secret set SPARKLE_ED_PRIVATE_KEY`, and `make sparkle-key-shred`.
-- [ ] `node scripts/mint-license.mjs --keygen`: put the public half in `License.swift`, and the private half in `.prod.vars` and the owner's password manager. Delete `publicKeyIsPlaceholderUntilPhase2` in the same commit.
-- [ ] The remaining GitHub secrets (named in `references/direct-distribution.md`) and the `production`/`release` environments.
-- [ ] `wrangler d1 create drakar-licenses` (and `-test`), put the ids in `wrangler.jsonc`, migrate, push the Worker secrets, deploy the Worker and the site, attach `drakar.mgcrea.io` and `api.drakar.mgcrea.io`.
-- [ ] `survey.sh drakar --net`: the support links and redirects resolve (PLAN.md §7.6).
-
-## Phase 3: First release, free
-
-- [ ] `CHANGELOG.md` `## [1.0.0] - <date>`, then follow `cut-a-release`: tag `app-v1.0.0` before pushing `main`. Watch `release-app`, then install from `drakar.mgcrea.io/download` on this Mac without quitting the running copy until the owner says to.
-
-## Phase 4: Selling at $14.99 (when the owner says to open the store)
-
-- [ ] Stripe, live and test: product "Drakar", price $14.99 one-time, a payment link with `price_id` metadata redirecting to the Worker's `/thanks`, and a webhook endpoint with all six events (`references/licence-server.md`).
-- [ ] `EXPECTED_PRICE_ID` in `wrangler.jsonc`, then deploy; add the `/buy` 302 to `_redirects`.
-- [ ] `LicenceLinks.isSelling = true`, the Licence pane's beta copy gone, and the site's "Free while in beta" replaced with the price. Release.
+The steps live in one tracked checklist, `docs/releasing.md`, "Once, before the first
+release", in the order they must run; this plan no longer carries its own copy. Its first
+version here was unsafe: it set the GitHub secrets and environments before creating D1, and
+once `CLOUDFLARE_API_TOKEN` exists CI runs `make api-deploy` and the site's deploy on every
+push to `main`, so the database id has to be committed first. The runbook also holds what
+this list lacked: the `production` environment admitting `app-v*` tags, the release secrets
+going in the `release` environment, every place the placeholder key lives, the site going up
+in Phase 2 under its `noindex` (which comes out in the Phase 3 release commit), and the
+refund terms the owner confirms before Phase 4 opens the store.

@@ -228,7 +228,8 @@ Not yet done, each confirmed by the owner in turn: going public (a secret scan o
 history, `mgcrea/drakar` created, the real Sparkle and licence keys in place of the
 `PLACEHOLDER-SET-IN-PHASE-2` both ship as today, the GitHub secrets, the D1 databases, the
 Worker and the site deployed); the first release, `app-v1.0.0`, free; and selling, when
-the owner opens the store.
+the owner opens the store. `docs/releasing.md`, "Once, before the first release", is the
+checklist for all three, in the order its steps must run.
 
 **The checkable claim:** _Drakar listens on one network socket, on 127.0.0.1, which
 answers only a client holding this launch's token, and its session host on one Unix
@@ -288,6 +289,6 @@ armada's did.
    `/privacy`, and the redirects the app depends on (`/appcast.xml` is `SUFeedURL`). Not
    deployed yet: `drakar.mgcrea.io` and the `mgcrea/support/drakar` tracker, wired into
    `Support.swift`, stay dead until the repository goes public and the site is deployed;
-   `survey.sh drakar --net` then, before the first release.
+   `docs/releasing.md`'s Phase 2 checks them from outside then, before the first release.
 7. **The name.** Not on the store, so the store-title check does not apply, but check the
    domain and GitHub `mgcrea/drakar` before the first public release.

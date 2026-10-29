@@ -166,7 +166,8 @@ the guard fails closed.
 download button, a GitHub link), `/privacy`, the `_redirects` file (`/appcast.xml`,
 `/download`, `/checksum`, `/releases`, and `/buy` only once a payment link exists),
 deployed to `drakar.mgcrea.io` through `fleet-ship-conventions`' path. `Support.swift`'s
-URLs then resolve; `survey.sh drakar --net` before the first release (PLAN.md §7.6).
+URLs then resolve; they are checked from outside before the first release
+(`docs/releasing.md`, Phase 2; PLAN.md §7.6).
 
 ### 8. The checkable claim
 
@@ -192,7 +193,10 @@ Before the first push to GitHub:
    Apple Development fallback proves signing end to end before any secret exists.
 2. **Going public, each step confirmed by the owner**: the history scan and read; create
    `mgcrea/drakar` and push; generate the Sparkle and licence keys; set the GitHub secrets;
-   create the D1 databases, deploy the Worker and the site, point `drakar.mgcrea.io`.
+   create the D1 databases, deploy the Worker and the site, point `drakar.mgcrea.io`. The
+   Cloudflare token comes last, after the D1 id is committed, since CI deploys on every push
+   to `main` once it exists: `docs/releasing.md`, "Once, before the first release", holds the
+   order.
 3. **First release, free**: tag `app-v1.0.0` with `isSelling` false.
 4. **Selling at $14.99**, when the owner says to open the store: Stripe product, price and payment link with
    `price_id` metadata, webhook endpoint with all six events, `EXPECTED_PRICE_ID`, `/buy`,

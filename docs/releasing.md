@@ -19,58 +19,150 @@ green.
 
 ## Once, before the first release
 
-### The keys are real
+This is the one checklist for going public (Phase 2), the first release (Phase 3) and opening
+the store (Phase 4). The plan's Phase 2–4 sections and the `cut-a-release` skill point here
+rather than repeating it. Every step is the owner's go, and **the order is part of it**: do a
+step only once every step above it is done.
 
-Until Phase 2, `SUPublicEDKey` in `apps/apple/Drakar-Info.plist` and `LicenseKey.publicKey` in
-`apps/apple/Drakar/Licence/License.swift` are the literal `PLACEHOLDER-SET-IN-PHASE-2`, and
-`make sign` refuses a bundle carrying either, before it signs anything. A tag pushed before then
-fails in **Build, sign and notarize**.
+### Phase 2: going public
 
-Drakar has **its own EdDSA key**, under the keychain account `drakar`, not the one armada, bastion
-and cupertino share: every `generate_keys` and `sign_update` call in the Makefile passes
-`--account drakar`. A leak of the shared key cannot update Drakar, and a leak of Drakar's cannot
-update the others.
+1. **Scan the whole history for secrets.** `brew install gitleaks` (ask first), then
+   `gitleaks git --log-opts="--all" -v`. The history was written for a private repository; any
+   finding stops this phase, and is not rewritten away quietly.
+2. **The owner reads what becomes public.** `git ls-files docs/marketing .claude`, and the
+   owner says what stays. A removal is a normal commit; a history rewrite only if the owner asks
+   for one.
+3. **Create `mgcrea/drakar`, public**, set it as `origin` (GitLab kept, archived or deleted as
+   the owner decides) and push `main`. CI runs; with no secrets yet the deploys warn and deploy
+   nothing, `revocations` skips, and the licence round trip skips.
+4. **The two environments.** `release` admits only `app-v*` tags: `release-app` runs there, so
+   a workflow edited on a branch or a pull request cannot read the signing secrets. `production`
+   admits `main` **and `app-v*` tags**: the deploys run there from `main`, and so does the
+   `revocations` job on a release tag, which `release-app` needs. A `production` limited to
+   `main` stops every release at `revocations`. In Settings › Environments, "Selected branches
+   and tags", or:
 
-### The repository secrets
+   ```bash
+   for env in release production; do
+     gh api -X PUT repos/mgcrea/drakar/environments/$env --input - <<<'{"deployment_branch_policy":{"protected_branches":false,"custom_branch_policies":true}}'
+   done
+   gh api repos/mgcrea/drakar/environments/release/deployment-branch-policies -f name='app-v*' -f type=tag
+   gh api repos/mgcrea/drakar/environments/production/deployment-branch-policies -f name='app-v*' -f type=tag
+   gh api repos/mgcrea/drakar/environments/production/deployment-branch-policies -f name=main -f type=branch
+   ```
 
-`gh secret list -R mgcrea/drakar` must show all seven that `release-app` reads:
+5. **The real keys, in one commit.** Drakar has **its own EdDSA key**, under the keychain
+   account `drakar`, not the one armada, bastion and cupertino share: every `generate_keys` and
+   `sign_update` call in the Makefile passes `--account drakar`. A leak of the shared key cannot
+   update Drakar, and a leak of Drakar's cannot update the others.
+   - `apps/apple/Vendor/bin/generate_keys --account drakar` prints the Sparkle public key.
+   - `node scripts/mint-license.mjs --keygen` prints the licence pair. The private half goes in
+     `.env` (`LICENSE_SIGNING_KEY`), in `apps/api/.prod.vars` and in the owner's password
+     manager, never in git. Losing it means no key can be issued for 1.x again.
 
-| Secret                      | What it is                                                                |
-| --------------------------- | ------------------------------------------------------------------------- |
-| `DEVELOPER_ID_P12_BASE64`   | the Developer ID Application certificate and its private key, as a `.p12` |
-| `DEVELOPER_ID_P12_PASSWORD` | the password that `.p12` was exported with                                |
-| `KEYCHAIN_PASSWORD`         | any password, for the throwaway keychain the job creates and deletes      |
-| `AC_KEY_ID`                 | the App Store Connect API key notarytool submits with                     |
-| `AC_ISSUER_ID`              | that key's issuer                                                         |
-| `AC_KEY_P8_BASE64`          | that key's `.p8`                                                          |
-| `SPARKLE_ED_PRIVATE_KEY`    | the EdDSA key the appcast is signed with                                  |
+   Until this commit both public keys are the literal `PLACEHOLDER-SET-IN-PHASE-2`, and
+   `make sign` refuses a bundle carrying either, before it signs anything: a tag pushed before
+   then fails in **Build, sign and notarize**. The commit changes every one of these:
 
-All but `AC_ISSUER_ID` belong in the `release` environment, whose deployment policy admits only
-`app-v*` tags, so a workflow edited on a branch cannot read them.
+   | Where                                                                 | What                                                                                                                             |
+   | --------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+   | `apps/apple/Drakar-Info.plist`                                        | `SUPublicEDKey` becomes the Sparkle public key                                                                                   |
+   | `apps/apple/Drakar/Licence/License.swift`                             | `publicKey` becomes the licence public key; the declaration stays on one line, since `make sign` reads it                        |
+   | `scripts/lib/license.mjs`                                             | `PUBLIC_KEY` becomes the same licence key (a script test compares it with License.swift's). `PLACEHOLDER_KEY` stays: `license-check.mjs` and `verify-license.mjs` compare against it |
+   | `DrakarTests/LicenseKeyTests.swift`                                   | delete `publicKeyIsPlaceholderUntilPhase2`                                                                                       |
+   | `DrakarTests/UpdatesTests.swift`                                      | rewrite or drop `anUpdaterThatWillNotStartStaysNil`: it runs only while the plist carries the placeholder, which made the refusal real |
+   | `DrakarTests/UpdatesTests.swift`                                      | `infoPlistDefaultsArePresentAndFalse` asserts the real key's shape (44 characters of base64, as `PUBLIC_KEY_PATTERN` in `scripts/lib/update-signature.mjs` has it) |
+   | `package.json`                                                        | drop the `--test-skip-pattern` from `test:scripts`; the comment above `test-scripts` in the Makefile says why it was there, and goes too |
 
-The two `DEVELOPER_ID_*` secrets and `SPARKLE_ED_PRIVATE_KEY` come out of the login keychain by
-hand: the App Store Connect API lists no Developer ID certificate, so nothing can fetch the
-`.p12` for you.
+   Then `git grep -n PLACEHOLDER-SET-IN-PHASE-2` should find only the Makefile's and
+   license.mjs's `PLACEHOLDER_KEY`, which go on refusing the placeholder, a comment in
+   `ci.yml`, and this runbook. `git grep -n "Phase 2"` finds the comments around each of
+   these that say "until Phase 2"; rewrite each in the same commit. `make test-scripts`,
+   `make -C apps/apple test-app` and `make license-check` (with `.env` filled in) pass.
 
-For the Sparkle key, run `make sparkle-keys`. It asserts that the keychain's `drakar` key is the
-one whose public half is `SUPublicEDKey` in `apps/apple/Drakar-Info.plist`, and only then prints
-the export and `gh secret set` commands. Run `make sparkle-key-shred` afterwards. The key is
-Drakar's alone, so it belongs in this one repository's secret, never an org-wide one.
-`make appcast` checks the same thing again on every release, over the zip it signs.
+6. **The signing secrets.** `release-app` reads seven:
 
-Two other secrets are not needed to release. `CLOUDFLARE_API_TOKEN`, in the `production`
-environment, is what the deploy jobs and the `revocations` job use; without it the deploys warn
-and deploy nothing, and `revocations` skips, **except on a release tag, where it fails**, and
-`release-app` needs it. So the token has to exist before the first tag. `LICENSE_SIGNING_KEY`
-turns on the licence round trip in the `app` job; without it that step warns and skips.
+   | Secret                      | What it is                                                                | Where                     |
+   | --------------------------- | ------------------------------------------------------------------------- | ------------------------- |
+   | `DEVELOPER_ID_P12_BASE64`   | the Developer ID Application certificate and its private key, as a `.p12` | `release` environment     |
+   | `DEVELOPER_ID_P12_PASSWORD` | the password that `.p12` was exported with                                | `release` environment     |
+   | `KEYCHAIN_PASSWORD`         | any password, for the throwaway keychain the job creates and deletes      | `release` environment     |
+   | `AC_KEY_ID`                 | the App Store Connect API key notarytool submits with                     | `release` environment     |
+   | `AC_KEY_P8_BASE64`          | that key's `.p8`                                                          | `release` environment     |
+   | `SPARKLE_ED_PRIVATE_KEY`    | the EdDSA key the appcast is signed with                                  | `release` environment     |
+   | `AC_ISSUER_ID`              | that key's issuer, a team identifier rather than a credential             | the repository            |
 
-### The version is 1.0.0
+   Set the six with `gh secret set NAME -R mgcrea/drakar --env release`. `gh secret list -R
+   mgcrea/drakar --env release` must show all six; without `--env release` it lists the
+   repository's secrets only, and shows none of them.
 
-The licence key's `major` is 1 (`CURRENT_MAJOR` in `apps/api/wrangler.jsonc`) and the app refuses
-a key for another major, so a first release numbered 0.x would lock out every key ever sold for
-1.x.
+   The two `DEVELOPER_ID_*` secrets and `SPARKLE_ED_PRIVATE_KEY` come out of the login keychain
+   by hand: the App Store Connect API lists no Developer ID certificate, so nothing can fetch
+   the `.p12` for you. For the Sparkle key, run `make sparkle-keys`. It asserts that the
+   keychain's `drakar` key is the one whose public half is `SUPublicEDKey`, and only then
+   prints the export and `gh secret set … --env release` commands. Run `make sparkle-key-shred`
+   afterwards. The key is Drakar's alone, so it belongs in this one repository, never in an
+   org-wide secret. `make appcast` checks the same thing again on every release, over the zip
+   it signs.
 
-### What flips in the first release commit
+   `LICENSE_SIGNING_KEY`, the licence private half, is a repository secret: it turns on the
+   licence round trip in the `app` job, which skips with a warning without it.
+
+7. **D1, and its id committed, before any Cloudflare token exists.** The moment
+   `CLOUDFLARE_API_TOKEN` exists, every push to `main` runs `make api-deploy` and the site's
+   deploy. So the database comes first:
+
+   ```bash
+   export CLOUDFLARE_ACCOUNT_ID=0121e8859874c6fc0d674676e17d9f18   # the Makefile's CF_ACCOUNT_ID
+   pnpm -C apps/api exec wrangler d1 create drakar-licenses
+   pnpm -C apps/api exec wrangler d1 create drakar-licenses-test
+   ```
+
+   Put each `database_id` it prints in `apps/api/wrangler.jsonc` (the production binding at the
+   top, the test one under `env.test`), with the comments that say there is none yet, and
+   commit and push that before the next step. A binding with no id can find the database by
+   name and slip past the migrations check `api-deploy` makes. Then apply the schema:
+   `pnpm -C apps/api migrate`.
+
+8. **The Worker's secrets and the first deploy.** `apps/api/.prod.vars` holds
+   `LICENSE_SIGNING_KEY` only: a secret meant to stay unset has no line at all, and
+   `pnpm -C apps/api secrets:prod` refuses an empty one. `STRIPE_WEBHOOK_SECRET` comes in
+   Phase 4. Push them with `pnpm -C apps/api secrets:prod`, then `make deploy`: the Worker
+   (refusing on unapplied migrations, then curling `/health`), then the site. Their
+   `wrangler.jsonc` routes attach `api.drakar.mgcrea.io` and `drakar.mgcrea.io` as custom
+   domains. The Worker refuses every sale while `EXPECTED_PRICE_ID` is empty, which it is
+   until Phase 4.
+
+   **The site goes up now, before any release**, and from step 9 on CI redeploys it on every
+   push to `main`. Its `/download`, `/checksum` and `/appcast.xml` 302 to a GitHub release that
+   does not exist yet. The `X-Robots-Tag: noindex` in `apps/website/public/_headers` is what
+   keeps it out of search results until then; it comes out in the first release commit
+   (Phase 3), never before.
+
+9. **Only now, `CLOUDFLARE_API_TOKEN`**, in the `production` environment:
+   `gh secret set CLOUDFLARE_API_TOKEN -R mgcrea/drakar --env production`. The deploy jobs and
+   the `revocations` job read it there; without it the deploys warn and deploy nothing, and
+   `revocations` skips, **except on a release tag, where it fails**, and `release-app` needs
+   it. So it has to exist before the first tag.
+10. **Check from outside** that the links the app ships with resolve (PLAN.md §7.6):
+
+    ```bash
+    curl -fsS -o /dev/null -w '%{http_code}\n' https://drakar.mgcrea.io                  # 200
+    curl -fsS https://api.drakar.mgcrea.io/health                                    # the Worker
+    curl -sI https://drakar.mgcrea.io/appcast.xml | grep -i location                 # a 302 to the releases
+    curl -fsS -o /dev/null -w '%{http_code}\n' https://github.com/mgcrea/support/tree/main/drakar   # the tracker
+    ```
+
+    `/download` and `/appcast.xml` lead to a GitHub 404 until Phase 3; that is expected.
+    `survey.sh` in `fleet-direct-conventions` has no network mode, so these are checked by hand.
+
+### Phase 3: the first release
+
+The version is **1.0.0**. The licence key's `major` is 1 (`CURRENT_MAJOR` in
+`apps/api/wrangler.jsonc`) and the app refuses a key for another major, so a first release
+numbered 0.x would lock out every key ever sold for 1.x.
+
+The first release commit, beyond what every release commit carries (below), also changes:
 
 - `CHANGELOG.md`: `## [1.0.0] - Unreleased` is dated, and the intro's "none is tagged yet" is
   rewritten to name `app-v1.0.0` as the newest (step 2 below).
@@ -79,7 +171,27 @@ a key for another major, so a first release numbered 0.x would lock out every ke
   `/checksum` and `/appcast.xml` start resolving the moment the release exists, because they are
   302s to `releases/latest/download`.
 
-The site's "Free while in beta" stays until the store opens; so does `isSelling = false`.
+Then [every release](#every-release), tag first. The site's "Free while in beta" stays until the
+store opens; so does `isSelling = false`.
+
+### Phase 4: before the store opens
+
+Only when the owner says to open the store.
+
+1. **The owner confirms the refund terms.** The licence email (`apps/api/src/email.ts`) and the
+   Worker's `/thanks` page (`apps/api/src/pages.ts`) promise armada's refund: within 30 days, in
+   full, for any reason. Armada's EULA says so; Drakar has no terms page, so that sentence is the
+   whole of the promise, and so is the trade the offline check makes (a refunded key keeps
+   working until the next release). The owner confirms both, adds a terms page if wanted, and
+   the email, `/thanks` and any terms say the same thing before the first sale.
+2. **Stripe**, live and test: product "Drakar", price $14.99 one-time, a Payment Link with
+   `price_id` metadata redirecting to the Worker's `/thanks`, and a webhook endpoint with all six
+   events. Its signing secret goes in `apps/api/.prod.vars` as `STRIPE_WEBHOOK_SECRET`, then
+   `pnpm -C apps/api secrets:prod`.
+3. **`EXPECTED_PRICE_ID`** in `apps/api/wrangler.jsonc`, and the `/buy` 302 in
+   `apps/website/public/_redirects`. Pushing `main` deploys both.
+4. **`LicenceLinks.isSelling = true`**, the Licence pane's beta copy gone, and the site's "Free
+   while in beta" replaced with the price, then a release.
 
 ## Every release
 
