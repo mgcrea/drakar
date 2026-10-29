@@ -3,7 +3,7 @@
 #
 # The extension's look is Drakar's design reference (PLAN.md §2.2) and it ships every few
 # days. This extracts what a release can change about its UX, from the installed copy,
-# and diffs it against the snapshot committed in docs/extension-surface/:
+# and diffs it against the snapshot kept in docs/extension-surface/:
 #
 #   requests.txt     what the webview asks its host to do (`accept_diff`, `rewind_code`):
 #                    the literals in both webview/index.js (`type:"…"`) and extension.js
@@ -19,9 +19,11 @@
 #   contributes.txt  package.json's commands, keybindings, settings and views.
 #   settings.txt     every key path in claude-code-settings.schema.json.
 #
-# The snapshot is committed rather than cached because VS Code deletes an old version's
-# folder soon after updating: the last reviewed version must outlive it. Several releases
-# between two reviews diff as one span.
+# The snapshot is kept in the working copy rather than cached because VS Code deletes an
+# old version's folder soon after updating: the last reviewed version must outlive it.
+# It is git-ignored, not committed: it is the extension's own text, and this repository is
+# public. A fresh clone has none until the first --accept. Several releases between two
+# reviews diff as one span.
 #
 #   scripts/extension-surface.sh           # diff the newest installed version, check the ledger
 #   scripts/extension-surface.sh --accept  # make it the snapshot (after updating the ledger)
