@@ -5,8 +5,11 @@
 // it. The app asks nobody anything — scripts/audit-network.sh fails the build
 // over any connection beyond the opt-in update check — so there is no list it
 // can consult while running. A refunded key therefore keeps working until the
-// next release and then stops. That is said to the buyer rather than left to be
-// discovered, on the site's /terms page.
+// next release and then stops. That is to be said to the buyer rather than left
+// to be discovered. Armada's site says it at /terms; Drakar's has no terms page
+// yet, and nobody has bought anything. Before Phase 4 opens the store the owner
+// confirms the terms, and whatever Drakar then publishes (a /terms page, if there
+// is one) must say it, as revoke() in apps/api/src/index.ts notes.
 //
 // Generated-and-committed rather than fetched by CI. Reading D1 from the release
 // job would put a network dependency in the path of shipping, so an outage at

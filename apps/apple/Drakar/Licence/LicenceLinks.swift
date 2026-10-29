@@ -12,11 +12,13 @@ enum LicenceLinks {
 
   /// Whether /buy resolves to a live payment link.
   ///
-  /// The same flag, for the same reason, as `SELLING` on the website — a button
-  /// here is a promise that there is something on the other end of it. The two
-  /// move together, and this one is the slower half: the site can be redeployed
-  /// in a minute, while a build that has shipped carries whatever it was compiled
-  /// with until the next release. Every buy button in the app is gated on it.
+  /// A button here is a promise that there is something on the other end of it. The
+  /// website has no flag of its own (armada's has `SELLING`): today it says "Free while
+  /// in beta" and its `_redirects` has no `/buy`, and Phase 4 adds the `/buy` 302 and the
+  /// price there when it flips this. The two move together, and this one is the slower
+  /// half: the site can be redeployed in a minute, while a build that has shipped carries
+  /// whatever it was compiled with until the next release. Every buy button in the app is
+  /// gated on it.
   ///
   /// DIVERGES from armada, which only shipped once it was selling: Drakar ships while
   /// the store is closed, and while this is false nothing is gated at all. Flipping it
