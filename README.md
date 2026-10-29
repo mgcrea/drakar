@@ -73,6 +73,10 @@ make test-all      # DrakarKit, then the app's hosted suite
 make run           # build, quit the old copy, launch the app
 ```
 
+Sparkle is not committed: `apps/apple/Vendor/` is fetched and checked against its pinned
+digest by `make -C apps/apple sparkle`, which every `make build` runs first. On a fresh
+checkout, run it (or any `make build`) once before building from Xcode.
+
 The Swift half has no Node dependencies; the scripts, the Worker and the site need Node 24
 and pnpm (`pnpm install`). Formatting is `xcrun swift-format` with the root
 `.swift-format`, and oxfmt and oxlint for the rest; `make format-swift-check`,
