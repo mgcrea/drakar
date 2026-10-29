@@ -365,6 +365,91 @@ answered `allow`). Three control requests, all answered at once, none of them st
   `stoppedByUser: true`. A stopped subagent's file ends on the rejected call and
   `[Request interrupted by user for tool use]`, with no closing text.
 
+## Rewind (verified 2026-10-29, 2.1.312)
+
+Captured live on 2026-10-29 on `claude-haiku-4-5-20251001` with Drakar's arguments plus
+`--setting-sources project`, in a scratch folder, from an environment holding only `HOME`,
+`PATH`, `USER`, `TMPDIR` and `CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING=true` (fixtures
+`rewind` and `rewind-history`; every `can_use_tool` was answered `allow`). Each prompt was
+sent with a `uuid` of the driver's, as Drakar sends one. `CLAUDE_CONFIG_DIR` was left unset:
+set to `~/.claude`, the same folder, the CLI looks for a keychain item named after a hash of
+the folder (`Claude Code-credentials-<hash>`, by the items in this Mac's keychain) instead of
+`Claude Code-credentials`, and every turn answers "Not logged in · Please run /login" with a
+`success` result.
+
+One control request, answered at once and starting no turn:
+`{subtype: "rewind_files", user_message_id: <a prompt's uuid>, dry_run: Bool}`.
+
+| Case | Reply |
+| --- | --- |
+| dry run, files differ | `success`, `{canRewind: true, filesChanged: ["/p/a.txt", "/p/b.txt"], insertions: 0, deletions: 2}` |
+| dry run, nothing differs | `success`, `{canRewind: true, filesChanged: [], insertions: 0, deletions: 0}` |
+| rewind | `success`, `{canRewind: true, skippedLinks: 0}` |
+| dry run, an unknown uuid | `success`, `{canRewind: false, error: "No file checkpoint found for this message."}` |
+| rewind, an unknown uuid | `error`, "No file checkpoint found for this message." |
+| dry run, no environment variable | `success`, `{canRewind: false, error: "File rewinding is not enabled."}` |
+| rewind, no environment variable | `error`, "File rewinding is not enabled." |
+
+Seven answers:
+
+1. **The replies.** The table. A refused dry run is a `success` carrying `canRewind: false`
+   and `error`; a refused rewind is a `control_response` with `subtype: "error"` and the same
+   string as its `error`, with no `response` and no `canRewind`. `filesChanged` holds absolute
+   paths; `insertions` and `deletions` count lines. A rewind's reply has no file list: the dry
+   run is the only place the files are named. A rewind writes no transcript line (no
+   `rewind_stand_in` either), and nothing else arrives on stdout.
+2. **A live prompt keeps the uuid it was sent with.** Its transcript `user` line has that
+   `uuid` (`aaaaaaaa-…`), and so does the `file-history-snapshot` written after it
+   (`messageId`). On stdout it comes back as `command_lifecycle`'s `command_uuid` (`queued`,
+   `started`, `completed`), `status`'s `user_message_uuids` and `thinking_tokens`'
+   `user_message_uuid`.
+3. **A resumed process can rewind to prompts from before it, even before its own first
+   prompt.** A process started with `--resume=<id>` answered dry runs for A and B before any
+   prompt, and after its own prompt C for A, B and C; the rewind for C worked. It rebuilds the
+   file history from the transcript's `file-history-snapshot` lines and the backups in
+   `<config>/file-history/<session id>/`. A new session with no prompt yet answers "No file
+   checkpoint found for this message." for another session's prompt.
+4. **The refusals.** "No file checkpoint found for this message." (a uuid the session has no
+   snapshot for) and "File rewinding is not enabled." (the environment variable missing, before
+   and after a turn), both seen. Read in the binary and not seen: "Failed to rewind:
+   <reason>" (the restore threw) and "rewindFiles: no turn received yet". The second belongs
+   to another copy of the handler; the one that answers stream-json checks only enabled, then
+   the checkpoint.
+5. **`--resume-session-at` keeps the message it is given.** The CLI keeps every message up
+   to and including that uuid. For a fork that ends just before prompt B, pass the uuid of
+   the message before it: B's `parentUuid` (here A's closing "Done." line). Given B's own
+   uuid, the fork keeps B unanswered; the next prompt follows it, and the model carried out
+   B's two Writes again before answering. The first prompt's `parentUuid` is null: there is
+   nothing to keep.
+6. **Both forms work.** `--resume-session-at=<uuid>` (as the SDK passes it) and
+   `--resume-session-at <uuid>` gave the same fork. It works under stream-json, despite the
+   binary's "Ignored outside print mode" for a related flag. An unknown uuid ends the process
+   before the `initialize` reply, with exit status 1: one `result` (`error_during_execution`,
+   `is_error`, `errors: ["No message found with message.uuid of: <uuid>"]`), the same text on
+   stderr, and no transcript.
+7. **The fork's transcript.** With `--resume=<id> --fork-session --resume-session-at=<uuid>`
+   the new session's id arrives on its first turn's `system/init`, and its file is written
+   then: a fork that is never prompted leaves no transcript, though a `file-history/<new id>/`
+   folder appears (as it does for the unknown uuid in answer 6). The file opens with `mode`,
+   `atis-latch`, `tools-used` and a `file-history-snapshot` for every prompt of the original,
+   those after the cut included (C), then a copy of every kept line: the same `uuid` and
+   `parentUuid`, `sessionId` rewritten, one new `promptId` for all of them, no
+   `turnAttributionKey` on the copied prompts. Then the new prompt, whose `parentUuid` is the
+   cut. The original's transcript is not touched, and the fork's backups are hard links to
+   the original's. The fork can rewind its copied prompts too: a dry run for A in an
+   unprompted fork listed `a.txt` and `b.txt`.
+
+- **Where a rewind goes.** To the files as they were just before that prompt ran. Rewinding
+  to A (which created `a.txt`) deleted `a.txt` and `b.txt`; rewinding to B brought `a.txt`
+  back to "one" and deleted `b.txt`. A file the checkpoint had not yet seen is deleted. That
+  is the point a fork from the same prompt ends at (answer 5).
+- **What is tracked.** Files the edit tools wrote (Write, here; the extension warns that Bash
+  changes to other files are not undone). Each prompt gets a `file-history-snapshot` line
+  (`messageId`, `trackedFileBackups` by relative path, each with `backupFileName`, `version`,
+  `realParentDir`), each edit a `file-history-delta` (`trackingPath`, `snapshotMessageId`).
+  Backups are `<hash>@v<n>` files under `<config>/file-history/<session id>/`; a file that did
+  not exist yet has `backupFileName: null`.
+
 ## Prompts sent mid-turn, and the command list (verified 2026-10-06, 2.1.288)
 
 Captured live on `haiku` (fixture `queued-prompts`).

@@ -109,6 +109,43 @@ enum Fixture: String {
   /// Attachments, request shapes and blobs, and the thinking line dropped; paths and ids
   /// scrubbed.
   case subagentFile = "subagent-file"
+  /// `rewind_files` and `--resume-session-at` on Claude Code 2.1.312 (2026-10-29, `haiku` 4.5),
+  /// with `CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING=true` unless said otherwise, in scenario
+  /// order (docs/claude-stream-json.md, "Rewind"). Prompts were sent with the uuids `aaaaaaaa-…`
+  /// (A), `bbbbbbbb-…` (B), `cccccccc-…` (C), `dddddddd-…` (D) and `eeeeeeee-…` (E), which come
+  /// back as `command_lifecycle`'s `command_uuid`; the request ids name each request.
+  /// 1. Lines 1-18, session `…0001`: A writes `a.txt` = "one"; B rewrites it to "two" and
+  ///    creates `b.txt` (each prompt's lifecycle, `init`, Write calls, results, "Done.").
+  /// 2. Lines 19-23: dry run and rewind for A (`rewind-a-dry` lists both files, `rewind-a`
+  ///    deletes both: the state before A), then for B (`rewind-b-dry` lists `a.txt`, `rewind-b`
+  ///    brings back "one"), then B's dry run again, now empty.
+  /// 3. Lines 24-25: an unknown uuid, dry run (`success`, `canRewind: false`) and real (`error`).
+  /// 4. Lines 26-27: a process started with `--resume=…0001`, before any prompt: dry runs for A
+  ///    and B both succeed.
+  /// 5. Lines 28-39: the same process after C writes `c.txt`: dry runs for A and B (from before
+  ///    this process) and C, then the rewind for C.
+  /// 6. Lines 40-41: a new session with no prompt yet, dry run and rewind for A: no checkpoint.
+  /// 7. Lines 42-52, session `…0002`, without the environment variable: a dry run before any
+  ///    prompt, D writing `d.txt`, then a dry run and a rewind for D: not enabled.
+  /// 8. Lines 53-58: `--resume=…0001 --fork-session --resume-session-at=<B's parentUuid>`, then
+  ///    E: a new session `…0003`, whose reply quotes A only.
+  /// 9. Lines 59-68: the same at B's own uuid, session `…0004`: B is kept, unanswered, and E's
+  ///    turn carries out B's two Writes.
+  /// 10. Line 69: the same at an unknown uuid: the only line, an `error_during_execution`
+  ///    result whose `errors` says "No message found with message.uuid of: …"; the process
+  ///    exits 1.
+  /// Stream events, thinking, status, `thinking_tokens`, rate limit, `can_use_tool` and the
+  /// `initialize` reply dropped; inits cut to a few keys; other ids zeroed, paths cut to `/p`.
+  case rewind = "rewind"
+  /// Session `…0001`'s transcript file from `rewind` (2.1.312, 2026-10-29), after A and B in
+  /// one process and C in a resumed one. Each prompt's line keeps the uuid it was sent with
+  /// (`aaaaaaaa-…`, `bbbbbbbb-…`, `cccccccc-…`), and a `file-history-snapshot` after it has that
+  /// uuid as its `messageId`. B's `parentUuid` (`…0224`, the "Done." line ending A's
+  /// turn) is what `--resume-session-at` takes for a fork that ends just before B; A's is
+  /// null. The rewinds wrote no line. `api-request*` and `atis-latch` lines dropped,
+  /// attachments cut to their type and without `rendered*`, thinking text and signatures
+  /// cut; ids zeroed consistently (every `parentUuid` still names a kept line), paths cut.
+  case rewindHistory = "rewind-history"
   /// The transcript line Claude Code 2.1.288 wrote for a prompt sent with a 64×64 red PNG
   /// and a text document `notes.txt` (2026-10-06): blocks kept as sent, keys trimmed.
   case historyWithAttachments = "history-with-attachments"
