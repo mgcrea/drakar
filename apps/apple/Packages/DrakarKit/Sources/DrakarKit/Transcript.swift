@@ -12,8 +12,9 @@ public struct Transcript: Sendable, Equatable {
     public var context: String?
     /// On a prompt, the images and files sent with it.
     public var attachments: [AttachmentPreview] = []
-    /// On a prompt, the CLI's message uuid: the one it was sent with, which its transcript
-    /// line keeps. What a fork or a rewind from it names.
+    /// On a Claude Code prompt, the CLI's message uuid: the one Drakar sent it with, which its
+    /// transcript line keeps; what a fork or a rewind from it names. A live Codex prompt
+    /// carries the id Drakar sent it with; a Codex history prompt carries none.
     public var messageID: String?
     /// On thinking streaming live, when its block started; nil once it landed or its turn ended.
     public var thinkingSince: Date?

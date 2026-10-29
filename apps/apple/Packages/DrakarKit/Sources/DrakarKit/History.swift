@@ -54,6 +54,14 @@ enum UserText: Equatable {
   }
 }
 
+/// Where a fork cut before a prompt resumes (`Transcript.resumePoint(before:in:)`).
+public enum ResumePoint: Equatable, Sendable {
+  /// Before the first prompt: there is no message to keep.
+  case start
+  /// After this message uuid, the one `--resume-session-at` takes.
+  case after(String)
+}
+
 extension Transcript {
   /// A session's history, folded from the transcript file Claude Code writes at
   /// `<config>/projects/<encoded cwd>/<session id>.jsonl`.
@@ -78,15 +86,16 @@ extension Transcript {
     return history(lines: Array(lines[..<cut]))
   }
 
-  /// The uuid `--resume-session-at` takes to end a fork just before `promptUUID`: that prompt
-  /// line's `parentUuid`, since the CLI keeps the message it is given (docs/claude-stream-json.md,
-  /// "Rewind", answer 5); nil when it is null, as for the first prompt, which has nothing
-  /// before it, and when no line has that uuid.
-  public static func resumePoint(before promptUUID: String, in lines: [Data]) -> String? {
-    guard let prompt = lines.first(where: { isLine($0, ofPrompt: promptUUID) }) else {
-      return nil
-    }
-    return (try? JSONValue.parse(prompt))?["parentUuid"]?.stringValue
+  /// Where a fork that ends just before the prompt `promptUUID` resumes, read from that
+  /// prompt line's `parentUuid`: `.after` that message, which `--resume-session-at` takes,
+  /// since the CLI keeps the message it is given (docs/claude-stream-json.md, "Rewind",
+  /// answer 5); `.start` when it is null, as for the first prompt, which has nothing before
+  /// it. Nil when no prompt line has that uuid: there is nothing to fork from.
+  public static func resumePoint(before promptUUID: String, in lines: [Data]) -> ResumePoint? {
+    guard let line = lines.first(where: { isLine($0, ofPrompt: promptUUID) }),
+      let json = try? JSONValue.parse(line)
+    else { return nil }
+    return json["parentUuid"]?.stringValue.map(ResumePoint.after) ?? .start
   }
 
   /// Whether `line` is the `user` line of the prompt `uuid`.

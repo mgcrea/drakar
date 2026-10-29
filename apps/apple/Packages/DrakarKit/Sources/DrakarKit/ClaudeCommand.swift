@@ -24,7 +24,7 @@ public struct ClaudeCommand: Sendable, Equatable {
   /// whoever has it open.
   public var forksSession = false
   /// With `resumeSessionID` and `forksSession`: the fork keeps the conversation up to and
-  /// including this message uuid (`Transcript.resumePoint(before:in:)`) and drops the rest.
+  /// including this message uuid (`ResumePoint.after`) and drops the rest.
   public var resumeSessionAt: String?
   /// The session's name (`custom-title`), for a new session or a fork: the CLI records it
   /// as `/rename` would.

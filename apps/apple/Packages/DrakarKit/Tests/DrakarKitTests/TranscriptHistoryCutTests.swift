@@ -40,12 +40,22 @@ struct TranscriptHistoryCutTests {
     #expect(cut.entries.first?.messageID == "p-1")
   }
 
+  @Test func aCutAtAnUnknownUUIDKeepsTheWholeHistory() throws {
+    let lines = try Fixture.rewindHistory.lines
+    #expect(
+      Transcript.history(lines: lines, endingBefore: "not-a-prompt")
+        == Transcript.history(lines: lines))
+  }
+
   @Test func resumePointIsTheOneTheCLITakes() throws {
     let lines = try Fixture.rewindHistory.lines
     // B's `parentUuid`: the "Done." line closing A's turn.
     #expect(
-      Transcript.resumePoint(before: promptB, in: lines) == "00000000-0000-4000-8000-000000000224")
-    #expect(Transcript.resumePoint(before: promptA, in: lines) == nil)
+      Transcript.resumePoint(before: promptB, in: lines)
+        == .after("00000000-0000-4000-8000-000000000224"))
+    // A's is null: a fork before it keeps nothing.
+    #expect(Transcript.resumePoint(before: promptA, in: lines) == .start)
+    // Not in the file: no fork point at all, not an empty one.
     #expect(Transcript.resumePoint(before: "not-a-prompt", in: lines) == nil)
   }
 
