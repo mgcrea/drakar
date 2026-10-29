@@ -319,19 +319,25 @@ import Testing
     connection.start(line: { _ in }, closed: {})
     let line = Data(repeating: 0x61, count: 1 << 20)
     connection.send(line)
-    let received = Task.detached { () -> Int in
-      try? await Task.sleep(for: .milliseconds(200))
+    // A thread of its own, not a task: `flushNow` blocks this one, and on a runner with few
+    // cores the cooperative pool has no other to give the reader before the limit passes.
+    let (received, report) = AsyncStream.makeStream(of: Int.self)
+    Thread.detachNewThread {
+      Thread.sleep(forTimeInterval: 0.2)
       var total = 0
       var buffer = [UInt8](repeating: 0, count: 64 * 1024)
       while true {
         let count = Darwin.read(reader, &buffer, buffer.count)
-        if count <= 0 { return total }
+        if count <= 0 { break }
         total += count
       }
+      report.yield(total)
+      report.finish()
     }
     connection.flushNow()
     connection.close()
-    let count = await received.value
+    var count = 0
+    for await total in received { count = total }
     #expect(count == line.count + 1)
   }
 
