@@ -30,7 +30,7 @@ struct SessionView: View {
     .environment(\.askedQuestion, askedQuestion)
     .environment(\.taskControls, session.tasks)
     .environment(\.rewindOffer, rewindOffer)
-    .environment(\.rewindAction, act)
+    .environment(\.rewindAction, rewindAction)
     // The card takes the keys when its question arrives or the session is shown, asked from
     // here: run after the update that made the card, the request reaches a card already up.
     .task(id: askedQuestion?.callID) {
@@ -191,7 +191,7 @@ struct SessionView: View {
     .sheet(isPresented: rewindSheetShown) {
       RewindSheet(rewinds: session.rewinds) { messageID in
         session.rewinds.cancel()
-        fork(from: messageID)
+        rewindAction.fork(from: messageID)
       }
     }
     // A rewind that took closes the sheet (the session noted it), then Fork and rewind forks.
@@ -199,7 +199,7 @@ struct SessionView: View {
     .onChange(of: session.rewinds.phase, initial: true) { _, phase in
       guard phase == .done, let request = session.rewinds.request else { return }
       session.rewinds.cancel()
-      if request.thenFork { fork(from: request.messageID) }
+      if request.thenFork { rewindAction.fork(from: request.messageID) }
     }
     // Esc anywhere in the session, as in the extension: the turn stops, what was queued
     // runs next, and the composer takes the keys. A panel or menu with Esc of its own
@@ -242,41 +242,15 @@ struct SessionView: View {
     }
   }
 
-  /// What a prompt's menu offers: as it reads with no turn running, disabled during one.
-  private func rewindOffer(_ messageID: String?) -> RewindOffer {
+  /// What the session's prompts offer: as it reads with no turn running, disabled during
+  /// one. A value, so a prompt redraws only when it changes.
+  private var rewindOffer: RewindOffer {
     RewindOffer.of(
-      messageID: messageID, canFork: project.offersForkFrom(item),
-      canRewindCode: session.offersCodeRewind,
+      canFork: project.offersForkFrom(item), canRewindCode: session.offersCodeRewind,
       duringTurn: session.transcript.isRunning)
   }
 
-  /// A prompt menu's pick. Each is checked again where it acts: a fork refused (a turn
-  /// started, the prompt not in the file) forks nothing, and a rewind Drakar may not send now
-  /// fails its sheet.
-  private func act(_ action: RewindAction) {
-    switch action {
-    case .fork(let messageID, let text):
-      fork(from: messageID, text: text)
-    case .rewind(let messageID):
-      session.rewinds.start(Rewinds.Request(messageID: messageID, thenFork: false))
-    case .forkAndRewind(let messageID, _):
-      session.rewinds.start(Rewinds.Request(messageID: messageID, thenFork: true))
-    }
-  }
-
-  /// Forks from the prompt `messageID`, its text (read from the transcript when not given)
-  /// in the new session's composer.
-  private func fork(from messageID: String, text: String? = nil) {
-    let text = text ?? promptText(messageID)
-    Task { await project.fork(item, from: messageID, text: text) }
-  }
-
-  private func promptText(_ messageID: String) -> String {
-    for entry in session.transcript.entries where entry.messageID == messageID {
-      if case .prompt(let text) = entry.kind { return text }
-    }
-    return ""
-  }
+  private var rewindAction: RewindMenuAction { RewindMenuAction(item: item, project: project) }
 
   /// Up from `Rewinds.start` until `cancel`. Dismissed by Esc, it is Never mind, except while
   /// a rewind already sent may be writing.

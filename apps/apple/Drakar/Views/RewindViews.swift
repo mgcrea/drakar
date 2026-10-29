@@ -1,9 +1,10 @@
 import DrakarKit
 import SwiftUI
 
-/// What a prompt's menu offers, decided from its message uuid and the session. A prompt with
-/// none (Codex history) offers nothing; one whose session can't be forked from offers no
-/// fork; one whose session Drakar doesn't drive offers no code rewind.
+/// What a prompt's menu offers. The session works it out once (`of`), as it reads with no
+/// turn running, and each prompt takes it for its message uuid (`at`): a prompt with none
+/// (Codex history) offers nothing; a session that can't be forked from offers no fork; one
+/// Drakar doesn't drive offers no code rewind.
 struct RewindOffer: Equatable {
   /// "Fork conversation from here".
   var fork: Bool
@@ -12,16 +13,18 @@ struct RewindOffer: Equatable {
   /// False while a turn runs: what is offered shows, disabled. Nothing is queued.
   var isEnabled = true
 
+  static let nothing = RewindOffer(fork: false, rewindCode: false)
+
   var offersAnything: Bool { fork || rewindCode }
 
-  /// `canFork` and `canRewindCode` as they read with no turn running; `duringTurn` disables
-  /// them.
-  static func of(
-    messageID: String?, canFork: Bool, canRewindCode: Bool, duringTurn: Bool = false
-  ) -> RewindOffer {
-    guard messageID != nil else { return RewindOffer(fork: false, rewindCode: false) }
-    return RewindOffer(fork: canFork, rewindCode: canRewindCode, isEnabled: !duringTurn)
+  /// The session's offer: `canFork` and `canRewindCode` as they read with no turn running;
+  /// `duringTurn` disables them.
+  static func of(canFork: Bool, canRewindCode: Bool, duringTurn: Bool = false) -> RewindOffer {
+    RewindOffer(fork: canFork, rewindCode: canRewindCode, isEnabled: !duringTurn)
   }
+
+  /// What the prompt with `messageID` offers of it: nothing without one.
+  func at(_ messageID: String?) -> RewindOffer { messageID == nil ? .nothing : self }
 }
 
 /// What a prompt's menu asks for; the session view acts on it.
@@ -31,16 +34,56 @@ enum RewindAction: Equatable {
   case forkAndRewind(messageID: String, text: String)
 }
 
+/// Acts on a prompt menu's pick for one session. Equal per session row rather than a bare
+/// closure, which SwiftUI cannot compare: every prompt reads it, and a new closure on each
+/// update would redraw them all (as `OpenInEditorAction`). Each pick is checked again where
+/// it acts: a fork refused (a turn started, the prompt not in the file) forks nothing, and a
+/// rewind Drakar may not send now fails its sheet.
+struct RewindMenuAction: Equatable {
+  let item: ProjectSession
+  let project: Project
+
+  func callAsFunction(_ action: RewindAction) {
+    let rewinds = item.session.rewinds
+    switch action {
+    case .fork(let messageID, let text):
+      fork(from: messageID, text: text)
+    case .rewind(let messageID):
+      rewinds.start(Rewinds.Request(messageID: messageID, thenFork: false))
+    case .forkAndRewind(let messageID, _):
+      rewinds.start(Rewinds.Request(messageID: messageID, thenFork: true))
+    }
+  }
+
+  /// Forks from the prompt `messageID`, its text (read from the transcript when not given)
+  /// in the new session's composer.
+  func fork(from messageID: String, text: String? = nil) {
+    let text = text ?? promptText(messageID)
+    Task { [item, project] in await project.fork(item, from: messageID, text: text) }
+  }
+
+  private func promptText(_ messageID: String) -> String {
+    for entry in item.session.transcript.entries where entry.messageID == messageID {
+      if case .prompt(let text) = entry.kind { return text }
+    }
+    return ""
+  }
+
+  static func == (a: Self, b: Self) -> Bool { a.item === b.item && a.project === b.project }
+}
+
 extension EnvironmentValues {
-  /// Set by the session: what a prompt with this message uuid offers. Nil outside a session.
-  @Entry var rewindOffer: ((String?) -> RewindOffer)? = nil
+  /// Set by the session: what its prompts offer, before each prompt's own uuid is read
+  /// (`RewindOffer.at`). Nil outside a session.
+  @Entry var rewindOffer: RewindOffer? = nil
   /// Set by the session: acts on a prompt menu's pick.
-  @Entry var rewindAction: ((RewindAction) -> Void)? = nil
+  @Entry var rewindAction: RewindMenuAction? = nil
 }
 
 extension View {
   /// A prompt bubble's undo arrow, shown on hover, and the same items in its context menu.
-  /// Read from the environment here, so the row around it stays `Equatable`.
+  /// Read from the environment here, so the row around it stays `Equatable`; both values
+  /// compare, so the bubble redraws only when what it offers changes.
   func rewindMenu(entryID: String, messageID: String?, text: String) -> some View {
     modifier(RewindMenu(entryID: entryID, messageID: messageID, text: text))
   }
@@ -56,12 +99,13 @@ private struct RewindMenu: ViewModifier {
   @State private var isHovering = false
 
   func body(content: Content) -> some View {
-    let offer = rewindOffer?(messageID) ?? RewindOffer(fork: false, rewindCode: false)
+    let offer = (rewindOffer ?? .nothing).at(messageID)
     if let messageID, let rewindAction, offer.offersAnything {
       HStack(alignment: .bottom, spacing: 6) {
         content
         Menu {
-          RewindMenuItems(messageID: messageID, text: text, offer: offer, act: rewindAction)
+          RewindMenuItems(
+            messageID: messageID, text: text, offer: offer, act: rewindAction.callAsFunction)
         } label: {
           Image(systemName: "arrow.uturn.backward")
             .font(.callout)
@@ -83,7 +127,8 @@ private struct RewindMenu: ViewModifier {
       }
       .onHover { isHovering = $0 }
       .contextMenu {
-        RewindMenuItems(messageID: messageID, text: text, offer: offer, act: rewindAction)
+        RewindMenuItems(
+          messageID: messageID, text: text, offer: offer, act: rewindAction.callAsFunction)
       }
     } else {
       content
@@ -137,18 +182,14 @@ struct RewindSheet: View {
 
   private var thenFork: Bool { rewinds.request?.thenFork == true }
 
-  /// The dry run on screen: the one ready, or the one being rewound.
-  private var listed: RewindResult? {
+  /// The dry run on screen, from the cache only: the one ready once `onChange` seeded it, or
+  /// the one being rewound.
+  private var listed: (result: RewindResult, paths: [String])? {
     switch rewinds.phase {
-    case .ready(let result): result
-    case .rewinding: shown?.result
+    case .ready(let result): shown.flatMap { $0.result == result ? $0 : nil }
+    case .rewinding: shown
     default: nil
     }
-  }
-
-  private func paths(of result: RewindResult) -> [String] {
-    if let shown, shown.result == result { return shown.paths }
-    return result.filesChanged.map(rewinds.shownPath)
   }
 
   var body: some View {
@@ -190,12 +231,14 @@ struct RewindSheet: View {
   @ViewBuilder private var content: some View {
     switch rewinds.phase {
     case .checking:
-      ProgressView()
-        .controlSize(.small)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityIdentifier("rewind.checking")
+      checking
     case .ready, .rewinding:
-      if let result = listed { files(of: result) }
+      if let listed {
+        files(of: listed.result, paths: listed.paths)
+      } else {
+        // The update before `onChange` seeds the cache.
+        checking
+      }
     case .failed(let line):
       VStack(alignment: .leading, spacing: 4) {
         Label(line, systemImage: "exclamationmark.triangle")
@@ -215,8 +258,14 @@ struct RewindSheet: View {
     }
   }
 
-  @ViewBuilder private func files(of result: RewindResult) -> some View {
-    let paths = paths(of: result)
+  private var checking: some View {
+    ProgressView()
+      .controlSize(.small)
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .accessibilityIdentifier("rewind.checking")
+  }
+
+  @ViewBuilder private func files(of result: RewindResult, paths: [String]) -> some View {
     if paths.isEmpty {
       Text(RewindCopy.nothingToRewind)
         .accessibilityIdentifier("rewind.nothing")
@@ -255,7 +304,9 @@ struct RewindSheet: View {
   @ViewBuilder private var buttons: some View {
     let isRewinding = rewinds.phase == .rewinding
     HStack {
-      if isRewinding { ProgressView().controlSize(.small) }
+      if isRewinding {
+        ProgressView().controlSize(.small).accessibilityIdentifier("rewind.rewinding")
+      }
       Spacer()
       Button(String(localized: "Never mind")) { rewinds.cancel() }
         .keyboardShortcut(.cancelAction)
@@ -266,7 +317,8 @@ struct RewindSheet: View {
   }
 
   /// Rewind (Continue for Fork and rewind) on the dry run's list, and while it waits on
-  /// either request; none for a failure, or for a plain rewind with nothing to rewind.
+  /// either request; none for a failure, or for a plain rewind with nothing to rewind. Only
+  /// Fork and rewind's Continue on an empty list, which writes nothing, takes Return.
   @ViewBuilder private var primary: some View {
     let title = thenFork ? String(localized: "Continue") : String(localized: "Rewind")
     switch rewinds.phase {
@@ -275,8 +327,8 @@ struct RewindSheet: View {
         .disabled(true)
         .accessibilityIdentifier("rewind.confirm")
     case .ready(let result) where !result.filesChanged.isEmpty:
+      // No default action: Return never writes files.
       Button(title) { rewinds.confirm() }
-        .keyboardShortcut(.defaultAction)
         .accessibilityIdentifier("rewind.confirm")
     case .ready where thenFork:
       Button(title) {
