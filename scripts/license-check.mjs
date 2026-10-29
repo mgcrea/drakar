@@ -28,11 +28,11 @@ if (!privateKey) {
   process.exit(2);
 }
 
-// DIVERGES from armada: Drakar has no real key until Phase 2, so the compiled one is the
-// placeholder and nothing could verify against it. LICENSE_PUBLIC_KEY stands in for it,
-// here and in license-check.swift, so a throwaway keypair proves the two languages agree.
-// That says nothing about whether .env matches the build, which is this check's point
-// once a real key exists, so the stand-in is refused as soon as one does. Set it on the
+// DIVERGES from armada: while the compiled key is the placeholder (as it was until
+// 2026-10-29), nothing can verify against it, so LICENSE_PUBLIC_KEY stands in for it, here
+// and in license-check.swift, and a throwaway keypair proves the two languages agree. That
+// says nothing about whether .env matches the build, which is this check's point now that
+// a real key exists, so the stand-in is refused while one is compiled in. Set it on the
 // command line: license-check.swift reads the environment, not .env.
 const override = process.env.LICENSE_PUBLIC_KEY;
 if (override && PUBLIC_KEY !== PLACEHOLDER_KEY) {

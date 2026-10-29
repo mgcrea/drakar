@@ -99,9 +99,9 @@ nonisolated enum Entitlement {
   case refused(String)
 
   /// DIVERGES from armada, whose `current` holds this body itself: here it is a function
-  /// of the check and the trial, so the precedence can be tested. The compiled public key
-  /// is the placeholder until Phase 2, which no stored key can verify against, so a
-  /// valid stored key cannot exist for a test to set.
+  /// of the check and the trial, so the precedence can be tested. A stored key that
+  /// verifies against the compiled public key needs the real private key, which no test
+  /// has, so a valid stored key cannot exist for a test to set.
   static var current: Entitlement {
     resolve(LicenseStore.check, trialActive: Trial.isActive)
   }

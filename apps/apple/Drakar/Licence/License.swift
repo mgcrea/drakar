@@ -49,12 +49,10 @@ nonisolated enum LicenseKey {
 
   /// The public half of the signing key: raw 32 bytes, base64url.
   ///
-  /// DIVERGES from armada: the placeholder until Phase 2 mints Drakar's keypair. It
-  /// decodes to no key, so every key is refused with "this build has no signing key
-  /// compiled in", and `make sign` refuses to sign a bundle that carries it (it reads
-  /// this line, so the declaration stays on one line).
+  /// Drakar's own, minted 2026-10-29. `make sign` reads this line to refuse a bundle
+  /// still carrying the placeholder it replaced, so the declaration stays on one line.
   ///
-  /// Once minted, not to be regenerated: changing it refuses every key ever issued,
+  /// Not to be regenerated: changing it refuses every key ever issued,
   /// all at once, in whatever build carries the new one. The private half signs in
   /// `scripts/mint-license.mjs` and the Worker in `apps/api`, and lives in `.env` and
   /// the Worker's secrets, never here and never in git.
@@ -62,7 +60,7 @@ nonisolated enum LicenseKey {
   /// Empty or a placeholder is the SAFE direction: every key is then refused with a
   /// sentence, rather than every key being accepted. `scripts/lib/license.mjs`
   /// carries the same constant and its tests read this line to assert the two agree.
-  static let publicKey = "PLACEHOLDER-SET-IN-PHASE-2"
+  static let publicKey = "CiSKGTcP0umEgb3-gozFMH0OODaQW2Towt_jnLlBLnk"
 
   /// - Parameter publicKey: the key signatures are checked against. Always
   ///   `LicenseKey.publicKey` in the app; a parameter so the tests can sign their own

@@ -126,8 +126,8 @@ final class UpdateController: NSObject {
   }
 
   /// DIVERGES from armada, which builds the controller with `startingUpdater: true`. Sparkle
-  /// then reports a refusal to start (a feed or key it finds invalid, as the placeholder
-  /// `SUPublicEDKey` is until Phase 2) with an alert of its own, and leaves behind a
+  /// then reports a refusal to start (a feed or key it finds invalid) with an alert of its
+  /// own, and leaves behind a
   /// controller whose updater never runs: `isStarted` read true, Check Now waited on its
   /// spinner for a callback that never came, and a "yes" brought the alert back at every
   /// launch. Starting it here keeps a refusal to one log line and a sentence in the pane, and

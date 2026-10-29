@@ -51,14 +51,13 @@ export const KEY_PREFIX = "drk1";
  * never leak and must never be lost: leaking it lets anyone issue keys, losing it
  * means no new keys can be issued for this major version ever again.
  *
- * DIVERGES from armada: the placeholder until Phase 2 mints Drakar's keypair. It is
- * not a key, so nothing verifies against it: verify-license.mjs refuses to ask, and
- * license-check.mjs takes LICENSE_PUBLIC_KEY in its place, which it honours only
- * while this is the placeholder.
+ * Drakar's own, minted 2026-10-29. Until then it was PLACEHOLDER_KEY below, which
+ * verify-license.mjs refuses to ask about and license-check.mjs replaces with
+ * LICENSE_PUBLIC_KEY; both checks stay, should the placeholder ever come back.
  */
-export const PUBLIC_KEY = "PLACEHOLDER-SET-IN-PHASE-2";
+export const PUBLIC_KEY = "CiSKGTcP0umEgb3-gozFMH0OODaQW2Towt_jnLlBLnk";
 
-/** What PUBLIC_KEY and LicenseKey.publicKey say until Phase 2. */
+/** What PUBLIC_KEY and LicenseKey.publicKey said before the real key, refused wherever read. */
 export const PLACEHOLDER_KEY = "PLACEHOLDER-SET-IN-PHASE-2";
 
 /** Crockford base32, the ULID alphabet: no I, L, O or U, so it survives dictation. */

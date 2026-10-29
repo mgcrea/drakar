@@ -32,30 +32,6 @@ import Testing
     #expect(UpdateController(defaults: defaults, isDevelopmentBuild: false).hasAnswered)
   }
 
-  /// An updater Sparkle refuses to start leaves no controller behind: no spinner waiting on a
-  /// callback that never comes, and the "yes" still recorded. The placeholder key makes the
-  /// refusal real in the test host, so this runs only while the bundle carries it; with the
-  /// real key it would start Sparkle inside the tests, writing to the app's own defaults.
-  @Test(.enabled(if: Bundle.main.infoDictionary?["SUPublicEDKey"] as? String == placeholderKey))
-  func anUpdaterThatWillNotStartStaysNil() {
-    let defaults = UserDefaults(suiteName: #function)!
-    defaults.removePersistentDomain(forName: #function)
-    let controller = UpdateController(defaults: defaults, isDevelopmentBuild: false)
-    controller.answer(automatic: true)
-    #expect(!controller.isStarted)
-    #expect(controller.hasAnswered)
-    #expect(controller.automatic)
-    #expect(controller.startFailure != nil)
-    controller.checkNow()
-    #expect(!controller.isStarted)
-    #expect(!controller.isChecking)
-    #expect(controller.lastCheck == nil)
-    let relaunched = UpdateController(defaults: defaults, isDevelopmentBuild: false)
-    #expect(relaunched.automatic)
-    relaunched.startIfConsented()
-    #expect(!relaunched.isStarted)
-  }
-
   /// The owner's own `make run` copy shares the release's bundle id, feed and key, and its
   /// build number is 1: an updater there would offer to replace it with the release. A
   /// development build never builds one, whatever it is told, and never asks.
@@ -104,7 +80,10 @@ import Testing
     #expect(info["SUAllowsAutomaticUpdates"] as? Bool == false)
     #expect(info["SUScheduledCheckInterval"] as? Int == 86400)
     #expect(info["SUFeedURL"] as? String == "https://drakar.mgcrea.io/appcast.xml")
+    // A real EdDSA public key: 32 bytes, 44 characters of base64, the shape
+    // scripts/lib/update-signature.mjs's PUBLIC_KEY_PATTERN checks.
+    let key = info["SUPublicEDKey"] as? String ?? ""
+    #expect(key.count == 44)
+    #expect(Data(base64Encoded: key)?.count == 32)
   }
 }
-
-private let placeholderKey = "PLACEHOLDER-SET-IN-PHASE-2"

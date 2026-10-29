@@ -6,9 +6,8 @@ import Testing
 
 /// The licence check, against keys signed here.
 ///
-/// The key compiled into Drakar is the placeholder until Phase 2, which no signature can
-/// match, so every case below signs with a keypair made for the test and passes its public
-/// half as `publicKey:`. That reaches the refusals only a correctly signed key can reach.
+/// The private half of the key compiled into Drakar is in no test, so every case below
+/// signs with a keypair made for the test and passes its public half as `publicKey:`. That reaches the refusals only a correctly signed key can reach.
 /// Armada's `make unit` does the same; its checks run outside Xcode, Drakar's in the
 /// hosted suite.
 ///
@@ -101,8 +100,8 @@ import Testing
     #expect(Trial.hasRun)
   }
 
-  /// A key first, always. Through `resolve`, because no key can verify against the
-  /// placeholder public key, so a valid stored key cannot exist until Phase 2.
+  /// A key first, always. Through `resolve`, because a stored key valid against the
+  /// compiled public key needs its private half, which no test has.
   @Test func entitlementPrefersKeyOverTrial() {
     let result = check(mint())
     #expect(result.license != nil)
@@ -118,13 +117,12 @@ import Testing
     }
   }
 
-  /// Phase 2 deletes this test in the commit that lands the real key.
-  @Test func publicKeyIsPlaceholderUntilPhase2() {
-    #expect(LicenseKey.publicKey == "PLACEHOLDER-SET-IN-PHASE-2")
-    // The placeholder decodes to no key, so a genuine signature is refused by name
-    // rather than accepted.
+  /// The compiled key is a real one: a key someone else signed is refused for its
+  /// signature, not for a build with no key compiled in, as the placeholder was.
+  @Test func theCompiledPublicKeyIsReal() {
+    #expect(LicenseKey.publicKey != "PLACEHOLDER-SET-IN-PHASE-2")
     let result = LicenseKey.check(mint(), major: 1, revoked: [])
-    #expect(refusal(result) == "this build has no signing key compiled in")
+    #expect(refusal(result) == "signature does not match")
   }
 
   static func base64Url(_ data: Data) -> String {

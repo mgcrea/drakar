@@ -224,11 +224,10 @@ price guard fails closed, not bastion's; the site skeleton in `apps/website`, wi
 (`.github/workflows/ci.yml`: tests on every push, `release-app` on an `app-v*` tag,
 deploys from `main`) with its runbook, `docs/releasing.md`.
 
-Not yet done, each confirmed by the owner in turn: going public (a secret scan of the
-history, `mgcrea/drakar` created, the real Sparkle and licence keys in place of the
-`PLACEHOLDER-SET-IN-PHASE-2` both ship as today, the GitHub secrets, the D1 databases, the
-Worker and the site deployed); the first release, `app-v1.0.0`, free; and selling, when
-the owner opens the store. `docs/releasing.md`, "Once, before the first release", is the
+Done on 2026-10-29: the secret scan of the history, `mgcrea/drakar` public, its two
+environments, and the real Sparkle and licence keys. Not yet done, each confirmed by the
+owner in turn: the GitHub secrets, the D1 databases, the Worker and the site deployed; the
+first release, `app-v1.0.0`, free; and selling, when the owner opens the store. `docs/releasing.md`, "Once, before the first release", is the
 checklist for all three, in the order its steps must run.
 
 **The checkable claim:** _Drakar listens on one network socket, on 127.0.0.1, which

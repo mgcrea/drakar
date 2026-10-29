@@ -76,8 +76,11 @@ step only once every step above it is done.
 
    Then `git grep -n PLACEHOLDER-SET-IN-PHASE-2` should find only the Makefile's and
    license.mjs's `PLACEHOLDER_KEY`, which go on refusing the placeholder, a comment in
-   `ci.yml`, and this runbook. `git grep -n "Phase 2"` finds the comments around each of
-   these that say "until Phase 2"; rewrite each in the same commit. `make test-scripts`,
+   `ci.yml`, `LicenseKeyTests`' check that the compiled key is not it, this runbook and the
+   direct-distribution plan. `git grep -n "Phase 2"` finds the comments around each of
+   these that say "until Phase 2"; rewrite each in the same commit. The ones left after it
+   are about D1 and Cloudflare (steps 7 and 8), and PLAN.md's own, unrelated Phase 2.
+   Done on 2026-10-29. `make test-scripts`,
    `make -C apps/apple test-app` and `make license-check` (with `.env` filled in) pass.
 
 6. **The signing secrets.** `release-app` reads seven:

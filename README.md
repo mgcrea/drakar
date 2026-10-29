@@ -84,9 +84,7 @@ and pnpm (`pnpm install`). Formatting is `xcrun swift-format` with the root
 
 A release is a commit, a signed `app-v<version>` tag, and CI's `release-app` job, which
 builds, signs, notarizes, verifies and publishes it; [docs/releasing.md](docs/releasing.md)
-is the runbook. The same targets rehearse it locally (while the public keys are still
-placeholders, `sign` refuses them; `ALLOW_PLACEHOLDER_KEYS=1 make bundle` signs a rehearsal
-anyway, with Apple Development, which can never be notarized):
+is the runbook. The same targets rehearse it locally:
 
 ```sh
 make build-release   # build, sign (Developer ID, else Apple Development) and notarize

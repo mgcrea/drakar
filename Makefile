@@ -85,13 +85,6 @@ changelog-check: ## Fail if Changelog.swift is stale against CHANGELOG.md
 # node:test for scripts/: the CHANGELOG parse the appcast, the release body and the
 # What's New pane share, and the Sparkle signature check `appcast` will run. Not called
 # `test`, which runs this and every other suite (below).
-#
-# DIVERGES from armada: package.json's `test:scripts` skips one test by name, the
-# fleet's "accepts the SUPublicEDKey committed in this repository's Info.plist". That
-# file is byte-identical across the fleet, so the skip lives outside it. The test reads
-# apps/apple/*-Info.plist, which is Drakar-Info.plist, and its SUPublicEDKey is the
-# placeholder until Phase 2 generates the key. The commit that lands the real key drops
-# the skip.
 test-scripts: ## Run the Node tests under scripts/
 	@pnpm test:scripts
 
@@ -144,8 +137,9 @@ INSTALLED   := /Applications/Drakar.app
 INFO_PLIST  := apps/apple/Drakar-Info.plist
 LICENSE_SWIFT := apps/apple/Drakar/Licence/License.swift
 
-# Both public keys ship as this literal until Phase 2 makes the real ones, and `sign`
-# refuses a bundle that carries it. ALLOW_PLACEHOLDER_KEYS=1 is the local rehearsal: it
+# Both public keys shipped as this literal until the real ones replaced it on 2026-10-29,
+# and `sign` still refuses a bundle that carries it, should it ever come back.
+# ALLOW_PLACEHOLDER_KEYS=1 is the local rehearsal with a placeholder: it
 # skips that refusal, says so, and signs with Apple Development even where a Developer ID
 # is present, so what it makes can never be notarized and mistaken for a release.
 PLACEHOLDER_KEY := PLACEHOLDER-SET-IN-PHASE-2
@@ -202,7 +196,7 @@ sign: ## Sign the Release bundle inside out (Developer ID if present, else Apple
 		if [ "$(ALLOW_PLACEHOLDER_KEYS)" = 1 ]; then \
 			echo "  !! SUPublicEDKey is the placeholder — signing anyway (ALLOW_PLACEHOLDER_KEYS=1); this build can never be updated"; \
 		else \
-			echo "  SUPublicEDKey is the placeholder ($(PLACEHOLDER_KEY)) — Phase 2 makes Drakar's key." >&2; \
+			echo "  SUPublicEDKey is the placeholder ($(PLACEHOLDER_KEY)), not Drakar's key." >&2; \
 			echo "  ALLOW_PLACEHOLDER_KEYS=1 signs a local rehearsal anyway." >&2; \
 			exit 1; \
 		fi; \
@@ -216,7 +210,7 @@ sign: ## Sign the Release bundle inside out (Developer ID if present, else Apple
 			if [ "$(ALLOW_PLACEHOLDER_KEYS)" = 1 ]; then \
 				echo "  !! LicenseKey.publicKey is the placeholder — signing anyway (ALLOW_PLACEHOLDER_KEYS=1); no licence key can verify"; \
 			else \
-				echo "  LicenseKey.publicKey is the placeholder ($(PLACEHOLDER_KEY)) — Phase 2 makes the licence key." >&2; \
+				echo "  LicenseKey.publicKey is the placeholder ($(PLACEHOLDER_KEY)), not Drakar's licence key." >&2; \
 				echo "  ALLOW_PLACEHOLDER_KEYS=1 signs a local rehearsal anyway." >&2; \
 				exit 1; \
 			fi; \
@@ -428,7 +422,7 @@ install-release: ## Install the notarized Release build into /Applications (refu
 # one item per account. Bastion, cupertino and armada share the default item; Drakar has
 # its own, `--account drakar`, decided in the direct-distribution spec: with no copies
 # installed yet a separate key costs nothing, while rotating a shared one later would take
-# two releases. Phase 2 makes it (`generate_keys --account drakar`); nothing here generates
+# two releases. Made 2026-10-29 (`generate_keys --account drakar`); nothing here generates
 # one.
 #
 # That private key is the most dangerous secret this project has: together with the
@@ -443,7 +437,7 @@ sparkle-keys: ## Assert the keychain's drakar EdDSA key is the one the app ships
 	@want=$$(/usr/libexec/PlistBuddy -c 'Print :SUPublicEDKey' $(INFO_PLIST)); \
 	[ "$$want" != "$(PLACEHOLDER_KEY)" ] || { \
 		echo "  SUPublicEDKey in $(INFO_PLIST) is still the placeholder." >&2; \
-		echo "  Phase 2: $(SPARKLE_TOOLS)/generate_keys --account $(SPARKLE_ACCOUNT), then put its public key there." >&2; \
+		echo "  $(SPARKLE_TOOLS)/generate_keys --account $(SPARKLE_ACCOUNT) -p prints the one to put there." >&2; \
 		exit 1; }
 	@security find-generic-password -s "https://sparkle-project.org" -a $(SPARKLE_ACCOUNT) >/dev/null 2>&1 \
 		|| { echo "  no '$(SPARKLE_ACCOUNT)' Sparkle key in this login keychain — the shared default item is not Drakar's" >&2; exit 1; }
@@ -507,12 +501,12 @@ revocations: ## Rewrite the baked-in revocation list from the Worker's D1
 # real License.swift and feeds it keys signed with the real private key from .env, which is
 # also what proves that key matches the public one compiled in.
 #
-# DIVERGES from armada: until Phase 2 the compiled key is the placeholder, so the check
-# runs against a throwaway pair passed on the command line, which proves the two languages
-# agree and nothing about .env:
+# DIVERGES from armada: while the compiled key is the placeholder (as it was until
+# 2026-10-29), the check runs against a throwaway pair passed on the command line, which
+# proves the two languages agree and nothing about .env:
 #   node scripts/mint-license.mjs --keygen
 #   LICENSE_SIGNING_KEY=… LICENSE_PUBLIC_KEY=… make license-check
-# scripts/license-check.mjs refuses LICENSE_PUBLIC_KEY once a real key is compiled in.
+# scripts/license-check.mjs refuses LICENSE_PUBLIC_KEY while a real key is compiled in.
 license-check: ## Prove a minted licence key verifies in the app's own verifier
 	@mkdir -p apps/apple/.build
 	@swiftc -O -o apps/apple/.build/license-check \

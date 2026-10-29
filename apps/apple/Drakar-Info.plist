@@ -26,13 +26,12 @@
 	     and sign_update call names, so a leak of the fleet's key cannot push an
 	     update to Drakar and a leak of this one reaches no other app.
 
-	     A placeholder until Phase 2 generates the key. Sparkle will not start an
-	     updater whose key is not a valid EdDSA key, so a build carrying this can
-	     never install anything, and `sign` refuses to sign a bundle that carries
-	     it. To be matched against `generate_keys -p` for the drakar account before
-	     the first release. -->
+	     Generated 2026-10-29 (`generate_keys --account drakar`). `make sparkle-keys`
+	     asserts the keychain's drakar key is this one before exporting it for CI,
+	     and `make appcast` checks it again over every zip it signs. `sign` refuses
+	     a bundle carrying the placeholder this replaced. -->
 	<key>SUPublicEDKey</key>
-	<string>PLACEHOLDER-SET-IN-PHASE-2</string>
+	<string>UW7tu1JPG5KmL4IvjRDKlD+VzNEeOi+0Qv4+Kmc5TKk=</string>
 
 	<!-- Present and false, never absent. An ABSENT SUEnableAutomaticChecks is what
 	     makes Sparkle show its own "check automatically?" prompt on second launch;

@@ -212,8 +212,7 @@ jobs:
       # has, so it skips loudly rather than failing there, and `if:` cannot read
       # `secrets`, so the guard is in the shell. A repository secret if it is set,
       # never an org-wide one: it is the one key that cannot be rotated without
-      # refusing every licence ever sold. Until Phase 2 sets it, with the real
-      # public key compiled in, this skips.
+      # refusing every licence ever sold. Until it is set, this skips.
       - name: Licence round trip 🔍
         env:
           LICENSE_SIGNING_KEY: ${{ secrets.LICENSE_SIGNING_KEY }}
@@ -387,7 +386,7 @@ jobs:
 
       # `make sign` refuses a bundle that still carries the placeholder Sparkle or
       # licence public key (PLACEHOLDER-SET-IN-PHASE-2), before anything is signed,
-      # so a tag pushed before Phase 2 lands the real keys fails here, not later.
+      # so a tag whose commit carries one fails here, not later.
       - name: Build, sign and notarize 📦
         env:
           AC_KEY_ID: ${{ secrets.AC_KEY_ID }}
