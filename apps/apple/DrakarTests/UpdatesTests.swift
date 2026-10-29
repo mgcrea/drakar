@@ -99,6 +99,9 @@ import Testing
     let info = Bundle.main.infoDictionary!
     #expect(info["SUEnableAutomaticChecks"] as? Bool == false)
     #expect(info["SUAutomaticallyUpdate"] as? Bool == false)
+    // False, not absent: absent, Sparkle's update window offers to download and install
+    // updates automatically, and a tick there would install without asking.
+    #expect(info["SUAllowsAutomaticUpdates"] as? Bool == false)
     #expect(info["SUScheduledCheckInterval"] as? Int == 86400)
     #expect(info["SUFeedURL"] as? String == "https://drakar.mgcrea.io/appcast.xml")
   }

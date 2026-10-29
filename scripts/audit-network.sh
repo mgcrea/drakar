@@ -316,9 +316,11 @@ EOF
     if [ "$saw_sparkle" -eq 1 ]; then
       plist="$app/Contents/Info.plist"
       # Absent is not the same as false: an ABSENT SUEnableAutomaticChecks is what makes
-      # Sparkle ask on its own, in its own words, which the consent card on Home replaces.
+      # Sparkle ask on its own, in its own words, which the consent card on Home replaces;
+      # an ABSENT SUAllowsAutomaticUpdates leaves Sparkle's update window offering to
+      # download and install updates automatically, which SECURITY.md says it never does.
       for pair in SUEnableAutomaticChecks=false SUAutomaticallyUpdate=false \
-        SUSendProfileInfo=false "SUFeedURL=$FEED_URL"; do
+        SUAllowsAutomaticUpdates=false SUSendProfileInfo=false "SUFeedURL=$FEED_URL"; do
         key=${pair%%=*}
         want=${pair#*=}
         got=$(/usr/libexec/PlistBuddy -c "Print :$key" "$plist" 2>/dev/null)

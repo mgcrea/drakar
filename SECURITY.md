@@ -35,8 +35,9 @@ In detail:
   identifier with it: not your licence key, not a machine id. When it finds a release and
   you choose to install it, Sparkle downloads that release's `Drakar.zip` from GitHub
   (`github.com/mgcrea/drakar/releases/download/…`), and installs it only if it carries
-  Drakar's own EdDSA signature. Automatic installs and profile reporting are off in the
-  shipped Info.plist.
+  Drakar's own EdDSA signature. It always asks before installing: the shipped Info.plist
+  turns automatic installs off and takes away Sparkle's option to turn them on
+  (`SUAllowsAutomaticUpdates` is false), and profile reporting is off.
 - **No licence call.** A licence key is checked on this Mac, against a public key built
   into the app, and the trial is counted on this Mac too.
 - **No entitlements, no sandbox.** Drakar spawns `claude` and `codex`, which work on your
@@ -71,9 +72,9 @@ scripts/audit-network.sh --running                # and the Drakar running now
   fetch the appcast and the update; and Drakar's own executable, its link to
   Network.framework for the listener and nothing outgoing. A bundle that has lost Sparkle
   or Drakar's executable fails rather than keeping the pardon. Then Sparkle's defaults in
-  the shipped Info.plist (no automatic checks, no automatic installs, no profile, that one
-  feed), its sandbox-only XPC services stripped, no entitlements in any signature, and the
-  hardened runtime on every binary.
+  the shipped Info.plist (no automatic checks, no automatic installs and no option to turn
+  them on, no profile, that one feed), its sandbox-only XPC services stripped, no
+  entitlements in any signature, and the hardened runtime on every binary.
 - **The running app** (`make audit-running`): it listens only on `127.0.0.1`; its lock
   files are 0600 in a folder no one else can write; the upgrade is refused without the
   token or with a wrong one, and accepted with it; the session host's socket is 0600, in a

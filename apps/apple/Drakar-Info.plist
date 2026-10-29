@@ -42,8 +42,13 @@
 	<false/>
 	<!-- Never install without being asked. This app runs agents with your
 	     permissions in your folders; a silent replacement of it is not something to
-	     enable by default. -->
+	     offer at all. SUAutomaticallyUpdate false is only the default: the option
+	     stays in Sparkle's update window ("Automatically download and install
+	     updates in the future") unless SUAllowsAutomaticUpdates is false too, which
+	     takes it away, so every update is asked about. -->
 	<key>SUAutomaticallyUpdate</key>
+	<false/>
+	<key>SUAllowsAutomaticUpdates</key>
 	<false/>
 	<key>SUSendProfileInfo</key>
 	<false/>

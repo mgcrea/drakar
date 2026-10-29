@@ -27,9 +27,10 @@
  * says so in general terms rather than listing them, so it stays true without a
  * capture.
  *
- * SUAllowsAutomaticUpdates is not set, so Sparkle's update window offers to
- * download and install updates automatically. The install sentence says so;
- * setting that key to false in the plist would let it say "never" instead.
+ * SUAllowsAutomaticUpdates is false in the plist, so Sparkle's update window
+ * never offers to download and install updates automatically, and the install
+ * sentence can say it always asks. `scripts/audit-network.sh` fails a bundle
+ * where that key is anything else.
  *
  * DIVERGES from armada, whose page also covers a purchase (nothing is on sale
  * here yet), its feedback form (this site has none) and its MCP endpoint and
@@ -111,9 +112,8 @@ const code = "[&_code]:font-mono [&_code]:text-[0.9em] [&_code]:break-words [&_c
       <p class={prose}>
         If a newer release exists and you choose to install it, Sparkle downloads that release's
         <code>Drakar.zip</code> from GitHub the same way, and installs it only if it carries Drakar's
-        own signature. It asks before installing, unless you tick the option in Sparkle's update
-        window to download and install updates automatically. With that on, updates download in the
-        background and install the next time Drakar quits.
+        own signature. It always asks before installing: Drakar turns off Sparkle's option to
+        download and install updates automatically, so nothing is ever installed in the background.
       </p>
     </section>
 
