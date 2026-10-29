@@ -120,7 +120,9 @@ struct ClosingAskTests {
       + "\n\n```\n" + String(repeating: "code();\n", count: 2_000) + "```\n\nWant me to push?"
     let start = ContinuousClock.now
     #expect(ClosingAsk.detect(reply) == yesOrNo("Want me to push?"))
-    #expect(ContinuousClock.now - start < .milliseconds(500))
+    // About 0.08 s on a quiet Mac, 0.5 s on CI's runner and up to 0.8 s here under load. The
+    // budget is for a scan gone quadratic over a reply this long, which takes far longer.
+    #expect(ContinuousClock.now - start < .seconds(2))
   }
 
   @Test func aConfirmationTakesYesOrNo() {
