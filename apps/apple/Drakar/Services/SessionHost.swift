@@ -138,9 +138,9 @@ import Synchronization
       }
     }
     reconnecting = task
-    let client = await task.value
+    let reconnected = await task.value
     reconnecting = nil
-    return client
+    return reconnected
   }
 
   /// Writes what was sent to the host before returning, for an app about to exit.
