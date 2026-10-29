@@ -243,7 +243,9 @@ final class AgentSession {
     windowFolder = URL(filePath: meta.windowFolder, directoryHint: .isDirectory)
     launched = (meta.start, meta.history)
     let started = records.first?.time ?? .now
-    historyLoad = Task { await self.readHistory(meta.history, at: started) }
+    historyLoad = Task {
+      await self.readHistory(meta.history, at: started, through: meta.start.resuming?.resumeAt)
+    }
     await historyLoad?.value
     let launch = self.backend.launch(meta.start)
     account = launch.account
@@ -575,16 +577,16 @@ final class AgentSession {
       isLoadingHistory = false
       return
     }
-    await readHistory(file, upTo: .max, at: .now)
+    await readHistory(file, upTo: .max, at: .now, through: resuming?.resumeAt)
   }
 
   /// The history from before a replayed process, as `mark` says it stood. Codex's thread
   /// holds the process's turns too, so it is cut where the process found it; with none
-  /// there, it has nothing the log does not.
-  private func readHistory(_ mark: HistoryMark, at time: Date) async {
+  /// there, it has nothing the log does not. `cut` is where the process's fork resumed.
+  private func readHistory(_ mark: HistoryMark, at time: Date, through cut: String? = nil) async {
     switch mark {
     case .claudeFile(let path, let length):
-      await readHistory(URL(filePath: path), upTo: length, at: time)
+      await readHistory(URL(filePath: path), upTo: length, at: time, through: cut)
     case .codexTurns(let count):
       codexTurnsBeforeProcess = count
       if count > 0, let resuming, resuming.agentKind == .codex {
@@ -599,9 +601,16 @@ final class AgentSession {
   }
 
   /// `file` up to `length` bytes; `time` is when the next message goes, which says whether
-  /// the cache went cold.
-  private func readHistory(_ file: URL, upTo length: UInt64, at time: Date) async {
-    let loaded = await Task.detached { () -> (Transcript, TranscriptFollower)? in
+  /// the cache went cold. A fork resumed at the message `cut` keeps the history through it,
+  /// and follows nothing: the rest of its original's file is not its own.
+  private func readHistory(
+    _ file: URL, upTo length: UInt64, at time: Date, through cut: String?
+  ) async {
+    let loaded = await Task.detached { () -> (Transcript, TranscriptFollower?)? in
+      if let cut {
+        guard let lines = try? Transcript.lines(contentsOf: file, upTo: length) else { return nil }
+        return (Transcript.history(lines: lines, through: cut), nil)
+      }
       var follower = TranscriptFollower(file: file)
       var transcript = Transcript()
       guard (try? follower.catchUp(&transcript, upTo: length)) != nil else { return nil }

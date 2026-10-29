@@ -229,6 +229,95 @@ struct ProjectTests {
     #expect(watched.isWatching)
   }
 
+  /// `id`'s transcript: two prompts and their replies, as Claude Code writes them.
+  private func writeTwoPrompts(_ id: String) throws {
+    let lines = [
+      #"{"type":"user","uuid":"p-1","parentUuid":null,"message":{"role":"user","content":"First"}}"#,
+      #"{"type":"assistant","uuid":"r-1","parentUuid":"p-1","message":{"id":"m-1","type":"message","role":"assistant","model":"m","content":[{"type":"text","text":"One."}],"stop_reason":"end_turn"}}"#,
+      #"{"type":"user","uuid":"p-2","parentUuid":"r-1","message":{"role":"user","content":"Second"}}"#,
+      #"{"type":"assistant","uuid":"r-2","parentUuid":"p-2","message":{"id":"m-2","type":"message","role":"assistant","model":"m","content":[{"type":"text","text":"Two."}],"stop_reason":"end_turn"}}"#,
+    ]
+    try Data((lines.joined(separator: "\n") + "\n").utf8).write(
+      to: folder.appending(path: "\(id).jsonl"))
+  }
+
+  /// A fork from a prompt resumes at the message before it, shows the history up to there,
+  /// and has the prompt's text waiting in its composer.
+  @Test func forkFromAPromptEndsBeforeIt() async throws {
+    try writeTwoPrompts("a")
+    let project = Project(folder: folder)
+    let original = project.attach(target("a"))
+    let fork = try #require(await project.fork(original, from: "p-2", text: "Second"))
+    #expect(fork.id != original.id)
+    #expect(project.selectedID == fork.id)
+    #expect(fork.session.resuming?.forks == true)
+    #expect(fork.session.resuming?.sessionID == "a")
+    #expect(fork.session.resuming?.resumeAt == "r-1")
+    #expect(fork.draft == "Second")
+    await fork.session.loadHistory()
+    #expect(fork.session.transcript.entries.map(\.kind) == [.prompt("First"), .text("One.")])
+    let launch = ClaudeBackend().launch(
+      AgentStart(
+        folder: folder, resuming: fork.session.resuming, environment: [:],
+        executableOverride: URL(filePath: "/bin/echo"), allowsBypass: false))
+    #expect(launch.configuration?.arguments.contains("--resume-session-at=r-1") == true)
+  }
+
+  /// Nothing comes before the first prompt: a new session in the same folder, picked as the
+  /// original was, with the prompt's text in its composer.
+  @Test func forkFromTheFirstPromptIsANewSession() async throws {
+    try writeTwoPrompts("a")
+    let project = Project(folder: folder)
+    let original = project.attach(target("a"))
+    original.session.setMode(.plan)
+    original.session.setModel("opus")
+    let fork = try #require(await project.fork(original, from: "p-1", text: "First"))
+    #expect(fork.id != original.id)
+    #expect(project.selectedID == fork.id)
+    #expect(fork.session.resuming == nil)
+    #expect(fork.session.agent == .claude)
+    #expect(fork.session.folder == original.session.folder)
+    #expect(fork.draft == "First")
+    #expect(fork.session.modePick == .plan)
+    #expect(fork.session.modelPick == "opus")
+  }
+
+  @Test func noForkFromWhileATurnRuns() async throws {
+    try writeTwoPrompts("a")
+    let script = folder.appending(path: "claude")
+    try Data("#!/bin/sh\ncat > /dev/null\n".utf8).write(to: script)
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script.path)
+    let project = Project(folder: folder)
+    project.executableOverride = script
+    let attached = project.attach(target("a"))
+    defer { project.stopAll() }
+    #expect(project.canForkFrom(attached))
+    attached.session.send("hello")
+    #expect(attached.session.transcript.isRunning)
+    #expect(!project.canForkFrom(attached))
+    #expect(await project.fork(attached, from: "p-2", text: "Second") == nil)
+    #expect(project.sessions.count == 1)
+  }
+
+  /// A message id the transcript does not hold has no point to fork at.
+  @Test func noForkFromAPromptNotInTheFile() async throws {
+    try writeTwoPrompts("a")
+    let project = Project(folder: folder)
+    let original = project.attach(target("a"))
+    #expect(await project.fork(original, from: "not-a-prompt", text: "Lost") == nil)
+    #expect(project.sessions.count == 1)
+    #expect(project.selectedID == original.id)
+  }
+
+  /// A Codex prompt's id is Drakar's, not one a Claude Code fork can resume at.
+  @Test func noForkFromACodexSession() {
+    var codex = target("a")
+    codex.agent = .codex
+    let project = Project(folder: folder)
+    let item = project.attach(codex)
+    #expect(!project.canForkFrom(item))
+  }
+
   @Test func theWindowIndexFindsASessionAndItsOwner() {
     let project = Project(folder: folder)
     let attached = project.attach(target("a"))

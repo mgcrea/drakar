@@ -36,6 +36,9 @@ struct ResumeTarget: Codable, Hashable {
   /// Continue a copy under a new id: the session is open in another process. Optional so
   /// that a target stored before the field existed still decodes.
   var forks: Bool?
+  /// The message a fork ends at (`--resume-session-at`): it keeps the history through that
+  /// one. Nil for a fork of the whole session.
+  var resumeAt: String?
   /// The agent that writes it. Optional so that a target stored before Codex arrived still
   /// decodes, as Claude Code's.
   var agent: AgentKind?

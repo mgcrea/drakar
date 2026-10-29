@@ -78,4 +78,22 @@ struct ClaudeLaunchTests {
     #expect(launch.account?.name == "writer")
     #expect(launch.environment["CLAUDE_CONFIG_DIR"]?.hasSuffix(".claude-writer") == true)
   }
+
+  /// Every `claude` keeps file checkpoints, so that a prompt's files can be rewound.
+  @Test func checkpointsAreOn() {
+    let launch = ClaudeLaunch.make(
+      folder: folder, resuming: nil, environment: ["PATH": "/usr/bin"],
+      executableOverride: URL(filePath: "/bin/echo"))
+    #expect(launch.environment["CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING"] == "true")
+  }
+
+  /// The person's own switch, whatever its value, wins over Drakar's.
+  @Test func aDisabledCheckpointWins() {
+    let launch = ClaudeLaunch.make(
+      folder: folder, resuming: nil,
+      environment: ["PATH": "/usr/bin", "CLAUDE_CODE_DISABLE_FILE_CHECKPOINTING": "1"],
+      executableOverride: URL(filePath: "/bin/echo"))
+    #expect(launch.environment["CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING"] == nil)
+    #expect(launch.environment["CLAUDE_CODE_DISABLE_FILE_CHECKPOINTING"] == "1")
+  }
 }

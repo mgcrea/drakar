@@ -47,6 +47,18 @@ struct TranscriptHistoryCutTests {
         == Transcript.history(lines: lines))
   }
 
+  /// What a fork resumed at a message shows: the lines through it, as the CLI keeps them.
+  @Test func keepsThroughTheResumePoint() throws {
+    let lines = try Fixture.rewindHistory.lines
+    let point = "00000000-0000-4000-8000-000000000224"
+    #expect(
+      Transcript.history(lines: lines, through: point).entries.map(\.kind)
+        == Transcript.history(lines: lines, endingBefore: promptB).entries.map(\.kind))
+    #expect(
+      Transcript.history(lines: lines, through: "not-a-message")
+        == Transcript.history(lines: lines))
+  }
+
   @Test func resumePointIsTheOneTheCLITakes() throws {
     let lines = try Fixture.rewindHistory.lines
     // B's `parentUuid`: the "Done." line closing A's turn.

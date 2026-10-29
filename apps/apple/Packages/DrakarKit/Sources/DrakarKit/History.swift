@@ -86,6 +86,16 @@ extension Transcript {
     return history(lines: Array(lines[..<cut]))
   }
 
+  /// The history a fork resumed at the message `messageUUID` shows (`--resume-session-at`,
+  /// which keeps every message up to and including it): the lines through that message's.
+  /// The whole history when no line has it.
+  public static func history(lines: [Data], through messageUUID: String) -> Transcript {
+    let kept = lines.firstIndex { line in
+      (try? JSONValue.parse(line))?["uuid"]?.stringValue == messageUUID
+    }
+    return history(lines: kept.map { Array(lines[...$0]) } ?? lines)
+  }
+
   /// Where a fork that ends just before the prompt `promptUUID` resumes, read from that
   /// prompt line's `parentUuid`: `.after` that message, which `--resume-session-at` takes,
   /// since the CLI keeps the message it is given (docs/claude-stream-json.md, "Rewind",
@@ -105,9 +115,14 @@ extension Transcript {
   }
 
   public static func history(contentsOf file: URL) throws -> Transcript {
+    history(lines: try lines(contentsOf: file))
+  }
+
+  /// A transcript file's lines, no further than `length` bytes into it.
+  public static func lines(contentsOf file: URL, upTo length: UInt64 = .max) throws -> [Data] {
     var buffer = LineBuffer()
-    var lines = buffer.append(try Data(contentsOf: file))
+    var lines = buffer.append(try Data(contentsOf: file).prefix(Int(clamping: length)))
     if !buffer.remainder.isEmpty { lines.append(buffer.remainder) }
-    return history(lines: lines)
+    return lines
   }
 }

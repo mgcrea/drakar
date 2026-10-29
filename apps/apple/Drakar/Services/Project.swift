@@ -1168,6 +1168,46 @@ final class Project {
 
   var canForkSelected: Bool { selected.map(canFork) ?? false }
 
+  /// Forks `item` from the prompt `messageID`, cut just before it, with `text` in the new
+  /// session's composer. The resume point is read from its transcript off the main actor:
+  /// after the message before the prompt, a fork resumed there; before the first prompt,
+  /// a plain new session in the same folder with the session's mode and model picks, there
+  /// being nothing to keep; a prompt not in the file forks nothing. Claude Code sessions
+  /// only.
+  @discardableResult func fork(_ item: ProjectSession, from messageID: String, text: String)
+    async -> ProjectSession?
+  {
+    guard canForkFrom(item), var target = item.session.savedTarget ?? item.session.resuming
+    else { return nil }
+    let file = target.transcriptFile
+    let point = await Task.detached {
+      (try? Transcript.lines(contentsOf: file)).flatMap {
+        Transcript.resumePoint(before: messageID, in: $0)
+      }
+    }.value
+    let forked: ProjectSession
+    switch point {
+    case nil:
+      return nil
+    case .after(let message):
+      target.forks = true
+      target.resumeAt = message
+      forked = attach(target)
+    case .start:
+      forked = newSession(agent: .claude, folder: item.session.folder, account: target.account)
+      if let mode = item.session.modePick { forked.session.setMode(mode) }
+      if let model = item.session.modelPick { forked.session.setModel(model) }
+    }
+    forked.draft = text
+    return forked
+  }
+
+  /// Whether `item` can be forked from one of its prompts: as `canFork`, and only Claude
+  /// Code's, whose prompts carry the CLI's message uuids (a Codex prompt's is Drakar's own).
+  func canForkFrom(_ item: ProjectSession) -> Bool {
+    canFork(item) && item.session.agent == .claude
+  }
+
   /// Whether `item` can take a name: not while another process has it, or its files move.
   func canRename(_ item: ProjectSession) -> Bool {
     !item.session.isReadOnly && !item.session.isMoving

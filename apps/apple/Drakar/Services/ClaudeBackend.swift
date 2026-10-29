@@ -28,6 +28,7 @@ final class ClaudeBackend: AgentBackend {
     if let resuming = start.resuming {
       command.resumeSessionID = resuming.sessionID
       command.forksSession = resuming.forks == true
+      command.resumeSessionAt = resuming.resumeAt
     }
     command.name = start.name
     let launch = ClaudeLaunch.make(

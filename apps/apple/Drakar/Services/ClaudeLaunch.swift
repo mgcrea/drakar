@@ -26,6 +26,11 @@ struct ClaudeLaunch {
     var environment = environment
     let chosen = explicit ?? resuming?.account ?? ClaudeChoice.account(forNewSessionIn: folder)
     if let chosen { environment = chosen.environment(environment) }
+    // A prompt's files can be rewound only from checkpoints the process kept: on, unless the
+    // person switched them off themselves.
+    if environment["CLAUDE_CODE_DISABLE_FILE_CHECKPOINTING"] == nil {
+      environment["CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING"] = "true"
+    }
     let account =
       chosen
       ?? ClaudeChoice.account(
