@@ -30,3 +30,6 @@ sparkle_key.pem
 # The VS Code extension's UI surface, extracted by scripts/extension-surface.sh: its own
 # text, kept on this Mac for `make extension-diff`, never published.
 docs/extension-surface/
+
+# Claude Code's per-project folder (skills, worktrees): kept on this Mac, never published.
+.claude/
