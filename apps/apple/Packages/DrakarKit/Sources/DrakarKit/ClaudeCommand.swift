@@ -23,6 +23,9 @@ public struct ClaudeCommand: Sendable, Equatable {
   /// With `resumeSessionID`: continue a copy under a new id, leaving the original to
   /// whoever has it open.
   public var forksSession = false
+  /// With `resumeSessionID` and `forksSession`: the fork keeps the conversation up to and
+  /// including this message uuid (`Transcript.resumePoint(before:in:)`) and drops the rest.
+  public var resumeSessionAt: String?
   /// The session's name (`custom-title`), for a new session or a fork: the CLI records it
   /// as `/rename` would.
   public var name: String?
@@ -57,7 +60,11 @@ public struct ClaudeCommand: Sendable, Equatable {
     // read as a flag.
     if let resumeSessionID {
       arguments.append("--resume=\(resumeSessionID)")
-      if forksSession { arguments.append("--fork-session") }
+      if forksSession {
+        arguments.append("--fork-session")
+        // One argument, as the SDK passes it (both forms checked on 2.1.312).
+        if let resumeSessionAt { arguments.append("--resume-session-at=\(resumeSessionAt)") }
+      }
     }
     // One argument too: a name can start with a dash.
     if let name { arguments.append("--name=\(name)") }

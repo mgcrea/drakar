@@ -184,7 +184,7 @@ final class AgentSession {
   /// True from the start for a session with a transcript, until its history is read.
   @ObservationIgnored private var isLoadingHistory = false
   @ObservationIgnored private var promptsDuringLoad:
-    [(text: String, context: String?, attachments: [AttachmentPreview])] = []
+    [(text: String, context: String?, attachments: [AttachmentPreview], uuid: String)] = []
   /// The history could not be read: the reason stays in `phase` and nothing is sent.
   @ObservationIgnored private var historyFailed = false
   @ObservationIgnored private var follower: TranscriptFollower?
@@ -626,7 +626,7 @@ final class AgentSession {
     // Prompts typed while the history was being read go after it.
     for prompt in promptsDuringLoad {
       self.transcript.addPrompt(
-        prompt.text, context: prompt.context, attachments: prompt.attachments)
+        prompt.text, context: prompt.context, attachments: prompt.attachments, uuid: prompt.uuid)
     }
     promptsDuringLoad = []
   }
@@ -666,7 +666,7 @@ final class AgentSession {
     hasLoadedHistory = true
     for prompt in promptsDuringLoad {
       self.transcript.addPrompt(
-        prompt.text, context: prompt.context, attachments: prompt.attachments)
+        prompt.text, context: prompt.context, attachments: prompt.attachments, uuid: prompt.uuid)
     }
     promptsDuringLoad = []
   }
@@ -700,10 +700,10 @@ final class AgentSession {
       return
     }
     let answersTurn = !transcript.entries.isEmpty
-    transcript.addPrompt(text, context: label, attachments: previews)
+    transcript.addPrompt(text, context: label, attachments: previews, uuid: uuid)
     onPromptSent?()
     if answersTurn { onReplied?() }
-    if isLoadingHistory { promptsDuringLoad.append((text, label, previews)) }
+    if isLoadingHistory { promptsDuringLoad.append((text, label, previews, uuid)) }
     let effect = NoteEffect.prompt(text: text, context: label, attachments: previews)
     if process == nil {
       pendingPrompt = command
@@ -1253,18 +1253,23 @@ final class AgentSession {
     switch note {
     case .started(let first, let effect):
       replayedStart = true
-      apply(effect, at: time)
+      apply(effect, of: first, at: time)
       try? backend.started(transport, then: first)
     case .sent(let command, let effect):
-      apply(effect, at: time)
+      apply(effect, of: command, at: time)
       _ = try? backend.send(command, to: transport)
     }
   }
 
-  private func apply(_ effect: NoteEffect, at time: Date) {
+  /// `command` is the one logged with `effect`. A prompt's carries the uuid it was sent with,
+  /// so a replayed prompt keeps it, from notes written before entries kept one too.
+  private func apply(_ effect: NoteEffect, of command: AgentCommand?, at time: Date) {
     switch effect {
     case .prompt(let text, let context, let attachments):
-      transcript.addPrompt(text, context: context, attachments: attachments, at: time)
+      let uuid: String? =
+        if case .prompt(_, _, let uuid, _)? = command { uuid } else { nil }
+      transcript.addPrompt(
+        text, context: context, attachments: attachments, uuid: uuid, at: time)
     case .queued(let prompt):
       transcript.queue(prompt)
     case .answered(let id):

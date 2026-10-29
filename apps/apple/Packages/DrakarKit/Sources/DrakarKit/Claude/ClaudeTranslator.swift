@@ -268,7 +268,7 @@ extension ClaudeTranslator {
             .init(
               text: prompt.joined(separator: "\n\n"),
               context: context.isEmpty ? nil : context.joined(separator: ", "),
-              attachments: user.attachments),
+              attachments: user.attachments, uuid: json["uuid"]?.stringValue),
             running: false))
       }
       // Tool results go through the live path, which pairs them with their calls.

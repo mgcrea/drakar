@@ -12,6 +12,9 @@ public struct Transcript: Sendable, Equatable {
     public var context: String?
     /// On a prompt, the images and files sent with it.
     public var attachments: [AttachmentPreview] = []
+    /// On a prompt, the CLI's message uuid: the one it was sent with, which its transcript
+    /// line keeps. What a fork or a rewind from it names.
+    public var messageID: String?
     /// On thinking streaming live, when its block started; nil once it landed or its turn ended.
     public var thinkingSince: Date?
     /// On thinking streamed live, how long it took from its block start to the whole block
@@ -242,7 +245,7 @@ public struct Transcript: Sendable, Equatable {
   /// separated by commas). `time` is when a running one was sent.
   public mutating func addPrompt(
     _ text: String, context: String? = nil, attachments: [AttachmentPreview] = [],
-    running: Bool = true, at time: Date = .now
+    uuid: String? = nil, running: Bool = true, at time: Date = .now
   ) {
     revision += 1
     if running { requestAt = time }
@@ -257,6 +260,7 @@ public struct Transcript: Sendable, Equatable {
     let id = "prompt#\(promptCount)"
     var entry = Entry(id: id, kind: .prompt(text), context: context)
     entry.attachments = attachments
+    entry.messageID = uuid
     upsert(entry)
     lastPromptID = id
     isRunning = running
@@ -380,8 +384,8 @@ public struct Transcript: Sendable, Equatable {
       session = info
     case .prompt(let prompt, let running):
       addPrompt(
-        prompt.text, context: prompt.context, attachments: prompt.attachments, running: running,
-        at: time)
+        prompt.text, context: prompt.context, attachments: prompt.attachments, uuid: prompt.uuid,
+        running: running, at: time)
     case .turnOutcome(let end):
       turnEnd = end
     case .turnStarted:
@@ -453,7 +457,9 @@ public struct Transcript: Sendable, Equatable {
       let prompt = queuedPrompts.remove(at: index)
       switch change {
       case .started:
-        addPrompt(prompt.text, context: prompt.context, attachments: prompt.attachments, at: time)
+        addPrompt(
+          prompt.text, context: prompt.context, attachments: prompt.attachments, uuid: prompt.uuid,
+          at: time)
       case .cancelled:
         break
       case .dropped(let agent):

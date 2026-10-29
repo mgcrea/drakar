@@ -71,6 +71,30 @@ extension Transcript {
     return feed.transcript
   }
 
+  /// The history a fork ending just before the prompt `promptUUID` keeps: the lines before
+  /// that prompt's, found by uuid, never by its text. The whole history when no line has it.
+  public static func history(lines: [Data], endingBefore promptUUID: String) -> Transcript {
+    let cut = lines.firstIndex { isLine($0, ofPrompt: promptUUID) } ?? lines.endIndex
+    return history(lines: Array(lines[..<cut]))
+  }
+
+  /// The uuid `--resume-session-at` takes to end a fork just before `promptUUID`: that prompt
+  /// line's `parentUuid`, since the CLI keeps the message it is given (docs/claude-stream-json.md,
+  /// "Rewind", answer 5); nil when it is null, as for the first prompt, which has nothing
+  /// before it, and when no line has that uuid.
+  public static func resumePoint(before promptUUID: String, in lines: [Data]) -> String? {
+    guard let prompt = lines.first(where: { isLine($0, ofPrompt: promptUUID) }) else {
+      return nil
+    }
+    return (try? JSONValue.parse(prompt))?["parentUuid"]?.stringValue
+  }
+
+  /// Whether `line` is the `user` line of the prompt `uuid`.
+  private static func isLine(_ line: Data, ofPrompt uuid: String) -> Bool {
+    guard let json = try? JSONValue.parse(line) else { return false }
+    return json["type"]?.stringValue == "user" && json["uuid"]?.stringValue == uuid
+  }
+
   public static func history(contentsOf file: URL) throws -> Transcript {
     var buffer = LineBuffer()
     var lines = buffer.append(try Data(contentsOf: file))

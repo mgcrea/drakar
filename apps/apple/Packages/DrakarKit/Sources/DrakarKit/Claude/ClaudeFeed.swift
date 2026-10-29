@@ -29,10 +29,10 @@ public struct ClaudeFeed: Sendable {
 
   public mutating func addPrompt(
     _ text: String, context: String? = nil, attachments: [AttachmentPreview] = [],
-    running: Bool = true, at time: Date = .now
+    uuid: String? = nil, running: Bool = true, at time: Date = .now
   ) {
     transcript.addPrompt(
-      text, context: context, attachments: attachments, running: running, at: time)
+      text, context: context, attachments: attachments, uuid: uuid, running: running, at: time)
   }
 
   public mutating func queue(_ prompt: QueuedPrompt) { transcript.queue(prompt) }

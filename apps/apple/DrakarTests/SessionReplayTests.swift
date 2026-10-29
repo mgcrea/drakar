@@ -303,6 +303,25 @@ struct SessionReplayTests {
     #expect(replayed.transcript.turnEnd == .completed)
   }
 
+  /// The uuid each prompt was sent with, which a fork or a rewind from it names, comes back
+  /// from the note's command: the first, typed before the process, and a later one.
+  @Test func replayedPromptsKeepTheUUIDTheyWereSentWith() async throws {
+    var log = Log()
+    log.note(
+      .started(
+        first: .prompt(text: "one", context: [], uuid: "u-1", attachments: []),
+        effect: .prompt(text: "one", context: nil, attachments: [])))
+    log.out(Self.initLine)
+    log.out(Self.done)
+    log.out(Self.result)
+    log.note(
+      .sent(
+        .prompt(text: "two", context: [], uuid: "u-2", attachments: []),
+        effect: .prompt(text: "two", context: nil, attachments: [])))
+    let replayed = await AgentSession(replaying: log.records, meta: meta)
+    #expect(replayed.transcript.entries.compactMap(\.messageID) == ["u-1", "u-2"])
+  }
+
   /// A request Drakar cannot serve, which it refuses on its own.
   private static let unserved =
     #"{"type":"control_request","request_id":"h-1","request":{"subtype":"hook_callback","callback_id":"c"}}"#

@@ -82,11 +82,17 @@ public enum AgentEvent: Sendable, Equatable {
     public var text: String
     public var context: String?
     public var attachments: [AttachmentPreview]
+    /// The CLI's message uuid for this prompt: its transcript line's `uuid`.
+    public var uuid: String?
 
-    public init(text: String, context: String? = nil, attachments: [AttachmentPreview] = []) {
+    public init(
+      text: String, context: String? = nil, attachments: [AttachmentPreview] = [],
+      uuid: String? = nil
+    ) {
       self.text = text
       self.context = context
       self.attachments = attachments
+      self.uuid = uuid
     }
   }
 
