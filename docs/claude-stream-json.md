@@ -446,9 +446,10 @@ Seven answers:
   `a.txt` back to "one", and `b.txt`, already gone, stayed gone (`rewind-b-dry` lists only
   `a.txt`, 1 insertion, 0 deletions). A file the checkpoint had not yet seen is deleted. That
   is the point a fork from the same prompt ends at (answer 5).
-- **The fixtures' ids.** Sent prompt uuids are kept as sent; every other uuid is zeroed in
-  each fixture on its own, so the same line can have two: A's "Done." is `…0106` in `rewind`
-  and `…0224` in `rewind-history`, where the CLI wrote one uuid.
+- **The fixtures' ids.** Sent prompt uuids are kept as sent, and session ids agree (session
+  `…0001` is the same in both). The other message uuids were zeroed in each fixture on its
+  own, so the same line can have two: A's "Done." is `…0106` in `rewind` and `…0224` in
+  `rewind-history`, where the CLI wrote one uuid.
 - **What is tracked.** Files the edit tools wrote (Write, here; the extension warns that Bash
   changes to other files are not undone). Each prompt gets a `file-history-snapshot` line
   (`messageId`, `trackedFileBackups` by relative path, each with `backupFileName`, `version`,

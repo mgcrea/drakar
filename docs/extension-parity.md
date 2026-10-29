@@ -42,12 +42,12 @@ Protocol changes are the other half and have their own procedure (raising
 
 | request | status | what | evidence | decision |
 | --- | --- | --- | --- | --- |
-| `interrupt_claude` | has | Stop the running turn | `apps/apple/Drakar/Services/AgentSession.swift:950` | |
-| `set_model` | has | Change the session's model | `apps/apple/Drakar/Services/AgentSession.swift:500` | |
-| `set_permission_mode` | has | Change the permission mode (Auto only for a model that takes it, and not while settings set `disableAutoMode: "disable"`, as the extension decides) | `apps/apple/Drakar/Services/AgentSession.swift:480` | |
+| `interrupt_claude` | has | Stop the running turn | `apps/apple/Drakar/Services/AgentSession.swift:1009` | |
+| `set_model` | has | Change the session's model | `apps/apple/Drakar/Services/AgentSession.swift:551` | |
+| `set_permission_mode` | has | Change the permission mode (Auto only for a model that takes it, and not while settings set `disableAutoMode: "disable"`, as the extension decides) | `apps/apple/Drakar/Services/AgentSession.swift:531` | |
 | `persist_session_permission_mode` | has | Remember a session's permission mode | `apps/apple/Drakar/Services/SessionMeta.swift:11` | |
 | `set_thinking_level` | partial | Turn extended thinking on or off (Drakar: an effort level picker) | `apps/apple/Drakar/Views/SessionPills.swift:98` | differ: the effort picker |
-| `get_context_usage` | has | Context window usage breakdown (/context) | `apps/apple/Drakar/Services/ClaudeBackend.swift:143` | |
+| `get_context_usage` | has | Context window usage breakdown (/context) | `apps/apple/Drakar/Services/ClaudeBackend.swift:153` | |
 | `side_question` | no | Ask a side question without derailing the session | | adopt: one CLI request each |
 | `run_in_background` | has | Move a running tool call to the background (Drakar: a line on the call's card) | `apps/apple/Drakar/Views/TaskControlViews.swift:114` | adopt: `background_tasks` |
 | `stop_subagent` | has | Stop a running subagent or background task (Drakar: on the task's card, not an agent map) | `apps/apple/Drakar/Views/TaskControlViews.swift:80` | adopt: subagents promise |
@@ -75,15 +75,15 @@ Protocol changes are the other half and have their own procedure (raising
 | `accept_diff` | has | Accept an edit Claude proposes, shown as a diff | `apps/apple/Drakar/Views/PermissionSheet.swift:56` | |
 | `open_diff` | has | Show a proposed edit as a diff (Drakar: inline in the permission sheet) | `apps/apple/Drakar/Views/PermissionSheet.swift:30` | |
 | `open_file_diffs` | no | Review all of a session's file changes as diffs | | adopt: review a session's changes |
-| `open_file` | has | Open a file, at a location, in the editor | `apps/apple/Drakar/Views/TranscriptView.swift:478` | |
-| `open_content` | partial | Open tool input or content as a document (Drakar: inline in the card) | `apps/apple/Drakar/Views/TranscriptView.swift:428` | differ: inline in the card |
+| `open_file` | has | Open a file, at a location, in the editor | `apps/apple/Drakar/Views/TranscriptView.swift:482` | |
+| `open_content` | partial | Open tool input or content as a document (Drakar: inline in the card) | `apps/apple/Drakar/Views/TranscriptView.swift:432` | differ: inline in the card |
 | `open_url` | has | Open a link | `apps/apple/Drakar/Views/LinkText.swift:97` | |
 | `open_folder` | has | Pick and open a folder | `apps/apple/Drakar/DrakarApp.swift:75` | |
 | `open_folder_in_new_window` | has | Open a folder or worktree in a new window | `apps/apple/Drakar/Views/HomeView.swift:204` | |
 | `create_worktree` | no | Create a git worktree to work in | | adopt: parallel sessions in one project |
 | `open_plan` | no | Open the session's plan file (/plan open) | | adopt: plan mode promise |
 | `open_markdown_preview` | partial | Plan preview with comments (Drakar: inline panel, no comments) | `apps/apple/Drakar/Views/PlanPanel.swift:30` | adopt: plan comments, plan mode promise |
-| `close_plan_preview` | partial | Close the plan preview once answered (Drakar: the inline panel goes away) | `apps/apple/Drakar/Views/SessionView.swift:66` | differ: the inline plan panel |
+| `close_plan_preview` | partial | Close the plan preview once answered (Drakar: the inline panel goes away) | `apps/apple/Drakar/Views/SessionView.swift:68` | differ: the inline plan panel |
 | `remove_plan_comment` | no | Delete a comment left on the plan | | adopt: plan comments, plan mode promise |
 
 ## Sessions
@@ -91,13 +91,13 @@ Protocol changes are the other half and have their own procedure (raising
 | request | status | what | evidence | decision |
 | --- | --- | --- | --- | --- |
 | `launch_claude` | has | Start or resume a session's CLI process | `apps/apple/Drakar/Services/ClaudeLaunch.swift:22` | |
-| `close_channel` | has | End a session's CLI process | `apps/apple/Drakar/Services/Project.swift:1486` | |
+| `close_channel` | has | End a session's CLI process | `apps/apple/Drakar/Services/Project.swift:1553` | |
 | `list_sessions_request` | has | List past sessions | `apps/apple/Packages/DrakarKit/Sources/DrakarKit/SessionIndex.swift:125` | |
-| `get_session_request` | has | Load a session's transcript to show or resume | `apps/apple/Packages/DrakarKit/Sources/DrakarKit/History.swift:74` | |
+| `get_session_request` | has | Load a session's transcript to show or resume | `apps/apple/Packages/DrakarKit/Sources/DrakarKit/History.swift:117` | |
 | `resolve_session_request` | partial | Find which worktree a session's transcript lives in (Drakar: worktree sessions folded into the project) | `apps/apple/Drakar/Services/SessionMonitor.swift:91` | differ: worktrees folded into the project |
-| `open_held_session` | has | Open a session another process holds (Drakar: Move Here, or Fork a Copy) | `apps/apple/Drakar/Views/SessionView.swift:428` | |
+| `open_held_session` | has | Open a session another process holds (Drakar: Move Here, or Fork a Copy) | `apps/apple/Drakar/Views/SessionView.swift:457` | |
 | `rename_session` | has | Rename a session | `apps/apple/Drakar/Views/RenameSessionPrompt.swift:24` | |
-| `generate_session_title` | partial | Have the CLI generate a title (Drakar: shows the CLI's ai-title, never asks for one) | `apps/apple/Packages/DrakarKit/Sources/DrakarKit/Transcript.swift:130` | differ: the CLI's own title |
+| `generate_session_title` | partial | Have the CLI generate a title (Drakar: shows the CLI's ai-title, never asks for one) | `apps/apple/Packages/DrakarKit/Sources/DrakarKit/Transcript.swift:134` | differ: the CLI's own title |
 | `archive_session` | no | Archive a session out of the list | | skip for now: VS Code-private state; project windows cover it |
 | `unarchive_session` | no | Unarchive a session | | skip for now: VS Code-private state; project windows cover it |
 | `unarchive_sessions` | no | Unarchive several sessions | | skip for now: VS Code-private state; project windows cover it |
@@ -114,9 +114,9 @@ Protocol changes are the other half and have their own procedure (raising
 
 | request | status | what | evidence | decision |
 | --- | --- | --- | --- | --- |
-| `get_applied_settings` | has | Read the settings the session actually applies | `apps/apple/Drakar/Services/ClaudeBackend.swift:217` | |
-| `apply_settings` | partial | Write settings at the user, local or flag layer (Drakar: only effort, as flag settings) | `apps/apple/Packages/DrakarKit/Sources/DrakarKit/ClientMessage.swift:104` | differ: the effort picker |
-| `refresh_claude_settings` | partial | Re-read the session's settings (Drakar: only after start and model or effort changes) | `apps/apple/Drakar/Services/ClaudeBackend.swift:216` | differ: refreshed without asking |
+| `get_applied_settings` | has | Read the settings the session actually applies | `apps/apple/Drakar/Services/ClaudeBackend.swift:240` | |
+| `apply_settings` | partial | Write settings at the user, local or flag layer (Drakar: only effort, as flag settings) | `apps/apple/Packages/DrakarKit/Sources/DrakarKit/ClientMessage.swift:108` | differ: the effort picker |
+| `refresh_claude_settings` | partial | Re-read the session's settings (Drakar: only after start and model or effort changes) | `apps/apple/Drakar/Services/ClaudeBackend.swift:239` | differ: refreshed without asking |
 | `open_config` | has | Open the extension's settings (Drakar: its own Settings window) | `apps/apple/Drakar/Views/SettingsView.swift:292` | |
 | `open_config_file` | no | Open a Claude config file (settings.json) in the editor | | adopt: in an editor tab |
 | `get_status` | partial | Status dialog, /status (Drakar: the inspector shows id, model, context) | `apps/apple/Drakar/Views/SessionInspector.swift:144` | differ: the inspector |
@@ -188,7 +188,7 @@ Protocol changes are the other half and have their own procedure (raising
 | --- | --- | --- | --- | --- |
 | `get_usage` | has | Plan usage limits, 5-hour and 7-day windows | `apps/apple/Drakar/Views/AccountToolbarItem.swift:40` | |
 | `open_account_usage` | has | Show detailed account usage (Drakar: toolbar popover) | `apps/apple/Drakar/Views/AccountToolbarItem.swift:120` | |
-| `request_usage_update` | partial | Refresh the usage figures (Drakar: updated passively from rate-limit events) | `apps/apple/Drakar/Services/AgentSession.swift:1272` | differ: refreshed without asking |
+| `request_usage_update` | partial | Refresh the usage figures (Drakar: updated passively from rate-limit events) | `apps/apple/Drakar/Services/AgentSession.swift:1341` | differ: refreshed without asking |
 | `request_admin_limit_increase` | no | Ask an org admin to raise the usage limit | | skip: accounts are `CLAUDE_CONFIG_DIR` and `/login` |
 | `sign_out` | no | Sign out of Claude | | skip: accounts are `CLAUDE_CONFIG_DIR` and `/login` |
 | `submit_oauth_code` | no | Paste the Claude login code | | skip: accounts are `CLAUDE_CONFIG_DIR` and `/login` |

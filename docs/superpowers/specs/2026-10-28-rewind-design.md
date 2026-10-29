@@ -77,8 +77,9 @@ live by slice 1 on 2026-10-29 ("Rewind (verified 2026-10-29, 2.1.312)" in
 ## Anti-goals
 
 - A file changes without the person seeing the dry run's list and pressing Rewind.
-- A rewind while a turn runs. The agent may be writing the same files; Rewind waits for the
-  turn to end.
+- A rewind while a turn runs. The agent may be writing the same files: during a turn the
+  menu's items are shown disabled and nothing is queued, and a turn starting while the sheet
+  is open fails the sheet.
 - A rewind offered where it is known to fail: a process that said rewinding is not enabled,
   a session Drakar does not drive. (A prompt with no checkpoint is only known by asking: the
   dry run asks.)
@@ -95,15 +96,15 @@ live by slice 1 on 2026-10-29 ("Rewind (verified 2026-10-29, 2.1.312)" in
 
 Each came out of the builder check. Each is the writer's call, not something the person said.
 
-- **Which prompts offer a code rewind.** Every prompt in the transcript, while Drakar drives
-  a live process that has not said "File rewinding is not enabled." and no turn runs. There
-  is no "has run a turn" rule: a resumed process answers before its first prompt, for
-  prompts of earlier processes too, from the transcript's `file-history-snapshot` lines
-  (stream-json "Rewind", answer 3). The dry run, sent when the person picks "Rewind code to
-  here" (never on hover), is the authority: "No file checkpoint found" shows the extension's
-  failure line and no Rewind button. Once a process answers "File rewinding is not enabled."
-  (a setting turned it off, or a process the session host started before this shipped), that
-  process offers no code rewind again.
+- **Which prompts offer a code rewind.** Every prompt in the transcript. The code items are
+  offered while Drakar drives a live process that has not said "File rewinding is not
+  enabled.", and enabled while no turn runs. There is no "has run a turn" rule: a resumed
+  process answers before its first prompt, for prompts of earlier processes too, from the
+  transcript's `file-history-snapshot` lines (stream-json "Rewind", answer 3). The dry run,
+  sent when the person picks "Rewind code to here" (never on hover), is the authority: "No
+  file checkpoint found" shows the extension's failure line and no Rewind button. Once a
+  process answers "File rewinding is not enabled." (a setting turned it off, or a process the
+  session host started before this shipped), that process offers no code rewind again.
 - **During a turn.** The menu's items are shown disabled while a turn runs, the fork
   included, not hidden. Nothing is queued: a queued rewind would write files the person
   approved before the agent changed them again.
@@ -162,4 +163,5 @@ In the running app, relaunched by the person (never `make run`):
 4. A resumed session before its first new prompt: the fork and the code items are all
    offered, and a dry run for an earlier prompt answers rather than refusing (stream-json
    "Rewind", answer 3).
-5. During a running turn: Rewind waits.
+5. During a running turn: the menu's items show disabled, and nothing is queued. With the
+   sheet open on a dry run's list, a turn that starts fails the sheet.
