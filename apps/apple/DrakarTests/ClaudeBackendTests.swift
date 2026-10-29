@@ -159,4 +159,100 @@ struct ClaudeBackendTests {
       from: process, at: .now)
     #expect(output.signals == [.taskStopAnswered(taskID: "t", error: "")])
   }
+
+  /// A rewind goes under its own `rewind-<UUID>` id, and its reply names the message and
+  /// whether it was a dry run, in whatever order replies come.
+  @Test func aRewindReplyNamesItsMessage() throws {
+    let backend = ClaudeBackend()
+    let process = try process()
+    defer { process.terminate() }
+    let dry = try #require(
+      try backend.send(.rewindFiles(userMessageID: "u-a", dryRun: true), to: process))
+    #expect(dry.hasPrefix("rewind-"))
+    #expect(UUID(uuidString: String(dry.dropFirst("rewind-".count))) != nil)
+    let real = try #require(
+      try backend.send(.rewindFiles(userMessageID: "u-b", dryRun: false), to: process))
+    #expect(real != dry)
+    // The capture's rewind reply (docs/claude-stream-json.md, "Rewind").
+    let rewound = backend.receive(
+      try line(
+        #"{"type":"control_response","response":{"subtype":"success","request_id":"\#(real)","response":{"canRewind":true,"skippedLinks":0}}}"#
+      ),
+      from: process, at: .now)
+    let done = try #require(
+      RewindResult(.object(["canRewind": .bool(true), "skippedLinks": .number(0)])))
+    #expect(rewound.signals == [.rewindAnswered(userMessageID: "u-b", dryRun: false, done)])
+    #expect(rewound.events.isEmpty)
+    let checked = backend.receive(
+      try line(
+        #"{"type":"control_response","response":{"subtype":"success","request_id":"\#(dry)","response":{"canRewind":true,"filesChanged":["/p/a.txt"],"insertions":0,"deletions":2}}}"#
+      ),
+      from: process, at: .now)
+    let result = try #require(checked.signals.first)
+    guard case .rewindAnswered("u-a", true, let answer?) = result else {
+      Issue.record("unexpected \(result)")
+      return
+    }
+    #expect(answer.canRewind)
+    #expect(answer.filesChanged == ["/p/a.txt"])
+    #expect(answer.deletions == 2)
+    // Answered once: the same id again, or one never sent, says nothing.
+    let again = backend.receive(
+      try line(
+        #"{"type":"control_response","response":{"subtype":"success","request_id":"\#(dry)","response":{"canRewind":true}}}"#
+      ),
+      from: process, at: .now)
+    #expect(again.signals.isEmpty)
+    let unknown = backend.receive(
+      try line(
+        #"{"type":"control_response","response":{"subtype":"success","request_id":"rewind-unknown","response":{"canRewind":true}}}"#
+      ),
+      from: process, at: .now)
+    #expect(unknown.signals.isEmpty)
+  }
+
+  /// A refused rewind is a control `error` with no response: its text still tells "no
+  /// checkpoint" from "not enabled". Only an error with no text says nothing.
+  @Test func aRefusedRewindCarriesItsError() throws {
+    let backend = ClaudeBackend()
+    let process = try process()
+    defer { process.terminate() }
+    let noCheckpoint = "No file checkpoint found for this message."
+    let notEnabled = "File rewinding is not enabled."
+    let first = try #require(
+      try backend.send(.rewindFiles(userMessageID: "u-a", dryRun: false), to: process))
+    let second = try #require(
+      try backend.send(.rewindFiles(userMessageID: "u-b", dryRun: false), to: process))
+    let third = try #require(
+      try backend.send(.rewindFiles(userMessageID: "u-c", dryRun: false), to: process))
+    let missing = backend.receive(
+      try line(
+        #"{"type":"control_response","response":{"subtype":"error","request_id":"\#(first)","error":"\#(noCheckpoint)"}}"#
+      ),
+      from: process, at: .now)
+    #expect(
+      missing.signals == [
+        .rewindAnswered(userMessageID: "u-a", dryRun: false, RewindResult(refusal: noCheckpoint))
+      ])
+    let off = backend.receive(
+      try line(
+        #"{"type":"control_response","response":{"subtype":"error","request_id":"\#(second)","error":"\#(notEnabled)"}}"#
+      ),
+      from: process, at: .now)
+    #expect(
+      off.signals == [
+        .rewindAnswered(userMessageID: "u-b", dryRun: false, RewindResult(refusal: notEnabled))
+      ])
+    guard case .rewindAnswered(_, _, let refused?) = off.signals.first else {
+      Issue.record("no refusal")
+      return
+    }
+    #expect(refused.isNotEnabled)
+    #expect(!refused.hasNoCheckpoint)
+    let silent = backend.receive(
+      try line(
+        #"{"type":"control_response","response":{"subtype":"error","request_id":"\#(third)"}}"#),
+      from: process, at: .now)
+    #expect(silent.signals == [.rewindAnswered(userMessageID: "u-c", dryRun: false, nil)])
+  }
 }

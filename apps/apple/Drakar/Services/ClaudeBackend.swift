@@ -15,6 +15,9 @@ final class ClaudeBackend: AgentBackend {
   /// Task controls sent and not yet answered: request id to the task or call it names. Their
   /// ids are UUIDs, off `requestCount`, since they are never noted for a replay to count.
   private var taskRequests: [String: String] = [:]
+  /// Rewinds sent and not yet answered, under ids of the same kind: the message and kind
+  /// each was sent for, since a refusal names neither.
+  private var rewindRequests: [String: (userMessageID: String, dryRun: Bool)] = [:]
 
   var notFoundMessage: String { ClaudeLaunch.notFound }
   let features = AgentFeatures.claude
@@ -47,6 +50,7 @@ final class ClaudeBackend: AgentBackend {
     translator = ClaudeTranslator()
     requestCount = 0
     taskRequests.removeAll()
+    rewindRequests.removeAll()
     try process.send(.initialize(requestID: nextRequestID("init")))
     askAppliedSettings(process)
     if let first { try send(first, to: process) }
@@ -98,6 +102,10 @@ final class ClaudeBackend: AgentBackend {
     case .taskOutput(let taskID):
       let id = taskRequestID("output", for: taskID)
       return (.taskOutput(requestID: id, taskID: taskID), id)
+    case .rewindFiles(let userMessageID, let dryRun):
+      let id = "rewind-\(UUID().uuidString)"
+      rewindRequests[id] = (userMessageID, dryRun)
+      return (.rewindFiles(requestID: id, userMessageID: userMessageID, dryRun: dryRun), id)
     }
   }
 
@@ -168,6 +176,20 @@ final class ClaudeBackend: AgentBackend {
           .taskOutputAnswered(
             taskID: target, response.isSuccess ? TaskOutput(response.response) : nil))
       }
+      return output
+    case .controlResponse(let response) where response.requestID.hasPrefix("rewind-"):
+      // One never sent by this backend, or answered already, says nothing.
+      guard let sent = rewindRequests.removeValue(forKey: response.requestID) else {
+        return output
+      }
+      // A refused dry run is a success with `canRewind` false; a refused rewind is a control
+      // error with the same text and no response (docs/claude-stream-json.md, "Rewind").
+      let result =
+        response.isSuccess
+        ? RewindResult(response.response)
+        : response.error.flatMap { $0.isEmpty ? nil : RewindResult(refusal: $0) }
+      output.signals.append(
+        .rewindAnswered(userMessageID: sent.userMessageID, dryRun: sent.dryRun, result))
       return output
     case .system(.initialized(let info)):
       if let mode = info.permissionMode { output.signals.append(.modeAdopted(mode)) }

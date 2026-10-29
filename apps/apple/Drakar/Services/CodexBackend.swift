@@ -110,6 +110,8 @@ final class CodexBackend: AgentBackend {
     case .rename(let title, _): .rename(title)
     // `features.controlsTasks` is false: nothing offers them.
     case .stopTask, .backgroundCall, .taskOutput: nil
+    // Claude Code's only: nothing offers a code rewind on a Codex session.
+    case .rewindFiles: nil
     }
   }
 }

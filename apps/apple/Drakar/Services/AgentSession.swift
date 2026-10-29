@@ -29,6 +29,12 @@ final class AgentSession {
   /// Stop, Run in background and task output for the cards: sent straight to the process,
   /// never noted, so a replay never sends one again.
   @ObservationIgnored let tasks = TaskControls()
+  /// A code rewind's dry run, confirmation and outcome for the sheet: sent straight to the
+  /// process, never noted, as `tasks` is.
+  @ObservationIgnored let rewinds = Rewinds()
+  /// This process answered "File rewinding is not enabled.": it offers no code rewind again.
+  /// Reset with `process`.
+  private(set) var rewindNotEnabled = false
   private(set) var transcript = Transcript()
   private(set) var phase: Phase = .idle
   /// The binary this session runs, for the footer and for bug reports.
@@ -132,8 +138,16 @@ final class AgentSession {
 
   /// The process, or after a replay the `ReplayTransport` it wrote to.
   @ObservationIgnored private(set) var process: (any ProcessTransport)? {
-    // What the one before was asked will not be answered.
-    didSet { if oldValue != nil, process !== oldValue { tasks.processEnded() } }
+    didSet {
+      guard process !== oldValue else { return }
+      // A new process has said nothing about rewinding yet.
+      rewindNotEnabled = false
+      // What the one before was asked will not be answered.
+      if oldValue != nil {
+        tasks.processEnded()
+        rewinds.processEnded()
+      }
+    }
   }
   /// What a spawn runs on; nil for the session host's, or an `AgentProcess` when there is no
   /// host to have. Tests give a recorder.
@@ -222,6 +236,18 @@ final class AgentSession {
       // and a note would have a replay send it again.
       guard let self, let process = self.process else { return }
       _ = try? self.backend.send(command, to: process)
+    }
+    rewinds.folder = folder
+    rewinds.send = { [weak self] command in
+      // As `tasks.send`, read again at each request: a turn that started since the dry run
+      // holds the rewind back.
+      guard let self, self.rewindsCode, let process = self.process else { return false }
+      do {
+        try self.backend.send(command, to: process)
+        return true
+      } catch {
+        return false
+      }
     }
   }
 
@@ -429,6 +455,15 @@ final class AgentSession {
     features.controlsTasks && !isReadOnly && !isMoving && !historyFailed && !isReconnecting
       && !waitsForHost && !isOutOfReach && process != nil
   }
+
+  /// The prompt's files can be put back now: `features.controlsTasks`, a process Drakar
+  /// drives (as the task controls read it), one that has not said rewinding is off, and no
+  /// turn running. No "has run a turn" rule: a resumed process answers before its first
+  /// prompt, for prompts of earlier processes too (docs/claude-stream-json.md, "Rewind").
+  /// Whether the prompt has a checkpoint only the dry run says.
+  func canRewindCode(_ messageID: String) -> Bool { rewindsCode }
+
+  private var rewindsCode: Bool { controlsTasks && !rewindNotEnabled && !transcript.isRunning }
 
   /// Where the cards look for subagent files: beside this session's own transcript once it
   /// saved one, else beside the one it continues (a fork's original, whose folder its own
@@ -1326,6 +1361,10 @@ final class AgentSession {
       CodexSkillStore.shared.skills(for: folder).refreshIfLoaded()
     case .taskStopAnswered, .backgroundAnswered, .taskOutputAnswered:
       tasks.answered(signal)
+    case .rewindAnswered(_, _, let result):
+      // A dry run's refusal or a rewind's: either says it of the whole process.
+      if result?.isNotEnabled == true { rewindNotEnabled = true }
+      rewinds.answered(signal)
     case .unusable(let message):
       stop()
       phase = .failed(message)

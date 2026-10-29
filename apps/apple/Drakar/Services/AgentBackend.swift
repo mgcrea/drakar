@@ -69,6 +69,8 @@ enum AgentCommand: Codable, Equatable {
   case stopTask(taskID: String)
   case backgroundCall(toolUseID: String)
   case taskOutput(taskID: String)
+  /// A code rewind (`Rewinds`), sent without a note as the task controls are.
+  case rewindFiles(userMessageID: String, dryRun: Bool)
 }
 
 struct BackendOutput {
@@ -102,4 +104,7 @@ enum SessionSignal: Equatable {
   case backgroundAnswered(toolUseID: String, BackgroundOutcome)
   /// Nil for a reply that holds no output.
   case taskOutputAnswered(taskID: String, TaskOutput?)
+  /// A `rewindFiles` was answered, for the message and kind it was sent as. A refusal comes
+  /// as a result with `canRewind` false and the CLI's error; nil for one with no text.
+  case rewindAnswered(userMessageID: String, dryRun: Bool, RewindResult?)
 }
