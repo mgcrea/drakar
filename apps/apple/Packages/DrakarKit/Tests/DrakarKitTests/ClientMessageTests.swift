@@ -64,6 +64,18 @@ struct ClientMessageTests {
         + "\n")
   }
 
+  /// A rewind and its dry run, as the extension sends them (2.1.312).
+  @Test func rewindEncodes() throws {
+    #expect(
+      try text(.rewindFiles(requestID: "rewind-1", userMessageID: "aaaaaaaa", dryRun: true))
+        == #"{"request":{"dry_run":true,"subtype":"rewind_files","user_message_id":"aaaaaaaa"},"request_id":"rewind-1","type":"control_request"}"#
+        + "\n")
+    #expect(
+      try text(.rewindFiles(requestID: "rewind-2", userMessageID: "aaaaaaaa", dryRun: false))
+        == #"{"request":{"dry_run":false,"subtype":"rewind_files","user_message_id":"aaaaaaaa"},"request_id":"rewind-2","type":"control_request"}"#
+        + "\n")
+  }
+
   @Test func encodesAPrompt() throws {
     #expect(
       try text(.prompt("Run it"))

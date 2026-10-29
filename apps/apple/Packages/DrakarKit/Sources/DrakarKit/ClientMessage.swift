@@ -50,6 +50,10 @@ public enum ClientMessage: Sendable, Equatable {
   case backgroundCall(requestID: String, toolUseID: String)
   /// A shell or Monitor task's output so far, its tail when long (`TaskOutput`).
   case taskOutput(requestID: String, taskID: String)
+  /// Put back the files as they were before the prompt `userMessageID` (the uuid it was sent
+  /// with), or with `dryRun` only list them. Answered at once, starting no turn
+  /// (`RewindResult`; docs/claude-stream-json.md, "Rewind").
+  case rewindFiles(requestID: String, userMessageID: String, dryRun: Bool)
   /// The answer to a request Drakar cannot serve, so that the CLI stops waiting on it.
   case refuse(requestID: String, error: String)
 
@@ -131,6 +135,13 @@ public enum ClientMessage: Sendable, Equatable {
     case .taskOutput(let id, let taskID):
       Self.controlRequest(
         id, ["subtype": .string("get_task_output"), "task_id": .string(taskID)])
+    case .rewindFiles(let id, let userMessageID, let dryRun):
+      Self.controlRequest(
+        id,
+        [
+          "subtype": .string("rewind_files"), "user_message_id": .string(userMessageID),
+          "dry_run": .bool(dryRun),
+        ])
     case .refuse(let id, let error):
       .object([
         "type": .string("control_response"),
