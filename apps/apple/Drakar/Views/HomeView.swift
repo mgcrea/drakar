@@ -29,7 +29,8 @@ struct HomeView: View {
     VStack(spacing: 0) {
       header
       Divider()
-      // Until the update question is answered, either way; then it is gone for good.
+      // In a release, until the update question is answered, either way; then it is gone
+      // for good. Never in a development build.
       UpdateConsentCard()
       if !monitor.isLoaded {
         ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)

@@ -58,8 +58,34 @@ final class UpdateController: NSObject {
   /// Check Now, and never when Sparkle refused to start.
   var isStarted: Bool { controller != nil }
 
-  init(defaults: UserDefaults = .standard) {
+  /// Whether this is a development build, which never builds an updater and never asks.
+  ///
+  /// DIVERGES from armada. Debug and Release share the bundle id, `SUFeedURL` and
+  /// `SUPublicEDKey`, and a Debug build's `CURRENT_PROJECT_VERSION` is 1 where a release's
+  /// is the commit count, so an updater in the owner's own `make run` copy would offer to
+  /// replace it with the release. A parameter rather than an `#if` at each use, so the tests,
+  /// which run in the Debug host, can still build a controller that behaves as a release.
+  let isDevelopmentBuild: Bool
+
+  /// What a build that is not passed one is: a Debug build is a development build.
+  static var compiledAsDevelopmentBuild: Bool {
+    #if DEBUG
+      true
+    #else
+      false
+    #endif
+  }
+
+  /// Whether Home should ask: in a release, until it is answered either way; in a
+  /// development build, never, since nothing would come of the answer.
+  var showsConsentCard: Bool { !isDevelopmentBuild && !hasAnswered }
+
+  init(
+    defaults: UserDefaults = .standard,
+    isDevelopmentBuild: Bool = UpdateController.compiledAsDevelopmentBuild
+  ) {
     self.defaults = defaults
+    self.isDevelopmentBuild = isDevelopmentBuild
     automatic = defaults.bool(forKey: "SUEnableAutomaticChecks")
     hasAnswered = defaults.bool(forKey: Self.choiceMade)
     super.init()
@@ -106,8 +132,11 @@ final class UpdateController: NSObject {
   /// spinner for a callback that never came, and a "yes" brought the alert back at every
   /// launch. Starting it here keeps a refusal to one log line and a sentence in the pane, and
   /// the controller nil, so the next Check Now asks again.
+  ///
+  /// A development build stops here, before Sparkle is touched: no controller, no failure to
+  /// report, whatever was answered.
   private func start() {
-    guard controller == nil else { return }
+    guard !isDevelopmentBuild, controller == nil else { return }
     let candidate = SPUStandardUpdaterController(
       startingUpdater: false, updaterDelegate: self, userDriverDelegate: self)
     do {
@@ -189,7 +218,7 @@ struct UpdateConsentCard: View {
   private var updates: UpdateController { .shared }
 
   var body: some View {
-    if !updates.hasAnswered {
+    if updates.showsConsentCard {
       VStack(alignment: .leading, spacing: 8) {
         Label("Should Drakar check for updates?", systemImage: "arrow.down.circle")
           .font(.subheadline).bold()
@@ -230,7 +259,8 @@ struct UpdateConsentCard: View {
 /// The update controls.
 ///
 /// Drakar's only connection of its own is this one, so the footer says what the check
-/// sends in plain terms.
+/// sends in plain terms. A development build has no check to offer, so it shows its
+/// version and says why there is nothing else.
 struct UpdatesPane: View {
   private var updates: UpdateController { .shared }
 
@@ -239,39 +269,55 @@ struct UpdatesPane: View {
       Section {
         LabeledContent("Version", value: AppInfo.version)
 
-        // The row's whole label is the answer to "am I current", because a row titled the
-        // same thing as the button beside it says nothing twice.
-        LabeledContent {
-          Button("Check Now…") { updates.checkNow() }
-            .disabled(updates.isChecking)
-        } label: {
-          Text(lastCheck)
+        if updates.isDevelopmentBuild {
+          Text("Updates are off in development builds.")
+            .foregroundStyle(.secondary)
+            .accessibilityIdentifier("settings.updates.development")
+        } else {
+          checkRow
         }
       }
 
-      Section {
-        // Answering here is answering the consent card too. Leaving it armed would ask
-        // again about a decision already made in this pane. A binding on the controller
-        // rather than armada's `@State` copy, so an answer given at the card shows here.
-        Toggle(
-          isOn: Binding(get: { updates.automatic }, set: { updates.answer(automatic: $0) })
-        ) {
-          Text("Check for updates automatically")
-        }
-      } footer: {
-        Text(
-          """
-          This is the only network connection Drakar makes of its own, and it makes none \
-          at all until you turn this on or press Check Now. It reads one file, \
-          drakar.mgcrea.io/appcast.xml, and sends no identifier with it: not your \
-          licence key, not a machine id.
-          """
-        )
-        .fixedSize(horizontal: false, vertical: true)
+      if !updates.isDevelopmentBuild {
+        automaticSection
       }
     }
     .formStyle(.grouped)
     .navigationTitle("Updates")
+  }
+
+  /// The row's whole label is the answer to "am I current", because a row titled the same
+  /// thing as the button beside it says nothing twice.
+  private var checkRow: some View {
+    LabeledContent {
+      Button("Check Now…") { updates.checkNow() }
+        .disabled(updates.isChecking)
+    } label: {
+      Text(lastCheck)
+    }
+  }
+
+  private var automaticSection: some View {
+    Section {
+      // Answering here is answering the consent card too. Leaving it armed would ask
+      // again about a decision already made in this pane. A binding on the controller
+      // rather than armada's `@State` copy, so an answer given at the card shows here.
+      Toggle(
+        isOn: Binding(get: { updates.automatic }, set: { updates.answer(automatic: $0) })
+      ) {
+        Text("Check for updates automatically")
+      }
+    } footer: {
+      Text(
+        """
+        This is the only network connection Drakar makes of its own, and it makes none \
+        at all until you turn this on or press Check Now. It reads one file, \
+        drakar.mgcrea.io/appcast.xml, and sends no identifier with it: not your \
+        licence key, not a machine id.
+        """
+      )
+      .fixedSize(horizontal: false, vertical: true)
+    }
   }
 
   /// A sentence either way. A row showing nothing before the first check reads as a missing

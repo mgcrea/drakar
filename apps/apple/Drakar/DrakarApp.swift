@@ -226,7 +226,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     Task { await SessionMonitor.shared.start() }
     Task { await AccountStore.shared.start() }
     Task { await HeldWindows.shared.list(from: .shared) }
-    // Builds nothing unless the person has said yes. DIVERGES from armada, which has no
+    // Builds nothing unless the person has said yes, and nothing at all in a development
+    // build (`UpdateController.isDevelopmentBuild`). DIVERGES from armada, which has no
     // hosted tests: the test host runs under the app's bundle id, and so would find the
     // owner's own yes and start checking from inside a test run.
     if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil {
