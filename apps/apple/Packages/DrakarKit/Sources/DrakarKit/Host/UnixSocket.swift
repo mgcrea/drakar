@@ -31,11 +31,16 @@ enum UnixSocket {
   }
 
   /// Throws when nothing listens there: no file, or one a dead host left.
+  ///
+  /// SO_NOSIGPIPE before connecting: a host that refuses this app closes at once, and macOS
+  /// refuses the option on a socket whose peer has gone (EINVAL), which would read as a
+  /// failure to connect rather than the refusal the first request reports.
   static func connected(to url: URL) throws -> Int32 {
     let fd = try make()
     do {
+      try noSigPipe(fd)
       try withAddress(url) { Darwin.connect(fd, $0, $1) }
-      try prepare(fd)
+      try check(fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK))
     } catch {
       Darwin.close(fd)
       throw error
@@ -86,9 +91,13 @@ enum UnixSocket {
   /// SIGPIPE. Already close-on-exec, from `make` or `accept`: not inherited by the CLIs the
   /// host spawns, which would keep the connection open.
   static func prepare(_ fd: Int32) throws {
+    try noSigPipe(fd)
+    try check(fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK))
+  }
+
+  private static func noSigPipe(_ fd: Int32) throws {
     var on: Int32 = 1
     try check(setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &on, socklen_t(MemoryLayout<Int32>.size)))
-    try check(fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK))
   }
 
   static func check(_ result: Int32) throws {
