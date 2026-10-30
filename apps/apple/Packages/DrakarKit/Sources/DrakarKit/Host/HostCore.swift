@@ -31,6 +31,9 @@ public final class HostCore: @unchecked Sendable {
     let log: HostLog
     var meta: Data
     var attached: Client?
+    /// How much of stderr the app attached has been sent: the tail at its attach, then each
+    /// chunk. A chunk the tail already held is not sent again.
+    var stderrSent = 0
     var exitStatus: Int32?
     /// Writes under way. Output read meanwhile waits in `pending`, so a line the CLI wrote
     /// in answer to a write is never logged before the write's `in`.
@@ -196,13 +199,14 @@ public final class HostCore: @unchecked Sendable {
       held.attached = client
       for record in backlog + meanwhile { out.send(client, .record(id: id, record)) }
       out.send(client, .caughtUp(id: id, offset: held.log.length))
-      if let status = held.exitStatus {
-        let tail = held.child.stderrTail
-        if !tail.isEmpty {
-          out.send(client, .stderr(id: id, text: String(decoding: tail, as: UTF8.self)))
-        }
-        out.send(client, .exited(id: id, status: status))
+      // Running or not: what a CLI wrote to stderr before this attach (between the spawn and
+      // the first one, or while no app was attached) is still why it failed.
+      let tail = held.child.stderrTail
+      if !tail.bytes.isEmpty {
+        out.send(client, .stderr(id: id, text: String(decoding: tail.bytes, as: UTF8.self)))
       }
+      held.stderrSent = tail.end
+      if let status = held.exitStatus { out.send(client, .exited(id: id, status: status)) }
       state.held[id] = held
       return []
     }
@@ -360,10 +364,14 @@ public final class HostCore: @unchecked Sendable {
     switch output {
     case .line(let bytes):
       append(.out, bytes, to: id, &held, &out)
-    case .stderr(let bytes):
+    case .stderr(let bytes, let end):
       // Past the exit the app has been told all; the tail still keeps it.
-      guard held.exitStatus == nil, let client = held.attached else { return }
-      out.send(client, .stderr(id: id, text: String(decoding: bytes, as: UTF8.self)))
+      guard held.exitStatus == nil, let client = held.attached, end > held.stderrSent else {
+        return
+      }
+      let unsent = bytes.suffix(min(bytes.count, end - held.stderrSent))
+      held.stderrSent = end
+      out.send(client, .stderr(id: id, text: String(decoding: unsent, as: UTF8.self)))
     case .exited(let status):
       held.exitStatus = status
       if let client = held.attached { out.send(client, .exited(id: id, status: status)) }
