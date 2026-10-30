@@ -60,7 +60,11 @@ struct AgentCallView: View {
     if state == .running, isBackground, task?.progressLine == nil {
       return String(localized: "Running in the background")
     }
-    if let line = task?.progressLine { return line }
+    if let line = task?.progressLine {
+      // Its progress says more than the note, but not that it went to the background.
+      if state == .running, isBackground { return String(localized: "In the background · \(line)") }
+      return line
+    }
     guard let report else { return nil }
     var finished = AgentTask()
     finished.toolUses = report.toolUses
