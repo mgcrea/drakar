@@ -311,6 +311,60 @@ struct ProjectTests {
     #expect(project.selectedID == original.id)
   }
 
+  /// A fork that can't be made says so in the session it was asked of, rather than nothing.
+  @Test func aForkNotMadeLeavesANotice() async throws {
+    try writeTwoPrompts("a")
+    let project = Project(folder: folder)
+    let original = project.attach(target("a"))
+    #expect(await project.fork(original, from: "not-a-prompt", text: "Lost") == nil)
+    #expect(original.session.transcript.entries.map(\.kind) == [.notice(RewindCopy.notForked)])
+  }
+
+  /// After a rewind that took, the fork's failure is said in the rewind's own note: one
+  /// note, which still says the code was rewound.
+  @Test func aForkNotMadeAfterARewindSaysTheCodeWasRewound() async throws {
+    try writeTwoPrompts("a")
+    let project = Project(folder: folder)
+    let original = project.attach(target("a"))
+    original.session.noteRewound()
+    #expect(
+      await project.fork(original, from: "not-a-prompt", text: "Lost", afterRewind: true) == nil)
+    #expect(
+      original.session.transcript.entries.map(\.kind) == [.notice(RewindCopy.rewoundNotForked)])
+    // With no rewind note to amend (it was never written), it is added.
+    try writeTwoPrompts("b")
+    let other = project.attach(target("b"))
+    #expect(
+      await project.fork(other, from: "not-a-prompt", text: "Lost", afterRewind: true) == nil)
+    #expect(other.session.transcript.entries.map(\.kind) == [.notice(RewindCopy.rewoundNotForked)])
+  }
+
+  /// A turn that starts while the transcript is read forks nothing: the fork would copy a
+  /// history the turn is still writing.
+  @Test func aTurnStartedDuringTheReadForksNothing() async throws {
+    try writeTwoPrompts("a")
+    let script = folder.appending(path: "claude")
+    try Data("#!/bin/sh\ncat > /dev/null\n".utf8).write(to: script)
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script.path)
+    let project = Project(folder: folder)
+    project.executableOverride = script
+    let attached = project.attach(target("a"))
+    defer { project.stopAll() }
+    let read = project.readResumePoint
+    project.readResumePoint = { file, messageID in
+      // The stand-in never ends the turn.
+      attached.session.send("hello")
+      return await read(file, messageID)
+    }
+    #expect(project.canForkFrom(attached))
+    #expect(await project.fork(attached, from: "p-2", text: "Second") == nil)
+    #expect(attached.session.transcript.isRunning)
+    #expect(project.sessions.count == 1)
+    #expect(project.selectedID == attached.id)
+    #expect(
+      attached.session.transcript.entries.contains { $0.kind == .notice(RewindCopy.notForked) })
+  }
+
   /// A Codex prompt's id is Drakar's, not one a Claude Code fork can resume at.
   @Test func noForkFromACodexSession() {
     var codex = target("a")

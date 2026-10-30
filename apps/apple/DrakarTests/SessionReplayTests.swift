@@ -219,6 +219,27 @@ struct SessionReplayTests {
     #expect(!live.tasks.isAvailable)
   }
 
+  /// A code rewind goes straight to the process, as a task control does, with no note for
+  /// a replay to send again: a replay never writes files.
+  @Test func aRewindIsSentUnnoted() async throws {
+    let (live, recorder) = try await liveTurn()
+    defer { live.stop() }
+    live.rewinds.start(Rewinds.Request(messageID: "u-a", thenFork: false))
+    #expect(live.rewinds.phase == .checking)
+    let records = recorder.records
+    #expect(
+      records.contains {
+        $0.kind == .in && String(decoding: $0.bytes, as: UTF8.self).contains("rewind_files")
+      })
+    #expect(
+      !records.contains {
+        $0.kind == .note
+          && String(decoding: $0.bytes, as: UTF8.self).localizedCaseInsensitiveContains("rewind")
+      })
+    let replayed = await AgentSession(replaying: records, meta: meta)
+    #expect(try #require(replayed.process as? ReplayTransport).owed.isEmpty)
+  }
+
   /// A rate limit the log kept is a reading from when its line came, not from the replay:
   /// one from hours ago never passes for the account's latest.
   @Test func aReplayedRateLimitIsReadWhenItsLineCame() async throws {

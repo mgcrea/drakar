@@ -30,6 +30,16 @@ enum CapabilityProbe {
   /// ...until this long after the probe started; a server still connecting then is shown so.
   static let connectingLimit: Duration = .seconds(10)
 
+  /// What the probe starts: what a new session would, but with no file checkpoints, since
+  /// it is never prompted and would only leave an empty `file-history/<id>/` folder.
+  static func launch(
+    folder: URL, account: ClaudeAccount?, environment: [String: String], executableOverride: URL?
+  ) -> ClaudeLaunch {
+    ClaudeLaunch.make(
+      folder: folder, resuming: nil, account: account, environment: environment,
+      executableOverride: executableOverride, checkpoints: false)
+  }
+
   /// What a new session in `folder` would load, under `account` when given (the one its
   /// lists are kept for), else under the account a new session there would take.
   /// Cancelling the calling task lets the process go as a finished probe does.
@@ -46,8 +56,8 @@ enum CapabilityProbe {
     // Cancelled while the environment loaded: nothing has started, so nothing is launched.
     // (Launching now would meet an already-closed input and need a hard kill.)
     guard !Task.isCancelled else { return .failed(String(localized: "Cancelled.")) }
-    let launch = ClaudeLaunch.make(
-      folder: folder, resuming: nil, account: account, environment: environment,
+    let launch = Self.launch(
+      folder: folder, account: account, environment: environment,
       executableOverride: executableOverride)
     guard let executable = launch.executable else { return .failed(ClaudeLaunch.notFound) }
     let process = AgentProcess(

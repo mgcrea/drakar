@@ -469,6 +469,22 @@ final class AgentSession {
 
   private var rewindsCode: Bool { offersCodeRewind && !transcript.isRunning }
 
+  /// A rewind took: the extension's line, left in the conversation once the sheet closes.
+  func noteRewound() {
+    transcript.addNotice(RewindCopy.succeeded)
+  }
+
+  /// A fork from one of this session's prompts was not made: said here, where it was asked
+  /// for. After a rewind that took, its note says both instead, so the conversation never
+  /// reads as if the code stayed as it was, nor carries two notes about one request.
+  func noteNotForked(afterRewind: Bool) {
+    if afterRewind {
+      transcript.reviseNotice(RewindCopy.succeeded, to: RewindCopy.rewoundNotForked)
+    } else {
+      transcript.addNotice(RewindCopy.notForked)
+    }
+  }
+
   /// Where the cards look for subagent files: beside this session's own transcript once it
   /// saved one, else beside the one it continues (a fork's original, whose folder its own
   /// sits beside). A new session's first turn has neither: `tasks.locateTranscript` finds it.
@@ -1374,10 +1390,7 @@ final class AgentSession {
     case .rewindAnswered(_, _, let result):
       // A dry run's refusal or a rewind's: either says it of the whole process.
       if result?.isNotEnabled == true { rewindNotEnabled = true }
-      let wasDone = rewinds.phase == .done
-      rewinds.answered(signal)
-      // The extension's line, left in the conversation once the sheet closes.
-      if !wasDone, rewinds.phase == .done { transcript.addNotice(RewindCopy.succeeded) }
+      if rewinds.answered(signal) { noteRewound() }
     case .unusable(let message):
       stop()
       phase = .failed(message)

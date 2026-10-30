@@ -199,7 +199,7 @@ struct SessionView: View {
     .onChange(of: session.rewinds.phase, initial: true) { _, phase in
       guard phase == .done, let request = session.rewinds.request else { return }
       session.rewinds.cancel()
-      if request.thenFork { rewindAction.fork(from: request.messageID) }
+      if request.thenFork { rewindAction.fork(from: request.messageID, afterRewind: true) }
     }
     // Esc anywhere in the session, as in the extension: the turn stops, what was queued
     // runs next, and the composer takes the keys. A panel or menu with Esc of its own

@@ -165,6 +165,68 @@ struct RewindsTests {
     #expect(real.phase == .failed(RewindCopy.failed))
   }
 
+  /// A rewind's success after its timeout: the files were written all the same. The sheet
+  /// still on its failure moves on to done (so a fork that waits on it follows), and the
+  /// session is told a rewind took; a dry run's late reply stays ignored.
+  @Test func aLateRewindSuccessStillTakes() async throws {
+    let (rewinds, _) = rewinds(timeout: .milliseconds(50))
+    rewinds.start(Rewinds.Request(messageID: "u-a", thenFork: true))
+    #expect(!rewinds.answered(.rewindAnswered(userMessageID: "u-a", dryRun: true, Self.dryRun())))
+    rewinds.confirm()
+    // Polled: the main actor is shared with the other suites, so the timeout runs late.
+    for _ in 0..<100 where rewinds.phase == .rewinding {
+      try await Task.sleep(for: .milliseconds(50))
+    }
+    #expect(rewinds.phase == .failed(RewindCopy.failed))
+    // A dry run's reply, or another message's, is not the rewind's.
+    #expect(!rewinds.answered(.rewindAnswered(userMessageID: "u-a", dryRun: true, Self.dryRun())))
+    #expect(!rewinds.answered(.rewindAnswered(userMessageID: "u-b", dryRun: false, Self.rewound)))
+    #expect(rewinds.phase == .failed(RewindCopy.failed))
+    #expect(rewinds.answered(.rewindAnswered(userMessageID: "u-a", dryRun: false, Self.rewound)))
+    #expect(rewinds.phase == .done)
+    #expect(rewinds.request == Rewinds.Request(messageID: "u-a", thenFork: true))
+    // Once only.
+    #expect(!rewinds.answered(.rewindAnswered(userMessageID: "u-a", dryRun: false, Self.rewound)))
+
+    // The sheet closed on the failure: still a rewind that took, and nothing reopens.
+    let (closed, _) = self.rewinds(timeout: .milliseconds(50))
+    closed.start(Self.request)
+    closed.answered(.rewindAnswered(userMessageID: "u-a", dryRun: true, Self.dryRun()))
+    closed.confirm()
+    for _ in 0..<100 where closed.phase == .rewinding {
+      try await Task.sleep(for: .milliseconds(50))
+    }
+    closed.cancel()
+    #expect(closed.answered(.rewindAnswered(userMessageID: "u-a", dryRun: false, Self.rewound)))
+    #expect(closed.phase == nil)
+    #expect(closed.request == nil)
+
+    // A late refusal changes nothing, and a process gone answers nothing late.
+    let (refused, _) = self.rewinds(timeout: .milliseconds(50))
+    refused.start(Self.request)
+    refused.answered(.rewindAnswered(userMessageID: "u-a", dryRun: true, Self.dryRun()))
+    refused.confirm()
+    for _ in 0..<100 where refused.phase == .rewinding {
+      try await Task.sleep(for: .milliseconds(50))
+    }
+    #expect(
+      !refused.answered(
+        .rewindAnswered(
+          userMessageID: "u-a", dryRun: false, RewindResult(refusal: "Failed to rewind: EACCES"))))
+    #expect(refused.phase == .failed(RewindCopy.failed))
+    #expect(refused.detail == nil)
+    let (gone, _) = self.rewinds(timeout: .milliseconds(50))
+    gone.start(Self.request)
+    gone.answered(.rewindAnswered(userMessageID: "u-a", dryRun: true, Self.dryRun()))
+    gone.confirm()
+    for _ in 0..<100 where gone.phase == .rewinding {
+      try await Task.sleep(for: .milliseconds(50))
+    }
+    gone.processEnded()
+    #expect(!gone.answered(.rewindAnswered(userMessageID: "u-a", dryRun: false, Self.rewound)))
+    #expect(gone.phase == .failed(RewindCopy.failed))
+  }
+
   /// The dry run's own timeout never fails a rewind that followed it.
   @Test func aDryRunsTimeoutLeavesTheRewindAlone() async throws {
     // Wide margins: the main actor is shared with the other suites.

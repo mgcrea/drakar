@@ -56,10 +56,13 @@ struct RewindMenuAction: Equatable {
   }
 
   /// Forks from the prompt `messageID`, its text (read from the transcript when not given)
-  /// in the new session's composer.
-  func fork(from messageID: String, text: String? = nil) {
+  /// in the new session's composer. A fork not made is said in this session's conversation,
+  /// `afterRewind` with the rewind that took before it (`Project.fork`).
+  func fork(from messageID: String, text: String? = nil, afterRewind: Bool = false) {
     let text = text ?? promptText(messageID)
-    Task { [item, project] in await project.fork(item, from: messageID, text: text) }
+    Task { [item, project] in
+      await project.fork(item, from: messageID, text: text, afterRewind: afterRewind)
+    }
   }
 
   private func promptText(_ messageID: String) -> String {

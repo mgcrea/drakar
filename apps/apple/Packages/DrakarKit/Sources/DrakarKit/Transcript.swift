@@ -273,6 +273,16 @@ public struct Transcript: Sendable, Equatable {
     addNote(.notice(text), parent: parent)
   }
 
+  /// The latest notice reading `text` reads `replacement` instead, where it stands; with
+  /// none, `replacement` is added. A note that something later qualifies stays one note.
+  public mutating func reviseNotice(_ text: String, to replacement: String) {
+    guard let index = entries.lastIndex(where: { $0.kind == .notice(text) }) else {
+      return addNotice(replacement)
+    }
+    revision += 1
+    entries[index].kind = .notice(replacement)
+  }
+
   private mutating func addNote(_ kind: Kind, parent: String? = nil) {
     revision += 1
     noticeCount += 1

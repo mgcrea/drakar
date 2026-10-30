@@ -71,7 +71,8 @@ live by slice 1 on 2026-10-29 ("Rewind (verified 2026-10-29, 2.1.312)" in
 - Rewinding the conversation in place. The extension forks, and so does Drakar.
 - The extension's "Rewind to…" list (Esc Esc). The arrow on each prompt is Drakar's way in.
 - Rewinding a session another process drives, or one with no process: a fork is offered
-  there, code is not.
+  there, code is not. A session reopened from the list has no process until its first new
+  prompt starts one, so until then it offers only the fork.
 - Codex.
 
 ## Anti-goals
@@ -100,7 +101,10 @@ Each came out of the builder check. Each is the writer's call, not something the
   offered while Drakar drives a live process that has not said "File rewinding is not
   enabled.", and enabled while no turn runs. There is no "has run a turn" rule: a resumed
   process answers before its first prompt, for prompts of earlier processes too, from the
-  transcript's `file-history-snapshot` lines (stream-json "Rewind", answer 3). The dry run,
+  transcript's `file-history-snapshot` lines (stream-json "Rewind", answer 3). That holds
+  for a process that is live, such as one the session host kept running; a session reopened
+  from the list starts its process only when a prompt is sent, and offers only the fork
+  before then (Non-goals). The dry run,
   sent when the person picks "Rewind code to here" (never on hover), is the authority: "No
   file checkpoint found" shows the extension's failure line and no Rewind button. Once a
   process answers "File rewinding is not enabled." (a setting turned it off, or a process the
@@ -160,8 +164,9 @@ In the running app, relaunched by the person (never `make run`):
    prompt's text in its composer. Fork from the first prompt: a plain new session, the text
    in its composer.
 3. Fork and rewind: both.
-4. A resumed session before its first new prompt: the fork and the code items are all
-   offered, and a dry run for an earlier prompt answers rather than refusing (stream-json
-   "Rewind", answer 3).
+4. A session whose process is live but has not prompted since it resumed (for example one
+   the session host kept running): the fork and the code items are all offered, and a dry
+   run for an earlier prompt answers rather than refusing (stream-json "Rewind", answer 3).
+   A session reopened from the list, with no process yet: only the fork is offered.
 5. During a running turn: the menu's items show disabled, and nothing is queued. With the
    sheet open on a dry run's list, a turn that starts fails the sheet.

@@ -28,8 +28,9 @@ public struct RewindResult: Sendable, Equatable {
     skippedLinks = response?["skippedLinks"]?.intValue ?? 0
   }
 
-  /// A refused real rewind arrives as a control `error` with no response (Task 1, answer 1):
-  /// canRewind false, the error string kept, no files.
+  /// A refused real rewind arrives as a control `error` with no response
+  /// (docs/claude-stream-json.md, "Rewind", answer 1): canRewind false, the error string
+  /// kept, no files.
   public init(refusal error: String) {
     canRewind = false
     self.error = error
@@ -59,4 +60,10 @@ public enum RewindCopy {
     localized: "A new forked conversation will be created after rewinding.")
   /// Drakar's: an empty dry run in Fork and rewind.
   public static let nothingToRewind = String(localized: "No files to rewind.")
+  /// Drakar's: a fork from a prompt that could not be made (the prompt is not in the file, a
+  /// turn started), left in the session it was asked of.
+  public static let notForked = String(localized: "Couldn't fork from this prompt.")
+  /// Drakar's: as `notForked`, after a rewind that took, in place of `succeeded`.
+  public static let rewoundNotForked = String(
+    localized: "Code rewind successful, but couldn't fork from this prompt.")
 }

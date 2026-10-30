@@ -1174,19 +1174,38 @@ final class Project {
   /// session's composer. The resume point is read from its transcript off the main actor:
   /// after the message before the prompt, a fork resumed there; before the first prompt,
   /// a plain new session in the same folder with the session's mode and model picks, there
-  /// being nothing to keep; a prompt not in the file forks nothing. Claude Code sessions
-  /// only.
-  @discardableResult func fork(_ item: ProjectSession, from messageID: String, text: String)
-    async -> ProjectSession?
-  {
-    guard canForkFrom(item), var target = item.session.savedTarget ?? item.session.resuming
-    else { return nil }
-    let file = target.transcriptFile
-    let point = await Task.detached {
+  /// being nothing to keep. Claude Code sessions only. A fork not made (a prompt not in the
+  /// file, a turn started, before or during the read) is said in `item`'s conversation,
+  /// `afterRewind` in the note of the rewind that came first.
+  @discardableResult func fork(
+    _ item: ProjectSession, from messageID: String, text: String, afterRewind: Bool = false
+  ) async -> ProjectSession? {
+    guard let forked = await forkIfAble(item, from: messageID, text: text) else {
+      item.session.noteNotForked(afterRewind: afterRewind)
+      return nil
+    }
+    return forked
+  }
+
+  /// Where a fork from a prompt resumes, read from the transcript off the main actor.
+  /// Settable so that a test can start a turn while it reads.
+  @ObservationIgnored var readResumePoint: (URL, String) async -> ResumePoint? = {
+    file, messageID in
+    await Task.detached {
       (try? Transcript.lines(contentsOf: file)).flatMap {
         Transcript.resumePoint(before: messageID, in: $0)
       }
     }.value
+  }
+
+  private func forkIfAble(_ item: ProjectSession, from messageID: String, text: String) async
+    -> ProjectSession?
+  {
+    guard canForkFrom(item), var target = item.session.savedTarget ?? item.session.resuming
+    else { return nil }
+    let point = await readResumePoint(target.transcriptFile, messageID)
+    // A turn that started during the read writes the history the fork would copy.
+    guard canForkFrom(item) else { return nil }
     let forked: ProjectSession
     switch point {
     case nil:

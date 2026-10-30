@@ -19,16 +19,21 @@ struct ClaudeLaunch {
   /// the account that wrote it; a new session under its folder's pick, else the one in
   /// Settings, else the shell's. An explicit `account` wins over all of them: the probe runs
   /// under the account its lists are kept for, and a new session under the one picked for it.
+  /// `checkpoints` false leaves file checkpointing as the environment has it: the probe is
+  /// never prompted, and a process with checkpoints on leaves a `file-history/<id>/` folder
+  /// behind even then.
   static func make(
     folder: URL, resuming: ResumeTarget?, account explicit: ClaudeAccount? = nil,
-    environment: [String: String], executableOverride: URL?
+    environment: [String: String], executableOverride: URL?, checkpoints: Bool = true
   ) -> ClaudeLaunch {
     var environment = environment
     let chosen = explicit ?? resuming?.account ?? ClaudeChoice.account(forNewSessionIn: folder)
     if let chosen { environment = chosen.environment(environment) }
     // A prompt's files can be rewound only from checkpoints the process kept: on, unless the
-    // person switched them off themselves.
-    if environment["CLAUDE_CODE_DISABLE_FILE_CHECKPOINTING"] == nil {
+    // person switched them off, or set the switch on to a value of their own.
+    if checkpoints, environment["CLAUDE_CODE_DISABLE_FILE_CHECKPOINTING"] == nil,
+      environment["CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING"] == nil
+    {
       environment["CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING"] = "true"
     }
     let account =

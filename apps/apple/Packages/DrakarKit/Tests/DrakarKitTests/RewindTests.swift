@@ -95,5 +95,27 @@ struct RewindTests {
     #expect(
       RewindCopy.forkNote == "A new forked conversation will be created after rewinding.")
     #expect(RewindCopy.nothingToRewind == "No files to rewind.")
+    #expect(RewindCopy.notForked == "Couldn't fork from this prompt.")
+    #expect(
+      RewindCopy.rewoundNotForked == "Code rewind successful, but couldn't fork from this prompt.")
+  }
+
+  /// A note something later qualifies is revised where it stands, the latest of its text;
+  /// with none to revise, the new text is added.
+  @Test func aNoticeIsRevisedInPlace() {
+    var transcript = Transcript()
+    transcript.addNotice(RewindCopy.succeeded)
+    transcript.addPrompt("Next", running: false)
+    transcript.addNotice(RewindCopy.succeeded)
+    let revision = transcript.revision
+    transcript.reviseNotice(RewindCopy.succeeded, to: RewindCopy.rewoundNotForked)
+    #expect(
+      transcript.entries.map(\.kind) == [
+        .notice(RewindCopy.succeeded), .prompt("Next"), .notice(RewindCopy.rewoundNotForked),
+      ])
+    #expect(transcript.revision > revision)
+    var empty = Transcript()
+    empty.reviseNotice(RewindCopy.succeeded, to: RewindCopy.rewoundNotForked)
+    #expect(empty.entries.map(\.kind) == [.notice(RewindCopy.rewoundNotForked)])
   }
 }
