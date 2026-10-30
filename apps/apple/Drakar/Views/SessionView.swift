@@ -33,13 +33,23 @@ struct SessionView: View {
     .environment(\.rewindAction, rewindAction)
     // The card takes the keys when its question arrives or the session is shown, asked from
     // here: run after the update that made the card, the request reaches a card already up.
+    // A session just shown builds its transcript lazily after this runs: a card made then
+    // starts with the request already bumped and never sees it change, so it is asked again
+    // once the card is up. Seen live on 2026-10-30: a session reached from its sidebar row
+    // left the card's keys dead.
     .task(id: askedQuestion?.callID) {
+      guard askedQuestion != nil else { return }
+      item.questionFocusRequest += 1
+      try? await Task.sleep(for: .milliseconds(150))
       if askedQuestion != nil { item.questionFocusRequest += 1 }
     }
     .environment(\.askedElicitation, askedElicitation)
     // The same for a server's question, in its call's card or in the composer's place, and
     // again when it moves from one to the other.
     .task(id: elicitationFocusKey) {
+      guard elicitationFocusKey != nil else { return }
+      item.questionFocusRequest += 1
+      try? await Task.sleep(for: .milliseconds(150))
       if elicitationFocusKey != nil { item.questionFocusRequest += 1 }
     }
     // Below the transcript's end, not after it: the history scrolls on under the composer
