@@ -33,7 +33,11 @@ lost against the extension (thinking, tools, subagents, permissions, plan mode, 
    their session, and its cloud routines cannot see this Mac.
 2. Add a row for each new request; mark dropped ones `gone`. New strings with no new
    request are usually a changed behaviour of an existing feature: note it on that row.
-3. `make extension-accept`, and commit the snapshot with the ledger.
+3. `make extension-accept`, and commit the ledger. The snapshot stays on this Mac:
+   `docs/extension-surface/` is git-ignored because it is the extension's own text, so a
+   worktree has none, and `make extension-diff` there says "no snapshot yet (run with
+   --accept)". Don't: accepting there marks the extension's current version as reviewed. Run it
+   from the main checkout, or link that folder into the worktree for the run.
 
 Protocol changes are the other half and have their own procedure (raising
 `ClaudeVersion.tested`, end of `docs/claude-stream-json.md`); do both in one pass.
