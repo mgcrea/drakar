@@ -32,9 +32,10 @@
  * sentence can say it always asks. `scripts/audit-network.sh` fails a bundle
  * where that key is anything else.
  *
- * DIVERGES from armada, whose page also covers a purchase (nothing is on sale
- * here yet), its feedback form (this site has none) and its MCP endpoint and
- * voice (Drakar has neither).
+ * The purchase section is armada's, gated on SELLING the same way.
+ *
+ * DIVERGES from armada, whose page also covers its feedback form (this site has
+ * none) and its MCP endpoint and voice (Drakar has neither).
  */
 import {
   APP_NAME,
@@ -43,6 +44,7 @@ import {
   REPO_URL,
   SECURITY_EMAIL,
   SECURITY_EMAIL_HREF,
+  SELLING,
   SITE_URL,
   SUPPORT_EMAIL,
   SUPPORT_EMAIL_HREF,
@@ -50,7 +52,7 @@ import {
 import Layout from "../layouts/Layout.astro";
 
 /** Set by hand when the page changes, never `new Date()`, which shows the deploy date. */
-const updated = "29 October 2026";
+const updated = "30 October 2026";
 
 const h2 = "m-0 font-display text-[22px] font-semibold tracking-[-0.03em]";
 const lead = "mt-5 mb-0 max-w-[62ch] text-[15px] leading-[1.65] text-pretty text-fg-dim";
@@ -131,8 +133,31 @@ const code = "[&_code]:font-mono [&_code]:text-[0.9em] [&_code]:break-words [&_c
       <h2 class={h2}>Your licence</h2>
       <p class={lead}>
         A licence key is checked on your Mac, against a public key built into the app, and the
-        trial is counted on your Mac too. Drakar never calls a licence server. Nothing is on sale
-        yet, so this site holds no purchase records.
+        trial is counted on your Mac too. Drakar never calls a licence server, so an installed
+        copy has no idea who bought it, and the app never sends your email anywhere.
+      </p>
+    </section>
+
+    <section class="mt-14">
+      <h2 class={h2}>Buying a licence</h2>
+      {
+        !SELLING && (
+          <p class={lead}>
+            Nothing is on sale yet. This is how a purchase will be handled once it is.
+          </p>
+        )
+      }
+      <p class={SELLING ? lead : prose}>
+        Apart from anything you choose to write to us, this is the one place personal data exists
+        at all, and it exists because a licence has to be deliverable and a refund has to be
+        traceable to a sale.
+      </p>
+      <p class={prose}>
+        Checkout is handled by Stripe, who take the payment details; this site never sees a card
+        number. What is kept afterwards is your email address, the Stripe session and payment
+        identifiers, and the licence issued against them. The email is used to send you the key and
+        to find the licence again if you ask for it or a refund needs it. It is not used for
+        anything else, and there is no mailing list to be added to.
       </p>
     </section>
 
@@ -161,7 +186,9 @@ const code = "[&_code]:font-mono [&_code]:text-[0.9em] [&_code]:break-words [&_c
     <section class="mt-14">
       <h2 class={h2}>Asking</h2>
       <p class={lead}>
-        Questions go to <a href={SUPPORT_EMAIL_HREF} class={link}>{SUPPORT_EMAIL}</a>. If you find
+        Questions go to <a href={SUPPORT_EMAIL_HREF} class={link}>{SUPPORT_EMAIL}</a>. To get a
+        copy of what is held against your email, or to have it deleted, write there too. Deleting a
+        purchase record ends the licence it belongs to, because the record is the licence. If you find
         Drakar doing something this page says it does not, that is a security report: write to
         <a href={SECURITY_EMAIL_HREF} class={link}>{SECURITY_EMAIL}</a>.
       </p>

@@ -8,16 +8,12 @@
 # real money at api.drakar.mgcrea.io. A test-mode webhook secret pushed there
 # refuses every genuine payment as an invalid signature, and nothing says why
 # until a buyer writes in. The `test` environment is declared in wrangler.jsonc,
-# but its database is not created yet, so the first rehearsal starts with:
+# with its database (drakar-licenses-test, migrated with `--env test`) and the
+# test-mode price pinned as its EXPECTED_PRICE_ID, both set in Phases 2 and 4.
+# The Worker answers at https://drakar-api-test.mgcrea.workers.dev, where the
+# test-mode Payment Link redirects and the test-mode webhook endpoint points;
+# deploy it with
 #
-#   pnpm exec wrangler d1 create drakar-licenses-test
-#     (paste the database_id it prints into the `test` environment's
-#     d1_databases entry in wrangler.jsonc)
-#   pnpm exec wrangler d1 migrations apply drakar-licenses-test --env test --remote
-#   (create the test-mode Payment Link, with `price_id` in its metadata, and
-#   paste its price id into the `test` environment's EXPECTED_PRICE_ID in
-#   wrangler.jsonc, then `pnpm types`: empty, the rehearsal fulfils every
-#   app's test checkouts with real drk1 keys)
 #   pnpm exec wrangler deploy --env test
 #
 # and only then the secret push above.

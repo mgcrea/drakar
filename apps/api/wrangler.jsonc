@@ -47,14 +47,11 @@
     // delivers its checkouts to every Worker. See `handleWebhook` in
     // src/index.ts.
     //
-    // DIVERGES from armada, which pins its live price here: Drakar has no price
-    // yet, so it ships empty, and a Worker deployed in Phase 2 refuses every
-    // checkout (200 and a log line) until Phase 4 creates the Payment Link,
-    // with `price_id` in its metadata, and pastes that price id in here. This
-    // is the fail-closed reading doing its job: the trio's sales reach this
-    // Worker from the day it is deployed, and none of them may leave with a
-    // drk1 key.
-    "EXPECTED_PRICE_ID": "",
+    // The live "Drakar" price, created in Phase 4 (2026-10-30); its Payment
+    // Link carries it as `price_id`. Until then it was empty, and the Worker
+    // refused every checkout (200 and a log line): the trio's sales reach this
+    // Worker too, and none of them may leave with a drk1 key.
+    "EXPECTED_PRICE_ID": "price_1UWLCYFQJry8F0HMyao4Ohsg",
     "LICENSE_FROM_EMAIL": "licences@mgcrea.io",
     "SITE_URL": "https://drakar.mgcrea.io"
   },
@@ -84,10 +81,8 @@
       // secret it does not hold. bastion's first test deploy did exactly that
       // on 2026-10-04.
       "routes": [],
-      // No `database_id` yet, because the database does not exist. Create it
-      // with `wrangler d1 create drakar-licenses-test` and paste the id it
-      // prints in here before the first `wrangler deploy --env test`.
-      // .test.vars.example has the steps.
+      // Created in Phase 2 (2026-10-29) with `wrangler d1 create
+      // drakar-licenses-test`, and migrated with `--env test`.
       "d1_databases": [
         {
           "binding": "DB",
@@ -101,21 +96,16 @@
         { "name": "RESEND_LIMIT", "namespace_id": "6001", "simple": { "limit": 5, "period": 60 } },
         { "name": "THANKS_LIMIT", "namespace_id": "6002", "simple": { "limit": 20, "period": 60 } }
       ],
-      // The one environment where an empty EXPECTED_PRICE_ID means unguarded
-      // rather than closed. Empty because there is nothing to pin yet: Drakar
-      // has no test-mode Payment Link, so no test-mode price id exists.
-      //
-      // PIN IT BEFORE THE FIRST `wrangler deploy --env test`. The sandbox is
-      // shared by every app, so unguarded this Worker mints real drk1 keys
+      // The one environment where an empty EXPECTED_PRICE_ID would mean
+      // unguarded rather than closed, so it is pinned: the sandbox is shared by
+      // every app, and unguarded this Worker would mint real drk1 keys
       // (recorded with livemode = 0, but signed with the production key) for
-      // the other apps' test purchases. Create the test-mode link with
-      // `price_id` in its metadata, paste its price id here, then `pnpm types`
-      // (the generated Env pins this literal). .test.vars.example lists it as a
-      // step.
+      // the other apps' test purchases. The test-mode "Drakar" price, created
+      // in Phase 4 (2026-10-30); its Payment Link carries it as `price_id`.
       "vars": {
         "CURRENT_MAJOR": "1",
         "ENVIRONMENT": "test",
-        "EXPECTED_PRICE_ID": "",
+        "EXPECTED_PRICE_ID": "price_1UWLBbFQJry8F0HMGuwMfNpn",
         "LICENSE_FROM_EMAIL": "licences@mgcrea.io",
         "SITE_URL": "https://drakar.mgcrea.io"
       },

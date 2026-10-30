@@ -1,0 +1,259 @@
+Drakar End User Licence Agreement
+Version 1.0, 2026
+
+Copyright (c) 2026 Magenta Creations <olivier@mgcrea.io>
+
+This agreement covers the signed, notarized builds of Drakar distributed by the
+copyright holder — the ones downloaded from drakar.mgcrea.io or from the GitHub
+releases page, and installed from `Drakar.zip`.
+
+It does NOT cover the source code. The source is in the same repository under the
+MIT licence; see Section 10.
+
+WHAT THIS IS
+
+You are buying a build, not access to the code. The code is readable by anyone,
+and is meant to be read: a program that runs coding agents in your projects, with
+your permissions, should be one you can audit. What a licence key pays for is the
+signed and notarized artifact, the work of keeping it working across macOS, Claude
+Code and Codex releases, and the commitments in Sections 7 through 9.
+
+1. THE LICENCE
+
+On payment, you are granted a perpetual, worldwide, non-exclusive licence to
+install and use the covered builds, for any purpose, including commercially.
+
+The key is issued to a person or an organization, not to a machine. There is no
+activation limit and nothing counts your installs. Use it on every Mac you own or
+control. If you bought as an organization, one key covers one named user across
+their machines; a second person needs a second key.
+
+The key is not transferable to someone else, and it is not for publishing. It
+carries the purchaser's email address, and the app displays it.
+
+2. WHAT VERSIONS IT COVERS
+
+A key names a major version and covers every release within it. A key for 1.x
+unlocks 1.0, 1.4, 1.9 and anything else numbered 1 — for as long as you like,
+with no expiry and no renewal.
+
+Version 2.0 is a new purchase. There is no subscription, nothing lapses, and a
+build you are running today does not stop working because a newer major shipped.
+Upgrade pricing for existing licensees, if any, is offered at the time and is not
+promised here.
+
+3. WHAT IS GATED, AND WHAT IS NOT
+
+What is sold is sending work to an agent: prompts, new sessions, answers to its
+questions, skills and runs across subfolders, and the editor bridge a `claude`
+started with `--ide` in a terminal connects to. Unlicensed, Drakar opens your
+projects and shows their sessions, transcripts, files and diffs, and says where
+the composer would be why it is not.
+
+Two things are deliberately outside that gate, and this is the agreement saying
+so rather than leaving them to be discovered:
+
+  (a) Nothing of yours is held back. A turn that is already running keeps going,
+      and its permission prompts, its questions and Stop keep working. Your
+      sessions are Claude Code's and Codex's own files, which go on working in a
+      terminal or any other client whether or not Drakar is licensed.
+
+  (b) Nothing is held back from a purchase and no capability is reserved. There
+      is no tier above the one you bought.
+
+4. EVALUATING IT BEFORE YOU BUY
+
+Two questions, and only one of them can honestly be answered after payment.
+
+Whether Drakar is worth the price is a judgment, and Section 6 makes it a safe
+one to get wrong: thirty days, a full refund, no reason required and no form to
+fill in. Whether it works at all — with your `claude` and `codex`, in your
+projects, on the version of macOS you are actually running — is a fact about your
+machine, and you are entitled to that one before paying rather than after.
+
+  (a) The trial settles the second question and nothing else. Press the button in
+      Settings ▸ Licence, or on the card shown where the composer would be, and
+      Drakar runs at full function for thirty minutes: every project, every
+      session and every action. Nothing is held back and nothing is crippled, so
+      what you learn in that half hour stays true afterwards.
+
+      It is a verification window, not a usage allowance. It is held in memory
+      and never written to disk, so quitting the app and opening it again starts
+      another one. We have not built the machinery to prevent that and do not
+      intend to. We would rather say so plainly than have you find out and wonder
+      what else went unsaid.
+
+      When the window closes, Drakar stops sending work until a key is entered or
+      it is reopened. A turn already running finishes as it would have.
+
+      If you enter a key while the window is open, nothing stops. The trial has
+      already done its job by then.
+
+  (b) Read the source, and build it yourself. Section 10 says what the MIT
+      licence lets you do with it.
+
+  (c) Buy it and change your mind. Section 6 refunds you in full within 30 days,
+      for any reason or none.
+
+5. VALIDATION IS OFFLINE, AND WHAT THAT COSTS
+
+The app verifies your key locally, using a signature it can check without asking
+anyone. It does not contact a licensing server, and it has no way to: the licence
+check makes no network call, and the app as a whole opens no connection of its
+own beyond the update check in Section 9. That is checked on every build rather
+than asserted — see `scripts/audit-network.sh` in the repository, which sweeps
+every binary in the bundle and asserts the update check ships switched off. Run
+it against the copy you downloaded if you would rather not take our word.
+
+Two consequences follow, and they are stated here rather than discovered:
+
+  (a) There is no way to deactivate a key remotely. If a key is revoked under
+      Section 6 or Section 12, it stops being accepted by builds released after
+      the revocation. Builds you already have continue to accept it. This is a
+      deliberate trade and the alternative was a program that phones home.
+
+  (b) Nothing about your usage is measured, transmitted or retained. There are no
+      installation counts, no licence check-ins, no analytics, and no crash
+      reporting. If you never write to us, we have no way to know you are running
+      it.
+
+6. REFUNDS
+
+Within 30 days of purchase, for any reason or none, ask and the purchase is
+refunded in full. Reply to the email your key came in, or write to
+olivier@mgcrea.io from the address the key was issued to. The key is revoked on
+refund, with the effect described in Section 5(a).
+
+This is deliberately generous and deliberately load-bearing. It is the thing that
+makes buying first a reasonable request, so it is not administered grudgingly and
+there is no form to fill in.
+
+If you are a consumer in the European Union you also have a statutory right of
+withdrawal, which the 30-day policy above is intended to exceed rather than
+replace. Because the key is delivered immediately, checkout asks you to consent
+to that immediate delivery and to acknowledge that doing so ends the statutory
+withdrawal right once delivery is complete. The refund policy above applies
+regardless.
+
+7. WHAT THE SOFTWARE DOES WITH YOUR DATA
+
+Drakar runs the `claude` and `codex` you installed, in the folders you open, and
+shows what they do. Nothing leaves your Mac by way of Drakar itself.
+
+Three honest limits on that sentence:
+
+  (a) The agents are the vendors' programs. They talk to Anthropic and OpenAI
+      over your own sign-in, read and change your files as you allow them to, and
+      have their own network behaviour and their own terms. What they send is
+      between you and those vendors.
+
+  (b) Drakar reads what those agents write under `~/.claude`, any
+      `~/.claude-<name>` beside it, and `~/.codex`, and writes there only when you
+      ask it to: installing or removing a skill, moving a folder's sessions to
+      another account, and the lock file a `claude --ide` in a terminal looks for
+      while the editor bridge runs. Skills installed from git are cloned under
+      `~/.agents/skill-sources`.
+
+  (c) So that sessions outlive the app, a helper inside it keeps the agents
+      running and logs what passes between them and Drakar, under Application
+      Support. A session's log is deleted once it has ended and Drakar has read
+      its end. None of it leaves your Mac.
+
+8. WHAT IT ASKS OF YOUR SYSTEM
+
+Drakar ships with no entitlements at all, on the app or on its helper, and the
+audit asserts that. It is not sandboxed, because the agents it starts work on
+your files and read their own settings in your home folder. It asks for no
+Accessibility or other privacy permission.
+
+It listens on two sockets and opens neither to the network: the editor bridge, on
+127.0.0.1 only, which answers only a client holding the token it writes, readable
+by you alone, into Claude Code's lock file; and its helper's, a Unix socket only
+your own Drakar can reach. `SECURITY.md` in the repository says how to check both.
+
+9. UPDATES
+
+Updates within your major version are free.
+
+Unlike the rest of the app, the update check is a network call, and it is the
+only one. It is off on a fresh install and stays off until you answer the
+question. Turning it on is a standing preference in Settings ▸ Updates; "Check
+Now…" there is a single check you asked for and leaves the standing preference
+alone. No identifier is sent with either, and nothing is installed without asking.
+
+10. THE SOURCE IS SEPARATE
+
+This agreement grants you no rights in the source code, and the MIT licence the
+source is published under grants you no rights in these builds. The two are
+independent, and you may hold both at once.
+
+The MIT licence lets you read, modify, build and run the source, and nothing here
+takes any of that away. The licence check is in the source, so a build you make
+yourself asks for a key exactly as a build from us does, and the MIT licence also
+lets you remove that check from your own copy. We have built no defences against
+it and do not intend to — the check is a few readable lines, and obscuring them
+would only cost the audit the readability it exists for.
+
+So what stands between the two is a request, not a technical measure or a legal
+one: if you use Drakar, buy a key. That is how the builds, and the work of keeping
+them working, get paid for.
+
+11. SUCCESSION
+
+The bundle identifier `io.mgcrea.Drakar`, and the signing identity it is checked
+against, are what your preferences are stored under and what the helper trusts.
+If they changed hands quietly, a new owner would inherit, on an ordinary update
+and with no prompt, a program that already runs agents in your projects with
+your permissions.
+
+So they will not change hands quietly. If this project is sold, transferred or
+abandoned:
+
+  (a) A change of the party controlling the signing identity or the bundle
+      identifier will be announced in the release notes of the first build made
+      under new control, and on drakar.mgcrea.io, before that build ships.
+
+  (b) If the project is abandoned, the source remains under the MIT licence and
+      the last published build remains licensed to you under this agreement.
+      Section 12 does not terminate it.
+
+  (c) A successor is bound by this section as a condition of the transfer.
+
+12. TERMINATION
+
+This licence ends if you breach it and do not cure the breach within 30 days of
+becoming aware of it — in practice, if you resell or publish your key. On
+termination the key is revoked, with the effect described in Section 5(a).
+
+Nothing else terminates it. It does not expire, it is not conditional on
+continued payment, and it is not withdrawn because the project stops.
+
+13. NO WARRANTY
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+
+This does not limit any warranty or remedy that applicable consumer law grants
+you and does not permit us to disclaim — in the European Union, the statutory
+conformity guarantee in particular.
+
+14. LIMITATION OF LIABILITY
+
+To the extent permitted by law, total liability arising out of or in connection
+with the Software is limited to the amount you paid for the licence.
+
+Nothing here excludes liability for death or personal injury caused by
+negligence, for fraud, or for anything else that cannot lawfully be excluded.
+
+15. GOVERNING LAW
+
+French law governs this agreement. If you are a consumer, this does not deprive
+you of the protection of the mandatory rules of the country where you live, and
+you may bring proceedings in your own courts.
+
+16. CONTACT
+
+Magenta Creations
+olivier@mgcrea.io
+https://drakar.mgcrea.io

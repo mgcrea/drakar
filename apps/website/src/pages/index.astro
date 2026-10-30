@@ -6,10 +6,20 @@
  * is the skeleton drakar.mgcrea.io needs to serve updates (_redirects is the
  * part the app depends on); the pitch, screenshots and pricing come later.
  *
- * No price: nothing is on sale while LicenceLinks.isSelling is false in
- * apps/apple, so the page says what is true today, that it is free in beta.
+ * The price and the Buy button only while SELLING, the mirror of
+ * LicenceLinks.isSelling in apps/apple: a price on a page whose /buy goes nowhere
+ * would be the one promise here that is not true.
  */
-import { APP_NAME, DOWNLOAD, MIN_MACOS, REPO_URL, TAGLINE } from "../config";
+import {
+  APP_NAME,
+  DOWNLOAD,
+  MIN_MACOS,
+  PRICING,
+  REPO_URL,
+  SELLING,
+  TAGLINE,
+  TRIAL,
+} from "../config";
 import Layout from "../layouts/Layout.astro";
 
 const button =
@@ -35,6 +45,16 @@ const button =
       <a href={DOWNLOAD.zip} class:list={[button, "bg-accent text-accent-ink hover:bg-accent-hi"]}>
         Download for {MIN_MACOS}
       </a>
+      {
+        SELLING && (
+          <a
+            href={PRICING.buy}
+            class:list={[button, "border border-rule-2 text-fg hover:border-accent hover:text-accent-hi"]}
+          >
+            Buy a licence · {PRICING.price}
+          </a>
+        )
+      }
       <a
         href={REPO_URL}
         rel="noopener"
@@ -43,6 +63,19 @@ const button =
         Source on GitHub
       </a>
     </div>
-    <p class="mono m-0">Free while in beta</p>
+    {
+      SELLING ? (
+        <p class="m-0 max-w-[62ch] text-[15px] leading-[1.6] text-pretty text-fg-dim">
+          {PRICING.price} (or {PRICING.eur}, VAT included) once, for {PRICING.covers}. No
+          subscription. Try it free for {TRIAL.minutes} minutes from the app first, and you have{" "}
+          {PRICING.refundDays} days to change your mind:{" "}
+          <a href="/terms/" class="text-accent underline underline-offset-2 hover:text-accent-hi"
+            >the terms</a
+          >.
+        </p>
+      ) : (
+        <p class="mono m-0">Free while in beta</p>
+      )
+    }
   </main>
 </Layout>

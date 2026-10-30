@@ -18,12 +18,10 @@
 // on a phone; the attachment is what they drop on the Licence pane without
 // selecting 240 characters of base64 by hand.
 //
-// The refund sentence is armada's, where it is there because its EULA (§6) says
-// it. Drakar has no EULA or terms page yet, so for now this sentence, and the
-// same one on /thanks in pages.ts, is the whole of the promise. Whatever terms
-// Drakar publishes before its first sale must say the same: copy that promises
-// something the terms do not is the expensive kind of wrong, so the two move
-// together or not at all.
+// The refund sentence is there because the EULA says it (apps/apple/EULA §6,
+// published at drakar.mgcrea.io/terms), as is the same one on /thanks in
+// pages.ts. Copy that promises something the terms do not is the expensive kind
+// of wrong, so the three move together or not at all.
 //
 // Line 3 of the body is the key and nothing else. test/worker/index.test.ts reads
 // it back from there to check the mail carried the stored key.

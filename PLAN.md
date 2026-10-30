@@ -281,9 +281,10 @@ armada's did.
    `make sign` refuses until then.
 5. **Price and trial.** _Decided 2026-10-28: $14.99, one-time,_ armada's price, with the
    trio's 30-minute in-memory trial, started from a button and ended by quitting. Not sold
-   until the owner opens the store, after the first (free) release:
-   `LicenceLinks.isSelling` stays false, the Worker refuses every sale while
-   `EXPECTED_PRICE_ID` is empty, and the site says "Free while in beta".
+   until the owner opened the store, after the first (free) release, 1.0.0. _On sale from
+   1.1.0 (2026-10-30), as the trio sell:_ $14.99 and €14.99 set explicitly on the Stripe
+   price, the trio's Payment Link settings, and armada's EULA adapted
+   (`apps/apple/EULA`, published at `/terms`).
 6. **The site.** The skeleton exists in `apps/website` (2026-10-28): a landing page,
    `/privacy`, and the redirects the app depends on (`/appcast.xml` is `SUFeedURL`). Not
    deployed yet: `drakar.mgcrea.io` and the `mgcrea/support/drakar` tracker, wired into

@@ -10,11 +10,9 @@ import UniformTypeIdentifiers
 /// somewhere with room and somewhere that survives losing focus.
 ///
 /// Armada's pane, copied, with the explanation rewritten for what Drakar's gate actually
-/// does. DIVERGES from armada in one state armada never shipped in: while nothing is sold
-/// (`isSelling` false) the pane says Drakar is free during the beta, and offers neither a
-/// Buy button nor a trial, since neither has anything to unlock. Key entry stays, so a key
-/// can be checked before the store opens. Armada's `LicenseLinks`, at the top of its pane,
-/// is `LicenceLinks` here, in a file of its own.
+/// does. Armada's `LicenseLinks`, at the top of its pane, is `LicenceLinks` here, in a file
+/// of its own. With `isSelling` false (only in tests now) nothing is gated, so a refused
+/// key is shown as armada shows it, and the Buy button is hidden.
 struct LicensePane: View {
   @State private var entry = ""
   @State private var problem: String?
@@ -52,10 +50,9 @@ struct LicensePane: View {
       // answer, and a trial that ended between two reads would have them
       // contradict each other.
       let entitlement = monitor.current
-      let isSelling = monitor.isSelling
 
       HStack(alignment: .top, spacing: 14) {
-        badge(for: entitlement, isSelling: isSelling)
+        badge(for: entitlement)
 
         VStack(alignment: .leading, spacing: 4) {
           switch entitlement {
@@ -68,17 +65,6 @@ struct LicensePane: View {
           case .trial:
             Text("Trial · \(Trial.remainingText)").foregroundStyle(.blue)
             trialExplanation
-          case .refused(let reason) where !isSelling:
-            Text("Free during the beta").foregroundStyle(.green)
-            Text("Drakar is free while it is in beta. A licence will be a one-time purchase.")
-              .font(.caption).foregroundStyle(.secondary)
-              .fixedSize(horizontal: false, vertical: true)
-            // A key that is present and refused says why, even while nothing needs one.
-            if LicenseStore.raw != nil {
-              Text(reason)
-                .font(.caption).foregroundStyle(.orange)
-                .fixedSize(horizontal: false, vertical: true)
-            }
           case .refused(let reason):
             Text("Unlicensed").foregroundStyle(.orange)
             Text(reason)
@@ -96,12 +82,11 @@ struct LicensePane: View {
   /// The glyph, alone in a column to the left of everything the state has to say.
   /// Fixed width, because a triangle is narrower than a seal and without it every
   /// sentence in the block would shift sideways the moment a trial ended.
-  private func badge(for entitlement: Entitlement, isSelling: Bool) -> some View {
+  private func badge(for entitlement: Entitlement) -> some View {
     let (symbol, tint): (String, Color) =
       switch entitlement {
       case .licensed: ("checkmark.seal.fill", .green)
       case .trial: ("clock.fill", .blue)
-      case .refused where !isSelling: ("checkmark.circle.fill", .green)
       case .refused: ("exclamationmark.triangle.fill", .orange)
       }
 

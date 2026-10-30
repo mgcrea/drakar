@@ -7,8 +7,8 @@ import SwiftUI
 /// The panes, and the order they sit in: General, Transcript, Theme, Attention, Updates,
 /// Licence, What's New, About.
 ///
-/// Licence follows Updates. It is there before anything is sold, saying so and taking a
-/// key, and offers nothing to buy until `LicenceLinks.isSelling`.
+/// Licence follows Updates: a key, the trial, and the Buy button while
+/// `LicenceLinks.isSelling`.
 ///
 /// What's New sits beside About: both answer what this build is rather than how it behaves.
 /// DIVERGES from armada, which puts the two in an `.information` section of their own:

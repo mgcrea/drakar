@@ -11,7 +11,9 @@ Open source under the [MIT licence](LICENSE), on GitHub at
 [mgcrea/drakar](https://github.com/mgcrea/drakar). Distributed directly (Developer ID,
 notarized, updated by Sparkle) from [drakar.mgcrea.io](https://drakar.mgcrea.io), never
 through the Mac App Store: it spawns processes that work on your files, which App Sandbox
-forbids. Free while in beta; nothing is on sale yet.
+forbids. The signed builds take a licence key, $14.99 (€14.99 with VAT) once for every 1.x
+release, with a 30-minute trial and a 30-day refund, under [their own terms](apps/apple/EULA);
+the source is free to read and build.
 
 Drakar listens on one network socket, on 127.0.0.1, which answers only a client holding
 this launch's token, and its session host on one Unix socket, which only your own Drakar

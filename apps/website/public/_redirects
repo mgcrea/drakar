@@ -27,3 +27,9 @@
 # pane links to drakar.mgcrea.io/buy (LicenceLinks.buy), and a Stripe URL
 # compiled into a shipped binary could never be repointed. Until then /buy
 # answers with the 404 page.
+
+# The payment link, behind a path this site owns for the same reason as the rest:
+# the app's Licence pane links to /buy, and a Stripe URL compiled into a shipped
+# binary could never be repointed. Live since 2026-10-30, which is SELLING in
+# src/config.ts: the pages that say whether anything is on sale follow that flag.
+/buy          https://buy.stripe.com/28E6oH8080pM1KsfRIdZ603  302

@@ -13,16 +13,14 @@ enum LicenceLinks {
   /// Whether /buy resolves to a live payment link.
   ///
   /// A button here is a promise that there is something on the other end of it. The
-  /// website has no flag of its own (armada's has `SELLING`): today it says "Free while
-  /// in beta" and its `_redirects` has no `/buy`, and Phase 4 adds the `/buy` 302 and the
-  /// price there when it flips this. The two move together, and this one is the slower
-  /// half: the site can be redeployed in a minute, while a build that has shipped carries
-  /// whatever it was compiled with until the next release. Every buy button in the app is
-  /// gated on it.
+  /// website's `SELLING` (apps/website/src/config.ts) mirrors it, and its `_redirects`
+  /// sends `/buy` to the live payment link. The two move together, and this one is the
+  /// slower half: the site can be redeployed in a minute, while a build that has shipped
+  /// carries whatever it was compiled with until the next release. Every buy button in
+  /// the app is gated on it, and so is the licence gate itself: while it is false nothing
+  /// is gated at all.
   ///
-  /// DIVERGES from armada, which only shipped once it was selling: Drakar ships while
-  /// the store is closed, and while this is false nothing is gated at all. Flipping it
-  /// is the release that opens the store and turns the gate on, so it moves only with
-  /// a live payment link behind /buy.
-  static let isSelling = false
+  /// True from 1.1.0, the release that opened the store. DIVERGES from armada, which only
+  /// shipped once it was selling: Drakar 1.0.0 shipped free while the store was closed.
+  static let isSelling = true
 }
