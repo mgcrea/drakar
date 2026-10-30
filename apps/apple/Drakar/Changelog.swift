@@ -217,7 +217,7 @@ nonisolated enum Changelog {
   // swift-format-ignore
   private static let v1_0_0: Release = Release(
     version: "1.0.0",
-    date: "",
+    date: "2026-10-30",
     sections: [
       Section(
         name: "Added",
@@ -258,6 +258,48 @@ nonisolated enum Changelog {
             headline: "Your selection goes with the prompt.",
             body: [
               "What you select, or the file you have open, goes with your next prompt, as in the VS Code extension, and with a terminal `claude --ide`'s too. ⌥K pins a selection so the next one can be added beside it.",
+            ]),
+          Entry(
+            ordinal: 6,
+            headline: "Sessions that outlive the app.",
+            body: [
+              "A small helper holds the `claude` and `codex` processes, so a quit, a crash or an update leaves them working, and the next launch attaches again and replays what they did meanwhile.",
+            ]),
+          Entry(
+            ordinal: 7,
+            headline: "Many sessions, one window.",
+            body: [
+              "The sidebar sorts what needs you first; ⌥⌘↑ and ⌥⌘↓ move between sessions, and Next After Replying shows the next one waiting. Mark several with ⌘-click and send them one prompt, or run a skill in a session per subfolder, a few at a time.",
+            ]),
+          Entry(
+            ordinal: 8,
+            headline: "Answered where they are asked.",
+            body: [
+              "Permission prompts, the agent's questions and an MCP server's questions are answered in their card in the transcript; a yes-or-no question also from the toolbar, with ⌥⌘Y or ⌥⌘N.",
+            ]),
+          Entry(
+            ordinal: 9,
+            headline: "Tasks and subagents.",
+            body: [
+              "A subagent's card shows its whole conversation. A running task can be stopped, sent to the background, and its output read.",
+            ]),
+          Entry(
+            ordinal: 10,
+            headline: "Sessions run elsewhere.",
+            body: [
+              "A session a terminal or VS Code runs shows its state in the sidebar, and can be moved into the window. A folder's sessions can move to another account.",
+            ]),
+          Entry(
+            ordinal: 11,
+            headline: "A Skills window.",
+            body: [
+              "Both agents' skills, commands and plugins in one list, installed from a git address or a folder, shared between projects, and deleted without leaving dangling links.",
+            ]),
+          Entry(
+            ordinal: 12,
+            headline: "Updates, when you ask for them.",
+            body: [
+              "Drakar checks for updates only once you said yes. Settings › What's New keeps each release's notes, with a count on its row while some are unread.",
             ]),
         ]),
     ])
