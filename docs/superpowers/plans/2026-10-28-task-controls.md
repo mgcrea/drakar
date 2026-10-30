@@ -45,9 +45,11 @@ DrakarKit SPM package. No new dependencies.
 - Output polls every 1 s, only while its section is open, its window is visible and the task
   runs, plus one fetch when the task ends. A request with no reply re-enables its button
   after 10 s.
-- Task-control requests are written without a `SessionNote`. A poll a second would otherwise
-  grow the session host's log. Their request IDs are `<prefix>-<UUID>`, outside the counter
-  that replay rebuilds.
+- Task-control requests are written without a `SessionNote`, so a replay never sends one
+  again. Their request IDs are `<prefix>-<UUID>`, outside the counter that replay rebuilds.
+  (Corrected after landing: skipping the note does not keep them out of the session host's
+  log, which records every stdin write and stdout line; that is why Output reads the task's
+  file instead of polling `get_task_output`.)
 - Codex: `AgentFeatures.controlsTasks` is false and nothing shows.
 - Deployment target macOS 26.0. Format with `make -C apps/apple format-swift` before each
   commit.

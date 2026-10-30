@@ -221,7 +221,10 @@ Before any prompt, no API call:
 - `{"subtype":"get_settings"}` → `{effective, sources, applied}`; `applied` is
   `{model, effort, advisor, ultracode, …}`, the resolved model id and the effort it runs
   with: `settings.json`'s `effortLevel`, else `--effort`'s, else the model's own. `effort`
-  is null on a model without effort.
+  is null on a model without effort. `effective` is the merged settings: a
+  `permissions.disableAutoMode` (or top-level `disableAutoMode`) of `"disable"` turns auto
+  mode off, while `initialize` still marks every model `supportsAutoMode: true` (seen on
+  2.1.312, 2026-10-28, with a project `settings.json`), so only this reply says.
 - `{"subtype":"apply_flag_settings","settings":{"effortLevel":"low"}}` → empty success,
   and `applied.effort` follows. The flag layer is the process's alone: `settings.json` is
   not touched. An unknown level (`bogus`) is a success too, and changes nothing.
