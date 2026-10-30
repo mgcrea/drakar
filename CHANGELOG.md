@@ -4,9 +4,35 @@ Notable changes to this repository. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and every published artifact follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
-Releases are tagged `app-v<version>` the way the sibling repos are, `app-v1.0.0` being the newest.
+Releases are tagged `app-v<version>` the way the sibling repos are, `app-v1.1.0` being the newest.
 The GitHub release notes, the Sparkle update dialog and the app's What's New pane are all rendered
 from this file, which is the curated summary. `### Internal` sections are left out of all three.
+
+## [1.1.0] - 2026-10-30
+
+**Drakar is on sale, and a prompt can rewind.** A licence is $14.99 (€14.99 with VAT), once, for
+every 1.x release on every Mac you own, with a 30-minute trial and a 30-day refund. And any prompt
+in a Claude Code session can now fork the conversation from there, rewind your files to that
+point, or both.
+
+### Added
+
+- **A licence, sold once.** Settings › Licence takes a key, starts a 30-minute trial, and links to
+  the store. Without a key or a trial Drakar sends nothing to an agent, and everything else stays:
+  your projects, sessions, transcripts and diffs, and a turn already running keeps going. The key
+  is checked on your Mac, never by a server. The terms are at drakar.mgcrea.io/terms.
+- **Rewind and fork from a prompt.** Hover a prompt, or right-click beside it: fork the
+  conversation from there, rewind the files Claude changed since, or both. The rewind shows which
+  files it would restore, and how much, before anything changes.
+- **Mark All Sessions.** Session › Mark All Sessions (⌥⌘A) marks every session in the window, from
+  anywhere, for one prompt to all of them.
+
+### Fixed
+
+- A fork you have not sent yet comes back after a relaunch, with its draft.
+- A question's card takes the keyboard when its session is opened from the sidebar.
+- A subagent sent to the background says so on its card.
+- A rewind overtaken by a turn that starts under it says so, rather than reporting a failure.
 
 ## [1.0.0] - 2026-10-30
 

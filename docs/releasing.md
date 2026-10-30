@@ -2,8 +2,8 @@
 
 How a Drakar release is cut. Drakar ships Developer ID signed and notarized, as a GitHub release
 with a Sparkle appcast beside it. It is not an App Store app and has no store listing. It is
-built to be sold with an offline licence key, but nothing is on sale until the owner opens the
-store (`LicenceLinks.isSelling` is false): the first release is free.
+sold with an offline licence key: 1.0.0 was free, and the store opened with 1.1.0
+(`LicenceLinks.isSelling` true, 2026-10-30).
 
 This is armada's runbook, copied on 2026-10-29, and armada's own is the model wherever the two
 read alike. Where Drakar differs it says so.
@@ -174,27 +174,43 @@ The first release commit, beyond what every release commit carries (below), also
   `/checksum` and `/appcast.xml` start resolving the moment the release exists, because they are
   302s to `releases/latest/download`.
 
-Then [every release](#every-release), tag first. The site's "Free while in beta" stays until the
-store opens; so does `isSelling = false`.
+Then [every release](#every-release), tag first. The site's "Free while in beta" stayed until the
+store opened (Phase 4); so did `isSelling = false`.
 
 ### Phase 4: before the store opens
 
-Only when the owner says to open the store.
+Only when the owner says to open the store. Done on 2026-10-30, as the trio sell, and released
+in 1.1.0.
 
-1. **The owner confirms the refund terms.** The licence email (`apps/api/src/email.ts`) and the
-   Worker's `/thanks` page (`apps/api/src/pages.ts`) promise armada's refund: within 30 days, in
-   full, for any reason. Armada's EULA says so; Drakar has no terms page, so that sentence is the
-   whole of the promise, and so is the trade the offline check makes (a refunded key keeps
-   working until the next release). The owner confirms both, adds a terms page if wanted, and
-   the email, `/thanks` and any terms say the same thing before the first sale.
-2. **Stripe**, live and test: product "Drakar", price $14.99 one-time, a Payment Link with
-   `price_id` metadata redirecting to the Worker's `/thanks`, and a webhook endpoint with all six
-   events. Its signing secret goes in `apps/api/.prod.vars` as `STRIPE_WEBHOOK_SECRET`, then
-   `pnpm -C apps/api secrets:prod`.
-3. **`EXPECTED_PRICE_ID`** in `apps/api/wrangler.jsonc`, and the `/buy` 302 in
-   `apps/website/public/_redirects`. Pushing `main` deploys both.
+1. **The owner confirms the refund terms.** Done: armada's, 30 days, in full, for any reason, in
+   `apps/apple/EULA` (§6), armada's EULA with its gate, data and system sections rewritten for
+   Drakar and its source section for the MIT licence (it asks, and forbids nothing). It is
+   published at `/terms`, rendered from that file, and the licence email (`apps/api/src/email.ts`),
+   the Worker's `/thanks` page (`apps/api/src/pages.ts`) and the Payment Link's custom text say
+   the same. Change one, change all of them.
+2. **Stripe**, live and test, with the trio's settings: product "Drakar" (tax code
+   `txcd_10202000`, statement descriptor `MGCREA DRAKAR`, image `/product-image.png`), a one-time
+   price of €14.99 with a $14.99 currency option, both set explicitly, and a Payment Link with
+   `price_id`, `major` and `rung` in its metadata, required terms consent with the EU
+   withdrawal wording, automatic tax and tax IDs, redirecting to the Worker's `/thanks`.
+
+   |                | Live                                         | Test                                              |
+   | -------------- | -------------------------------------------- | ------------------------------------------------- |
+   | Product        | `prod_VXQ2PzJ9ko89Hz`                        | `prod_VXQ1EXH1Q36ypq`                             |
+   | Price          | `price_1UWLCYFQJry8F0HMyao4Ohsg`             | `price_1UWLBbFQJry8F0HMGuwMfNpn`                  |
+   | Payment Link   | `buy.stripe.com/28E6oH8080pM1KsfRIdZ603`     | `buy.stripe.com/test_28E6oH8080pM1KsfRIdZ603`     |
+   | Worker         | `api.drakar.mgcrea.io`                       | `drakar-api-test.mgcrea.workers.dev`              |
+
+   Each mode has a webhook endpoint at its Worker's `/stripe/webhook` with the six events
+   (`checkout.session.completed`, `.async_payment_succeeded`, `.async_payment_failed`,
+   `charge.refunded`, `charge.dispute.created`, `charge.dispute.closed`). Made in the Dashboard,
+   since the API returns the signing secret only at creation; it goes from the clipboard into
+   `apps/api/.prod.vars` (or `.test.vars`) as `STRIPE_WEBHOOK_SECRET`, then
+   `pnpm -C apps/api secrets:prod` (or the `--env test` push `.test.vars.example` gives).
+3. **`EXPECTED_PRICE_ID`** in `apps/api/wrangler.jsonc`, live at the top and test under
+   `env.test`, and the `/buy` 302 in `apps/website/public/_redirects`. Pushing `main` deploys both.
 4. **`LicenceLinks.isSelling = true`**, the Licence pane's beta copy gone, and the site's "Free
-   while in beta" replaced with the price, then a release.
+   while in beta" replaced with the price, behind the site's `SELLING`, then a release (1.1.0).
 
 ## Every release
 
@@ -347,7 +363,8 @@ the second release onward.
 - **The Stripe account is shared with armada, bastion and cupertino**, so every app's Worker
   receives every sale. Drakar's refuses anything but its own price, and fails closed when
   `EXPECTED_PRICE_ID` is empty: with that var blank it refuses every sale, Drakar's included.
-  That is the state until the store opens; once it does, never deploy `apps/api` with it unset.
+  That was the state until the store opened; now it is open, never deploy `apps/api` with it
+  unset.
 - **Late prose lands in the wrong section.** A bullet added after the retitle goes under the new
   version, not under a fresh `[Unreleased]`; add `## [Unreleased]` back after tagging if work
   continues, never before.

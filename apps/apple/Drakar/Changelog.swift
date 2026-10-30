@@ -205,14 +205,73 @@ nonisolated enum Changelog {
 
   // <generated:changelog> generated from CHANGELOG.md by `make changelog` — do not edit by hand
 
-  /// The most recent 1 releases, newest first.
+  /// The most recent 2 releases, newest first.
   ///
   /// Split into one `let` per release rather than a single nested literal.
   /// Swift's expression type-checker is superlinear in the depth of an array
   /// literal, and this one is releases of sections of entries of strings — the
   /// exact shape that turns into a multi-second type-check with no diagnostic.
   // swift-format-ignore
-  static let releases: [Release] = [v1_0_0]
+  static let releases: [Release] = [v1_1_0, v1_0_0]
+
+  // swift-format-ignore
+  private static let v1_1_0: Release = Release(
+    version: "1.1.0",
+    date: "2026-10-30",
+    sections: [
+      Section(
+        name: "Added",
+        lead: [],
+        entries: [
+          Entry(
+            ordinal: 0,
+            headline: "A licence, sold once.",
+            body: [
+              "Settings › Licence takes a key, starts a 30-minute trial, and links to the store. Without a key or a trial Drakar sends nothing to an agent, and everything else stays: your projects, sessions, transcripts and diffs, and a turn already running keeps going. The key is checked on your Mac, never by a server. The terms are at drakar.mgcrea.io/terms.",
+            ]),
+          Entry(
+            ordinal: 1,
+            headline: "Rewind and fork from a prompt.",
+            body: [
+              "Hover a prompt, or right-click beside it: fork the conversation from there, rewind the files Claude changed since, or both. The rewind shows which files it would restore, and how much, before anything changes.",
+            ]),
+          Entry(
+            ordinal: 2,
+            headline: "Mark All Sessions.",
+            body: [
+              "Session › Mark All Sessions (⌥⌘A) marks every session in the window, from anywhere, for one prompt to all of them.",
+            ]),
+        ]),
+      Section(
+        name: "Fixed",
+        lead: [],
+        entries: [
+          Entry(
+            ordinal: 3,
+            headline: nil,
+            body: [
+              "A fork you have not sent yet comes back after a relaunch, with its draft.",
+            ]),
+          Entry(
+            ordinal: 4,
+            headline: nil,
+            body: [
+              "A question's card takes the keyboard when its session is opened from the sidebar.",
+            ]),
+          Entry(
+            ordinal: 5,
+            headline: nil,
+            body: [
+              "A subagent sent to the background says so on its card.",
+            ]),
+          Entry(
+            ordinal: 6,
+            headline: nil,
+            body: [
+              "A rewind overtaken by a turn that starts under it says so, rather than reporting a failure.",
+            ]),
+        ]),
+    ])
 
   // swift-format-ignore
   private static let v1_0_0: Release = Release(
