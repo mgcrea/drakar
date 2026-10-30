@@ -174,6 +174,11 @@ private struct SessionCommands: View {
         set: { project?.movesOnAfterReply = $0 })
     )
     .disabled(project == nil)
+    // The sidebar's own ⌘A needs the list focused, and a click on a row gives the composer the
+    // keys, where ⌘A selects the draft: this one reaches the marks from anywhere.
+    Button("Mark All Sessions") { project?.markAll() }
+      .keyboardShortcut("a", modifiers: [.command, .option])
+      .disabled(project == nil)
     Button("Dismiss") { project?.dismissSelected() }
       .keyboardShortcut("d", modifiers: [.command, .option, .shift])
       .disabled(project?.canDismissSelected != true)
