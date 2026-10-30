@@ -316,12 +316,24 @@ struct StoredProject: Codable, Equatable {
   /// The batches still sending or running. Optional so that a window stored before they were
   /// kept still decodes.
   var fanOuts: [StoredFanOut]?
+  /// Forks that ran no turn, so have no transcript of their own to resume. Optional so that a
+  /// window stored before they were kept still decodes.
+  var pendingForks: [StoredFork]?
 
   /// Nothing worth bringing back: no session, no tab, no batch, and no sort or switch chosen.
   var isEmpty: Bool {
     sessions.isEmpty && documents?.isEmpty != false && sessionOrder == nil
       && movesOnAfterReply == nil && fanOuts?.isEmpty != false
+      && pendingForks?.isEmpty != false
   }
+}
+
+/// A fork not yet sent: what it forks and where, its name, and its composer's draft (a fork
+/// from a prompt holds that prompt's text).
+struct StoredFork: Codable, Equatable {
+  var target: ResumeTarget
+  var name: String?
+  var draft: String
 }
 
 /// Each project's `StoredProject`, app-wide in `UserDefaults` by folder. A window's scene
@@ -422,6 +434,15 @@ final class Project {
       let folder = URL(filePath: target.cwd, directoryHint: .isDirectory)
       let item = make(AgentSession(folder: folder, resuming: target))
       item.dismissedAsk = stored?.dismissedQuestions?[target.sessionID]
+      sessions.append(item)
+    }
+    // Each its own row, though it shares its original's session id until its first turn.
+    for fork in stored?.pendingForks ?? [] {
+      let folder = URL(filePath: fork.target.cwd, directoryHint: .isDirectory)
+      let session = AgentSession(folder: folder, resuming: fork.target)
+      if let name = fork.name { session.rename(to: name) }
+      let item = make(session)
+      item.draft = fork.draft
       sessions.append(item)
     }
     storedFanOuts = stored?.fanOuts ?? []
@@ -1625,6 +1646,14 @@ final class Project {
       } + dismissedElsewhere.filter { !ended.contains($0.key) }.map { ($0.key, $0.value) }
     // Batches not yet restored are kept as they were stored.
     let batches = fanOuts.map(storedFanOut) + storedFanOuts
+    // Only an unsent fork's draft is read, so only typing there writes the window again.
+    let forks = held.compactMap { item -> StoredFork? in
+      let session = item.session
+      guard session.savedTarget == nil, session.transcript.session == nil,
+        let target = session.resuming, target.forks == true
+      else { return nil }
+      return StoredFork(target: target, name: session.name, draft: item.draft)
+    }
     return StoredProject(
       sessions: held.compactMap(\.session.savedTarget),
       selected: selected.flatMap { $0.isWatching ? nil : $0.session.savedTarget?.sessionID },
@@ -1635,7 +1664,8 @@ final class Project {
       focusedPane: workspace.focusedPane,
       sessionOrder: sessionOrder == .opened ? nil : sessionOrder,
       movesOnAfterReply: movesOnAfterReply ? true : nil,
-      fanOuts: batches.isEmpty ? nil : batches)
+      fanOuts: batches.isEmpty ? nil : batches,
+      pendingForks: forks.isEmpty ? nil : forks)
   }
 
   private func make(_ session: AgentSession) -> ProjectSession {

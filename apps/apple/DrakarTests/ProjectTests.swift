@@ -263,6 +263,27 @@ struct ProjectTests {
     #expect(launch.configuration?.arguments.contains("--resume-session-at=r-1") == true)
   }
 
+  /// A fork writes no transcript until its first turn: kept by its target and draft, it comes
+  /// back after a relaunch beside its original, still forking at the same message.
+  @Test func anUnsentForkSurvivesARelaunch() async throws {
+    try writeTwoPrompts("a")
+    let project = Project(folder: folder)
+    let original = project.attach(target("a"))
+    let fork = try #require(await project.fork(original, from: "p-2", text: "Second"))
+    let whole = project.fork(original)
+    whole.draft = ""
+    let stored = try JSONDecoder().decode(
+      StoredProject.self, from: JSONEncoder().encode(project.stored))
+    let restored = Project(folder: folder, restoring: stored)
+    #expect(restored.sessions.count == 3)
+    let forks = restored.sessions.filter { $0.session.resuming?.forks == true }
+    #expect(forks.count == 2)
+    let fromPrompt = try #require(forks.first { $0.session.resuming?.resumeAt == "r-1" })
+    #expect(fromPrompt.session.resuming?.sessionID == "a")
+    #expect(fromPrompt.draft == fork.draft)
+    #expect(forks.contains { $0.session.resuming?.resumeAt == nil && $0.draft.isEmpty })
+  }
+
   /// Nothing comes before the first prompt: a new session in the same folder, picked as the
   /// original was, with the prompt's text in its composer.
   @Test func forkFromTheFirstPromptIsANewSession() async throws {
