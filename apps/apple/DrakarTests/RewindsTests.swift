@@ -86,20 +86,21 @@ struct RewindsTests {
     #expect(rewinds.phase == .failed(RewindCopy.noCheckpoint))
   }
 
-  /// A turn that starts while the sheet waits makes its list stale: no Rewind follows.
+  /// A turn that starts while the sheet waits makes its list stale: no Rewind follows, and the
+  /// sheet says why rather than that a rewind failed.
   @Test func aTurnFailsTheSheet() {
     let (rewinds, sent) = rewinds()
     rewinds.start(Self.request)
     rewinds.answered(.rewindAnswered(userMessageID: "u-a", dryRun: true, Self.dryRun()))
     rewinds.turnStarted()
-    #expect(rewinds.phase == .failed(RewindCopy.failed))
+    #expect(rewinds.phase == .failed(RewindCopy.turnStarted))
     rewinds.confirm()
     #expect(sent.commands == [.rewindFiles(userMessageID: "u-a", dryRun: true)])
     // A dry run still out: its late reply shows nothing either.
     rewinds.start(Self.request)
     rewinds.turnStarted()
     rewinds.answered(.rewindAnswered(userMessageID: "u-a", dryRun: true, Self.dryRun()))
-    #expect(rewinds.phase == .failed(RewindCopy.failed))
+    #expect(rewinds.phase == .failed(RewindCopy.turnStarted))
     // A rewind already sent is left to its reply.
     rewinds.cancel()
     rewinds.start(Self.request)
@@ -200,6 +201,23 @@ struct RewindsTests {
     #expect(closed.answered(.rewindAnswered(userMessageID: "u-a", dryRun: false, Self.rewound)))
     #expect(closed.phase == nil)
     #expect(closed.request == nil)
+
+    // A sheet started again since, its list shown: the files just changed under it, so no
+    // Rewind follows from that list.
+    let (again, sent) = self.rewinds(timeout: .milliseconds(50))
+    again.start(Self.request)
+    again.answered(.rewindAnswered(userMessageID: "u-a", dryRun: true, Self.dryRun()))
+    again.confirm()
+    for _ in 0..<100 where again.phase == .rewinding {
+      try await Task.sleep(for: .milliseconds(50))
+    }
+    again.cancel()
+    again.start(Self.request)
+    again.answered(.rewindAnswered(userMessageID: "u-a", dryRun: true, Self.dryRun()))
+    #expect(again.answered(.rewindAnswered(userMessageID: "u-a", dryRun: false, Self.rewound)))
+    #expect(again.phase == .failed(RewindCopy.failed))
+    again.confirm()
+    #expect(sent.commands.count == 3)
 
     // A late refusal changes nothing, and a process gone answers nothing late.
     let (refused, _) = self.rewinds(timeout: .milliseconds(50))
@@ -424,7 +442,7 @@ struct RewindsTests {
       return
     }
     session.send("hi")
-    #expect(session.rewinds.phase == .failed(RewindCopy.failed))
+    #expect(session.rewinds.phase == .failed(RewindCopy.turnStarted))
     session.rewinds.confirm()
     // Given time to arrive, the stand-in got the dry run alone.
     try await Task.sleep(for: .milliseconds(300))

@@ -113,6 +113,11 @@ final class Rewinds {
     if attempt == late.attempt, request?.messageID == messageID {
       detail = nil
       phase = .done
+    } else {
+      switch phase {
+      case .checking, .ready: staleSheet()
+      default: break
+      }
     }
     return true
   }
@@ -135,7 +140,8 @@ final class Rewinds {
     case .checking, .ready:
       outstanding = nil
       attempt += 1
-      fail(detail: nil)
+      phase = .failed(RewindCopy.turnStarted)
+      detail = nil
     default:
       break
     }
@@ -193,6 +199,14 @@ final class Rewinds {
       self.fail(detail: nil)
       if !outstanding.dryRun { self.late = (outstanding.messageID, self.attempt) }
     }
+  }
+
+  /// An earlier rewind wrote the files after this sheet asked what would change: its list,
+  /// shown or awaited, is stale, and no Rewind follows from it.
+  private func staleSheet() {
+    outstanding = nil
+    attempt += 1
+    fail(detail: nil)
   }
 
   private func fail(detail: String?) {

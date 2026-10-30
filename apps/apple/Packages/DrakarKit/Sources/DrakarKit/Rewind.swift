@@ -60,6 +60,10 @@ public enum RewindCopy {
     localized: "A new forked conversation will be created after rewinding.")
   /// Drakar's: an empty dry run in Fork and rewind.
   public static let nothingToRewind = String(localized: "No files to rewind.")
+  /// Drakar's: a turn started while the sheet waited, so its list may be out of date. Nothing
+  /// failed, and nothing was written.
+  public static let turnStarted = String(
+    localized: "Claude started a turn, so nothing was rewound. Try again once it ends.")
   /// Drakar's: a fork from a prompt that could not be made (the prompt is not in the file, a
   /// turn started), left in the session it was asked of.
   public static let notForked = String(localized: "Couldn't fork from this prompt.")

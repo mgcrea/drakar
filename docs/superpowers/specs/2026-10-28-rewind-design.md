@@ -113,8 +113,10 @@ Each came out of the builder check. Each is the writer's call, not something the
   included, not hidden. Nothing is queued: a queued rewind would write files the person
   approved before the agent changed them again.
 - **A turn while the sheet waits.** A turn starting while the sheet checks or shows the dry
-  run's list fails the sheet: the list may no longer hold. A rewind already sent is left to
-  its reply.
+  run's list fails the sheet: the list may no longer hold. The sheet says so in Drakar's
+  words ("Claude started a turn, so nothing was rewound. Try again once it ends."), not as a
+  failed rewind. A late success of an earlier rewind fails it the same way, with the plain
+  failure line. A rewind already sent is left to its reply.
 - **The sheet's buttons.** Return never presses Rewind; Esc is Never mind. Never mind is
   disabled while the real rewind runs, since it may already be writing.
 - **Nothing to rewind.** A plain "Rewind code" whose dry run lists no files shows "No files
