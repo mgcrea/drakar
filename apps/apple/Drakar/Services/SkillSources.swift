@@ -1,10 +1,9 @@
 import DrakarKit
 import Foundation
 
-/// Runs `git`, both outputs read as they come so a full pipe never stalls it, and stops it
-/// after a timeout or when the caller is cancelled. Waits on the termination handler rather
-/// than `waitUntilExit`, which can hold a thread of the shared pool (see `ClaudeVersion.read`).
-/// Off the main actor: it waits on a process.
+/// Runs `git` through DrakarKit's `ProcessRunner`: both outputs read as they come, stopped
+/// after a timeout or when the caller is cancelled, and no thread of the shared pool held
+/// while it waits. Off the main actor: it waits on a process.
 nonisolated enum GitRunner {
   nonisolated struct Output: Sendable {
     var status: Int32
@@ -13,10 +12,6 @@ nonisolated enum GitRunner {
     /// Stopped by the timeout.
     var timedOut: Bool
   }
-
-  /// How long a stopped git has to end, and its pipes to close: a process it started, such as
-  /// ssh or a credential helper, can hold them open after git is gone.
-  static let grace = DispatchTimeInterval.seconds(2)
 
   /// The first `git` on `path`; nil when there is none.
   static func locate(
@@ -30,117 +25,14 @@ nonisolated enum GitRunner {
       .first(where: isExecutable)
   }
 
-  /// A value given once, waited for by one caller whether or not its task is cancelled: git's
-  /// end and its outputs are waited for even after a cancel asked git to stop.
-  private final class Latch<Value: Sendable>: @unchecked Sendable {
-    private let lock = NSLock()
-    private var value: Value?
-    private var waiter: CheckedContinuation<Value, Never>?
-
-    func give(_ value: Value) {
-      lock.lock()
-      guard self.value == nil else { return lock.unlock() }
-      self.value = value
-      let waiter = waiter
-      self.waiter = nil
-      lock.unlock()
-      waiter?.resume(returning: value)
-    }
-
-    func wait() async -> Value {
-      await withCheckedContinuation { continuation in
-        lock.lock()
-        if let value {
-          lock.unlock()
-          continuation.resume(returning: value)
-        } else {
-          waiter = continuation
-          lock.unlock()
-        }
-      }
-    }
-  }
-
-  /// What one pipe says, read as it comes on a queue of its own, to its end or until `stop()`,
-  /// which closes the read end.
-  private final class PipeReader: @unchecked Sendable {
-    private let handle: FileHandle
-    private let source: DispatchSourceRead
-    private let result = Latch<Data>()
-    /// Touched on the source's queue only.
-    private var data = Data()
-
-    init(_ pipe: Pipe) {
-      handle = pipe.fileHandleForReading
-      let descriptor = handle.fileDescriptor
-      source = DispatchSource.makeReadSource(
-        fileDescriptor: descriptor, queue: DispatchQueue(label: "drakar.git.pipe"))
-      source.setEventHandler { [self] in
-        var buffer = [UInt8](repeating: 0, count: 65_536)
-        let count = Darwin.read(descriptor, &buffer, buffer.count)
-        if count > 0 {
-          data.append(contentsOf: buffer[..<count])
-        } else if count == 0 || (errno != EINTR && errno != EAGAIN) {
-          source.cancel()
-        }
-      }
-      // After the cancel handler no event handler runs, so the read end closes safely here.
-      source.setCancelHandler { [self] in
-        try? handle.close()
-        result.give(data)
-      }
-      source.resume()
-    }
-
-    func stop() { source.cancel() }
-
-    func read() async -> Data { await result.wait() }
-  }
-
   static func run(
     _ executable: URL, _ arguments: [String], environment: [String: String], timeout: Duration
   ) async throws -> Output {
-    let process = Process()
-    process.executableURL = executable
-    process.arguments = arguments
-    process.environment = environment
-    let output = Pipe()
-    let errors = Pipe()
-    process.standardOutput = output
-    process.standardError = errors
-    process.standardInput = FileHandle.nullDevice
-    let ended = Latch<Bool>()
-    process.terminationHandler = { _ in ended.give(true) }
-    try process.run()
-    let out = PipeReader(output)
-    let err = PipeReader(errors)
-    // Asks git to end; after the grace, ends it, and stops reading pipes something else holds.
-    let stop: @Sendable () -> Void = {
-      process.terminate()
-      DispatchQueue.global().asyncAfter(deadline: .now() + grace) {
-        if process.isRunning { kill(process.processIdentifier, SIGKILL) }
-        out.stop()
-        err.stop()
-      }
-    }
-    return await withTaskCancellationHandler {
-      let watchdog = Task {
-        try await Task.sleep(for: timeout)
-        guard process.isRunning else { return false }
-        stop()
-        return true
-      }
-      let outData = await out.read()
-      let errData = await err.read()
-      _ = await ended.wait()
-      watchdog.cancel()
-      let timedOut = (try? await watchdog.value) == true
-      return Output(
-        status: process.terminationStatus, output: String(decoding: outData, as: UTF8.self),
-        errors: String(decoding: errData, as: UTF8.self), timedOut: timedOut)
-    } onCancel: {
-      stop()
-    }
+    let result = try await ProcessRunner.run(
+      executable, arguments, environment: environment, timeout: timeout)
+    return Output(
+      status: result.status, output: String(decoding: result.output, as: UTF8.self),
+      errors: String(decoding: result.errors, as: UTF8.self), timedOut: result.timedOut)
   }
 }
 

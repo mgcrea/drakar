@@ -164,6 +164,9 @@ jobs:
   app:
     name: App
     runs-on: macos-latest
+    # A green run takes about ten minutes. A hung test held the 1.0.0 release run for three
+    # hours under the six-hour default before anyone looked; this fails it instead.
+    timeout-minutes: 30
     steps:
       # fetch-depth: 0 because CURRENT_PROJECT_VERSION is the commit count. A
       # shallow clone would silently count only what it fetched and produce a

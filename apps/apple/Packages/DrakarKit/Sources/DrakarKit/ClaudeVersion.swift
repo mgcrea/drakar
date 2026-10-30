@@ -52,29 +52,12 @@ public struct ClaudeVersion: Comparable, Sendable, CustomStringConvertible {
   public static func read(
     of executable: URL, environment: [String: String], timeout: Duration = .seconds(5)
   ) async -> ClaudeVersion? {
-    let process = Process()
-    process.executableURL = executable
-    process.arguments = ["--version"]
-    process.environment = environment
-    let output = Pipe()
-    process.standardOutput = output
-    process.standardError = FileHandle.nullDevice
-    process.standardInput = FileHandle.nullDevice
-    do { try process.run() } catch { return nil }
-
-    let watchdog = Task {
-      try await Task.sleep(for: timeout)
-      if process.isRunning { process.terminate() }
-    }
-    defer { watchdog.cancel() }
-    let data = await Task.detached { output.fileHandleForReading.readDataToEndOfFile() }.value
-    // Known hang, not fixed yet: in about 3 of 80 `make test` runs (2026-10-04),
-    // `ClaudeVersionTests.asksTheBinary` sat here forever, `waitUntilExit` blocking a
-    // thread of Swift's shared async pool, with the other process tests queued behind it.
-    // Settings calls this too. The likely fix is to await the process's
-    // `terminationHandler` instead of blocking.
-    process.waitUntilExit()
-    guard process.terminationStatus == 0 else { return nil }
-    return ClaudeVersion(String(decoding: data, as: UTF8.self))
+    guard
+      let result = try? await ProcessRunner.run(
+        executable, ["--version"], environment: environment, readsErrors: false,
+        timeout: timeout),
+      !result.timedOut, result.status == 0
+    else { return nil }
+    return ClaudeVersion(String(decoding: result.output, as: UTF8.self))
   }
 }
