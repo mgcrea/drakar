@@ -21,7 +21,20 @@ import Observation
 @MainActor
 @Observable
 final class EntitlementMonitor {
-  static let shared = EntitlementMonitor()
+  static let shared = EntitlementMonitor(isSelling: LicenceLinks.isSelling && !isTestHost)
+
+  /// The app's own test host, in a Debug build: there `shared` gates nothing, so the
+  /// suites that drive sessions send as they did before the store opened, and the gate's
+  /// own tests build monitors of their own with `isSelling` set. Fenced `#if DEBUG`, as
+  /// bastion's and cupertino's demo licence is: a shipped build answers the licence
+  /// question from a key, never from its environment.
+  private static var isTestHost: Bool {
+    #if DEBUG
+      ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+    #else
+      false
+    #endif
+  }
 
   /// Tests only: forces `allowsWork` for the current task, so parallel suites never share
   /// a flipped global. Task-local, as `ClaudeChoice.testSuite` is.
