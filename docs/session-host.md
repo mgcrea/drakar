@@ -122,7 +122,7 @@ fire-and-forget ones, in the process's attach stream.
 | `spawned` | to `spawn` | `id` |
 | `record` | attach stream | `id`, then the record (below) |
 | `caughtUp` | attach stream | `id`, `offset`: the log's end; what follows is live |
-| `stderr` | attach stream | `id`, `text` as it comes; an attach after the exit gets the tail |
+| `stderr` | attach stream | `id`, `text`: every attach gets the tail first, running or not, then what comes |
 | `exited` | attach stream | `id`, `status`; ends the stream |
 | `released` | unprompted | `id`: no app holds it any more, and it may be gone |
 | `refused` | answers | `reason`, free text |

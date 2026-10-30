@@ -87,6 +87,23 @@ struct ClaudeCommandTests {
     #expect(environment["EMPTY"] == "")
     #expect(ShellEnvironment.parse(Data("no marker".utf8)) == nil)
   }
+
+  /// A startup file that leaves a job running (`some-daemon >/dev/null &!`): the job keeps the
+  /// shell's outputs open, but the environment is read when the shell ends.
+  @Test(.timeLimit(.minutes(1))) func aJobTheShellLeavesRunningDoesNotHoldTheRead() async throws {
+    let folder = FileManager.default.temporaryDirectory.appending(
+      path: "drakar-shell-\(UUID().uuidString)", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: folder) }
+    let shell = folder.appending(path: "zsh")
+    try Data("#!/bin/sh\nsleep 8 &\nprintf '__DRAKAR_ENV__PATH=/a:/b\\0'\n".utf8)
+      .write(to: shell)
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: shell.path)
+    let started = ContinuousClock.now
+    let environment = await ShellEnvironment.read(shell: shell.path, timeout: .seconds(5))
+    #expect(environment?["PATH"] == "/a:/b")
+    #expect(ContinuousClock.now - started < .seconds(2))
+  }
 }
 
 /// Which `ProcessTransport` a test runs its stand-in agent through.
@@ -281,5 +298,76 @@ struct ClaudeVersionTests {
     try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: silent.path)
     #expect(
       await ClaudeVersion.read(of: silent, environment: [:], timeout: .milliseconds(200)) == nil)
+  }
+
+  /// More hung binaries at once than the pool has threads: each read used to hold one while it
+  /// waited, so no timeout could run until the binaries ended by themselves.
+  @Test(.timeLimit(.minutes(1))) func manyHungBinariesAtOnceAllTimeOut() async throws {
+    let folder = FileManager.default.temporaryDirectory.appending(
+      path: "drakar-version-\(UUID().uuidString)", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: folder) }
+    let hung = folder.appending(path: "claude")
+    try Data("#!/bin/sh\nexec sleep 30\n".utf8).write(to: hung)
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: hung.path)
+    let count = ProcessInfo.processInfo.activeProcessorCount * 2
+    let started = ContinuousClock.now
+    let versions = await withTaskGroup(of: ClaudeVersion?.self) { group in
+      for _ in 0..<count {
+        group.addTask {
+          await ClaudeVersion.read(of: hung, environment: [:], timeout: .milliseconds(200))
+        }
+      }
+      return await group.reduce(into: []) { $0.append($1) }
+    }
+    #expect(versions.count == count)
+    #expect(versions.allSatisfy { $0 == nil })
+    #expect(ContinuousClock.now - started < .seconds(10))
+  }
+}
+
+@Suite("Running a short process", .timeLimit(.minutes(1)))
+struct ProcessRunnerTests {
+  /// More hung processes at once than the machine has cores. Blocking reads held a thread of
+  /// the shared pool each, so the timeouts that would stop them never got one: CI's 1.0.0
+  /// release run hung for three hours this way.
+  @Test func manyHungProcessesAtOnceAreAllStopped() async throws {
+    let count = ProcessInfo.processInfo.activeProcessorCount * 2
+    let started = ContinuousClock.now
+    let results = try await withThrowingTaskGroup(of: ProcessRunner.Output.self) { group in
+      for _ in 0..<count {
+        group.addTask {
+          try await ProcessRunner.run(
+            URL(filePath: "/bin/sleep"), ["30"], environment: [:], timeout: .milliseconds(200))
+        }
+      }
+      return try await group.reduce(into: []) { $0.append($1) }
+    }
+    #expect(results.count == count)
+    #expect(results.allSatisfy { $0.timedOut })
+    #expect(ContinuousClock.now - started < .seconds(10))
+  }
+
+  /// A shell that ends at once and leaves a job holding its outputs: the read ends with the
+  /// shell, with what it wrote, not when the job does or at the timeout.
+  @Test func aJobLeftHoldingThePipesDoesNotHoldTheRead() async throws {
+    let started = ContinuousClock.now
+    let result = try await ProcessRunner.run(
+      URL(filePath: "/bin/sh"), ["-c", "echo hi; sleep 8 >/dev/null & echo bye"],
+      environment: [:], timeout: .seconds(5))
+    #expect(ContinuousClock.now - started < .seconds(2))
+    #expect(String(decoding: result.output, as: UTF8.self) == "hi\nbye\n")
+    #expect(result.status == 0)
+    #expect(!result.timedOut)
+  }
+
+  @Test func readsBothOutputsAndTheStatus() async throws {
+    let result = try await ProcessRunner.run(
+      URL(filePath: "/bin/sh"), ["-c", "echo out; echo err >&2; exit 3"], environment: [:],
+      timeout: .seconds(5))
+    #expect(String(decoding: result.output, as: UTF8.self) == "out\n")
+    #expect(String(decoding: result.errors, as: UTF8.self) == "err\n")
+    #expect(result.status == 3)
+    #expect(!result.timedOut)
   }
 }

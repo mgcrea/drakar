@@ -297,6 +297,27 @@ import Testing
     #expect(events[3] == .exited(id: id, status: 3))
   }
 
+  /// What a running process wrote to stderr before any app attached reaches the app that
+  /// does, once: CI's 1.0.0 run lost the line a CLI wrote between the spawn and the attach.
+  @Test func stderrWrittenBeforeTheAttachReachesItOnce() async throws {
+    let host = try Host()
+    defer { host.close() }
+    let client = host.connect(pid: 42)
+    let id = try host.spawn(
+      "/bin/sh", ["-c", "echo early >&2; read line; echo late >&2"], from: client)
+    // Long enough for the host to have read the line before anyone attaches.
+    try await Task.sleep(for: .milliseconds(300))
+    #expect(host.held(id)?.running == true)
+    _ = host.core.handle(.attach(id: id, from: 0), from: client)
+    _ = host.core.handle(.write(id: id, bytes: bytes("go\n"), logged: nil), from: client)
+    #expect(await eventually { host.inbox.of(client).contains(.exited(id: id, status: 0)) })
+    let stderr = host.inbox.of(client).compactMap { event -> String? in
+      guard case .stderr(_, let text) = event else { return nil }
+      return text
+    }
+    #expect(stderr == ["early\n", "late\n"])
+  }
+
   @Test func attachIsRefusedWhileAnotherAppHolds() async throws {
     let host = try Host()
     defer { host.close() }

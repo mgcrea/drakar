@@ -1192,6 +1192,8 @@ final class AgentSession {
         return self.fail(
           String(localized: "Drakar lost the session host, and this session's process with it."))
       }
+      // The attach sends stderr's tail again, which holds all of this and more.
+      self.diagnostics = ""
       self.follow(hosted.reattach(on: client), of: hosted)
     }
   }

@@ -73,24 +73,13 @@ public enum ShellEnvironment {
     shell: String = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh",
     timeout: Duration = .seconds(5)
   ) async -> [String: String]? {
-    let process = Process()
-    process.executableURL = URL(filePath: shell)
-    process.arguments = ["-l", "-i", "-c", "printf '\(marker)'; /usr/bin/env -0"]
-    let output = Pipe()
-    process.standardOutput = output
-    process.standardError = FileHandle.nullDevice
-    process.standardInput = FileHandle.nullDevice
-    do { try process.run() } catch { return nil }
-
-    let watchdog = Task {
-      try await Task.sleep(for: timeout)
-      if process.isRunning { process.terminate() }
-    }
-    defer { watchdog.cancel() }
-    let data = await Task.detached { output.fileHandleForReading.readDataToEndOfFile() }.value
-    process.waitUntilExit()
-    guard process.terminationStatus == 0 else { return nil }
-    return parse(data)
+    guard
+      let result = try? await ProcessRunner.run(
+        URL(filePath: shell), ["-l", "-i", "-c", "printf '\(marker)'; /usr/bin/env -0"],
+        readsErrors: false, timeout: timeout),
+      !result.timedOut, result.status == 0
+    else { return nil }
+    return parse(result.output)
   }
 
   /// The variables after the marker. Exposed for tests.
