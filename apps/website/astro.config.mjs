@@ -19,15 +19,14 @@ export default defineConfig({
         "default-src 'self'",
         "img-src 'self' data:",
         "font-src 'self' data:",
-        // The beacon POSTs its measurement here (no `static.` prefix). Miss it and
-        // the script loads, runs, and every report stays empty.
+        // The beacon POSTs its measurement to the first (no `static.` prefix).
+        // Miss it and the script loads, runs, and every report stays empty.
         //
-        // DIVERGES from armada, which also names https://feedback.mgcrea.io for
-        // its /feedback/ form. This site has no form and posts nothing, so the
-        // origin would be an allowance with nothing behind it. When a feedback
-        // page arrives, the origin comes back with it, or its Send button is
-        // refused by the browser with no build error.
-        "connect-src 'self' https://cloudflareinsights.com",
+        // The second is the feedback Worker `/feedback/` posts to. Miss that and
+        // the form renders, the user types a report, presses Send, and the
+        // browser refuses the fetch: no build error, one console line nobody
+        // reads. `pnpm feedback:check` asserts it survives into the policy.
+        "connect-src 'self' https://cloudflareinsights.com https://feedback.mgcrea.io",
         "base-uri 'self'",
         "form-action 'self'",
         "object-src 'none'",
@@ -46,7 +45,9 @@ export default defineConfig({
         resources: ["'self'", "https://static.cloudflareinsights.com"],
       },
       // DIVERGES from armada, which allows `style` attributes for its drawings'
-      // computed widths. Nothing here carries one, so `style-src` stays strict.
+      // computed widths and glows. Nothing here carries one (the glows are
+      // classes in global.css), so `style-src` stays strict. A `style=` added to a
+      // page is refused in the build only, since the dev server sends no policy.
     },
   },
   vite: { plugins: [tailwindcss()] },

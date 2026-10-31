@@ -14,6 +14,16 @@
   --color-accent: var(--color-accent);
   --color-accent-hi: var(--color-accent-hi);
   --color-accent-ink: var(--color-accent-ink);
+  --color-plate-a: var(--color-plate-a);
+  --color-plate-b: var(--color-plate-b);
+  --color-ok: var(--color-ok);
+  --color-ok-ink: var(--color-ok-ink);
+  --color-warn: var(--color-warn);
+  --color-warn-ink: var(--color-warn-ink);
+  --color-danger: var(--color-danger);
+  --color-danger-ink: var(--color-danger-ink);
+  --color-chrome: var(--color-chrome);
+  --color-chrome-2: var(--color-chrome-2);
 }
 
 @theme {
@@ -26,9 +36,13 @@
   --font-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
   --radius-sm: 8px;
   --radius-md: 12px;
+  --container-wide: 1240px;
 }
 
+/* No scroll-padding-top: every anchored section carries `scroll-mt-20` for the
+   sticky bar, and the two together left a blank band above each jump. */
 html {
+  scroll-behavior: smooth;
   color-scheme: dark;
 }
 
@@ -39,6 +53,7 @@ body {
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  overflow-x: hidden;
 }
 
 ::selection {
@@ -46,8 +61,9 @@ body {
   color: var(--color-accent-ink);
 }
 
+/* The page width. The legal pages narrow it with their own max-width. */
 @utility wrap {
-  max-width: 760px;
+  max-width: var(--container-wide);
   margin-inline: auto;
   padding-inline: clamp(20px, 4vw, 40px);
 }
@@ -59,4 +75,166 @@ body {
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--color-fg-muted);
+}
+
+/* ── Plate light ─────────────────────────────────────────────────────────────
+   The icon's plate, blue to violet, as light rather than as a fill: the hero's
+   glow bled off the top edge, and smaller ones behind the pricing card and the
+   closing plate. Classes rather than `style` attributes, so the CSP needs no
+   style-src-attr allowance (astro.config.mjs). */
+@utility glow-hero {
+  background:
+    radial-gradient(38% 60% at 34% 0%, rgb(0 122 255 / 0.26) 0%, transparent 70%),
+    radial-gradient(38% 60% at 66% 0%, rgb(175 82 222 / 0.26) 0%, transparent 70%);
+}
+
+@utility glow-soft {
+  background:
+    radial-gradient(45% 100% at 38% 0%, rgb(0 122 255 / 0.16), transparent 72%),
+    radial-gradient(45% 100% at 62% 0%, rgb(175 82 222 / 0.16), transparent 72%);
+}
+
+/* The one gradient word: the plate across the text, left to right as the icon runs. */
+@utility text-plate {
+  background: linear-gradient(100deg, #5aa9ff 0%, var(--color-accent) 48%, #d38bf5 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* A hairline in the plate's colours, for the drawn window's top edge. */
+@utility rim-plate {
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgb(90 169 255 / 0.7),
+    rgb(211 139 245 / 0.7),
+    transparent
+  );
+}
+
+/* The faint dot grid of the icon's plate, behind a section. */
+@utility dots {
+  background-image: radial-gradient(rgb(255 255 255 / 0.06) 1px, transparent 1.2px);
+  background-size: 22px 22px;
+}
+
+/* ── Scroll reveal ───────────────────────────────────────────────────────────
+   `.in` is added by the observer in Layout.astro; reduced motion and a missing
+   observer both show everything at once. */
+.reveal {
+  opacity: 0;
+  transform: translateY(14px);
+  transition:
+    opacity 0.6s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.reveal.in {
+  opacity: 1;
+  transform: none;
+}
+
+/* ── The hero's transcript, arriving ─────────────────────────────────────────
+   Each turn of the drawn conversation fades up in order on load, as the stream
+   delivers them. The delay is a class per step rather than a style attribute. */
+@keyframes arrive {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+.arrive {
+  animation: arrive 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.step-1 {
+  animation-delay: 0.25s;
+}
+.step-2 {
+  animation-delay: 0.7s;
+}
+.step-3 {
+  animation-delay: 1.15s;
+}
+.step-4 {
+  animation-delay: 1.6s;
+}
+.step-5 {
+  animation-delay: 2.05s;
+}
+.step-6 {
+  animation-delay: 2.5s;
+}
+
+/* The composer's caret. */
+@keyframes blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+.caret {
+  animation: blink 1.1s steps(1) infinite;
+}
+
+/* A permission card waiting on you: a slow ring, the only thing on the page that
+   asks for attention, as the card does in the app. */
+@keyframes ask {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgb(255 159 10 / 0);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgb(255 159 10 / 0.16);
+  }
+}
+
+.ask {
+  animation: ask 2.4s ease-in-out infinite;
+}
+
+/* The tool-call strip under the hero: two identical runs, moved by half. */
+@keyframes marquee {
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+.marquee {
+  animation: marquee 48s linear infinite;
+}
+
+/* The dashed line from a terminal to the Review Changes window. 44 is four dash
+   periods of the `6 5` pattern, so the loop has no visible jump. */
+@keyframes dash {
+  to {
+    stroke-dashoffset: -44;
+  }
+}
+
+.dash {
+  animation: dash 1.7s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  .reveal {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-delay: 0s !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

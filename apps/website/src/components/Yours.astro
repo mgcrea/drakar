@@ -1,0 +1,152 @@
+---
+/**
+ * The positioning, as a comparison: three ways to get a Claude Code window on a
+ * Mac, and what each one actually runs.
+ *
+ * Every statement about another product is from its vendor's own page, as the
+ * 2026-10-21 competitive brief graded them (P): Claude's desktop docs for the
+ * first column, OpenAI's Codex import page for the second. They are dated in the
+ * footnote because both products move; a claim here that stops being true is a
+ * claim about someone else's product, so re-check them with each brief and drop
+ * a column rather than leave it stale.
+ *
+ * Not a "versus" table with ticks and crosses. The two other apps are good at
+ * what they are for; the point is only what each one runs.
+ */
+import { ANTHROPIC_TERMS } from "../config";
+import SectionHeader from "./SectionHeader.astro";
+
+const SOURCES = {
+  desktop: "https://code.claude.com/docs/en/desktop",
+  codexImport: "https://learn.chatgpt.com/codex/import",
+};
+
+const COLUMNS = [
+  {
+    name: "Claude desktop app",
+    runs: "Its own copy of Claude Code",
+    lines: [
+      "Its own session list: a session started in a terminal or VS Code is not in it",
+      "Customisations synced through claude.ai, not read from ~/.claude",
+    ],
+    source: SOURCES.desktop,
+    ours: false,
+  },
+  {
+    name: "Codex in the ChatGPT app",
+    runs: "Codex, with a copy of your Claude Code setup",
+    lines: [
+      "Imports your instructions, settings, skills, hooks, subagents and recent chats into its own format",
+      "Keeps the copy in sync, as long as automatic updates are on",
+      "Runs Codex, not Claude Code",
+    ],
+    source: SOURCES.codexImport,
+    ours: false,
+  },
+  {
+    name: "Drakar",
+    runs: "The claude and codex you installed",
+    lines: [
+      "Over their own protocols, stream-json and app-server, the way the VS Code extension drives claude",
+      "Reads ~/.claude and every ~/.claude-* account as they are; nothing is imported or synced",
+      "Sessions from your terminal and VS Code show in the sidebar, and can move into the window",
+    ],
+    source: null,
+    ours: true,
+  },
+] as const;
+---
+
+<section id="yours" class="relative scroll-mt-20 py-[104px]">
+  <div class="wrap flex flex-col gap-12">
+    <SectionHeader
+      eyebrow="Yours, not a copy"
+      heading="Nothing to import. Nothing to sync. Nothing bundled."
+      class="mb-0!"
+    >
+      Drakar ships no agent. It runs the <code class="font-mono text-[0.9em] text-fg">claude</code> you
+      installed (Settings › General picks which, when you have several) and talks to it the way
+      Anthropic's own VS Code extension does. Your settings, skills, hooks, MCP servers and transcripts stay exactly
+      where Claude Code keeps them, and a session you start in Drakar is one you can resume from a
+      terminal.
+    </SectionHeader>
+
+    <div class="grid grid-cols-1 gap-4 lg:grid-cols-3">
+      {
+        COLUMNS.map((c) => (
+          <div
+            class:list={[
+              "reveal relative flex flex-col gap-4 overflow-hidden rounded-[16px] border p-6",
+              c.ours
+                ? "border-accent/40 bg-linear-to-b from-accent/[.10] to-bg-2 shadow-[0_30px_70px_-40px_rgba(130,100,255,.7)]"
+                : "border-rule bg-bg-2",
+            ]}
+          >
+            {c.ours && <div class="rim-plate absolute inset-x-0 top-0 h-px" aria-hidden="true" />}
+            <div class="flex items-center justify-between gap-3">
+              <h3 class="m-0 text-[15px] font-semibold tracking-[-0.01em] text-fg">{c.name}</h3>
+              {c.source && (
+                <a
+                  href={c.source}
+                  target="_blank"
+                  rel="noopener"
+                  class="font-mono text-[10.5px] text-fg-muted transition-colors hover:text-accent-hi"
+                >
+                  source ↗
+                </a>
+              )}
+            </div>
+            <div class="flex flex-col gap-1">
+              <span class="mono">Runs</span>
+              <span
+                class:list={[
+                  "font-display text-[21px] leading-[1.2] font-semibold tracking-[-0.025em] text-balance",
+                  c.ours ? "text-plate" : "text-fg",
+                ]}
+              >
+                {c.runs}
+              </span>
+            </div>
+            <ul class="m-0 flex list-none flex-col gap-2.5 p-0">
+              {c.lines.map((line) => (
+                <li class="flex gap-2.5 text-[13.5px] leading-[1.55] text-pretty text-fg-dim">
+                  <span
+                    class:list={[
+                      "mt-[7px] block size-[5px] flex-none rounded-full",
+                      c.ours ? "bg-accent" : "bg-fg-muted/60",
+                    ]}
+                    aria-hidden="true"
+                  />
+                  {line}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))
+      }
+    </div>
+
+    <figure class="reveal m-0 flex flex-col gap-3 border-l-2 border-accent/60 pl-5 md:pl-7">
+      <blockquote
+        class="m-0 font-display text-[clamp(19px,2.2vw,25px)] leading-[1.4] font-medium tracking-[-0.02em] text-pretty text-fg"
+      >
+        “…{ANTHROPIC_TERMS.quote}.”
+      </blockquote>
+      <figcaption class="text-[13.5px] leading-[1.6] text-fg-muted">
+        Anthropic's legal and compliance page, on who may use a Claude subscription with Claude Code.
+        That sentence describes Drakar exactly: your subscription, your sign-in, the binary Anthropic
+        ships. <a
+          href={ANTHROPIC_TERMS.url}
+          target="_blank"
+          rel="noopener"
+          class="text-fg-dim underline underline-offset-2 hover:text-accent-hi">Read it there ↗</a
+        >
+      </figcaption>
+    </figure>
+
+    <p class="m-0 text-[12px] leading-[1.6] text-fg-muted">
+      What the other two apps do is from their vendors' own pages, as they read on October 21, 2026.
+      Drakar is not affiliated with Anthropic or OpenAI.
+    </p>
+  </div>
+</section>

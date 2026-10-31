@@ -87,8 +87,7 @@ jobs:
   # request, rather than in the deploy job after it has merged.
   #
   # DIVERGES from armada: no `lfs: true`, because this repository has no LFS
-  # objects (the site's images are plain files), and no feedback-form check,
-  # because the skeleton site has no form. `make site-build` is the plain build.
+  # objects (the site's images, release cards included, are plain files).
   website:
     name: Website
     runs-on: ubuntu-latest
@@ -110,8 +109,18 @@ jobs:
       # page or in config.ts builds, and deploys.
       - name: Check 🔍
         run: pnpm check
+      # The site's APP_VERSION is generated from the pbxproj's MARKETING_VERSION;
+      # a release commit that bumps one and not the other fails here, not on the
+      # live site's nav badge.
+      - name: Version 🔍
+        run: pnpm version:check
       - name: Build 📦
         run: make site-build
+      # The feedback form fails in the browser, not the build: a CSP without the
+      # Worker's origin, a renamed field, a hidden diagnostic, a slug that is not
+      # this subdomain. The check reads dist/, so it runs after the build.
+      - name: Feedback form 🔍
+        run: node apps/website/scripts/feedback-check.mjs
 
   # The gate `scripts/generate-revocations.mjs` claims in its header: `--check`
   # compares the committed Revocations.swift with D1.
@@ -319,9 +328,9 @@ jobs:
             echo "::error::project.pbxproj has $marketing of 4 configurations (Drakar and DrakarHost, Debug and Release) at MARKETING_VERSION = $version"
             fail=1
           fi
-          # DIVERGES from armada: no apps/website/src/config.ts APP_VERSION check.
-          # Drakar's site carries no version number (it links to /download, which
-          # is releases/latest), so there is no copy there to disagree.
+          # The site's APP_VERSION is not checked here: it is generated from these
+          # same MARKETING_VERSION lines, and `pnpm version:check` in the website
+          # job fails any push where the two disagree.
           #
           # The CHANGELOG is a shipped artifact twice over: `make appcast` puts the
           # tag's section in the Sparkle feed, and the release body below is the

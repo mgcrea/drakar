@@ -1,0 +1,57 @@
+---
+/**
+ * The cross-links to armada and bastion: the two siblings a Drakar reader, who
+ * runs agents all day, plausibly also wants. Armada's component, two across.
+ *
+ * Not a `SectionHeader` section: a cross-promo that borrowed the page's own
+ * section opener would read as one of its arguments. It gets an eyebrow and cards,
+ * subordinate to the sections above and to the closing plate below.
+ *
+ * Placed between the price and the closing plate, never after it, which is where
+ * both siblings put theirs: a page ending on a link to a different product puts
+ * that link below the one call to action the page exists for.
+ *
+ * No `primary` button. The page holds one accent fill per viewport, and a filled
+ * button on another product is the page arguing against its own sale.
+ */
+import { SIBLING_APPS } from "../config";
+import Button from "./Button.astro";
+---
+
+<section id="also" class="wrap py-[96px]">
+  <div class="mono mb-5 text-accent">Also from Magenta Creations</div>
+
+  <div class="grid grid-cols-1 gap-5 lg:grid-cols-2">
+    {
+      SIBLING_APPS.map((app) => (
+        <div class="reveal flex flex-col gap-5 rounded-[20px] border border-rule bg-bg-2 p-7 md:p-8">
+          <div class="flex items-center gap-4">
+            {/* From this site's own public/apps/, never hotlinked; see SIBLING_APPS.
+                `rounded-[22.4%]` is the plate's own corner, 230/1024. */}
+            <img
+              src={app.icon}
+              alt=""
+              width="256"
+              height="256"
+              loading="lazy"
+              decoding="async"
+              class="h-14 w-14 shrink-0 rounded-[22.4%]"
+            />
+            <div class="flex flex-col gap-1">
+              <h2 class="m-0 font-display text-[22px] leading-[1.2] font-semibold tracking-[-0.03em]">
+                {app.name}
+              </h2>
+              <p class="m-0 text-[14.5px] text-accent-hi">{app.tagline}</p>
+            </div>
+          </div>
+          <p class="m-0 flex-1 text-[15px] leading-[1.6] text-pretty text-fg-dim">{app.pitch}</p>
+          <div>
+            <Button href={app.url} variant="secondary" external>
+              Visit {app.name} <span class="opacity-60">↗</span>
+            </Button>
+          </div>
+        </div>
+      ))
+    }
+  </div>
+</section>

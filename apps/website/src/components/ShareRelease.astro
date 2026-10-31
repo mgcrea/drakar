@@ -1,0 +1,47 @@
+---
+/**
+ * The post that goes with a release's link, ready to send.
+ *
+ * The text is the release's summary, its `**Title.**` and the sentence or two
+ * after it in CHANGELOG.md, which a test holds to 256 characters so it fits on X
+ * beside the link (a link always counts as 23 there). The link is what carries
+ * the release card: X, Slack and iMessage all unfurl og:image.
+ *
+ * It is on the page for visitors as much as for us. Somebody who wants to tell a
+ * colleague about a release gets the same words, already the right length.
+ *
+ * X only. A second network's button was tried on cupertino's release pages and
+ * dropped; "Copy text" is the way to anywhere else, with the link included.
+ */
+import Button from "./Button.astro";
+
+interface Props {
+  post: string;
+  url: string;
+}
+
+const { post, url } = Astro.props;
+
+const x = `https://x.com/intent/post?${new URLSearchParams({ text: post, url })}`;
+---
+
+<section class="mt-10 rounded-[16px] border border-rule bg-bg-2 p-5 md:p-6" aria-labelledby="share">
+  <h2 id="share" class="mono m-0 text-fg-muted">Share this release</h2>
+  <p class="mt-3 mb-0 text-[15px] leading-[1.6] text-pretty text-fg">
+    {post} <span class="break-all text-fg-muted">{url}</span>
+  </p>
+  <div class="mt-5 flex flex-wrap gap-2.5">
+    <Button href={x} variant="secondary" size="sm" external>Post on X</Button>
+    {/* A <button>, not a Button: it copies rather than navigates. Styled as the
+        quiet sibling of the link beside it. */}
+    <button
+      type="button"
+      data-copy={`${post} ${url}`}
+      class="inline-flex cursor-pointer items-center rounded-lg px-[13px] py-[7px] text-[13px] text-fg-dim transition-colors hover:text-fg"
+    >
+      Copy text
+    </button>
+  </div>
+</section>
+{/* A file in public/, not an inline script: see public/copy-text.js. */}
+<script is:inline src="/copy-text.js" defer></script>

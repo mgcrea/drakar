@@ -1,0 +1,122 @@
+---
+import {
+  APP_NAME,
+  APP_VERSION,
+  BUNDLE_ID,
+  DOWNLOAD,
+  FEEDBACK_URL,
+  FOOTER_APPS,
+  ISSUES_URL,
+  PRICING,
+  REPO_URL,
+  SUPPORT_EMAIL,
+  SUPPORT_EMAIL_HREF,
+} from "../config";
+import Logo from "./Logo.astro";
+import MagentaMark from "./MagentaMark.astro";
+
+type FooterLink = { label: string; href: string; title?: string };
+
+/**
+ * Off-site links open a new tab; on-site ones do not. Cupertino's footer opens
+ * every link in a new tab, including its own privacy page, which is not worth
+ * copying.
+ */
+const isExternal = (href: string) => href.startsWith("http");
+
+const columns: { title: string; links: FooterLink[] }[] = [
+  {
+    title: "Read",
+    links: [
+      { label: "Yours, not a copy", href: "/#yours" },
+      { label: "The conversation", href: "/#conversation" },
+      { label: "The editor", href: "/#editor" },
+      { label: "Many sessions", href: "/#sessions" },
+      { label: "What it connects to", href: "/#trust" },
+    ],
+  },
+  {
+    title: "Get it",
+    links: [
+      { label: "Download", href: DOWNLOAD.zip },
+      { label: `Buy · ${PRICING.price}`, href: PRICING.buy },
+      /** The site's own changelog, which links on to the GitHub releases. */
+      { label: "Changelog", href: "/changelog/" },
+      { label: "Checksum", href: DOWNLOAD.checksum },
+      { label: "Source ↗", href: REPO_URL },
+    ],
+  },
+  {
+    title: "Help",
+    links: [
+      { label: "Support", href: "/support/" },
+      { label: "Feedback", href: FEEDBACK_URL },
+      { label: "Public tracker ↗", href: ISSUES_URL },
+      { label: "Privacy", href: "/privacy/" },
+      { label: "Terms", href: "/terms/" },
+      { label: SUPPORT_EMAIL, href: SUPPORT_EMAIL_HREF },
+    ],
+  },
+  {
+    title: "More apps",
+    links: FOOTER_APPS.map((app) => ({
+      label: `${app.name} ↗`,
+      href: app.url,
+      title: app.blurb,
+    })),
+  },
+];
+---
+
+<footer class="border-t border-rule bg-bg-2 py-12">
+  <div class="wrap flex flex-wrap gap-x-16 gap-y-10">
+    <div class="flex basis-full flex-col gap-3 sm:basis-auto sm:pr-8">
+      <div class="flex items-center gap-2.5">
+        <Logo size={22} />
+        <span class="font-display text-[14.5px] font-[590] tracking-[-0.02em] text-fg"
+          >{APP_NAME}</span
+        >
+      </div>
+      <p class="m-0 max-w-[30ch] text-[13px] leading-[1.55] text-fg-dim">
+        Claude Code and Codex, as you installed them, in a native Mac window.
+      </p>
+      <p class="m-0 text-[12.5px] leading-[1.6] text-fg-muted">
+        Signed, notarized, {DOWNLOAD.requires}.<br />
+        Not affiliated with Anthropic or OpenAI.
+      </p>
+      <p class="m-0 font-mono text-[11px] text-fg-muted">
+        v{APP_VERSION} · © {new Date().getFullYear()} · {BUNDLE_ID}
+      </p>
+      <a
+        href="https://mg-crea.com"
+        target="_blank"
+        rel="noopener"
+        class="inline-flex items-center gap-1.5 text-[12.5px] text-fg-muted transition-colors hover:text-accent"
+      >
+        <MagentaMark size={13} uid="footer" />Magenta Creations
+      </a>
+    </div>
+
+    {
+      columns.map((c) => (
+        <div class="flex min-w-[120px] flex-col gap-3">
+          <div class="mono">{c.title}</div>
+          <ul class="m-0 flex list-none flex-col gap-2 p-0">
+            {c.links.map((l) => (
+              <li>
+                <a
+                  href={l.href}
+                  title={l.title}
+                  {...(isExternal(l.href) ? { target: "_blank", rel: "noopener" } : {})}
+                  class="text-[13px] text-fg-dim transition-colors hover:text-accent-hi"
+                >
+                  {l.label}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))
+    }
+  </div>
+</footer>

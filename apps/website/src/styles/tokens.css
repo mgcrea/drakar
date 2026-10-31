@@ -11,9 +11,9 @@
    direct-sale sites read as one family. Dark is the base, and there is one
    theme, as on all three.
 
-   DIVERGES from armada in the accent, which is Drakar's own, and in what is
-   left: armada's session-state, window-chrome and paper colours belonged to
-   its drawings, which this site does not have. */
+   DIVERGES from armada in the accent and the plate, which are Drakar's own,
+   and in the drawings' colours below, which draw Drakar's window rather than
+   armada's. */
 :root {
   --color-bg: #0b0c0f;
   --color-bg-2: #131419;
@@ -37,4 +37,22 @@
   --color-accent-hi: #cbbcff;
   /* Sits on an accent fill, 8.1:1. Near-black, as on the siblings. */
   --color-accent-ink: #1b1c1f;
+
+  /* The plate's two ends, from design/drakar-icon.svg, for glows and the one
+     gradient word in the hero. Never type on their own: each is under 5:1 here. */
+  --color-plate-a: #007aff;
+  --color-plate-b: #af52de;
+
+  /* Session and diff states in the drawings, as the app colours them: the
+     system green, orange and red, lifted for ink on this ground. */
+  --color-ok: #30d158;
+  --color-ok-ink: #63e08a;
+  --color-warn: #ff9f0a;
+  --color-warn-ink: #ffb340;
+  --color-danger: #ff453a;
+  --color-danger-ink: #ff7b72;
+
+  /* The drawn window: macOS dark chrome, a step above the page. */
+  --color-chrome: #1e1f24;
+  --color-chrome-2: #26272d;
 }

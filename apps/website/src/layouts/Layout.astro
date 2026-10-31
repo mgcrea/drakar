@@ -1,10 +1,16 @@
 ---
-import { APP_NAME, TAGLINE } from "../config";
+import { APP_NAME, SOCIAL_CARD, TAGLINE, X_HANDLE } from "../config";
 import "../styles/global.css";
+
+type SchemaObject = Record<string, unknown>;
 
 export interface Props {
   title?: string;
   description?: string;
+  ogImage?: string;
+  /** Describes the picture, not the product. Pass one with any custom `ogImage`. */
+  ogImageAlt?: string;
+  schema?: SchemaObject | SchemaObject[];
   /**
    * Keep the page out of search results. The 404 passes it: it is served for
    * every URL that does not exist, and an indexed copy stands in for all of them.
@@ -12,24 +18,23 @@ export interface Props {
   noindex?: boolean;
 }
 
+/**
+ * The title tracks the H1, so the tab, the search result and the page make the
+ * same promise. It names both agents, because that is what a searcher types.
+ */
 const {
-  title = `${APP_NAME}: Claude Code in a native Mac window`,
+  title = "Drakar – Claude Code and Codex in a native Mac window",
   description = TAGLINE,
+  ogImage = "/og-image.png",
+  ogImageAlt = SOCIAL_CARD.alt,
+  schema,
   noindex = false,
 } = Astro.props;
 
 const canonicalHref = new URL(Astro.url.pathname, Astro.site).href;
+const ogImageHref = ogImage.startsWith("http") ? ogImage : new URL(ogImage, Astro.site).href;
 
-/*
- * DIVERGES from armada, whose head also carries an og:image card, a touch icon,
- * a PNG favicon, Twitter handles and a JSON-LD graph. This site has no card
- * generator yet, and a declared image with no file behind it shares as a blank
- * card, so the head names only what exists: the SVG favicon, copied from
- * design/drakar-icon.svg. Social cards come with the full site.
- *
- * The 404 gets no canonical and no og:url: it is served for every missing URL,
- * and either would claim each of them is the 404 page itself.
- */
+const schemaEntries = Array.isArray(schema) ? schema : schema ? [schema] : [];
 ---
 
 <!doctype html>
@@ -41,10 +46,14 @@ const canonicalHref = new URL(Astro.url.pathname, Astro.site).href;
     <!-- One value: the page is dark in both system themes, by design. -->
     <meta name="theme-color" content="#0b0c0f" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
 
     <title>{title}</title>
     <meta name="description" content={description} />
     {noindex && <meta name="robots" content="noindex" />}
+    {/* The 404 gets no canonical and no og:url: it is served for every missing
+        URL, and either would claim each of them is the 404 page itself. */}
     {!noindex && <link rel="canonical" href={canonicalHref} />}
 
     <meta property="og:title" content={title} />
@@ -52,7 +61,30 @@ const canonicalHref = new URL(Astro.url.pathname, Astro.site).href;
     <meta property="og:type" content="website" />
     {!noindex && <meta property="og:url" content={canonicalHref} />}
     <meta property="og:site_name" content={APP_NAME} />
-    <meta name="twitter:card" content="summary" />
+    {/*
+      Dimensions are declared so a scraper can lay the card out before the image
+      arrives; without them the first share of a cold URL can render blank. They
+      describe the default card, so a page passing its own `ogImage` has to match
+      the 1200×630 shape.
+    */}
+    <meta property="og:image" content={ogImageHref} />
+    <meta property="og:image:width" content={String(SOCIAL_CARD.width)} />
+    <meta property="og:image:height" content={String(SOCIAL_CARD.height)} />
+    <meta property="og:image:alt" content={ogImageAlt} />
+
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:site" content={X_HANDLE} />
+    <meta name="twitter:creator" content={X_HANDLE} />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={ogImageHref} />
+    <meta name="twitter:image:alt" content={ogImageAlt} />
+
+    {
+      schemaEntries.map((entry) => (
+        <script is:inline type="application/ld+json" set:html={JSON.stringify(entry)} />
+      ))
+    }
   </head>
   <body>
     <a
@@ -62,20 +94,29 @@ const canonicalHref = new URL(Astro.url.pathname, Astro.site).href;
       Skip to content
     </a>
     <slot />
-    <footer class="wrap pb-12">
-      <nav
-        aria-label="Site"
-        class="flex flex-wrap gap-x-6 gap-y-2 border-t border-rule pt-6 text-[13px] text-fg-muted"
-      >
-        <a href="/" class="hover:text-accent-hi">{APP_NAME}</a>
-        <a href="/privacy/" class="hover:text-accent-hi">Privacy</a>
-        <a href="/terms/" class="hover:text-accent-hi">Terms</a>
-        <a href="/releases" class="hover:text-accent-hi">Releases</a>
-        <a href="https://mg-crea.com" target="_blank" rel="noopener" class="hover:text-accent-hi">
-          Magenta Creations
-        </a>
-      </nav>
-    </footer>
+
+    <script>
+      // Scroll-reveal, the only script on most pages. Reduced motion and a missing
+      // observer both show everything at once rather than leaving it invisible.
+      const reveals = document.querySelectorAll(".reveal");
+      const stillPlease = matchMedia("(prefers-reduced-motion: reduce)").matches;
+      if ("IntersectionObserver" in window && reveals.length && !stillPlease) {
+        const io = new IntersectionObserver(
+          (entries) => {
+            entries.forEach((e) => {
+              if (e.isIntersecting) {
+                e.target.classList.add("in");
+                io.unobserve(e.target);
+              }
+            });
+          },
+          { rootMargin: "0px 0px -80px 0px" },
+        );
+        reveals.forEach((el) => io.observe(el));
+      } else {
+        reveals.forEach((el) => el.classList.add("in"));
+      }
+    </script>
     {/* Cloudflare Web Analytics is not rendered here. The beacon is injected at the
         edge for the whole mgcrea.io zone, so a second one in this HTML would report
         the same visit twice, under two different site tags.

@@ -1,0 +1,349 @@
+---
+/**
+ * The feedback form. Cupertino's page, by way of armada's, with Drakar's words.
+ *
+ * ## Why the app opens this page rather than sending anything
+ *
+ * Drakar's claim (SECURITY.md) is that the only connections it opens of its own
+ * are Sparkle's, and only once you said yes to update checks. An in-app form
+ * would be a second exception. So the app does not send feedback: its Help pane opens this URL, and
+ * the website does the sending, only when someone presses Send.
+ *
+ * ## The rule that makes that honest
+ *
+ * The diagnostics arrive as query parameters and are rendered as **visible,
+ * editable, deletable inputs**. They must never become hidden fields. "You can see
+ * everything it sends, in the address bar, before you press anything" is the
+ * property that makes this better than an in-app form, and a hidden input throws
+ * it away while looking tidier. `pnpm feedback:check` fails the build on one.
+ *
+ * Field names come from `@mgcrea/feedback-contract`, which the Worker validates
+ * with. A parameter name that drifts fails silently, with the row landing and one
+ * column empty for months.
+ *
+ * `APP_SLUG` must be this site's subdomain: since contract 0.4.0 the Worker takes
+ * the allowed slug from the posting page's Origin. `pnpm feedback:check` asserts it.
+ */
+import { LIMIT } from "@mgcrea/feedback-contract";
+
+import Footer from "../components/Footer.astro";
+import Nav from "../components/Nav.astro";
+import { APP_NAME, ISSUES_URL, SUPPORT_EMAIL, SUPPORT_EMAIL_HREF } from "../config";
+import Layout from "../layouts/Layout.astro";
+
+const field =
+  "w-full rounded-lg border border-rule-2 bg-bg-2 px-3 py-2 text-fg " +
+  "placeholder:text-fg-muted focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent";
+const label = "mb-1.5 block text-sm font-medium text-fg";
+---
+
+<Layout
+  title={`Feedback · ${APP_NAME}`}
+  description={`Report a bug or suggest an improvement to ${APP_NAME}. No account needed, and the email address is optional.`}
+>
+  <Nav />
+  <main id="main" tabindex="-1" class="wrap mx-auto max-w-[72ch] px-6 py-20 md:py-28">
+    <div class="mono text-accent">Feedback</div>
+    <h1
+      class="mt-3 font-display text-[clamp(34px,5vw,52px)] leading-[1.05] font-semibold tracking-[-0.038em]"
+    >
+      Feedback
+    </h1>
+    <div
+      class="mt-8 text-[16px] leading-[1.7] text-fg-dim [&_a:not([class])]:text-fg [&_a:not([class])]:underline [&_a:not([class])]:decoration-rule-2 [&_a:not([class])]:underline-offset-4 [&_h2]:mt-12 [&_h2]:mb-4 [&_h2]:font-display [&_h2]:text-[22px] [&_h2]:font-semibold [&_h2]:text-fg [&_p]:mt-4 [&_strong]:font-medium [&_strong]:text-fg"
+    >
+      <p>
+        Found a bug, or want {APP_NAME} to do something it does not? Both are worth writing in about.
+        No account is needed and an email address is optional. Leave it blank and the report is
+        anonymous.
+      </p>
+      <p>
+        <strong>The details can be yours.</strong> A useful report sometimes quotes a file path, a
+        prompt or a piece of a transcript. This form is private, and the public tracker is not.
+      </p>
+
+      <form id="feedback-form" novalidate class="mt-8 space-y-6">
+        <div>
+          <span class={label}>What is this about?</span>
+          <div class="flex flex-wrap gap-2" role="radiogroup" aria-label="Kind of feedback">
+            {
+              [
+                ["bug", "Something is broken"],
+                ["idea", "An idea"],
+                ["question", "A question"],
+              ].map(([value, text]) => (
+                <label class="cursor-pointer">
+                  <input type="radio" name="kind" value={value} class="peer sr-only" />
+                  <span class="block rounded-full border border-rule-2 px-4 py-1.5 text-sm text-fg-dim transition peer-checked:border-accent peer-checked:bg-accent/10 peer-checked:text-fg peer-focus-visible:ring-1 peer-focus-visible:ring-accent">
+                    {text}
+                  </span>
+                </label>
+              ))
+            }
+          </div>
+        </div>
+
+        <div>
+          <label class={label} for="subject">Subject</label>
+          <input
+            class={field}
+            id="subject"
+            name="subject"
+            type="text"
+            required
+            maxlength={LIMIT.subject}
+            placeholder="A one-line summary"
+          />
+        </div>
+
+        <div>
+          <label class={label} for="body">Details</label>
+          <textarea
+            class={field}
+            id="body"
+            name="body"
+            rows="8"
+            required
+            maxlength={LIMIT.body}
+            placeholder="What you did, what you expected, and what happened instead."></textarea>
+        </div>
+
+        <div>
+          <label class={label} for="email">
+            Your email <span class="text-fg-muted">(optional)</span>
+          </label>
+          <input
+            class={field}
+            id="email"
+            name="email"
+            type="email"
+            autocomplete="email"
+            maxlength={LIMIT.email}
+            placeholder="Only so we can reply"
+          />
+          <span class="mt-1.5 block text-xs text-fg-muted">
+            Used to answer you and nothing else. Leave it blank to stay anonymous.
+          </span>
+        </div>
+
+        {/* Visible, editable, deletable: see the header comment. A `readonly`
+            attribute would quietly break the same promise, so there is none. */}
+        <fieldset class="rounded-lg border border-rule bg-bg-2/60 p-4">
+          <legend class="px-1 text-sm font-medium text-fg">What gets sent with this</legend>
+          <span class="mb-4 block text-xs text-fg-muted">
+            {APP_NAME} filled these in so you don't have to. Edit or clear anything you would rather not
+            send; the report goes through either way.
+          </span>
+          <div class="grid gap-3 sm:grid-cols-2">
+            <div>
+              <label class="mb-1 block text-xs text-fg-muted" for="appVersion">App version</label>
+              <input
+                class={`${field} text-sm`}
+                id="appVersion"
+                name="appVersion"
+                type="text"
+                maxlength="64"
+              />
+            </div>
+            <div>
+              <label class="mb-1 block text-xs text-fg-muted" for="osVersion">macOS version</label>
+              <input
+                class={`${field} text-sm`}
+                id="osVersion"
+                name="osVersion"
+                type="text"
+                maxlength="64"
+              />
+            </div>
+            <div>
+              <label class="mb-1 block text-xs text-fg-muted" for="hardware">Mac model</label>
+              <input
+                class={`${field} text-sm`}
+                id="hardware"
+                name="hardware"
+                type="text"
+                maxlength="64"
+              />
+            </div>
+            <div>
+              <label class="mb-1 block text-xs text-fg-muted" for="language">Language</label>
+              <input
+                class={`${field} text-sm`}
+                id="language"
+                name="language"
+                type="text"
+                maxlength="16"
+              />
+            </div>
+          </div>
+          <button
+            type="button"
+            id="clear-diagnostics"
+            class="mt-3 text-xs text-fg underline underline-offset-2 hover:text-accent"
+          >
+            Clear all four
+          </button>
+          <span class="mt-3 block text-xs text-fg-muted">
+            That is the whole list. No username, no session, file or project names, no identifier: two
+            reports from the same Mac cannot be linked to each other.
+          </span>
+        </fieldset>
+
+        {/* Honeypot. Hidden from people, left in the DOM for bots. A filled one gets
+            a 200 and is dropped by the Worker, so a bot cannot tell it from success.
+            `aria-hidden` and `tabindex` keep it from screen readers and the tab
+            order; `sr-only` alone would expose it to assistive technology. */}
+        <div class="hidden" aria-hidden="true">
+          <label for="website">Website</label>
+          <input id="website" name="website" type="text" tabindex="-1" autocomplete="off" />
+        </div>
+
+        <div class="flex flex-wrap items-center gap-4">
+          <button
+            type="submit"
+            id="submit"
+            class="rounded-[10px] bg-accent px-[22px] py-3 text-[14.5px] font-medium text-accent-ink transition-colors hover:bg-accent-hi disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Send feedback
+          </button>
+          <span id="status" role="status" aria-live="polite" class="text-sm text-fg-dim"></span>
+        </div>
+      </form>
+
+      <h2>Prefer a public issue?</h2>
+      <p>
+        For anything that is not about your own work, such as a feature request or a Claude Code
+        release that broke something, <a href={ISSUES_URL} rel="noopener noreferrer">the public tracker</a
+        > works too, and is where most {APP_NAME} reports go. It is shared by every Magenta Creations app, and the answer helps whoever asks
+        next.
+      </p>
+      <p>
+        You can also email <a href={SUPPORT_EMAIL_HREF}>{SUPPORT_EMAIL}</a>.
+      </p>
+    </div>
+  </main>
+  <Footer />
+</Layout>
+
+<script>
+  import { CONTRACT_VERSION, LIMIT, parseFeedbackParams } from "@mgcrea/feedback-contract";
+
+  import { APP_SLUG, FEEDBACK_API, SUPPORT_EMAIL } from "../config";
+
+  const form = document.getElementById("feedback-form") as HTMLFormElement | null;
+  const status = document.getElementById("status");
+  const submit = document.getElementById("submit") as HTMLButtonElement | null;
+  if (!form || !status || !submit) throw new Error("feedback form markup missing");
+
+  const input = (name: string) => form.elements.namedItem(name) as HTMLInputElement | null;
+  const say = (text: string, tone: "error" | "ok" | "busy" = "busy") => {
+    status.textContent = text;
+    status.className =
+      "text-sm " + { error: "text-danger-ink", ok: "text-ok-ink", busy: "text-fg-dim" }[tone];
+  };
+
+  // Prefill. `parseFeedbackParams` cannot throw: a missing parameter, an unknown
+  // `kind`, or a `v` from a future app all render the form with a blank field
+  // rather than an error page.
+  const prefill = parseFeedbackParams(new URLSearchParams(window.location.search));
+
+  for (const [name, value] of [
+    ["appVersion", prefill.appVersion],
+    ["osVersion", prefill.osVersion],
+    ["hardware", prefill.hardware],
+    ["language", prefill.language],
+    ["subject", prefill.subject],
+  ] as const) {
+    if (value) {
+      const el = input(name);
+      if (el) el.value = value;
+    }
+  }
+
+  const kind = form.querySelector<HTMLInputElement>(`input[name="kind"][value="${prefill.kind}"]`);
+  if (kind) kind.checked = true;
+
+  document.getElementById("clear-diagnostics")?.addEventListener("click", () => {
+    for (const name of ["appVersion", "osVersion", "hardware", "language"]) {
+      const el = input(name);
+      if (el) el.value = "";
+    }
+    say("Cleared. Those four fields will be sent empty.", "ok");
+  });
+
+  // A stale site is worth knowing about, never worth blocking on.
+  if (prefill.unknownContractVersion) {
+    console.warn(
+      `[${APP_SLUG}] app sent contract v${prefill.unknownContractVersion}, this page speaks ` +
+        `v${CONTRACT_VERSION}. Submitting as v${CONTRACT_VERSION}; this site needs a redeploy.`,
+    );
+  }
+
+  let sending = false;
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (sending) return;
+
+    const value = (name: string) => input(name)?.value.trim() ?? "";
+    if (!value("subject")) return say("A subject, however short, please.", "error");
+    if (!value("body")) return say("Tell us what happened before sending.", "error");
+    if (value("body").length > LIMIT.body) return say("That is longer than we can store.", "error");
+
+    sending = true;
+    submit.disabled = true;
+    say("Sending…");
+
+    try {
+      // Two ordered requests, on purpose: the ticket is a short-lived signature that
+      // makes the cheapest attack (find the endpoint, POST in a loop) cost a round
+      // trip and a clock. It is not authentication and is not treated as any.
+      const ticketResponse = await fetch(`${FEEDBACK_API}/ticket`);
+      if (!ticketResponse.ok) throw new Error(`ticket ${ticketResponse.status}`);
+      const { ticket } = (await ticketResponse.json()) as { ticket: string };
+
+      const response = await fetch(`${FEEDBACK_API}/submit`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          v: CONTRACT_VERSION,
+          app: APP_SLUG,
+          kind: form.querySelector<HTMLInputElement>('input[name="kind"]:checked')?.value ?? "bug",
+          subject: value("subject"),
+          body: value("body"),
+          email: value("email") || undefined,
+          appVersion: value("appVersion") || undefined,
+          osVersion: value("osVersion") || undefined,
+          hardware: value("hardware") || undefined,
+          language: value("language") || undefined,
+          // 'app' only when the app filled the diagnostics in. A person who opened
+          // this page cold and typed their own macOS version is 'web'.
+          source: prefill.fromApp ? "app" : "web",
+          ticket,
+          website: value("website"),
+        }),
+      });
+
+      if (response.status === 429) {
+        say("That is a lot of reports at once. Give it ten seconds and try again.", "error");
+      } else if (!response.ok) {
+        throw new Error(`submit ${response.status}`);
+      } else {
+        form.hidden = true;
+        say("Thank you, that landed. We read everything and reply within a few working days.", "ok");
+        return;
+      }
+    } catch (error) {
+      console.error(error);
+      // The failure that matters is losing what they wrote, so the text stays on
+      // screen and the fallback is a channel that cannot fail the same way.
+      say(
+        `That did not send, but your text is still here. Please copy it into an email to ${SUPPORT_EMAIL}.`,
+        "error",
+      );
+    } finally {
+      sending = false;
+      submit.disabled = false;
+    }
+  });
+</script>

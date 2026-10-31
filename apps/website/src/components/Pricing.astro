@@ -1,0 +1,124 @@
+---
+/**
+ * The price, what it buys, and the two separate ways to find out whether Drakar
+ * is for you before committing. Armada's section, with Drakar's facts.
+ *
+ * The trial and the refund are not interchangeable and the copy must not blur
+ * them. The trial answers "does this drive my claude", which only running it can
+ * answer. The refund answers "was it worth the money", asked afterwards.
+ *
+ * Buy is the filled button here and Download the outline, the hero's order
+ * reversed: a reader who scrolled this far has read what it does.
+ */
+import { DOCS, DOWNLOAD, PRICING, TRIAL } from "../config";
+import AppleGlyph from "./AppleGlyph.astro";
+import Button from "./Button.astro";
+import SectionCopy from "./SectionCopy.astro";
+
+const covers = PRICING.covers.replace(/^./, (c) => c.toUpperCase());
+
+/** Each line is CHANGELOG.md 1.1.0's "A licence, sold once", or the README. */
+const INCLUDED = [
+  {
+    title: covers,
+    body: "The key is issued to you, not to a machine, and nothing counts your installs. A 2.0, if there is one, would be a new purchase; nothing lapses in between.",
+  },
+  {
+    title: "Checked on your Mac, never by a server",
+    body: "A key is a signature Drakar verifies locally. No activation call, no licence server, and nothing that refuses to start because a host is down.",
+  },
+  {
+    title: `A free ${TRIAL.minutes}-minute trial of the whole app`,
+    body: "Started from a button in Settings › Licence, never on its own. Without a key or a trial, Drakar sends nothing to an agent, and everything else stays: your projects, sessions, transcripts and diffs.",
+  },
+  {
+    title: `${PRICING.refundDays} days to change your mind`,
+    body: "Full refund, no reason needed.",
+  },
+  {
+    title: "The source is MIT, and stays readable",
+    body: "What is sold is the signed, notarized build. An app that runs agents over your files should be readable by the people trusting it, and buildable by anyone who would rather.",
+  },
+];
+---
+
+<section id="pricing" class="scroll-mt-20 py-[104px]">
+  <div class="wrap grid grid-cols-1 items-start gap-12 lg:grid-cols-2 lg:gap-16">
+    <SectionCopy eyebrow="Price" heading="One price, one major version, every Mac you own.">
+      <p class="m-0 text-[16px] leading-[1.6] text-pretty text-fg-dim">
+        No subscription and no per-seat tier. You already pay for the agent; Drakar is the window you
+        drive it from, and charging rent on top of your Claude or ChatGPT plan is not a business it
+        wants to be in.
+      </p>
+      <p class="m-0 text-[14px] leading-[1.6] text-pretty text-fg-muted">
+        The trial answers whether Drakar drives your <code>claude</code> the way you work. The refund
+        answers whether it was worth the money, which is a different question, and asked second.
+      </p>
+    </SectionCopy>
+
+    <div class="reveal relative">
+      <div class="glow-soft pointer-events-none absolute -inset-x-8 -top-12 h-[180px]" aria-hidden="true">
+      </div>
+      <div
+        class="relative overflow-hidden rounded-[18px] border border-white/10 bg-bg-2 p-6 shadow-[0_30px_80px_-40px_rgba(110,80,255,.55)] sm:p-9"
+      >
+        <div class="rim-plate absolute inset-x-0 top-0 h-px" aria-hidden="true"></div>
+        <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+          <span
+            class="font-display text-[clamp(40px,6vw,58px)] leading-none font-semibold tracking-[-0.04em]"
+          >
+            {PRICING.price}
+          </span>
+          <span class="text-[14px] text-fg-dim">once, not a subscription</span>
+        </div>
+        {/* Both figures, because neither is a conversion of the other: the dollar
+            price is quoted tax-exclusive and the euro one VAT-inclusive. */}
+        <p class="mt-2 mb-0 text-[13.5px] leading-[1.6] text-fg-dim">
+          {PRICING.eur} in the EU, VAT included.
+        </p>
+
+        <ul class="m-0 mt-7 flex list-none flex-col gap-5 p-0">
+          {
+            INCLUDED.map((item) => (
+              <li class="flex gap-3">
+                <span
+                  class="mt-[3px] flex size-[15px] flex-none items-center justify-center rounded-full bg-accent/15 text-[9px] text-accent"
+                  aria-hidden="true"
+                >
+                  ✓
+                </span>
+                <span class="flex flex-col gap-1">
+                  <span class="text-[14.5px] font-medium text-fg">{item.title}</span>
+                  <span class="text-[13.5px] leading-[1.6] text-pretty text-fg/50">{item.body}</span>
+                </span>
+              </li>
+            ))
+          }
+        </ul>
+
+        <div class="mt-8 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+          <Button href={PRICING.buy} size="lg" class="w-full sm:w-auto">
+            Buy a licence <span class="opacity-70">·</span>
+            {PRICING.price}
+          </Button>
+          <Button href={DOWNLOAD.zip} variant="secondary" size="lg" class="w-full sm:w-auto">
+            <AppleGlyph size={16} />
+            Try it free
+          </Button>
+        </div>
+
+        <p class="mt-6 mb-0 text-[13px] leading-[1.6] text-pretty text-fg-muted">
+          The trial is held in memory, so quitting and reopening Drakar starts another one. Nothing
+          prevents that, and nothing pretends to. The{" "}
+          <a href="/terms/" class="text-fg-dim underline underline-offset-2 hover:text-accent-hi"
+            >licence terms</a
+          > set out the rest, including delivery of the key and the refund. The{" "}
+          <a
+            href={DOCS.sourceLicense}
+            class="text-fg-dim underline underline-offset-2 hover:text-accent-hi">MIT licence</a
+          > covers the code.
+        </p>
+      </div>
+    </div>
+  </div>
+</section>

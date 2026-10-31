@@ -1,0 +1,50 @@
+---
+import { DOWNLOAD, PRICING } from "../config";
+import AppleGlyph from "./AppleGlyph.astro";
+import Button from "./Button.astro";
+import Logo from "./Logo.astro";
+---
+
+<section
+  id="download"
+  class="wrap relative flex scroll-mt-20 flex-col items-center gap-5 overflow-hidden py-[96px] text-center"
+>
+  <div class="glow-soft pointer-events-none absolute inset-x-0 top-0 h-[260px]" aria-hidden="true">
+  </div>
+
+  <Logo size={76} class="relative shadow-[0_20px_50px_-20px_rgba(120,90,255,.6)]" />
+
+  <h2
+    class="relative m-0 max-w-[19ch] font-display text-[clamp(28px,3.6vw,42px)] leading-[1.1] font-semibold tracking-[-0.04em] text-balance"
+  >
+    Your <span class="text-plate">claude</span>, in a window that feels like a Mac app.
+  </h2>
+  <p class="relative m-0 max-w-[54ch] text-[16.5px] leading-[1.6] text-pretty text-fg-dim">
+    The agent you installed, on the subscription you already pay for, with the conversation, the
+    permission prompts and the diffs where you can see them. Signed with a Developer ID and notarized
+    by Apple.
+  </p>
+
+  {/* The hero's order reversed: a reader who got this far has read the price,
+      so the filled button is Buy. Download is not external: it is a zip, not a page. */}
+  <div class="relative flex w-full flex-col items-center gap-3 pt-1.5 sm:w-auto sm:flex-row">
+    <Button href={PRICING.buy} size="lg" class="w-full sm:w-auto">
+      Buy a licence <span class="opacity-70">·</span>
+      {PRICING.price}
+    </Button>
+    <Button href={DOWNLOAD.zip} variant="secondary" size="lg" class="w-full sm:w-auto">
+      <AppleGlyph size={16} />
+      Download for macOS
+    </Button>
+  </div>
+
+  <p class="relative m-0 text-[12.5px] leading-[1.7] text-fg-muted">
+    {PRICING.price} once, for {PRICING.covers} · {PRICING.refundDays}-day refund ·{" "}
+    {DOWNLOAD.requires} ·{" "}
+    <a class="underline underline-offset-2 hover:text-fg-dim" href={DOWNLOAD.checksum}>SHA-256</a>{" "}
+    ·{" "}
+    <a class="underline underline-offset-2 hover:text-fg-dim" href={DOWNLOAD.releases}>
+      release notes
+    </a>
+  </p>
+</section>

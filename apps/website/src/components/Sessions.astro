@@ -1,0 +1,150 @@
+---
+/**
+ * Many sessions, many accounts, and sessions that outlive the app: CHANGELOG
+ * 1.0.0's "Many sessions, one window", "Sessions that outlive the app",
+ * "Sessions run elsewhere", "Which claude, and which account", "A Skills
+ * window", and 1.1.0's Mark All Sessions. Menu names are the app's own.
+ *
+ * The keyboard row closes it: the shortcuts the section and the two above it
+ * name, drawn as keycaps. Decoration over a real list, so it carries its labels.
+ */
+import SectionHeader from "./SectionHeader.astro";
+
+const CARDS = [
+  {
+    title: "What needs you, first",
+    body: "The sidebar sorts sessions waiting on you above the ones working. ⌥⌘↑ and ⌥⌘↓ move between them, and Next After Replying takes you to the next one waiting as soon as you answer.",
+    span: "lg:col-span-2",
+    accent: "bg-warn",
+  },
+  {
+    title: "Every account, side by side",
+    body: "Sessions across ~/.claude and every ~/.claude-* folder, each with its own state. Settings › General picks the account a new session starts under, and a folder's sessions can move to another account.",
+    span: "lg:col-span-2",
+    accent: "bg-accent",
+  },
+  {
+    title: "Sessions that outlive the app",
+    body: "A small helper holds the claude and codex processes, so a quit, a crash or an update leaves them working. The next launch attaches again and replays what they did meanwhile.",
+    span: "lg:col-span-2",
+    accent: "bg-ok",
+  },
+  {
+    title: "Started somewhere else",
+    body: "A session a terminal or VS Code runs shows its state in the sidebar, and Move to This Window brings it in.",
+    span: "lg:col-span-3",
+    accent: "bg-fg-muted",
+  },
+  {
+    title: "One prompt, many sessions",
+    body: "⌘-click to mark several, or Mark All Sessions, and send them one prompt. Run in Each Subfolder starts a skill in a session per subfolder, a few at a time.",
+    span: "lg:col-span-3",
+    accent: "bg-accent",
+  },
+] as const;
+
+const KEYS = [
+  { keys: ["⌥", "⌘", "Y"], label: "Allow" },
+  { keys: ["⌥", "⌘", "N"], label: "Deny" },
+  { keys: ["⌥", "⌘", "↓"], label: "Next session" },
+  { keys: ["⌥", "⌘", "A"], label: "Mark all" },
+  { keys: ["⌘", "P"], label: "Quick open" },
+  { keys: ["⇧", "⌘", "F"], label: "Search" },
+  { keys: ["⌥", "K"], label: "Pin selection" },
+] as const;
+---
+
+<section id="sessions" class="relative scroll-mt-20 bg-linear-to-b from-bg to-bg-2 py-[104px]">
+  <div class="dots pointer-events-none absolute inset-0 opacity-60 [mask-image:radial-gradient(60%_50%_at_50%_30%,black,transparent)]" aria-hidden="true"></div>
+  <div class="wrap relative flex flex-col gap-12">
+    <SectionHeader
+      eyebrow="Many sessions"
+      heading="Many sessions, every account, one window."
+      class="mb-0!"
+    >
+      Drakar is built for running several agents at once without losing track of the one that stopped
+      to ask you something. Each session keeps its own state, its own account and its own folder, and
+      the window always knows which one is waiting.
+    </SectionHeader>
+
+    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-6">
+      {
+        CARDS.map((c, i) => (
+          <article
+            class:list={[
+              "reveal flex flex-col gap-3 rounded-[16px] border border-rule bg-bg-2/80 p-6 backdrop-blur",
+              c.span,
+              i === CARDS.length - 1 && "sm:col-span-2",
+            ]}
+          >
+            <span class:list={["block h-[3px] w-8 rounded-full", c.accent]} aria-hidden="true" />
+            <h3 class="m-0 text-[16px] font-semibold tracking-[-0.015em]">{c.title}</h3>
+            <p class="m-0 text-[13.5px] leading-[1.6] text-pretty text-fg-dim">{c.body}</p>
+          </article>
+        ))
+      }
+    </div>
+
+    {/* The Skills window, its own band: it is the one window that is not a session. */}
+    <article class="reveal grid grid-cols-1 items-center gap-8 overflow-hidden rounded-[18px] border border-rule bg-bg-2 p-6 lg:grid-cols-[1fr_1.1fr] lg:p-8">
+      <div class="flex flex-col gap-3">
+        <span class="mono text-accent">Skills</span>
+        <h3 class="m-0 font-display text-[24px] leading-[1.15] font-semibold tracking-[-0.03em]">
+          Both agents' skills, in one list.
+        </h3>
+        <p class="m-0 text-[14px] leading-[1.6] text-pretty text-fg-dim">
+          Claude Code's and Codex's skills, commands and plugins, side by side: installed from a git
+          address or a folder, shared between projects, and deleted without leaving dangling links
+          behind.
+        </p>
+      </div>
+      <div class="overflow-hidden rounded-[12px] border border-white/10 bg-chrome text-[12px]" aria-hidden="true">
+        {
+          [
+            { name: "release-notes", kind: "skill", agents: ["claude", "codex"] },
+            { name: "review-diff", kind: "command", agents: ["claude"] },
+            { name: "swift-format", kind: "skill", agents: ["claude", "codex"] },
+            { name: "fleet-website-conventions", kind: "skill", agents: ["claude"] },
+          ].map((row, i) => (
+            <div class:list={["flex items-center gap-3 px-4 py-2.5", i > 0 && "border-t border-white/6"]}>
+              <span class="truncate font-mono text-[11.5px] text-fg">{row.name}</span>
+              <span class="text-[11px] text-fg-muted">{row.kind}</span>
+              <span class="ml-auto flex gap-1">
+                {row.agents.map((a) => (
+                  <span
+                    class:list={[
+                      "rounded-[5px] px-1.5 py-[1px] font-mono text-[10px]",
+                      a === "codex" ? "bg-accent/16 text-accent-hi" : "bg-white/8 text-fg/80",
+                    ]}
+                  >
+                    {a}
+                  </span>
+                ))}
+              </span>
+            </div>
+          ))
+        }
+      </div>
+    </article>
+
+    <ul class="reveal m-0 flex list-none flex-wrap justify-center gap-x-6 gap-y-5 p-0 pt-4">
+      {
+        KEYS.map((k) => (
+          <li class="flex flex-col items-center gap-2">
+            <span class="flex gap-1" aria-hidden="true">
+              {k.keys.map((key) => (
+                <kbd class="flex h-[38px] min-w-[38px] items-center justify-center rounded-[8px] border border-white/14 border-b-white/5 bg-linear-to-b from-[#2b2c33] to-[#1c1d22] px-2 font-sans text-[15px] text-fg shadow-[0_2px_0_0_rgba(0,0,0,.6),inset_0_1px_0_0_rgba(255,255,255,.08)]">
+                  {key}
+                </kbd>
+              ))}
+            </span>
+            <span class="text-[11.5px] text-fg-muted">
+              <span class="sr-only">{k.keys.join("")}: </span>
+              {k.label}
+            </span>
+          </li>
+        ))
+      }
+    </ul>
+  </div>
+</section>

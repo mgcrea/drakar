@@ -6,16 +6,21 @@
   "scripts": {
     "dev": "astro dev",
     "build": "astro build",
+    "feedback:check": "astro build && node scripts/feedback-check.mjs",
     "preview": "astro preview",
     "release": "astro build && wrangler deploy",
     "astro": "astro",
     "check": "astro check",
-    "typecheck": "astro check"
+    "typecheck": "astro check",
+    "icons": "node scripts/generate-icons.mjs",
+    "cards": "node scripts/generate-release-cards.mjs"
   },
   "dependencies": {
     "@astrojs/sitemap": "^3.7.4",
+    "@mgcrea/feedback-contract": "^0.4.0",
     "@tailwindcss/vite": "^4.3.3",
     "astro": "^7.3.4",
+    "sharp": "^0.35.4",
     "tailwindcss": "^4.3.3"
   },
   "devDependencies": {

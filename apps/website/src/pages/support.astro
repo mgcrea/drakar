@@ -1,0 +1,118 @@
+---
+/**
+ * The support page.
+ *
+ * It exists because the app links to it: `SupportApp` in swift-support-kit renders
+ * Help items for the tracker, the feedback form and `siteURL + supportPath`, and
+ * that last one lands here.
+ *
+ * Armada's page, in the other order. `preferIssueTracker` is true in
+ * apps/apple/Drakar/Services/Support.swift: Drakar is a developer tool, and the
+ * public tracker is where its users already are, so the tracker leads and the
+ * private form, for reports that have to quote your own code, comes second.
+ */
+import Footer from "../components/Footer.astro";
+import Nav from "../components/Nav.astro";
+import {
+  APP_NAME,
+  FEEDBACK_URL,
+  GITHUB_NEW_ISSUE_URL,
+  ISSUES_URL,
+  PRICING,
+  SITE_URL,
+  SUPPORT_EMAIL,
+  SUPPORT_EMAIL_HREF,
+} from "../config";
+import Layout from "../layouts/Layout.astro";
+
+const schema = {
+  "@context": "https://schema.org",
+  "@type": "ContactPage",
+  name: "Support",
+  url: `${SITE_URL}/support/`,
+  isPartOf: { "@id": `${SITE_URL}/#website` },
+  publisher: { "@id": `${SITE_URL}/#organization` },
+};
+
+const h2 = "m-0 font-display text-[22px] font-semibold tracking-[-0.03em]";
+const lead = "mt-5 mb-0 max-w-[62ch] text-[15px] leading-[1.65] text-fg-dim text-pretty";
+const prose = "mt-4 mb-0 max-w-[62ch] text-[15px] leading-[1.65] text-fg-dim text-pretty";
+const link = "underline underline-offset-2 hover:text-accent-hi";
+const strong = "font-medium text-fg";
+---
+
+<Layout
+  title={`Support · ${APP_NAME}`}
+  description={`Get help with ${APP_NAME}: the public tracker, a private feedback form for reports that quote your own code, or email for licences.`}
+  schema={schema}
+>
+  <Nav />
+  <main id="main" tabindex="-1" class="wrap max-w-[820px] py-20">
+    <div class="mono text-accent">Support</div>
+    <h1 class="mt-3 mb-0 font-display text-[clamp(28px,4.4vw,40px)] font-semibold tracking-[-0.04em]">
+      Support
+    </h1>
+    <p class="mt-4 mb-0 max-w-[62ch] text-[16px] leading-[1.6] text-fg-dim text-pretty">
+      Three ways in, and which one to use comes down to a single question:{" "}
+      <strong class={strong}>does telling us what went wrong mean quoting your own work?</strong>
+    </p>
+
+    <section class="mt-14">
+      <h2 class={h2}>A bug or an idea you are happy to share</h2>
+      <p class={lead}>
+        The <a href={ISSUES_URL} target="_blank" rel="noopener" class={link}>public tracker</a> is shared
+        by every Magenta Creations app, and has a folder for {APP_NAME}. It suits most things: a card that
+        renders wrong, a Claude Code or Codex release that broke something, a feature request. It is
+        public, so the answer is there for whoever asks next.{" "}
+        <a href={GITHUB_NEW_ISSUE_URL} target="_blank" rel="noopener" class={link}>Open an issue</a>.
+      </p>
+      <p class={prose}>
+        Say which version of {APP_NAME}, which macOS, and which <code class="font-mono text-fg">claude</code>
+        or <code class="font-mono text-fg">codex</code> version the session ran. The protocol {APP_NAME}
+        speaks is undocumented and moves with each CLI release, so that last number is usually the
+        answer.
+      </p>
+    </section>
+
+    <section class="mt-14">
+      <h2 class={h2}>Anything that quotes your own work</h2>
+      <p class={lead}>
+        A useful report sometimes has to include a file path, a prompt or a piece of a transcript. The <a
+          href={FEEDBACK_URL}
+          class={link}>feedback form</a
+        > is private: no account is needed, and the email address is optional. Leave it blank and the
+        report is anonymous.
+      </p>
+      <p class={prose}>
+        <strong class={strong}>Choosing Send Feedback in the app does not send anything.</strong> It
+        hands your browser a URL and stops. Everything that URL carries (the app version, the macOS
+        version, the Mac model and the language) is visible in the address bar, and on the page as four
+        fields you can edit or clear before pressing Send.
+      </p>
+    </section>
+
+    <section class="mt-14">
+      <h2 class={h2}>Licences and payment</h2>
+      <p class={lead}>
+        Email <a href={SUPPORT_EMAIL_HREF} class={link}>{SUPPORT_EMAIL}</a> for a key that will not
+        activate, a key you have lost, or a refund within the {PRICING.refundDays}-day window, no reason
+        needed. A key is checked on your Mac and never sent anywhere, so a reply is the only way we can
+        look at one: quote the address you bought with rather than the key itself.
+      </p>
+      <p class={prose}>
+        What a key covers, and what the trial does, is set out in the{" "}
+        <a href="/terms/" class={link}>licence terms</a>.
+      </p>
+    </section>
+
+    <section class="mt-14">
+      <h2 class={h2}>What to expect</h2>
+      <p class={lead}>
+        Everything gets read, and most things get an answer within a few working days. {APP_NAME} is not
+        made by Anthropic or OpenAI, so a problem with Claude Code or Codex themselves, your plan or your
+        sign-in belongs with them.
+      </p>
+    </section>
+  </main>
+  <Footer />
+</Layout>

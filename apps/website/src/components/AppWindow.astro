@@ -1,0 +1,288 @@
+---
+/**
+ * Drakar's session window, drawn: the sidebar of sessions sorted by what needs
+ * you, a Claude Code turn arriving in the transcript (a selection sent with the
+ * prompt, two reads, an edit with its diff, and a permission card waiting), and
+ * the editor beside it with the same file open and the selection still marked.
+ *
+ * A drawing, not a capture: Drakar has no screenshot pipeline yet. Every element
+ * is something CHANGELOG.md 1.0.0 or 1.1.0 says the window does, but the names,
+ * paths and code are examples, and the caption under it says so. When appshot
+ * captures exist, this is what they replace.
+ *
+ * The turns arrive one after another on load (`.arrive` in global.css), and the
+ * permission card rings, as the card does in the app while it waits. Reduced
+ * motion shows the finished turn. Below `md` only the transcript is drawn: the
+ * sidebar and the editor would be too small to read.
+ */
+
+type Tone = "kw" | "ty" | "fn" | "st" | "cm" | "nu" | "pl";
+type Segment = [Tone, string];
+
+/** Swift, coloured roughly as Xcode's dark theme does. Example code. */
+const CODE: { n: number; s: Segment[] }[] = [
+  { n: 40, s: [["kw", "final class "], ["ty", "SessionStore"], ["pl", ": "], ["ty", "ObservableObject"], ["pl", " {"]] },
+  { n: 41, s: [["kw", "  @Published private"], ["pl", "(set) "], ["kw", "var "], ["pl", "summaries: ["], ["ty", "SessionSummary"], ["pl", "] = []"]] },
+  { n: 42, s: [["pl", ""]] },
+  { n: 43, s: [["cm", "  /// Coalesces a turn's writes into one publish."]] },
+  { n: 44, s: [["kw", "  private var "], ["pl", "pending: ["], ["ty", "SessionID"], ["pl", ": "], ["ty", "SessionSummary"], ["pl", "] = [:]"]] },
+  { n: 45, s: [["kw", "  private var "], ["pl", "flush: "], ["ty", "Task"], ["pl", "<"], ["ty", "Void"], ["pl", ", "], ["ty", "Never"], ["pl", ">?"]] },
+  { n: 46, s: [["pl", ""]] },
+  { n: 47, s: [["kw", "  func "], ["fn", "update"], ["pl", "(_ summary: "], ["ty", "SessionSummary"], ["pl", ") {"]] },
+  { n: 48, s: [["pl", "    pending[summary.id] = summary"]] },
+  { n: 49, s: [["pl", "    flush?."], ["fn", "cancel"], ["pl", "()"]] },
+  { n: 50, s: [["pl", "    flush = "], ["ty", "Task"], ["pl", " { "], ["kw", "@MainActor in"]] },
+  { n: 51, s: [["kw", "      try? await "], ["ty", "Task"], ["pl", "."], ["fn", "sleep"], ["pl", "(for: ."], ["fn", "milliseconds"], ["pl", "("], ["nu", "16"], ["pl", "))"]] },
+  { n: 52, s: [["pl", "      "], ["fn", "apply"], ["pl", "(pending)"]] },
+  { n: 53, s: [["pl", "      pending."], ["fn", "removeAll"], ["pl", "()"]] },
+  { n: 54, s: [["pl", "    }"]] },
+  { n: 55, s: [["pl", "  }"]] },
+  { n: 56, s: [["pl", ""]] },
+  { n: 57, s: [["kw", "  private func "], ["fn", "apply"], ["pl", "(_ changes: ["], ["ty", "SessionID"], ["pl", ": "], ["ty", "SessionSummary"], ["pl", "]) {"]] },
+  { n: 58, s: [["pl", "    summaries = summaries."], ["fn", "map"], ["pl", " { changes[$0.id] ?? $0 }"]] },
+  { n: 59, s: [["pl", "  }"]] },
+  { n: 60, s: [["pl", "}"]] },
+];
+
+const TONE: Record<Tone, string> = {
+  kw: "text-[#fc5fa3]",
+  ty: "text-[#5dd8ff]",
+  fn: "text-[#67b7a4]",
+  st: "text-[#fc6a5d]",
+  cm: "text-[#7f8c98]",
+  nu: "text-[#d0bf69]",
+  pl: "text-fg/85",
+};
+
+/** Lines the agent just changed: a green bar in the gutter, as the editor marks them. */
+const CHANGED = new Set([44, 45, 48, 49, 50, 51, 52, 53]);
+/** The selection that went with the prompt. */
+const SELECTED = new Set([47, 48, 49, 50, 51, 52, 53, 54, 55]);
+
+type State = "waiting" | "working" | "idle";
+const DOT: Record<State, string> = { waiting: "bg-warn", working: "bg-ok", idle: "bg-fg-muted/60" };
+
+const PROJECTS: {
+  name: string;
+  sessions: { title: string; state: State; meta: string; agent?: "codex"; selected?: boolean }[];
+}[] = [
+  {
+    name: "drakar",
+    sessions: [
+      { title: "Fix the list flicker", state: "waiting", meta: "Bash · now", selected: true },
+      { title: "Review the rewind sheet", state: "working", meta: "codex · 2m", agent: "codex" },
+      { title: "Licence pane copy", state: "idle", meta: "18m" },
+    ],
+  },
+  {
+    name: "armada",
+    sessions: [
+      { title: "Pace forecast weights", state: "working", meta: "work · 4m" },
+      { title: "Release 1.11.1", state: "idle", meta: "1h" },
+    ],
+  },
+  {
+    name: "swift-support-kit",
+    sessions: [{ title: "Settings scaffold docs", state: "idle", meta: "3h" }],
+  },
+];
+
+const card = "rounded-[9px] border border-white/8 bg-white/[.035]";
+const toolHead = "flex items-center gap-2 px-3 py-2 font-mono text-[10.5px]";
+---
+
+<div
+  class="relative overflow-hidden rounded-[14px] border border-white/12 bg-chrome text-left shadow-[0_50px_120px_-40px_rgba(70,60,200,.55),0_30px_60px_-30px_rgba(0,0,0,.9)]"
+  role="img"
+  aria-label="A drawing of Drakar's session window: a sidebar of sessions with the selected one waiting on a permission prompt; a Claude Code turn that read a file, edited it and now asks to run swift test, with Allow and Deny buttons; and the edited file open in an editor beside the conversation, with the selection that was sent marked."
+>
+  <div class="rim-plate absolute inset-x-0 top-0 h-px" aria-hidden="true"></div>
+
+  {/* Title bar */}
+  <div class="flex h-[38px] items-center gap-3 border-b border-black/40 bg-chrome-2 px-3.5" aria-hidden="true">
+    <div class="flex gap-[7px]">
+      <span class="block size-[11px] rounded-full bg-[#ff5f57]"></span>
+      <span class="block size-[11px] rounded-full bg-[#febc2e]"></span>
+      <span class="block size-[11px] rounded-full bg-[#28c840]"></span>
+    </div>
+    <div class="flex min-w-0 flex-1 items-center justify-center gap-2 text-[11.5px] text-fg-dim">
+      <span class="truncate font-medium text-fg/90">Fix the list flicker</span>
+      <span class="hidden truncate text-fg-muted sm:inline">— ~/Projects/apps/drakar</span>
+    </div>
+    {/* A yes-or-no question is answered from the toolbar too (CHANGELOG 1.0.0). */}
+    <div class="hidden items-center gap-1 sm:flex">
+      <span class="rounded-[5px] border border-white/10 px-1.5 py-[2px] text-[10px] text-fg/80">
+        Deny <span class="font-mono text-fg-muted">⌥⌘N</span>
+      </span>
+      <span class="rounded-[5px] border border-warn/40 bg-warn/10 px-1.5 py-[2px] text-[10px] text-warn-ink">
+        Allow <span class="font-mono opacity-70">⌥⌘Y</span>
+      </span>
+    </div>
+  </div>
+
+  <div
+    class="grid grid-cols-1 md:grid-cols-[200px_1fr] lg:grid-cols-[210px_minmax(0,1fr)_minmax(0,0.92fr)]"
+    aria-hidden="true"
+  >
+    {/* Sidebar */}
+    <div class="hidden flex-col border-r border-black/40 bg-[#18191d] md:flex">
+      <div class="flex items-center justify-between px-3 pt-3 pb-1.5">
+        <span class="text-[10px] font-semibold tracking-[0.06em] text-fg-muted uppercase">Sessions</span>
+        <span class="font-mono text-[10px] text-fg-muted">⌥⌘↓</span>
+      </div>
+      <div class="flex flex-col gap-2.5 px-1.5 pb-3">
+        {
+          PROJECTS.map((p) => (
+            <div class="flex flex-col">
+              <span class="px-1.5 pt-1 pb-1 font-mono text-[10px] text-fg-muted">{p.name}</span>
+              {p.sessions.map((s) => (
+                <div
+                  class:list={[
+                    "flex items-start gap-2 rounded-[6px] px-1.5 py-[5px]",
+                    s.selected && "bg-accent/14 ring-1 ring-accent/25",
+                  ]}
+                >
+                  <span class:list={["mt-[5px] block size-[6px] flex-none rounded-full", DOT[s.state]]} />
+                  <span class="flex min-w-0 flex-col">
+                    <span class="truncate text-[11.5px] leading-[1.35] text-fg/90">{s.title}</span>
+                    <span
+                      class:list={[
+                        "truncate font-mono text-[9.5px] leading-[1.5]",
+                        s.state === "waiting" ? "text-warn-ink" : "text-fg-muted",
+                      ]}
+                    >
+                      {s.meta}
+                    </span>
+                  </span>
+                </div>
+              ))}
+            </div>
+          ))
+        }
+      </div>
+      <div class="mt-auto flex items-center justify-between border-t border-white/6 px-3 py-2 font-mono text-[9.5px] text-fg-muted">
+        <span>~/.claude-work</span>
+        <span>claude 2.1.296</span>
+      </div>
+    </div>
+
+    {/* Transcript */}
+    <div class="flex min-w-0 flex-col bg-[#1b1c21]">
+      <div class="flex flex-1 flex-col gap-3 px-4 pt-4 pb-3 sm:px-5">
+        {/* The prompt, with the selection that went with it */}
+        <div class="arrive step-1 flex flex-col items-end gap-1.5">
+          <div class="max-w-[88%] rounded-[12px] rounded-br-[4px] bg-accent/16 px-3 py-2 text-[12.5px] leading-[1.5] text-fg">
+            The session list flickers when a turn ends. Find out why and fix it.
+          </div>
+          <span class="rounded-[5px] border border-accent/30 bg-accent/8 px-1.5 py-[2px] font-mono text-[9.5px] text-accent-hi">
+            SessionStore.swift:47–55
+          </span>
+        </div>
+
+        <p class="arrive step-2 m-0 text-[12.5px] leading-[1.55] text-fg/85">
+          Every summary write republishes the whole list. Reading the store first.
+        </p>
+
+        <div class="arrive step-2 flex flex-col gap-1.5">
+          <div class={card}>
+            <div class={toolHead}>
+              <span class="block size-[6px] rounded-full bg-ok"></span>
+              <span class="text-fg">Read</span>
+              <span class="truncate text-fg-muted">Sources/DrakarKit/SessionStore.swift</span>
+              <span class="ml-auto text-fg-muted">214 lines</span>
+            </div>
+          </div>
+          <div class={card}>
+            <div class={toolHead}>
+              <span class="block size-[6px] rounded-full bg-ok"></span>
+              <span class="text-fg">Grep</span>
+              <span class="truncate text-fg-muted">"summaries[" in Sources</span>
+              <span class="ml-auto text-fg-muted">6 matches</span>
+            </div>
+          </div>
+        </div>
+
+        <div class:list={["arrive step-3 overflow-hidden", card]}>
+          <div class:list={[toolHead, "border-b border-white/6"]}>
+            <span class="block size-[6px] rounded-full bg-ok"></span>
+            <span class="text-fg">Edit</span>
+            <span class="truncate text-fg-muted">SessionStore.swift</span>
+            <span class="ml-auto text-ok-ink">+6</span>
+            <span class="text-danger-ink">−1</span>
+          </div>
+          <div class="py-1 font-mono text-[10.5px] leading-[1.7]">
+            <div class="bg-danger/12 px-3 text-danger-ink/95">−     summaries[index] = summary</div>
+            <div class="bg-ok/10 px-3 text-ok-ink/95">+     pending[summary.id] = summary</div>
+            <div class="bg-ok/10 px-3 text-ok-ink/95">+     flush?.cancel()</div>
+            <div class="bg-ok/10 px-3 text-ok-ink/95">+     flush = Task &#123; @MainActor in</div>
+            <div class="bg-ok/10 px-3 text-ok-ink/95">+       try? await Task.sleep(for: .milliseconds(16))</div>
+            <div class="px-3 text-fg-muted">      …</div>
+          </div>
+        </div>
+
+        {/* The permission card, waiting */}
+        <div class="arrive step-4 ask rounded-[10px] border border-warn/45 bg-warn/[.07] p-3">
+          <div class="flex items-center gap-2 font-mono text-[10.5px]">
+            <span class="block size-[6px] rounded-full bg-warn"></span>
+            <span class="text-warn-ink">Allow Bash?</span>
+          </div>
+          <div class="mt-2 rounded-[6px] bg-black/35 px-2.5 py-1.5 font-mono text-[11px] text-fg">
+            swift test --filter SessionStoreTests
+          </div>
+          <div class="mt-2.5 flex flex-wrap items-center gap-1.5">
+            <span class="rounded-[6px] bg-accent px-2.5 py-[5px] text-[11px] font-medium text-accent-ink">
+              Allow <span class="font-mono opacity-60">⌥⌘Y</span>
+            </span>
+            <span class="rounded-[6px] border border-white/12 px-2.5 py-[5px] text-[11px] text-fg/90">
+              Deny <span class="font-mono text-fg-muted">⌥⌘N</span>
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* Composer */}
+      <div class="arrive step-5 border-t border-white/6 px-4 py-3 sm:px-5">
+        <div class="flex items-center gap-2 rounded-[10px] border border-white/10 bg-black/25 px-3 py-2.5">
+          <span class="text-[12px] text-fg-muted">Reply…</span>
+          <span class="caret -ml-1 block h-[14px] w-px bg-accent-hi"></span>
+          <span class="ml-auto hidden font-mono text-[9.5px] text-fg-muted sm:inline">Opus · ~/.claude-work</span>
+        </div>
+      </div>
+    </div>
+
+    {/* Editor */}
+    <div class="hidden min-w-0 flex-col border-l border-black/40 bg-[#1f2025] lg:flex">
+      <div class="flex h-[32px] items-end gap-px border-b border-black/40 bg-[#18191d] pl-2">
+        <span class="flex h-[28px] items-center gap-1.5 rounded-t-[6px] bg-[#1f2025] px-3 text-[11px] text-fg">
+          SessionStore.swift
+          <span class="block size-[5px] rounded-full bg-ok" title="Reloaded"></span>
+        </span>
+        <span class="flex h-[28px] items-center px-3 text-[11px] text-fg-muted">SessionRow.swift</span>
+        <span class="ml-auto flex h-[28px] items-center px-3 font-mono text-[9.5px] text-fg-muted">⌘P</span>
+      </div>
+      <div class="px-3 py-1.5 font-mono text-[9.5px] text-fg-muted">
+        DrakarKit › Sources › SessionStore.swift
+      </div>
+      <div class="flex-1 overflow-hidden pb-3 font-mono text-[10.5px] leading-[1.72]">
+        {
+          CODE.map((line) => (
+            <div class:list={["flex", SELECTED.has(line.n) && "bg-accent/[.09]"]}>
+              <span
+                class:list={[
+                  "w-[3px] flex-none",
+                  CHANGED.has(line.n) ? "bg-ok/80" : "bg-transparent",
+                ]}
+              />
+              <span class="w-[30px] flex-none pr-2.5 text-right text-fg-muted/70 select-none">{line.n}</span>
+              <span class="min-w-0 truncate whitespace-pre">
+                {line.s.map(([tone, text]) => (
+                  <span class={TONE[tone]}>{text}</span>
+                ))}
+              </span>
+            </div>
+          ))
+        }
+      </div>
+    </div>
+  </div>
+</div>

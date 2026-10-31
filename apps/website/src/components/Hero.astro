@@ -1,0 +1,73 @@
+---
+/**
+ * The promise, then the window. Centred rather than armada's two columns: the
+ * thing being sold is a wide window, and a drawing of it at half the page width
+ * would be too small to read.
+ *
+ * The headline is the line the 2026-10-21 competitive brief recommends:
+ * "as you installed them" is the one claim the field's other clients cannot make.
+ */
+import { APP_VERSION, DOWNLOAD, PRICING, TRIAL } from "../config";
+import AppleGlyph from "./AppleGlyph.astro";
+import AppWindow from "./AppWindow.astro";
+import Button from "./Button.astro";
+---
+
+<section class="relative overflow-hidden pt-[84px] pb-[72px]">
+  <!-- The plate's two colours, bled off the top edge, blue left, violet right,
+       as the icon runs. -->
+  <div class="glow-hero pointer-events-none absolute inset-x-0 -top-[180px] h-[760px]" aria-hidden="true">
+  </div>
+  <div
+    class="dots pointer-events-none absolute inset-x-0 top-0 h-[620px] [mask-image:linear-gradient(to_bottom,black,transparent)]"
+    aria-hidden="true"
+  >
+  </div>
+
+  <div class="wrap relative flex flex-col items-center gap-6 text-center">
+    <a
+      href={`/changelog/${APP_VERSION}/`}
+      class="flex items-center gap-2 rounded-full border border-white/12 bg-white/[.03] px-3.5 py-1.5 text-[11.5px] font-medium text-fg-dim backdrop-blur transition-colors hover:border-accent/50 hover:text-fg"
+    >
+      <span class="block size-1.5 rounded-full bg-ok" aria-hidden="true"></span>
+      {APP_VERSION} is out · rewind and fork from any prompt
+      <span class="text-fg-muted" aria-hidden="true">→</span>
+    </a>
+
+    <h1
+      class="m-0 max-w-[17ch] font-display text-[clamp(40px,6.4vw,76px)] leading-[1.0] font-semibold tracking-[-0.048em] text-balance"
+    >
+      Claude Code and Codex, <span class="text-plate">as you installed them.</span>
+    </h1>
+
+    <p class="m-0 max-w-[60ch] text-[17px] leading-[1.6] text-pretty text-fg-dim">
+      Drakar is a native Mac window for the <code class="font-mono text-[0.92em] text-fg">claude</code>
+      and <code class="font-mono text-[0.92em] text-fg">codex</code> already on your Mac: the
+      conversation, the tool calls, the permission prompts and the diffs, with an editor beside them,
+      in a window as light as Zed. No copy of the agent, nothing to import, and your own subscription.
+    </p>
+
+    <div class="flex w-full flex-col items-center justify-center gap-3 pt-1 sm:w-auto sm:flex-row">
+      <Button href={DOWNLOAD.zip} size="lg" class="w-full sm:w-auto">
+        <AppleGlyph size={16} />
+        Download for macOS
+      </Button>
+      <Button href={PRICING.buy} variant="secondary" size="lg" class="w-full sm:w-auto">
+        Buy a licence <span class="text-fg-dim">·</span>
+        {PRICING.price}
+      </Button>
+    </div>
+
+    <p class="m-0 text-[12.5px] text-fg-muted">
+      {DOWNLOAD.requires} · free {TRIAL.minutes}-minute trial · {PRICING.refundDays}-day refund · MIT
+      source
+    </p>
+  </div>
+
+  <figure class="wrap relative m-0 mt-16 flex flex-col gap-3">
+    <AppWindow />
+    <figcaption class="text-center font-mono text-[11px] text-fg-muted">
+      A drawing of the session window · the sessions, files and code are examples
+    </figcaption>
+  </figure>
+</section>

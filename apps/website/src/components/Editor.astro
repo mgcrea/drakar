@@ -1,0 +1,206 @@
+---
+/**
+ * The editor beside the conversation, and Drakar as the editor of a `claude`
+ * running in a terminal. Both are README sections ("The editor", "Drakar as the
+ * editor of claude in a terminal") and CHANGELOG 1.0.0 entries; the words here
+ * are theirs, shortened.
+ *
+ * The bridge is drawn as a diagram rather than a window: a terminal, a dashed
+ * line that moves (`.dash` in global.css), and Drakar's Review Changes window.
+ * The point is the direction of travel, which a capture could not show.
+ */
+import { DOCS } from "../config";
+import SectionCopy from "./SectionCopy.astro";
+
+const FEATURES = [
+  {
+    keys: "⌘P",
+    title: "Quick open",
+    body: "Any file in the folder, by name.",
+  },
+  {
+    keys: "⇧⌘F",
+    title: "Search",
+    body: "Across the folder, results by file.",
+  },
+  {
+    keys: "⌘S",
+    title: "Tabs that keep up",
+    body: "A tab the agent changes reloads. If you edited it too, Drakar asks which version to keep.",
+  },
+  {
+    keys: "⌥K",
+    title: "Selections as chips",
+    body: "What you select goes with the next prompt; ⌥K pins it so another can join it.",
+  },
+] as const;
+
+const RESULTS = [
+  { name: "SessionStore.swift", path: "DrakarKit/Sources", hit: true },
+  { name: "SessionStoreTests.swift", path: "DrakarKit/Tests", hit: false },
+  { name: "SessionSummary.swift", path: "DrakarKit/Sources", hit: false },
+  { name: "session-host.md", path: "docs", hit: false },
+] as const;
+---
+
+<section id="editor" class="relative scroll-mt-20 overflow-hidden py-[104px]">
+  <div class="wrap flex flex-col gap-24">
+    {/* The editor */}
+    <div class="grid grid-cols-1 items-center gap-12 lg:grid-cols-[1fr_1.1fr] lg:gap-16">
+      <SectionCopy
+        eyebrow="The editor"
+        heading="An editor beside the conversation, <span class='text-fg-dim'>not a second app.</span>"
+      >
+        <p class="m-0 text-[16px] leading-[1.6] text-pretty text-fg-dim">
+          A session window shows its folder's files in the sidebar and opens them as tabs beside the
+          conversation, with line numbers and colours. Enough to read what the agent wrote, fix the
+          line it got wrong, and point at the next thing, without leaving the window you are steering
+          from.
+        </p>
+        <ul class="m-0 mt-2 grid list-none grid-cols-1 gap-3 p-0 sm:grid-cols-2">
+          {
+            FEATURES.map((f) => (
+              <li class="flex flex-col gap-1.5 rounded-[12px] border border-rule bg-bg-2 p-4">
+                <span class="flex items-center justify-between gap-2">
+                  <span class="text-[14px] font-medium text-fg">{f.title}</span>
+                  <kbd class="rounded-[5px] border border-white/12 bg-white/[.04] px-1.5 py-[1px] font-mono text-[10.5px] text-fg-dim">
+                    {f.keys}
+                  </kbd>
+                </span>
+                <span class="text-[13px] leading-[1.55] text-pretty text-fg-dim">{f.body}</span>
+              </li>
+            ))
+          }
+        </ul>
+      </SectionCopy>
+
+      {/* Quick open, drawn */}
+      <div class="reveal relative" aria-hidden="true">
+        <div class="glow-soft pointer-events-none absolute -inset-10 opacity-80"></div>
+        <div
+          class="relative overflow-hidden rounded-[14px] border border-white/12 bg-chrome shadow-[0_40px_90px_-40px_rgba(70,60,200,.6)]"
+        >
+          <div class="flex h-[30px] items-end gap-px border-b border-black/40 bg-[#18191d] pl-2">
+            <span class="flex h-[26px] items-center rounded-t-[6px] bg-[#1f2025] px-3 text-[11px] text-fg">
+              SessionRow.swift
+            </span>
+            <span class="flex h-[26px] items-center px-3 text-[11px] text-fg-muted">Package.swift</span>
+          </div>
+          <div class="relative h-[300px] bg-[#1f2025] font-mono text-[10.5px] leading-[1.75] text-fg/40">
+            {
+              Array.from({ length: 16 }, (_, i) => (
+                <div class="flex">
+                  <span class="w-[36px] flex-none pr-3 text-right text-fg-muted/50">{i + 1}</span>
+                  <span
+                    class:list={[
+                      "block h-[7px] translate-y-[7px] rounded-full bg-white/[.05]",
+                      ["w-[46%]", "w-[62%]", "w-[30%]", "w-[0%]", "w-[54%]", "w-[70%]", "w-[40%]", "w-[58%]"][i % 8],
+                    ]}
+                  />
+                </div>
+              ))
+            }
+            <div class="absolute inset-x-6 top-6 overflow-hidden rounded-[12px] border border-white/14 bg-[#2a2b31]/95 shadow-[0_30px_60px_-20px_rgba(0,0,0,.9)] backdrop-blur sm:inset-x-12">
+              <div class="flex items-center gap-2 border-b border-white/8 px-3.5 py-2.5 font-sans text-[13px] text-fg">
+                <span class="text-fg-muted">⌘P</span>
+                sess<span class="caret -ml-1.5 block h-[15px] w-px bg-accent-hi"></span>
+              </div>
+              <div class="p-1.5 font-sans">
+                {
+                  RESULTS.map((r) => (
+                    <div
+                      class:list={[
+                        "flex items-baseline justify-between gap-3 rounded-[7px] px-2.5 py-[6px]",
+                        r.hit && "bg-accent text-accent-ink",
+                      ]}
+                    >
+                      <span class:list={["text-[12.5px]", r.hit ? "font-medium" : "text-fg/90"]}>{r.name}</span>
+                      <span class:list={["font-mono text-[10px]", r.hit ? "text-accent-ink/70" : "text-fg-muted"]}>
+                        {r.path}
+                      </span>
+                    </div>
+                  ))
+                }
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    {/* The IDE bridge */}
+    <div class="flex flex-col gap-10">
+      <div class="grid grid-cols-1 items-end gap-8 lg:grid-cols-[1fr_1.15fr] lg:gap-16">
+        <div class="flex flex-col gap-[14px]">
+          <div class="mono text-accent">For claude in a terminal</div>
+          <h2
+            class="m-0 font-display text-[clamp(30px,3.8vw,46px)] leading-[1.05] font-semibold tracking-[-0.038em] text-balance"
+          >
+            Keep your terminal. Review its edits in Drakar.
+          </h2>
+        </div>
+        <p class="m-0 text-[15.5px] leading-[1.68] text-pretty text-fg-dim lg:mb-1">
+          While Drakar runs, a <code class="font-mono text-[0.9em] text-fg">claude --ide</code> started in
+          a folder Drakar has open, or connected with <code class="font-mono text-[0.9em] text-fg">/ide</code>,
+          sends every edit to Drakar's Review Changes window, and the file is written only if you accept
+          it there. It sees your selection in Drakar's editor too. Settings › General picks the folders:
+          those open in Drakar, any in your home folder, or none.{" "}
+          <a href={DOCS.ideBridge} target="_blank" rel="noopener" class="text-fg underline decoration-rule-2 underline-offset-4 hover:text-accent-hi">How it works ↗</a>
+        </p>
+      </div>
+
+      <div class="reveal grid grid-cols-1 items-center gap-4 md:grid-cols-[1fr_110px_1fr]" aria-hidden="true">
+        {/* Terminal */}
+        <div class="overflow-hidden rounded-[12px] border border-white/10 bg-[#0f1013] shadow-[0_30px_60px_-30px_rgba(0,0,0,.9)]">
+          <div class="flex items-center gap-[6px] border-b border-white/6 px-3 py-2">
+            <span class="block size-[9px] rounded-full bg-white/15"></span>
+            <span class="block size-[9px] rounded-full bg-white/15"></span>
+            <span class="block size-[9px] rounded-full bg-white/15"></span>
+            <span class="ml-2 font-mono text-[10px] text-fg-muted">zsh — ~/Projects/apps/drakar</span>
+          </div>
+          <div class="px-4 py-3.5 font-mono text-[11.5px] leading-[1.8]">
+            <div><span class="text-ok-ink">❯</span> <span class="text-fg">claude --ide</span></div>
+            <div class="text-fg/80">&gt; rename SessionHost.start to attach</div>
+            <div class="text-fg-muted">● Update(Sources/SessionHost.swift)</div>
+            <div class="flex items-center gap-1.5 text-fg-muted">
+              <span class="caret block h-[13px] w-[7px] bg-fg/60"></span>
+            </div>
+          </div>
+        </div>
+
+        {/* The line */}
+        <svg viewBox="0 0 110 40" class="mx-auto h-10 w-[110px] rotate-90 md:rotate-0" fill="none">
+          <defs>
+            <linearGradient id="bridge-line" x1="0" x2="110" y1="0" y2="0" gradientUnits="userSpaceOnUse">
+              <stop offset="0" stop-color="#5aa9ff" />
+              <stop offset="1" stop-color="#d38bf5" />
+            </linearGradient>
+          </defs>
+          <path d="M4 20 H96" stroke="url(#bridge-line)" stroke-width="2" stroke-dasharray="6 5" class="dash" />
+          <path d="M92 13 L102 20 L92 27" stroke="#d38bf5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+
+        {/* Review Changes */}
+        <div class="overflow-hidden rounded-[12px] border border-accent/35 bg-chrome shadow-[0_30px_70px_-30px_rgba(110,80,255,.6)]">
+          <div class="flex items-center gap-[6px] border-b border-black/40 bg-chrome-2 px-3 py-2">
+            <span class="block size-[9px] rounded-full bg-[#ff5f57]"></span>
+            <span class="block size-[9px] rounded-full bg-[#febc2e]"></span>
+            <span class="block size-[9px] rounded-full bg-[#28c840]"></span>
+            <span class="ml-2 text-[11px] font-medium text-fg/90">Review Changes</span>
+            <span class="ml-auto font-mono text-[10px] text-fg-muted">SessionHost.swift</span>
+          </div>
+          <div class="py-1.5 font-mono text-[10.5px] leading-[1.75]">
+            <div class="px-3 text-fg-muted">  final class SessionHost &#123;</div>
+            <div class="bg-danger/12 px-3 text-danger-ink/95">−   func start(_ id: SessionID) async throws</div>
+            <div class="bg-ok/10 px-3 text-ok-ink/95">+   func attach(_ id: SessionID) async throws</div>
+            <div class="px-3 text-fg-muted">      …</div>
+          </div>
+          <div class="flex justify-end gap-1.5 border-t border-white/6 px-3 py-2">
+            <span class="rounded-[6px] border border-white/12 px-2.5 py-[4px] text-[11px] text-fg/85">Reject</span>
+            <span class="rounded-[6px] bg-accent px-2.5 py-[4px] text-[11px] font-medium text-accent-ink">Accept</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>

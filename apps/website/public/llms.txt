@@ -1,0 +1,80 @@
+# Drakar
+
+> A native macOS app to drive Claude Code: the conversation, the tool calls, the permission
+> prompts and the diffs, in a window as light as Zed. It runs the `claude` you installed over its
+> stream-json protocol, the way the VS Code extension does, and a session can run Codex instead,
+> through its `app-server`. Nothing is bundled, imported or synced.
+
+Released: a Developer ID signed, notarized zip published on GitHub releases, downloadable at
+https://drakar.mgcrea.io/download, with a licence at https://drakar.mgcrea.io/buy. macOS 26 or
+later, and macOS only. Open source under the MIT licence at https://github.com/mgcrea/drakar.
+Not affiliated with Anthropic or OpenAI.
+
+## The conversation
+
+- Each turn as it arrives: text, thinking, Markdown, and every tool call as a card with its result.
+  Edit and Write calls show their diffs.
+- Permission prompts, the agent's questions and an MCP server's questions are answered in their
+  card; a yes-or-no one also from the toolbar, with ⌥⌘Y or ⌥⌘N.
+- A subagent's card shows its whole conversation. A running task can be stopped, sent to the
+  background, and its output read.
+- Rewind and fork from any prompt: fork the conversation from there, rewind the files Claude
+  changed since, or both, with the files and line counts shown before anything changes.
+- What you select in the editor, or the file you have open, goes with your next prompt. ⌥K pins
+  a selection as a chip so another can be added beside it.
+
+## The editor
+
+- A session window shows its folder's files and opens them as tabs beside the conversation, with
+  line numbers and colours. ⌘S saves, ⌘P finds a file by name, ⇧⌘F searches the folder.
+- A tab the agent changes reloads; if you edited it too, Drakar asks which version to keep, and it
+  asks before a window with unsaved tabs closes.
+- While Drakar runs, a `claude --ide` in a terminal, in a folder Drakar has open (or connected
+  with `/ide`), sends every edit to Drakar's Review Changes window, and the file is written only
+  if you accept it there.
+
+## Sessions
+
+- The sidebar sorts what needs you first; ⌥⌘↑ and ⌥⌘↓ move between sessions, and Next After
+  Replying shows the next one waiting.
+- Sessions across `~/.claude` and every `~/.claude-*` account. Settings › General picks which
+  `claude` runs and the account (`CLAUDE_CONFIG_DIR`) a new session starts under.
+- A small helper holds the `claude` and `codex` processes, so a quit, a crash or an update leaves
+  them working; the next launch attaches and replays what they did meanwhile.
+- Sessions a terminal or VS Code runs show their state in the sidebar and can be moved into the
+  window. Mark several (or Mark All Sessions, ⌥⌘A) and send them one prompt, or run a skill in a
+  session per subfolder.
+- A Skills window lists both agents' skills, commands and plugins, installed from a git address
+  or a folder.
+
+## Privacy and security
+
+- Drakar listens on one network socket, on 127.0.0.1, which answers only a client holding this
+  launch's token (the IDE bridge), and its session host on one Unix socket, which only your own
+  Drakar can reach.
+- The only connections Drakar opens of its own are Sparkle's, to check for and fetch updates,
+  and only once you said yes to update checks. A check reads drakar.mgcrea.io/appcast.xml and
+  sends no identifier. Everything else that reaches the network is the `claude` or `codex` you
+  installed.
+- The licence key is checked on your Mac, never by a server. No analytics, no telemetry, no crash
+  reporter.
+- No entitlements and no sandbox, by design: it spawns agents that work on your files. Hardened
+  runtime on every binary. `make audit`, `make audit-running` and `make audit-release` check the
+  claim against the sources, the running app and the built bundle.
+
+## Price
+
+- $14.99 once (€14.99 in the EU, VAT included), covering every 1.x release, on every Mac you own.
+  Not a subscription.
+- A free 30-minute trial, started from a button and held in memory.
+- 30-day refund, no reason needed.
+
+## Links
+
+- Site: https://drakar.mgcrea.io
+- Changelog: https://drakar.mgcrea.io/changelog/
+- Buy: https://drakar.mgcrea.io/buy
+- Support: https://drakar.mgcrea.io/support/
+- Privacy: https://drakar.mgcrea.io/privacy/
+- Terms: https://drakar.mgcrea.io/terms/
+- Source: https://github.com/mgcrea/drakar

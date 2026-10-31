@@ -1,0 +1,37 @@
+---
+/**
+ * A strip of tool calls, each with the state dot its card carries in the
+ * transcript, scrolling under the hero. Decoration, so it is hidden from
+ * assistive technology. Two identical runs side by side, translated by half, make
+ * the loop seamless; reduced motion stops it through the rule in global.css.
+ */
+const ITEMS = [
+  { label: "Read  Sources/SessionStore.swift", dot: "bg-ok" },
+  { label: "Edit  +12 −3", dot: "bg-ok" },
+  { label: "Bash  swift test", dot: "bg-warn" },
+  { label: "Grep  “permission_prompt”", dot: "bg-ok" },
+  { label: "Task  Review the diff", dot: "bg-accent" },
+  { label: "Write  docs/releasing.md", dot: "bg-ok" },
+  { label: "WebFetch  developer.apple.com", dot: "bg-warn" },
+  { label: "TodoWrite  4 items", dot: "bg-ok" },
+  { label: "codex  apply_patch", dot: "bg-accent" },
+  { label: "Glob  **/*.swift", dot: "bg-ok" },
+] as const;
+---
+
+<div class="overflow-hidden border-y border-rule bg-bg py-3.5" aria-hidden="true">
+  <div class="marquee flex w-max">
+    {
+      [0, 1].map(() => (
+        <div class="flex gap-10 pr-10">
+          {ITEMS.map((item) => (
+            <span class="flex items-center gap-2 font-mono text-[11.5px] whitespace-pre text-fg-muted">
+              <span class:list={["block size-[5px] rounded-full", item.dot]} />
+              {item.label}
+            </span>
+          ))}
+        </div>
+      ))
+    }
+  </div>
+</div>

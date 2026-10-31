@@ -1,4 +1,8 @@
 ---
+import Button from "../components/Button.astro";
+import Footer from "../components/Footer.astro";
+import Logo from "../components/Logo.astro";
+import Nav from "../components/Nav.astro";
 import { APP_NAME, SITE_DOMAIN } from "../config";
 import Layout from "../layouts/Layout.astro";
 ---
@@ -8,17 +12,25 @@ import Layout from "../layouts/Layout.astro";
   description={`That page does not exist on ${SITE_DOMAIN}.`}
   noindex
 >
+  <Nav />
   <main
     id="main"
     tabindex="-1"
-    class="wrap flex min-h-[70vh] flex-col items-start justify-center gap-5 py-24"
+    class="wrap relative flex min-h-[62vh] flex-col items-center justify-center gap-5 py-24 text-center"
   >
-    <div class="mono text-accent">404</div>
-    <h1 class="m-0 font-display text-[clamp(30px,4.4vw,44px)] leading-[1.06] font-semibold tracking-[-0.04em]">
-      That page does not exist.
+    <div class="glow-soft pointer-events-none absolute inset-x-0 top-0 h-[260px]" aria-hidden="true">
+    </div>
+    <Logo size={64} class="relative" />
+    <div class="mono relative text-accent">404</div>
+    <h1
+      class="relative m-0 font-display text-[clamp(30px,4.4vw,48px)] leading-[1.06] font-semibold tracking-[-0.04em]"
+    >
+      Nothing to rewind to here.
     </h1>
-    <a href="/" class="text-[15px] text-accent underline underline-offset-2 hover:text-accent-hi">
-      Back to {APP_NAME}
-    </a>
+    <p class="relative m-0 max-w-[46ch] text-[15.5px] leading-[1.68] text-pretty text-fg-dim">
+      That page does not exist. Your sessions are still running where you left them.
+    </p>
+    <Button href="/" size="lg" class="relative">Back to {APP_NAME}</Button>
   </main>
+  <Footer />
 </Layout>

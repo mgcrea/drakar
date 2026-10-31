@@ -1,0 +1,35 @@
+---
+/**
+ * The copy half of a two-column section: an eyebrow, the display heading, and the
+ * paragraphs the section passes in its slot. `SectionHeader` is the other shape,
+ * heading and copy side by side above a full-width body; this one sits beside a
+ * drawing instead.
+ *
+ * `paper` is for the light band, where the accent would fail contrast and the
+ * eyebrow takes the danger red instead.
+ */
+export interface Props {
+  eyebrow: string;
+  /** HTML, so a section can place its own line break. */
+  heading: string;
+  paper?: boolean;
+  class?: string;
+}
+
+const { eyebrow, heading, paper = false, class: className } = Astro.props;
+---
+
+<div
+  class:list={[
+    "flex flex-col gap-4 [&_code]:font-mono [&_code]:text-[0.9em]",
+    paper ? "[&_code]:text-ink" : "[&_code]:text-fg",
+    className,
+  ]}
+>
+  <div class:list={["mono", paper ? "text-danger" : "text-accent"]}>{eyebrow}</div>
+  <h2
+    class="m-0 font-display text-[clamp(32px,4.2vw,50px)] leading-[1.05] font-semibold tracking-[-0.038em] text-balance"
+    set:html={heading}
+  />
+  <slot />
+</div>

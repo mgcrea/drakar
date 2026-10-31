@@ -1,0 +1,24 @@
+---
+/**
+ * The plated mark, `public/logo.png`, which `pnpm icons` renders from the
+ * repo-root `design/drakar-icon.svg` with the plate's corner already applied.
+ * A PNG rather than the SVG: see generate-icons.mjs. Sized by attributes, so it
+ * needs no `style` and the CSP no style-attribute allowance.
+ */
+export interface Props {
+  size?: number;
+  class?: string;
+  /** Empty by default: every use sits beside the word "Drakar". */
+  alt?: string;
+}
+
+const { size = 23, class: className, alt = "" } = Astro.props;
+---
+
+<img
+  src="/logo.png"
+  alt={alt}
+  width={size}
+  height={size}
+  class:list={["flex-none", className]}
+/>

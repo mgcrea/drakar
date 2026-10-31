@@ -1,0 +1,108 @@
+---
+/**
+ * What Drakar connects to, and how to check. Every line is SECURITY.md's "What
+ * Drakar claims", shortened; if one of them changes there, it changes here in the
+ * same commit, as the privacy page does.
+ *
+ * The three sockets are drawn as the audit would list them: the one listener,
+ * the one Unix socket, and the one outgoing caller, with what guards each.
+ */
+import { DOCS, DOWNLOAD, REPO_URL } from "../config";
+import SectionHeader from "./SectionHeader.astro";
+
+const SOCKETS = [
+  {
+    label: "listens",
+    where: "127.0.0.1",
+    what: "The IDE bridge, for claude --ide",
+    guard:
+      "Bound to loopback, refuses non-local clients, and refuses the WebSocket upgrade to anyone without this launch's token, written 0600 into the lock file Claude Code reads.",
+  },
+  {
+    label: "listens",
+    where: "Unix socket",
+    what: "The session host",
+    guard:
+      "In a 0700 folder, made 0600 before it listens, and only a peer running as you, signed with Drakar's identifier by Drakar's team, gets in.",
+  },
+  {
+    label: "connects",
+    where: DOWNLOAD.appcast,
+    what: "Sparkle's update check",
+    guard:
+      "Not constructed until you say yes to update checks. It sends no identifier, and installs only a release carrying Drakar's own EdDSA signature, always after asking.",
+  },
+] as const;
+
+const AUDITS = [
+  { cmd: "make audit", what: "the sources" },
+  { cmd: "make audit-running", what: "the running app" },
+  { cmd: "make audit-release", what: "the built bundle, every Mach-O" },
+] as const;
+---
+
+<section id="trust" class="relative scroll-mt-20 overflow-hidden py-[104px]">
+  <div class="wrap flex flex-col gap-12">
+    <SectionHeader
+      eyebrow="What it connects to"
+      heading="One loopback port, one private socket, and the updater you allowed."
+      class="mb-0!"
+    >
+      Everything else that reaches the network is the <code class="font-mono text-[0.9em] text-fg">claude</code>
+      or <code class="font-mono text-[0.9em] text-fg">codex</code> you installed, talking to its vendor over
+      your sign-in. A licence key is checked on your Mac, never by a server. Drakar has no analytics, no
+      crash reporter and no account.
+    </SectionHeader>
+
+    <div class="grid grid-cols-1 gap-4 lg:grid-cols-3">
+      {
+        SOCKETS.map((s) => (
+          <article class="reveal flex flex-col gap-4 rounded-[16px] border border-rule bg-bg-2 p-6">
+            <div class="flex items-center gap-2 font-mono text-[11px]">
+              <span
+                class:list={[
+                  "rounded-[5px] px-1.5 py-[2px]",
+                  s.label === "listens" ? "bg-ok/12 text-ok-ink" : "bg-accent/14 text-accent-hi",
+                ]}
+              >
+                {s.label}
+              </span>
+              <span class="truncate text-fg">{s.where}</span>
+            </div>
+            <h3 class="m-0 text-[16px] font-semibold tracking-[-0.015em]">{s.what}</h3>
+            <p class="m-0 text-[13.5px] leading-[1.6] text-pretty text-fg-dim">{s.guard}</p>
+          </article>
+        ))
+      }
+    </div>
+
+    <div class="reveal grid grid-cols-1 items-center gap-8 rounded-[18px] border border-rule bg-[#0f1013] p-6 lg:grid-cols-[1.1fr_1fr] lg:p-8">
+      <div class="font-mono text-[12px] leading-[2]" aria-label="The three audits, as make targets">
+        {
+          AUDITS.map((a) => (
+            <div class="flex flex-wrap gap-x-3">
+              <span>
+                <span class="text-ok-ink">❯</span> <span class="text-fg">{a.cmd}</span>
+              </span>
+              <span class="text-fg-muted"># {a.what}</span>
+            </div>
+          ))
+        }
+      </div>
+      <div class="flex flex-col gap-3">
+        <h3 class="m-0 text-[17px] font-semibold tracking-[-0.015em]">Don't take our word for it.</h3>
+        <p class="m-0 text-[13.5px] leading-[1.65] text-pretty text-fg-dim">
+          The audit script exists to falsify the claim above, and CI runs it on every release: one
+          loopback listener, one Unix socket, nothing outgoing but Sparkle; no entitlements, on the app
+          or any helper; the hardened runtime on every binary. The source is MIT, so you can run it
+          yourself, or build Drakar from it.
+        </p>
+        <p class="m-0 flex flex-wrap gap-x-5 gap-y-1 text-[13.5px]">
+          <a href={DOCS.security} target="_blank" rel="noopener" class="text-fg underline decoration-rule-2 underline-offset-4 hover:text-accent-hi">SECURITY.md ↗</a>
+          <a href={DOCS.audit} target="_blank" rel="noopener" class="text-fg underline decoration-rule-2 underline-offset-4 hover:text-accent-hi">The audit script ↗</a>
+          <a href={REPO_URL} target="_blank" rel="noopener" class="text-fg underline decoration-rule-2 underline-offset-4 hover:text-accent-hi">Source ↗</a>
+        </p>
+      </div>
+    </div>
+  </div>
+</section>

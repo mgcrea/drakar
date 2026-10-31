@@ -34,13 +34,20 @@
  *
  * The purchase section is armada's, gated on SELLING the same way.
  *
- * DIVERGES from armada, whose page also covers its feedback form (this site has
- * none) and its MCP endpoint and voice (Drakar has neither).
+ * The feedback paragraphs are armada's: the app's Send Feedback opens /feedback/
+ * and sends nothing itself, and the page posts only when you press Send.
+ *
+ * DIVERGES from armada, whose page also covers its MCP endpoint and voice
+ * (Drakar has neither).
  */
+import Footer from "../components/Footer.astro";
+import Nav from "../components/Nav.astro";
 import {
   APP_NAME,
   DOCS,
   DOWNLOAD,
+  FEEDBACK_API,
+  FEEDBACK_URL,
   REPO_URL,
   SECURITY_EMAIL,
   SECURITY_EMAIL_HREF,
@@ -52,7 +59,7 @@ import {
 import Layout from "../layouts/Layout.astro";
 
 /** Set by hand when the page changes, never `new Date()`, which shows the deploy date. */
-const updated = "30 October 2026";
+const updated = "31 October 2026";
 
 const h2 = "m-0 font-display text-[22px] font-semibold tracking-[-0.03em]";
 const lead = "mt-5 mb-0 max-w-[62ch] text-[15px] leading-[1.65] text-pretty text-fg-dim";
@@ -65,7 +72,8 @@ const code = "[&_code]:font-mono [&_code]:text-[0.9em] [&_code]:break-words [&_c
   title={`Privacy · ${APP_NAME}`}
   description="What leaves your Mac and what does not: one update check you turn on yourself, no telemetry, and a licence checked offline."
 >
-  <main id="main" tabindex="-1" class:list={["wrap py-20", code]}>
+  <Nav />
+  <main id="main" tabindex="-1" class:list={["wrap max-w-[820px] py-20", code]}>
     <div class="mono text-accent">Privacy</div>
     <h1 class="mt-3 mb-0 font-display text-[clamp(28px,4.4vw,40px)] font-semibold tracking-[-0.04em]">
       Privacy
@@ -86,6 +94,11 @@ const code = "[&_code]:font-mono [&_code]:text-[0.9em] [&_code]:break-words [&_c
         <a href={DOCS.security} rel="noopener" class={link}>SECURITY.md</a> lists each part of that
         claim and how <a href={DOCS.audit} rel="noopener" class={link}>scripts/audit-network.sh</a>
         checks it, against the source, the app you downloaded, and the copy running on your Mac.
+      </p>
+      <p class={prose}>
+        Help › Send Feedback is not a second connection. It opens the
+        <a href={FEEDBACK_URL} class={link}>feedback form</a> in your browser with the app version,
+        macOS version, Mac model and language in the address bar, and the app sends nothing itself.
       </p>
     </section>
 
@@ -164,7 +177,7 @@ const code = "[&_code]:font-mono [&_code]:text-[0.9em] [&_code]:break-words [&_c
     <section class="mt-14">
       <h2 class={h2}>This site</h2>
       <p class={lead}>
-        Static files on Cloudflare, with no cookies, no forms and no third-party embeds. It loads no
+        Static files on Cloudflare, with no cookies and no third-party embeds. It loads no
         fonts or images from anywhere else, and its content security policy refuses requests to
         origins it does not name. Cloudflare keeps its own request logs, as any host does.
       </p>
@@ -180,6 +193,13 @@ const code = "[&_code]:font-mono [&_code]:text-[0.9em] [&_code]:break-words [&_c
         The download links redirect to
         <a href={`${REPO_URL}/releases`} rel="noopener" class={link}>Drakar's releases on GitHub</a>,
         and GitHub's own privacy terms cover what happens there.
+      </p>
+      <p class={prose}>
+        The <a href={FEEDBACK_URL} class={link}>feedback form</a> posts what you typed, and the four
+        diagnostic fields shown beside it, to <code>{new URL(FEEDBACK_API).host}</code>, a small worker
+        of ours. It does so only when you press Send, and keeps the report so it can be answered. The
+        email address is optional and used only to reply to you. No other page on this site talks to
+        it.
       </p>
     </section>
 
@@ -198,4 +218,5 @@ const code = "[&_code]:font-mono [&_code]:text-[0.9em] [&_code]:break-words [&_c
       </p>
     </section>
   </main>
+  <Footer />
 </Layout>

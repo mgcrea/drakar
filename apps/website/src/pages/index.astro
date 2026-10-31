@@ -1,81 +1,101 @@
 ---
-/**
- * One screen: what Drakar is, where to get it, where its source is.
- *
- * DIVERGES from armada, whose home page is twenty marketing sections. This one
- * is the skeleton drakar.mgcrea.io needs to serve updates (_redirects is the
- * part the app depends on); the pitch, screenshots and pricing come later.
- *
- * The price and the Buy button only while SELLING, the mirror of
- * LicenceLinks.isSelling in apps/apple: a price on a page whose /buy goes nowhere
- * would be the one promise here that is not true.
- */
+import Conversation from "../components/Conversation.astro";
+import Cta from "../components/Cta.astro";
+import Editor from "../components/Editor.astro";
+import Footer from "../components/Footer.astro";
+import Hero from "../components/Hero.astro";
+import Marquee from "../components/Marquee.astro";
+import Nav from "../components/Nav.astro";
+import Pricing from "../components/Pricing.astro";
+import Sessions from "../components/Sessions.astro";
+import SiblingApps from "../components/SiblingApps.astro";
+import Trust from "../components/Trust.astro";
+import Yours from "../components/Yours.astro";
 import {
   APP_NAME,
+  APP_VERSION,
+  DOCS,
   DOWNLOAD,
   MIN_MACOS,
   PRICING,
-  REPO_URL,
   SELLING,
+  SITE_URL,
+  SUPPORT_EMAIL,
   TAGLINE,
-  TRIAL,
 } from "../config";
 import Layout from "../layouts/Layout.astro";
 
-const button =
-  "inline-flex items-center justify-center rounded-md px-5 py-3 text-[15px] font-medium transition-colors";
+/** Publisher and site identity. `@id` lets the other schemas point at them. */
+const organizationSchema = {
+  "@context": "https://schema.org",
+  "@type": "Organization",
+  "@id": `${SITE_URL}/#organization`,
+  name: "Magenta Creations",
+  url: "https://mg-crea.com",
+  email: SUPPORT_EMAIL,
+  sameAs: ["https://mg-crea.com", "https://github.com/mgcrea"],
+};
+
+const websiteSchema = {
+  "@context": "https://schema.org",
+  "@type": "WebSite",
+  "@id": `${SITE_URL}/#website`,
+  name: APP_NAME,
+  url: SITE_URL,
+  publisher: { "@id": `${SITE_URL}/#organization` },
+  inLanguage: "en",
+};
+
+/**
+ * The offer only while SELLING: a price in structured data is a claim the thing
+ * can be bought right now.
+ */
+const schema = {
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  name: APP_NAME,
+  applicationCategory: "DeveloperApplication",
+  operatingSystem: MIN_MACOS,
+  softwareRequirements: DOWNLOAD.requires,
+  url: SITE_URL,
+  description: TAGLINE,
+  author: { "@type": "Person", name: "Olivier Louvignes" },
+  publisher: { "@id": `${SITE_URL}/#organization` },
+  license: DOCS.sourceLicense,
+  softwareVersion: APP_VERSION,
+  downloadUrl: `${SITE_URL}${DOWNLOAD.zip}`,
+  ...(SELLING
+    ? {
+        offers: {
+          "@type": "Offer",
+          price: PRICING.amount,
+          priceCurrency: PRICING.currency,
+          url: `${SITE_URL}${PRICING.buy}`,
+          availability: "https://schema.org/InStock",
+        },
+      }
+    : {}),
+};
 ---
 
-<Layout>
-  <main
-    id="main"
-    tabindex="-1"
-    class="wrap flex min-h-[86vh] flex-col items-start justify-center gap-6 py-20"
-  >
-    <img src="/favicon.svg" alt="" width="88" height="88" class="rounded-[20px]" />
-    <h1
-      class="m-0 font-display text-[clamp(40px,7vw,64px)] leading-none font-semibold tracking-[-0.04em]"
-    >
-      {APP_NAME}
-    </h1>
-    <p class="m-0 max-w-[40ch] text-[clamp(18px,2.4vw,21px)] leading-[1.5] text-pretty text-fg-dim">
-      {TAGLINE}
-    </p>
-    <div class="mt-2 flex flex-wrap gap-3">
-      <a href={DOWNLOAD.zip} class:list={[button, "bg-accent text-accent-ink hover:bg-accent-hi"]}>
-        Download for {MIN_MACOS}
-      </a>
-      {
-        SELLING && (
-          <a
-            href={PRICING.buy}
-            class:list={[button, "border border-rule-2 text-fg hover:border-accent hover:text-accent-hi"]}
-          >
-            Buy a licence · {PRICING.price}
-          </a>
-        )
-      }
-      <a
-        href={REPO_URL}
-        rel="noopener"
-        class:list={[button, "border border-rule-2 text-fg hover:border-accent hover:text-accent-hi"]}
-      >
-        Source on GitHub
-      </a>
-    </div>
-    {
-      SELLING ? (
-        <p class="m-0 max-w-[62ch] text-[15px] leading-[1.6] text-pretty text-fg-dim">
-          {PRICING.price} (or {PRICING.eur}, VAT included) once, for {PRICING.covers}. No
-          subscription. Try it free for {TRIAL.minutes} minutes from the app first, and you have{" "}
-          {PRICING.refundDays} days to change your mind:{" "}
-          <a href="/terms/" class="text-accent underline underline-offset-2 hover:text-accent-hi"
-            >the terms</a
-          >.
-        </p>
-      ) : (
-        <p class="mono m-0">Free while in beta</p>
-      )
-    }
+{/*
+  The order is the argument: what it looks like, what it runs, what the
+  conversation does, the editor, many sessions, what it connects to, and only
+  then the price.
+*/}
+<Layout schema={[organizationSchema, websiteSchema, schema]}>
+  <Nav />
+  <main id="main" tabindex="-1">
+    <Hero />
+    <Marquee />
+    <Yours />
+    <Conversation />
+    <Editor />
+    <Sessions />
+    <Trust />
+    <Pricing />
+    <SiblingApps />
+    <Cta />
   </main>
+  <Footer />
 </Layout>

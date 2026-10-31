@@ -1,0 +1,166 @@
+---
+/**
+ * What the transcript does, as a bento: the newest feature (rewind and fork,
+ * CHANGELOG 1.1.0) large with its drawing, the rest of 1.0.0's conversation
+ * entries around it. Each card's words are its CHANGELOG entry, shortened.
+ *
+ * The drawings are small and decorative (`aria-hidden`): every card says in
+ * words what its picture shows.
+ */
+import SectionHeader from "./SectionHeader.astro";
+
+const chip = "rounded-[6px] px-2 py-[4px] text-[11px]";
+---
+
+<section id="conversation" class="scroll-mt-20 bg-linear-to-b from-bg-2 to-bg py-[104px]">
+  <div class="wrap flex flex-col gap-12">
+    <SectionHeader
+      eyebrow="The conversation"
+      heading="Every turn, every tool call, every question, where you can see it."
+      class="mb-0!"
+    >
+      Drakar shows what Claude Code is doing as it does it: the text and the thinking, each tool call as
+      a card with its result, the diffs as diffs, and the questions where they are asked. Markdown is
+      rendered, code is coloured, and nothing scrolls past in a terminal you were not watching.
+    </SectionHeader>
+
+    <div class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-6">
+      {/* Rewind and fork: the large card */}
+      <article
+        class="reveal relative flex flex-col gap-6 overflow-hidden rounded-[18px] border border-rule bg-bg-2 p-6 md:col-span-2 lg:col-span-4 lg:flex-row lg:items-center lg:gap-8 lg:p-8"
+      >
+        <div class="flex flex-col gap-3 lg:max-w-[34ch]">
+          <span class="self-start rounded-full bg-accent/14 px-2.5 py-[3px] font-mono text-[10.5px] text-accent-hi">
+            New in 1.1.0
+          </span>
+          <h3 class="m-0 font-display text-[24px] leading-[1.15] font-semibold tracking-[-0.03em]">
+            Rewind and fork from any prompt.
+          </h3>
+          <p class="m-0 text-[14px] leading-[1.6] text-pretty text-fg-dim">
+            Hover a prompt, or right-click beside it: fork the conversation from there, rewind the files
+            Claude changed since, or both. The rewind shows which files it would restore, and how much,
+            before anything changes.
+          </p>
+        </div>
+        <div class="flex min-w-0 flex-1 flex-col gap-2.5" aria-hidden="true">
+          <div class="self-end rounded-[12px] rounded-br-[4px] bg-accent/16 px-3 py-2 text-[12.5px] text-fg">
+            Move the session host to a Unix socket.
+          </div>
+          <div class="ml-auto w-full max-w-[320px] rounded-[10px] border border-white/10 bg-chrome p-1.5 shadow-[0_24px_50px_-24px_rgba(0,0,0,.9)]">
+            <div class="rounded-[6px] px-2.5 py-1.5 text-[12px] text-fg/90">Fork conversation from here</div>
+            <div class="rounded-[6px] bg-accent px-2.5 py-1.5 text-[12px] font-medium text-accent-ink">
+              Rewind code to here
+            </div>
+            <div class="rounded-[6px] px-2.5 py-1.5 text-[12px] text-fg/90">Fork conversation and rewind code</div>
+          </div>
+          <div class="ml-auto w-full max-w-[320px] rounded-[10px] border border-white/8 bg-white/[.03] px-3 py-2.5 font-mono text-[10.5px] leading-[1.8]">
+            <div class="mb-1 text-fg-muted">Restores 3 files</div>
+            <div class="flex justify-between text-fg/85">
+              SessionHost.swift <span><span class="text-ok-ink">+41</span> <span class="text-danger-ink">−112</span></span>
+            </div>
+            <div class="flex justify-between text-fg/85">
+              HostSocket.swift <span class="text-danger-ink">deleted</span>
+            </div>
+            <div class="flex justify-between text-fg/85">
+              docs/session-host.md <span><span class="text-ok-ink">+6</span> <span class="text-danger-ink">−19</span></span>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      {/* Questions answered in place */}
+      <article class="reveal flex flex-col gap-4 rounded-[18px] border border-rule bg-bg-2 p-6 lg:col-span-2">
+        <div class="flex flex-col gap-2 rounded-[10px] border border-white/8 bg-white/[.03] p-3" aria-hidden="true">
+          <span class="font-mono text-[10.5px] text-accent-hi">Question</span>
+          <span class="text-[12px] text-fg/90">Keep the old socket path as a fallback?</span>
+          <div class="flex flex-wrap gap-1.5">
+            <span class:list={[chip, "bg-accent font-medium text-accent-ink"]}>Yes <span class="font-mono opacity-60">⌥⌘Y</span></span>
+            <span class:list={[chip, "border border-white/12 text-fg/85"]}>No <span class="font-mono text-fg-muted">⌥⌘N</span></span>
+          </div>
+        </div>
+        <h3 class="m-0 text-[16px] font-semibold tracking-[-0.015em]">Answered where they are asked.</h3>
+        <p class="m-0 text-[13.5px] leading-[1.6] text-pretty text-fg-dim">
+          Permission prompts, the agent's questions and an MCP server's questions are answered in their
+          card in the transcript. A yes-or-no one also from the toolbar, with ⌥⌘Y or ⌥⌘N.
+        </p>
+      </article>
+
+      {/* Subagents and tasks */}
+      <article class="reveal flex flex-col gap-4 rounded-[18px] border border-rule bg-bg-2 p-6 lg:col-span-2">
+        <div class="flex flex-col gap-1.5 rounded-[10px] border border-white/8 bg-white/[.03] p-3 font-mono text-[10.5px]" aria-hidden="true">
+          <div class="flex items-center gap-2">
+            <span class="block size-[6px] rounded-full bg-accent"></span>
+            <span class="text-fg">Task</span>
+            <span class="truncate text-fg-muted">Audit the release script</span>
+          </div>
+          <div class="ml-[14px] flex flex-col gap-1 border-l border-white/10 pl-2.5 text-fg-muted">
+            <span>Read  scripts/audit-network.sh</span>
+            <span>Bash  make audit-release</span>
+            <span class="text-fg/80">“Two allowances, both named…”</span>
+          </div>
+          <div class="mt-1 flex gap-1.5">
+            <span class="rounded-[5px] border border-white/12 px-1.5 py-[2px] text-fg/80">Stop</span>
+            <span class="rounded-[5px] border border-white/12 px-1.5 py-[2px] text-fg/80">Run in background</span>
+          </div>
+        </div>
+        <h3 class="m-0 text-[16px] font-semibold tracking-[-0.015em]">Subagents, all of them.</h3>
+        <p class="m-0 text-[13.5px] leading-[1.6] text-pretty text-fg-dim">
+          A subagent's card holds its whole conversation, not a one-line summary. A running task can be
+          stopped, sent to the background, and its output read.
+        </p>
+      </article>
+
+      {/* Diffs */}
+      <article class="reveal flex flex-col gap-4 rounded-[18px] border border-rule bg-bg-2 p-6 lg:col-span-2">
+        <div class="overflow-hidden rounded-[10px] border border-white/8 bg-white/[.03] font-mono text-[10.5px] leading-[1.7]" aria-hidden="true">
+          <div class="flex gap-2 border-b border-white/6 px-3 py-1.5">
+            <span class="text-fg">Write</span>
+            <span class="text-fg-muted">docs/releasing.md</span>
+            <span class="ml-auto text-ok-ink">+24</span>
+          </div>
+          <div class="bg-ok/10 px-3 text-ok-ink/95">+ ## Cutting a release</div>
+          <div class="bg-ok/10 px-3 text-ok-ink/95">+ 1. Write the summary first.</div>
+          <div class="bg-danger/12 px-3 text-danger-ink/95">− TODO</div>
+        </div>
+        <h3 class="m-0 text-[16px] font-semibold tracking-[-0.015em]">Diffs, not descriptions.</h3>
+        <p class="m-0 text-[13.5px] leading-[1.6] text-pretty text-fg-dim">
+          Every Edit and Write arrives as the change it made, line by line, with what it added and what
+          it removed.
+        </p>
+      </article>
+
+      {/* Codex */}
+      <article class="reveal flex flex-col gap-4 rounded-[18px] border border-rule bg-bg-2 p-6 lg:col-span-2">
+        <div class="flex items-center gap-2 rounded-[10px] border border-white/8 bg-white/[.03] p-3" aria-hidden="true">
+          <span class="rounded-[6px] bg-white/8 px-2 py-1 font-mono text-[11px] text-fg">claude</span>
+          <span class="text-[11px] text-fg-muted">or</span>
+          <span class="rounded-[6px] bg-accent/16 px-2 py-1 font-mono text-[11px] text-accent-hi">codex</span>
+          <span class="ml-auto font-mono text-[10px] text-fg-muted">per session</span>
+        </div>
+        <h3 class="m-0 text-[16px] font-semibold tracking-[-0.015em]">Codex, as a second agent.</h3>
+        <p class="m-0 text-[13.5px] leading-[1.6] text-pretty text-fg-dim">
+          A session can run Codex instead, through its own <code class="font-mono text-[0.92em] text-fg">app-server</code>,
+          in the same window, on the same folders, each agent with its own config.
+        </p>
+      </article>
+
+      {/* Selection */}
+      <article class="reveal flex flex-col gap-4 rounded-[18px] border border-rule bg-bg-2 p-6 md:col-span-2 lg:col-span-6 lg:flex-row lg:items-center lg:gap-10">
+        <div class="flex flex-col gap-2 lg:max-w-[46ch]">
+          <h3 class="m-0 text-[16px] font-semibold tracking-[-0.015em]">Your selection goes with the prompt.</h3>
+          <p class="m-0 text-[13.5px] leading-[1.6] text-pretty text-fg-dim">
+            What you select, or the file you have open, goes with your next prompt, as in the VS Code
+            extension. ⌥K pins a selection as a chip, so the next one can be added beside it, from the
+            same file or another.
+          </p>
+        </div>
+        <div class="flex flex-1 flex-wrap items-center gap-2 rounded-[10px] border border-white/10 bg-black/25 px-3 py-2.5" aria-hidden="true">
+          <span class="rounded-[5px] border border-accent/30 bg-accent/8 px-1.5 py-[2px] font-mono text-[10.5px] text-accent-hi">SessionStore.swift:47–55</span>
+          <span class="rounded-[5px] border border-accent/30 bg-accent/8 px-1.5 py-[2px] font-mono text-[10.5px] text-accent-hi">SessionRow.swift:12–30</span>
+          <span class="text-[12.5px] text-fg/80">Make these two agree on when a row is stale.</span>
+          <span class="caret block h-[14px] w-px bg-accent-hi"></span>
+        </div>
+      </article>
+    </div>
+  </div>
+</section>

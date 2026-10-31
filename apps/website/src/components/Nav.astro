@@ -1,0 +1,72 @@
+---
+import { APP_NAME, APP_VERSION, DOWNLOAD, PRICING } from "../config";
+import AppleGlyph from "./AppleGlyph.astro";
+import Button from "./Button.astro";
+import Logo from "./Logo.astro";
+
+/** Each one is a section on the homepage, so the bar is a table of contents. */
+const links = [
+  { href: "/#yours", label: "Yours" },
+  { href: "/#conversation", label: "Conversation" },
+  { href: "/#editor", label: "Editor" },
+  { href: "/#sessions", label: "Sessions" },
+  { href: "/#trust", label: "Trust" },
+  { href: "/#pricing", label: "Price" },
+];
+---
+
+<header
+  class="sticky top-0 z-50 border-b border-rule bg-[color-mix(in_srgb,var(--color-bg)_72%,transparent)] backdrop-blur-[20px] backdrop-saturate-[180%]"
+>
+  <div class="wrap flex h-[58px] items-center justify-between gap-6">
+    <div class="flex flex-none items-center gap-2.5">
+      <a href="/" class="flex items-center gap-[10px] text-fg">
+        <Logo size={23} />
+        <span class="font-display text-[14.5px] leading-none font-[590] tracking-[-0.02em]"
+          >{APP_NAME}</span
+        >
+      </a>
+
+      {/* The shipping version, beside the wordmark: an identifying detail, not a
+          call to action. It links to that version's page in the changelog:
+          somebody reading the number wants to know what it brought, and the page
+          links on to the build. src/data/changelog.ts fails the build if there is
+          no page for it. `hidden` is safe here: this is a plain anchor, not a
+          Button. */}
+      <a
+        href={`/changelog/${APP_VERSION}/`}
+        class="hidden rounded-full border border-rule px-2 py-[3px] font-mono text-[10.5px] leading-none font-medium text-fg-muted transition-colors hover:border-accent hover:text-accent-hi sm:block"
+      >
+        {APP_VERSION}
+      </a>
+    </div>
+
+    {/* `lg`, not `md`: at 768 the lockup, the links and two buttons do not all
+        fit, and the Buy button is what gets pushed off the edge. */}
+    <nav class="hidden items-center gap-[30px] lg:flex">
+      {
+        links.map((l) => (
+          <a href={l.href} class="text-[13px] text-fg-dim transition-colors hover:text-accent-hi">
+            {l.label}
+          </a>
+        ))
+      }
+    </nav>
+
+    {/* The bar is the one element that survives a scroll, so it carries the
+        funnel, and Buy is its filled button. The responsive hiding sits on a
+        wrapper span; see Button.astro for why. */}
+    <div class="flex flex-none items-center gap-2">
+      <span class="hidden sm:block">
+        <Button href={DOWNLOAD.zip} variant="secondary" size="sm">
+          <AppleGlyph size={13} />
+          Download
+        </Button>
+      </span>
+      <Button href={PRICING.buy} size="sm">
+        Buy <span class="opacity-70">·</span>
+        {PRICING.price}
+      </Button>
+    </div>
+  </div>
+</header>
