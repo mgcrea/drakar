@@ -441,10 +441,8 @@ const fulfil = async (event: StripeEvent, env: Env): Promise<Response> => {
  * Nothing here reaches the app. Revocation is baked into a build by
  * `make revocations`, so this only records the fact; the refunded key keeps
  * working until the next release. That is the trade the offline check makes, and
- * it has to be said out loud rather than left to be discovered. Armada's EULA
- * says it (§6 and §7(a)) and its site serves that text at /terms; Drakar has
- * neither yet, and whatever terms it publishes before its first sale must say
- * the same.
+ * it has to be said out loud rather than left to be discovered. Drakar's EULA
+ * says it (§5(a) and §6), and the site serves that text at /terms.
  */
 const revoke = async (env: Env, paymentIntent: string | null | undefined, why: string) => {
   if (!paymentIntent) {
