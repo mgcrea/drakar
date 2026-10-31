@@ -1267,6 +1267,35 @@ final class Project {
     if let selected, canFork(selected) { fork(selected) }
   }
 
+  /// Whether Open Plan can ask the shown session for its plan: a Claude Code process Drakar
+  /// drives, as its permission rules are read. `phase` is read too, and first: the process
+  /// is not observed, and the Session menu has to redraw when one starts or ends.
+  var canOpenPlanSelected: Bool {
+    guard let session = selected?.session else { return false }
+    return session.phase == .ready && session.hasLiveRules
+  }
+
+  func openPlanSelected() async {
+    if let selected { await openPlan(selected) }
+  }
+
+  /// `item`'s plan file in the side editor, asked of its process with `get_plan`. No plan
+  /// yet, or no path to it, and no answer, are each said in its conversation; a file that
+  /// will not read is the editor's problem, as for any file link.
+  func openPlan(_ item: ProjectSession) async {
+    let session = item.session
+    guard session.hasLiveRules else { return }
+    guard let reply = await session.readPlan() else {
+      session.notePlanUnread()
+      return
+    }
+    guard reply.exists, let path = reply.path else {
+      session.noteNoPlan()
+      return
+    }
+    workspace.open(URL(filePath: path))
+  }
+
   /// Whether another app's process has `summary` open between turns, so that it can be
   /// ended for the session to move here. One in another Drakar window has no `live`.
   static func canMoveHere(_ summary: SessionSummary) -> Bool {

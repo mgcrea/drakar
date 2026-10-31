@@ -12,6 +12,9 @@ struct PlanPanel: View {
   let offersAutoMode: Bool
   let approve: (_ editsManually: Bool) -> Void
   let keepPlanning: (_ feedback: String) -> Void
+  /// Opens the plan's file in the side editor; nil, no button, where the session cannot be
+  /// asked for it.
+  var openPlan: (() -> Void)? = nil
 
   @State private var feedback = ""
   @FocusState private var focus: Focus?
@@ -24,8 +27,17 @@ struct PlanPanel: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 10) {
-      Label("Claude's plan", systemImage: "list.bullet.clipboard")
-        .font(.headline)
+      HStack {
+        Label("Claude's plan", systemImage: "list.bullet.clipboard")
+          .font(.headline)
+        Spacer()
+        if let openPlan {
+          Button("Open Plan File", action: openPlan)
+            .controlSize(.small)
+            .help("Open the plan's file in the editor (⌥⌘P)")
+            .accessibilityIdentifier("plan.open")
+        }
+      }
       ScrollView {
         MarkdownView(text: plan)
           .padding(10)

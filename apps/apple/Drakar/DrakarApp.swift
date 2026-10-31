@@ -148,6 +148,7 @@ private struct SessionCommands: View {
     .keyboardShortcut("n", modifiers: [.command, .control])
     .disabled(project == nil)
     ForkSessionCommand(project: project)
+    OpenPlanCommand(project: project)
     Button("Run Skill in Subfolders…") { project?.fanOutRequest = FanOutRequest() }
       .disabled(project == nil)
     Button("Rename Session…") {
@@ -211,6 +212,20 @@ private struct ForkSessionCommand: View {
     Button("Fork Session") { project?.forkSelected() }
       .keyboardShortcut("d", modifiers: [.command, .shift])
       .disabled(project?.canForkSelected != true)
+  }
+}
+
+/// Session > Open Plan (⌥⌘P), apart for `ForkSessionCommand`'s reason.
+private struct OpenPlanCommand: View {
+  let project: Project?
+
+  var body: some View {
+    Button("Open Plan") {
+      guard let project else { return }
+      Task { await project.openPlanSelected() }
+    }
+    .keyboardShortcut("p", modifiers: [.command, .option])
+    .disabled(project?.canOpenPlanSelected != true)
   }
 }
 

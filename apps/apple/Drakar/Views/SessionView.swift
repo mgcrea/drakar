@@ -85,7 +85,8 @@ struct SessionView: View {
               },
               keepPlanning: { feedback in
                 session.answer(plan, PlanApproval.keepPlanning(feedback: feedback))
-              }
+              },
+              openPlan: session.hasLiveRules ? { Task { await project.openPlan(item) } } : nil
             )
             .id(plan.id)
           }

@@ -46,9 +46,9 @@ Protocol changes are the other half and have their own procedure (raising
 
 | request | status | what | evidence | decision |
 | --- | --- | --- | --- | --- |
-| `interrupt_claude` | has | Stop the running turn | `apps/apple/Drakar/Services/AgentSession.swift:1009` | |
-| `set_model` | has | Change the session's model | `apps/apple/Drakar/Services/AgentSession.swift:551` | |
-| `set_permission_mode` | has | Change the permission mode (Auto only for a model that takes it, and not while settings set `disableAutoMode: "disable"`, as the extension decides) | `apps/apple/Drakar/Services/AgentSession.swift:531` | |
+| `interrupt_claude` | has | Stop the running turn | `apps/apple/Drakar/Services/AgentSession.swift:1094` | |
+| `set_model` | has | Change the session's model | `apps/apple/Drakar/Services/AgentSession.swift:634` | |
+| `set_permission_mode` | has | Change the permission mode (Auto only for a model that takes it, and not while settings set `disableAutoMode: "disable"`, as the extension decides) | `apps/apple/Drakar/Services/AgentSession.swift:614` | |
 | `persist_session_permission_mode` | has | Remember a session's permission mode | `apps/apple/Drakar/Services/SessionMeta.swift:11` | |
 | `set_thinking_level` | partial | Turn extended thinking on or off (Drakar: an effort level picker) | `apps/apple/Drakar/Views/SessionPills.swift:98` | differ: the effort picker |
 | `get_context_usage` | has | Context window usage breakdown (/context) | `apps/apple/Drakar/Services/ClaudeBackend.swift:153` | |
@@ -58,7 +58,7 @@ Protocol changes are the other half and have their own procedure (raising
 | `get_subagent_transcript` | has | Read a subagent's own transcript (Drakar: reads the file itself, inside the card) | `apps/apple/Drakar/Services/SubagentFeed.swift:18` | adopt: subagents promise, after a reload too |
 | `get_task_output` | has | Read a background task's output (Drakar: background Bash tasks only; reads the tail of the task's output file, `get_task_output` as the fallback when the file is not known) | `apps/apple/Drakar/Services/TaskControls.swift:88` | adopt: subagents promise |
 | `rewind_code` | has | Revert file edits back to a chosen message (Drakar: a prompt's undo arrow, a dry-run sheet before any file is written) | `apps/apple/Drakar/Views/RewindViews.swift:174` | adopt: `rewind_files`, dry run first |
-| `fork_conversation` | has | Fork a session, optionally from a chosen message (Drakar: from a prompt's undo arrow, or the whole session) | `apps/apple/Drakar/Services/Project.swift:1179` | adopt: from a chosen message, with rewind |
+| `fork_conversation` | has | Fork a session, optionally from a chosen message (Drakar: from a prompt's undo arrow, or the whole session) | `apps/apple/Drakar/Services/Project.swift:1201` | adopt: from a chosen message, with rewind |
 | `export_conversation` | no | Export the conversation as text (/export) | | adopt: one CLI request each |
 | `open_export_document` | no | Open an export in the editor to save it | | adopt: one CLI request each |
 | `message_rated` | no | Thumbs up or down on a response | | skip: Anthropic's feedback channel for its own UI |
@@ -85,9 +85,9 @@ Protocol changes are the other half and have their own procedure (raising
 | `open_folder` | has | Pick and open a folder | `apps/apple/Drakar/DrakarApp.swift:75` | |
 | `open_folder_in_new_window` | has | Open a folder or worktree in a new window | `apps/apple/Drakar/Views/HomeView.swift:204` | |
 | `create_worktree` | no | Create a git worktree to work in | | adopt: parallel sessions in one project |
-| `open_plan` | no | Open the session's plan file (/plan open) | | adopt: plan mode promise |
-| `open_markdown_preview` | partial | Plan preview with comments (Drakar: inline panel, no comments) | `apps/apple/Drakar/Views/PlanPanel.swift:30` | adopt: plan comments, plan mode promise |
-| `close_plan_preview` | partial | Close the plan preview once answered (Drakar: the inline panel goes away) | `apps/apple/Drakar/Views/SessionView.swift:68` | differ: the inline plan panel |
+| `open_plan` | has | Open the session's plan file (/plan open; Drakar: Session › Open Plan, or the plan panel's Open Plan File, in the side editor) | `apps/apple/Drakar/Services/Project.swift:1278` | adopt: plan mode promise |
+| `open_markdown_preview` | partial | Plan preview with comments (Drakar: inline panel, no comments) | `apps/apple/Drakar/Views/PlanPanel.swift:42` | adopt: plan comments, plan mode promise |
+| `close_plan_preview` | partial | Close the plan preview once answered (Drakar: the inline panel goes away) | `apps/apple/Drakar/Views/SessionView.swift:76` | differ: the inline plan panel |
 | `remove_plan_comment` | no | Delete a comment left on the plan | | adopt: plan comments, plan mode promise |
 
 ## Sessions
@@ -95,11 +95,11 @@ Protocol changes are the other half and have their own procedure (raising
 | request | status | what | evidence | decision |
 | --- | --- | --- | --- | --- |
 | `launch_claude` | has | Start or resume a session's CLI process | `apps/apple/Drakar/Services/ClaudeLaunch.swift:22` | |
-| `close_channel` | has | End a session's CLI process | `apps/apple/Drakar/Services/Project.swift:1553` | |
+| `close_channel` | has | End a session's CLI process | `apps/apple/Drakar/Services/Project.swift:1622` | |
 | `list_sessions_request` | has | List past sessions | `apps/apple/Packages/DrakarKit/Sources/DrakarKit/SessionIndex.swift:125` | |
 | `get_session_request` | has | Load a session's transcript to show or resume | `apps/apple/Packages/DrakarKit/Sources/DrakarKit/History.swift:117` | |
 | `resolve_session_request` | partial | Find which worktree a session's transcript lives in (Drakar: worktree sessions folded into the project) | `apps/apple/Drakar/Services/SessionMonitor.swift:91` | differ: worktrees folded into the project |
-| `open_held_session` | has | Open a session another process holds (Drakar: Move Here, or Fork a Copy) | `apps/apple/Drakar/Views/SessionView.swift:457` | |
+| `open_held_session` | has | Open a session another process holds (Drakar: Move Here, or Fork a Copy) | `apps/apple/Drakar/Views/SessionView.swift:66` | |
 | `rename_session` | has | Rename a session | `apps/apple/Drakar/Views/RenameSessionPrompt.swift:24` | |
 | `generate_session_title` | partial | Have the CLI generate a title (Drakar: shows the CLI's ai-title, never asks for one) | `apps/apple/Packages/DrakarKit/Sources/DrakarKit/Transcript.swift:134` | differ: the CLI's own title |
 | `archive_session` | no | Archive a session out of the list | | skip for now: VS Code-private state; project windows cover it |
@@ -124,9 +124,9 @@ Protocol changes are the other half and have their own procedure (raising
 | `open_config` | has | Open the extension's settings (Drakar: its own Settings window) | `apps/apple/Drakar/Views/SettingsView.swift:292` | |
 | `open_config_file` | no | Open a Claude config file (settings.json) in the editor | | adopt: in an editor tab |
 | `get_status` | partial | Status dialog, /status (Drakar: the inspector shows id, model, context) | `apps/apple/Drakar/Views/SessionInspector.swift:144` | differ: the inspector |
-| `add_permission_rules` | partial | Add allow or deny rules (Drakar: only through a prompt's "always allow" suggestions) | `apps/apple/Drakar/Views/PermissionSheet.swift:44` | adopt: permissions promise |
-| `list_permission_rules` | no | List permission rules | | adopt: permissions promise |
-| `remove_permission_rule` | no | Remove a permission rule | | adopt: permissions promise |
+| `add_permission_rules` | has | Add allow or deny rules (Drakar: Add Rule… in the inspector's Permissions tab, and a prompt's "always allow" suggestions) | `apps/apple/Drakar/Views/PermissionsInspector.swift:333` | adopt: permissions promise |
+| `list_permission_rules` | has | List permission rules (Drakar: the inspector's Permissions tab) | `apps/apple/Drakar/Views/PermissionsInspector.swift:12` | adopt: permissions promise |
+| `remove_permission_rule` | has | Remove a permission rule (Drakar: on a settings-file rule's row) | `apps/apple/Drakar/Views/PermissionsInspector.swift:265` | adopt: permissions promise |
 | `get_sandbox_dialog` | no | Load the Bash sandbox settings dialog | | skip: editors for files you own; Drakar opens the files |
 | `set_sandbox_setting` | no | Change a Bash sandbox setting | | skip: editors for files you own; Drakar opens the files |
 | `get_hooks_listing` | no | List the configured hooks | | adopt: read-only, in the inspector |
@@ -192,7 +192,7 @@ Protocol changes are the other half and have their own procedure (raising
 | --- | --- | --- | --- | --- |
 | `get_usage` | has | Plan usage limits, 5-hour and 7-day windows | `apps/apple/Drakar/Views/AccountToolbarItem.swift:40` | |
 | `open_account_usage` | has | Show detailed account usage (Drakar: toolbar popover) | `apps/apple/Drakar/Views/AccountToolbarItem.swift:120` | |
-| `request_usage_update` | partial | Refresh the usage figures (Drakar: updated passively from rate-limit events) | `apps/apple/Drakar/Services/AgentSession.swift:1341` | differ: refreshed without asking |
+| `request_usage_update` | partial | Refresh the usage figures (Drakar: updated passively from rate-limit events) | `apps/apple/Drakar/Services/AgentSession.swift:1428` | differ: refreshed without asking |
 | `request_admin_limit_increase` | no | Ask an org admin to raise the usage limit | | skip: accounts are `CLAUDE_CONFIG_DIR` and `/login` |
 | `sign_out` | no | Sign out of Claude | | skip: accounts are `CLAUDE_CONFIG_DIR` and `/login` |
 | `submit_oauth_code` | no | Paste the Claude login code | | skip: accounts are `CLAUDE_CONFIG_DIR` and `/login` |
@@ -272,7 +272,7 @@ the SDK sends outside this path.
 | `get_context_usage` | sends | `get_context_usage` | | |
 | `get_hooks_listing` | no | `get_hooks_listing`, `edit_hook` | | |
 | `get_memory_dialog` | no | `get_memory_dialog`, `set_memory_setting` | | |
-| `get_plan` | no | `open_plan` | | |
+| `get_plan` | sends | `open_plan` | | |
 | `get_sandbox_dialog` | no | `get_sandbox_dialog`, `set_sandbox_setting` | | |
 | `get_settings` | sends | `get_applied_settings`, `get_output_style`, `refresh_claude_settings`, `refresh_remote_control_lock` | | |
 | `get_skills_dialog` | no | `get_skills_dialog`, `set_skill_state` | | |
@@ -280,7 +280,7 @@ the SDK sends outside this path.
 | `get_task_output` | sends | `get_task_output` | fallback only: Drakar reads the task's output file when its path is known | |
 | `get_usage` | no | `get_usage` | The SDK names its method `usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET` | |
 | `interrupt` | sends | `interrupt_claude` | | |
-| `list_permission_rules` | no | `list_permission_rules`, `add_permission_rules`, `remove_permission_rule` | | |
+| `list_permission_rules` | sends | `list_permission_rules`, `add_permission_rules`, `remove_permission_rule` | Rules are added and removed through `claude edit-permission-rules`, as the extension does | |
 | `mcp_authenticate` | no | `authenticate_mcp_server` | | |
 | `mcp_clear_auth` | no | `clear_mcp_server_auth` | | |
 | `mcp_oauth_callback_url` | no | `submit_mcp_oauth_callback_url` | | |

@@ -460,6 +460,88 @@ Seven answers:
   Backups are `<hash>@v<n>` files under `<config>/file-history/<session id>/`; a file that did
   not exist yet has `backupFileName: null`.
 
+## Permission rules (verified 2026-10-31, 2.1.312)
+
+Measured live on 2026-10-31 against claude 2.1.312, in a scratch project with a local allow
+and deny rule. One control request lists the rules; changing them goes outside the stream,
+as the extension does it.
+
+**`list_permission_rules`** (`{subtype: "list_permission_rules"}`, no other fields) answers
+`{state: {rules, workspaceDirectories, originalCwd, managedOnly, errors?}}`:
+
+- `rules[]`: `behavior` (`allow`, `deny`, `ask`); `source` (`userSettings`,
+  `projectSettings`, `localSettings`, `flagSettings`, `policySettings`, `cliArg`, `command`,
+  `session`, `mcpMount`, `toolsNarrowing`, `mcpServerPolicy`, `hostCredential`; Drakar reads
+  any other string as unknown, not as a failure); `rule`, verbatim, which may hold invisible
+  or control characters; `description?`, the CLI's reading as `{prefix, emphasis?, suffix?}`
+  ("Any Bash command starting with **npm run test**"); `editability` (`persistent`,
+  `session`, `readonly`); `notInEffect?`, true when managed settings pin
+  `allowManagedPermissionRulesOnly` and this non-policy rule is ignored.
+- `workspaceDirectories[]`: `{path, source}`.
+- `managedOnly`: the session applies policy rules only.
+- `errors?`: settings files skipped for parse errors, as `get_settings` reports them.
+
+The real reply, for the project with a local allow and deny:
+
+```json
+{"state": {"rules": [
+  {"behavior": "allow", "source": "localSettings", "rule": "Bash(npm run test:*)",
+   "description": {"prefix": "Any Bash command starting with ", "emphasis": "npm run test"},
+   "editability": "persistent"},
+  {"behavior": "deny", "source": "localSettings", "rule": "Read(./secrets/**)",
+   "editability": "persistent"}],
+ "workspaceDirectories": [], "originalCwd": "/…/rules", "managedOnly": false}}
+```
+
+A session's own approvals ("always allow" for this session) and `--allowedTools` rules are
+listed only by the process that holds them. For a session with no process, Drakar starts a
+`claude` in its folder under its account, sends `initialize` and `list_permission_rules`, and
+lets it go once answered or after 20 s (`PermissionRulesProbe`); that listing has the
+settings files' rules only.
+
+**Changing a rule**: `claude edit-permission-rules --json`, run in the session's folder, one
+edit as JSON on stdin.
+
+| Edit | stdin |
+| --- | --- |
+| Add | `{"op": "add", "rules": [1…100 strings], "behavior": …, "destination": "userSettings" \| "projectSettings" \| "localSettings"}` |
+| Remove | `{"op": "remove", "rule": …, "behavior": …, "source": <one of those three>}` |
+
+- **Success.** Exit status 0; the last stdout line is `{"ok": true, "warnings": [String],
+  "stored": [String]}`. `stored` is the rules as written, which can differ from what was
+  sent.
+- **Refusal.** Exit status 1, the reason on stderr, ready to show. Seen: a rule already
+  present (`"Bash(npm run test:*)" is already in the allow rules in project local
+  settings`; the whole add fails, the other rules with it), `Bash()` (empty parentheses), a
+  malformed rule, a remove of a rule that is not there, and a remove from `session`. Session
+  rules can't be removed this way.
+- **`CLAUDE_CODE_CHILD_SESSION`.** With it in the environment the command refuses ("cannot
+  be changed from an editor started inside a Claude Code session"). Drakar removes it for
+  this command only (`PermissionRuleEditor`).
+- **The running session picks the change up by itself.** Nothing is sent to it: in a
+  stream-json session, the listing showed an added rule 1.3 s after the command returned.
+  The extension reads the listing again up to 14 times, 300 ms apart, until the change
+  shows; Drakar does the same with a session's own process, and reads one fresh probe for a
+  session with none.
+
+## Plan (verified 2026-10-31, 2.1.312)
+
+**`get_plan`** (`{subtype: "get_plan"}`, no other fields), measured against 2.1.312 on
+2026-10-31, answers `{exists: false}` or `{exists: true, content, path}`. `content` is the
+plan's text; `path` is its file, under the account's `plans/`, where ExitPlanMode's
+`planFilePath` points too ("Plans, todos and subagents"). `path` is left out only on
+connections that persist frames server-side, never on a process Drakar drives. Asking never
+creates a plan.
+
+Drakar's Session › Open Plan (⌥⌘P), and the plan panel's "Open Plan File", send it and open
+`path` in the side editor. `{exists: false}`, `exists` with no `path`, no reply in 10 s, or a
+refusal leave a notice in the conversation instead: "No plan in this session yet." or
+"Couldn't read the plan."
+
+- **Unverified: an edit to the plan file before approval.** The file opens editable. Whether
+  Claude reads back an edit made to it before the plan is approved (and so runs the edited
+  plan) has not been checked; it is the open question of the live check.
+
 ## Prompts sent mid-turn, and the command list (verified 2026-10-06, 2.1.288)
 
 Captured live on `haiku` (fixture `queued-prompts`).

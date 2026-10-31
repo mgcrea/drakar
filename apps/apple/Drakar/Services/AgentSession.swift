@@ -480,8 +480,8 @@ final class AgentSession {
 
   private var rewindsCode: Bool { offersCodeRewind && !transcript.isRunning }
 
-  /// `listPermissionRules()` asks a process: a Claude Code one Drakar drives, as the task
-  /// controls read it.
+  /// `listPermissionRules()` and `readPlan()` ask a process: a Claude Code one Drakar drives,
+  /// as the task controls read it.
   var hasLiveRules: Bool { agent == .claude && controlsTasks }
 
   /// The running process's permission rules, session approvals and `--allowedTools` ones
@@ -529,6 +529,16 @@ final class AgentSession {
   /// A rewind took: the extension's line, left in the conversation once the sheet closes.
   func noteRewound() {
     transcript.addNotice(RewindCopy.succeeded)
+  }
+
+  /// Open Plan found no plan file to open: the process has none yet, or did not say where.
+  func noteNoPlan() {
+    transcript.addNotice(String(localized: "No plan in this session yet."))
+  }
+
+  /// Open Plan had no answer from the process: a refusal, its end, or the timeout.
+  func notePlanUnread() {
+    transcript.addNotice(String(localized: "Couldn't read the plan."))
   }
 
   /// A fork from one of this session's prompts was not made: said here, where it was asked
