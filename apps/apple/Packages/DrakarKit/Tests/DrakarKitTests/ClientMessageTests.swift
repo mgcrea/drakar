@@ -76,6 +76,18 @@ struct ClientMessageTests {
         + "\n")
   }
 
+  /// The rules listing and the plan read, as the extension sends them (2.1.312): no fields.
+  @Test func listPermissionRulesAndGetPlan() throws {
+    #expect(
+      try text(.listPermissionRules(requestID: "rules-1"))
+        == #"{"request":{"subtype":"list_permission_rules"},"request_id":"rules-1","type":"control_request"}"#
+        + "\n")
+    #expect(
+      try text(.getPlan(requestID: "plan-1"))
+        == #"{"request":{"subtype":"get_plan"},"request_id":"plan-1","type":"control_request"}"#
+        + "\n")
+  }
+
   @Test func encodesAPrompt() throws {
     #expect(
       try text(.prompt("Run it"))

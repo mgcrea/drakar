@@ -54,6 +54,12 @@ public enum ClientMessage: Sendable, Equatable {
   /// with), or with `dryRun` only list them. Answered at once, starting no turn
   /// (`RewindResult`; docs/claude-stream-json.md, "Rewind").
   case rewindFiles(requestID: String, userMessageID: String, dryRun: Bool)
+  /// Every permission rule the process applies, with where each came from and whether the
+  /// edit command can remove it (`PermissionRulesState`).
+  case listPermissionRules(requestID: String)
+  /// The session's plan: `{exists: false}`, or its text and file (`PlanReply`). It never
+  /// creates one.
+  case getPlan(requestID: String)
   /// The answer to a request Drakar cannot serve, so that the CLI stops waiting on it.
   case refuse(requestID: String, error: String)
 
@@ -142,6 +148,10 @@ public enum ClientMessage: Sendable, Equatable {
           "subtype": .string("rewind_files"), "user_message_id": .string(userMessageID),
           "dry_run": .bool(dryRun),
         ])
+    case .listPermissionRules(let id):
+      Self.controlRequest(id, ["subtype": .string("list_permission_rules")])
+    case .getPlan(let id):
+      Self.controlRequest(id, ["subtype": .string("get_plan")])
     case .refuse(let id, let error):
       .object([
         "type": .string("control_response"),
