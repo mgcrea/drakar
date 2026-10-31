@@ -90,8 +90,9 @@ const testEnv = (overrides: Partial<Env> = {}, sender?: () => Promise<void>) => 
 
 /**
  * Overrides carrying a fixture price id. `wrangler types` pins EXPECTED_PRICE_ID
- * to the literals in wrangler.jsonc, the live price id and the test
- * environment's "", so any other id has to be widened past the generated type.
+ * to the literals in wrangler.jsonc, the live and test price ids, so any other
+ * id, and the empty one of a Worker deployed before its price exists, has to be
+ * widened past the generated type.
  */
 const priced = (price: string, rest: Partial<Env> = {}): Partial<Env> =>
   ({ ...rest, EXPECTED_PRICE_ID: price }) as unknown as Partial<Env>;
@@ -438,7 +439,7 @@ describe("the product guard", () => {
   // Worker deployed before its Stripe price exists, receiving another app's
   // sale: it must acknowledge, and mint, store and mail nothing.
   it("refuses to fulfil anything when no price is configured", async () => {
-    const built = testEnv({ EXPECTED_PRICE_ID: "" });
+    const built = testEnv(priced(""));
     const response = await webhook(built.env, completed({ metadata: { price_id: "price_other" } }));
     expect(response.status).toBe(200);
     expect(await response.text()).toMatch(/^fulfilment not configured/);
@@ -448,7 +449,7 @@ describe("the product guard", () => {
   });
 
   it("refuses the delayed-payment route too when no price is configured", async () => {
-    const built = testEnv({ EXPECTED_PRICE_ID: "" });
+    const built = testEnv(priced(""));
     const response = await webhook(built.env, {
       ...completed(),
       type: "checkout.session.async_payment_succeeded",
@@ -459,7 +460,7 @@ describe("the product guard", () => {
   });
 
   it("refuses a session with no price at all when no price is configured", async () => {
-    const built = testEnv({ EXPECTED_PRICE_ID: "", STRIPE_SECRET_KEY: "" });
+    const built = testEnv(priced("", { STRIPE_SECRET_KEY: "" }));
     const response = await webhook(built.env, completed({ metadata: {} }));
     expect(await response.text()).toMatch(/^fulfilment not configured/);
     expect(await count(built.env)).toBe(0);
@@ -470,7 +471,7 @@ describe("the product guard", () => {
   // price is set still reaches fulfilment instead of answering "duplicate".
   it("fulfils the same event once the price is configured", async () => {
     const event = { ...completed(), id: "evt_before_the_price" };
-    const early = testEnv({ EXPECTED_PRICE_ID: "" });
+    const early = testEnv(priced(""));
     expect(await (await webhook(early.env, event)).text()).toMatch(/^fulfilment not configured/);
 
     const configured = testEnv(priced("price_test"));
@@ -494,7 +495,7 @@ describe("the product guard", () => {
 
   it("leaves refunds working when no price is configured", async () => {
     const built = await fulfilled();
-    const unconfigured = { ...built.env, EXPECTED_PRICE_ID: "" } as Env;
+    const unconfigured = { ...built.env, ...priced("") } as Env;
     const response = await webhook(
       unconfigured,
       chargeEvent("charge.refunded", { amount_refunded: 1499 }),
@@ -505,7 +506,7 @@ describe("the product guard", () => {
   // The rehearsal: a test-mode link sells a test-mode price that is not pinned
   // anywhere, so the test environment alone keeps the unguarded reading.
   it("fulfils any price in the test environment when none is configured", async () => {
-    const built = testEnv({ ENVIRONMENT: "test", EXPECTED_PRICE_ID: "" });
+    const built = testEnv(priced("", { ENVIRONMENT: "test" }));
     const response = await webhook(built.env, completed({ metadata: { price_id: "price_other" } }));
     expect(response.status).toBe(200);
     expect(await response.text()).toBe("ok");
