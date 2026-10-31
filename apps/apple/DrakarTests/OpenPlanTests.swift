@@ -35,8 +35,11 @@ struct OpenPlanTests {
     try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: fake.path)
   }
 
-  /// A project showing a Claude Code session whose process answers `get_plan` with `reply`.
-  private func project(answering reply: String?) async throws -> (Project, ProjectSession) {
+  /// A project showing a Claude Code session whose process answers `get_plan` with `reply`,
+  /// waited for up to `timeout`: long, so a stalled main actor fails no answered read.
+  private func project(answering reply: String?, timeout: Duration = .seconds(5)) async throws -> (
+    Project, ProjectSession
+  ) {
     if let reply {
       try Data(reply.utf8).write(to: fake.appendingPathExtension("reply"))
     }
@@ -45,7 +48,7 @@ struct OpenPlanTests {
     item.session.executableOverride = fake
     item.session.accounts = { [] }
     item.session.makeTransport = { AgentProcess($0) }
-    item.session.controlReplyTimeout = .milliseconds(300)
+    item.session.controlReplyTimeout = timeout
     await item.session.spawn()
     #expect(project.canOpenPlanSelected)
     return (project, item)
@@ -90,7 +93,7 @@ struct OpenPlanTests {
   }
 
   @Test func aFailedReadSaysSo() async throws {
-    let (project, item) = try await project(answering: nil)
+    let (project, item) = try await project(answering: nil, timeout: .milliseconds(300))
     defer { item.session.stop() }
     await project.openPlanSelected()
     #expect(lastNotice(item) == "Couldn't read the plan.")

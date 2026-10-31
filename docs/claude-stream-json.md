@@ -528,8 +528,7 @@ edit as JSON on stdin.
 
 **`get_plan`** (`{subtype: "get_plan"}`, no other fields), measured against 2.1.312 on
 2026-10-31, answers `{exists: false}` or `{exists: true, content, path}`. `content` is the
-plan's text; `path` is its file, under the account's `plans/`, where ExitPlanMode's
-`planFilePath` points too ("Plans, todos and subagents"). `path` is left out only on
+plan's text; `path` is its file, under the account's `plans/`. `path` is left out only on
 connections that persist frames server-side, never on a process Drakar drives. Asking never
 creates a plan.
 
@@ -541,6 +540,9 @@ refusal leave a notice in the conversation instead: "No plan in this session yet
 - **Unverified: an edit to the plan file before approval.** The file opens editable. Whether
   Claude reads back an edit made to it before the plan is approved (and so runs the edited
   plan) has not been checked; it is the open question of the live check.
+- **Unverified: `path` and ExitPlanMode's `planFilePath` name the same file.** Both are under
+  the account's `plans/` ("Plans, todos and subagents"); that they agree for one session has
+  not been checked.
 
 ## Prompts sent mid-turn, and the command list (verified 2026-10-06, 2.1.288)
 
