@@ -370,4 +370,32 @@ struct ProcessRunnerTests {
     #expect(result.status == 3)
     #expect(!result.timedOut)
   }
+
+  /// `claude edit-permission-rules` reads its edit on stdin and acts on the folder it runs in.
+  @Test func feedsInputAndRunsInTheFolder() async throws {
+    let folder = FileManager.default.temporaryDirectory.appending(
+      path: "drakar-runner-\(UUID().uuidString)", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: folder) }
+    // /var is a link to /private/var, and `pwd` names where the shell really is.
+    let resolved = try #require(realpath(folder.path(percentEncoded: false), nil))
+    defer { free(resolved) }
+    let result = try await ProcessRunner.run(
+      URL(filePath: "/bin/sh"), ["-c", "pwd; cat"], environment: [:], input: Data("hi".utf8),
+      currentDirectory: folder, timeout: .seconds(5))
+    #expect(String(decoding: result.output, as: UTF8.self) == String(cString: resolved) + "\nhi")
+    #expect(result.status == 0)
+    #expect(!result.timedOut)
+  }
+
+  /// A process that never reads a large input still ends at its own end, the input dropped.
+  @Test func anUnreadInputDoesNotHoldTheRun() async throws {
+    let started = ContinuousClock.now
+    let result = try await ProcessRunner.run(
+      URL(filePath: "/bin/sh"), ["-c", "sleep 0.2; echo done"], environment: [:],
+      input: Data(count: 1 << 22), timeout: .seconds(10))
+    #expect(ContinuousClock.now - started < .seconds(5))
+    #expect(String(decoding: result.output, as: UTF8.self) == "done\n")
+    #expect(!result.timedOut)
+  }
 }

@@ -82,6 +82,18 @@ enum PermissionRulesAnswer: Equatable {
   case listed(PermissionRulesState)
   /// The CLI's error, or a sentence saying it gave no reply to read.
   case refused(String)
+
+  /// A `list_permission_rules` reply: its listing, else the CLI's error, else a sentence
+  /// saying there was nothing to read.
+  init(_ response: ControlResponse) {
+    if response.isSuccess, let state = PermissionRulesState(response.response) {
+      self = .listed(state)
+    } else {
+      self = .refused(
+        response.error.flatMap { $0.isEmpty ? nil : $0 }
+          ?? String(localized: "Claude Code didn't answer."))
+    }
+  }
 }
 
 struct BackendOutput {

@@ -213,13 +213,9 @@ final class ClaudeBackend: AgentBackend {
             requestID: response.requestID,
             response.isSuccess ? PlanReply(response.response) : nil))
       } else {
-        let state = response.isSuccess ? PermissionRulesState(response.response) : nil
-        let refusal =
-          response.error.flatMap { $0.isEmpty ? nil : $0 }
-          ?? String(localized: "Claude Code didn't answer.")
         output.signals.append(
           .permissionRulesAnswered(
-            requestID: response.requestID, state.map { .listed($0) } ?? .refused(refusal)))
+            requestID: response.requestID, PermissionRulesAnswer(response)))
       }
       return output
     case .system(.initialized(let info)):

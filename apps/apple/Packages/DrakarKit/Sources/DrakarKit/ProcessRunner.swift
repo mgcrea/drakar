@@ -105,24 +105,73 @@ public enum ProcessRunner {
     func read() async -> Data { await result.wait() }
   }
 
+  /// Writes `data` to a pipe as the process takes it, on a queue of its own and never
+  /// blocking, then closes the write end so the process reads its end of file. `stop()` closes
+  /// it with what is left unwritten: a process that never reads a large input cannot hold the
+  /// run, and one that has ended raises no SIGPIPE, the write end being set not to.
+  private final class PipeWriter: @unchecked Sendable {
+    private let handle: FileHandle
+    private let source: DispatchSourceWrite
+    private let data: Data
+    /// How much of `data` is written. Touched on the source's queue only.
+    private var written = 0
+
+    init(_ pipe: Pipe, _ data: Data) {
+      handle = pipe.fileHandleForWriting
+      self.data = data
+      let descriptor = handle.fileDescriptor
+      _ = fcntl(descriptor, F_SETNOSIGPIPE, 1)
+      _ = fcntl(descriptor, F_SETFL, fcntl(descriptor, F_GETFL) | O_NONBLOCK)
+      source = DispatchSource.makeWriteSource(
+        fileDescriptor: descriptor, queue: DispatchQueue(label: "drakar.process.input"))
+      source.setEventHandler { [self] in
+        while written < data.count {
+          let count = data.withUnsafeBytes {
+            Darwin.write(descriptor, $0.baseAddress! + written, $0.count - written)
+          }
+          if count > 0 {
+            written += count
+          } else if count < 0, errno == EINTR {
+            continue
+          } else if count < 0, errno == EAGAIN {
+            return
+          } else {
+            break
+          }
+        }
+        source.cancel()
+      }
+      source.setCancelHandler { [self] in try? handle.close() }
+      source.resume()
+    }
+
+    func stop() { source.cancel() }
+  }
+
   /// `environment` nil inherits this process's. `readsErrors` false sends standard error to
-  /// /dev/null, and `errors` comes back empty. Throws only when the process cannot start.
+  /// /dev/null, and `errors` comes back empty. `input` is written to standard input, which
+  /// then closes; nil leaves it /dev/null. `currentDirectory` nil runs it in this process's.
+  /// Throws only when the process cannot start.
   public static func run(
     _ executable: URL, _ arguments: [String], environment: [String: String]? = nil,
-    readsErrors: Bool = true, timeout: Duration
+    readsErrors: Bool = true, input: Data? = nil, currentDirectory: URL? = nil,
+    timeout: Duration
   ) async throws -> Output {
     let process = Process()
     process.executableURL = executable
     process.arguments = arguments
     if let environment { process.environment = environment }
+    if let currentDirectory { process.currentDirectoryURL = currentDirectory }
     let output = Pipe()
     let errors = readsErrors ? Pipe() : nil
+    let inputPipe = input.map { _ in Pipe() }
     process.standardOutput = output
     process.standardError = errors ?? FileHandle.nullDevice
-    process.standardInput = FileHandle.nullDevice
+    process.standardInput = inputPipe ?? FileHandle.nullDevice
     let ended = Latch<Bool>()
     process.terminationHandler = { _ in ended.give(true) }
     try process.run()
+    let writer = inputPipe.map { PipeWriter($0, input ?? Data()) }
     let out = PipeReader(output)
     let err = errors.map(PipeReader.init)
     // Asks the process to end; after the grace, ends it, and stops reading pipes in case its
@@ -131,6 +180,7 @@ public enum ProcessRunner {
       process.terminate()
       DispatchQueue.global().asyncAfter(deadline: .now() + grace) {
         if process.isRunning { kill(process.processIdentifier, SIGKILL) }
+        writer?.stop()
         out.stop()
         err?.stop()
       }
@@ -146,6 +196,7 @@ public enum ProcessRunner {
       // rather than wait for an end of file that a job it left behind (a shell's `cmd &`) can
       // hold off for as long as the job runs.
       _ = await ended.wait()
+      writer?.stop()
       out.stop()
       err?.stop()
       let outData = await out.read()
