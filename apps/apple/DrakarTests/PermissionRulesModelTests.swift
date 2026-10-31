@@ -339,4 +339,18 @@ struct PermissionRulesModelTests {
     #expect(model.note == nil)
     #expect(model.listing == .listed(PermissionRulesState(rules: [Self.npm]), live: false))
   }
+
+  /// The tag at the end of a rule's row: Drakar's word for each source it knows, the CLI's
+  /// own name for any other.
+  @Test func sourceLabels() {
+    let labels = [
+      "userSettings": "User", "projectSettings": "Project", "localSettings": "Local",
+      "flagSettings": "Flag", "policySettings": "Policy", "cliArg": "Command line",
+      "command": "Slash command", "session": "Session", "mcpServerPolicy": "MCP",
+      "mcpMount": "MCP", "hostCredential": "hostCredential",
+    ]
+    for (source, label) in labels {
+      #expect(PermissionsInspector.sourceLabel(source) == label)
+    }
+  }
 }

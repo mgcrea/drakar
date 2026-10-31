@@ -2,15 +2,17 @@ import AppKit
 import DrakarKit
 import SwiftUI
 
-/// The inspector's tabs: the selected session, or what the project's agent would load.
+/// The inspector's tabs: the selected session, what the project's agent would load, or the
+/// selected session's permission rules.
 enum InspectorTab: String {
-  case session, capabilities
+  case session, capabilities, permissions
 }
 
-/// The window's right-hand column, in two tabs: the selected session's context and details,
-/// and the project's skills and MCP servers. The tabs sit in the toolbar over the column,
-/// so they never scroll with it. The tab is kept per window; one opened while its lists
-/// changed shows them, since that is what the toolbar's dot pointed at.
+/// The window's right-hand column, in three tabs: the selected session's context and
+/// details, the project's skills and MCP servers, and the session's permission rules. The
+/// tabs sit in the toolbar over the column, so they never scroll with it. The tab is kept
+/// per window; one opened while its lists changed shows them, since that is what the
+/// toolbar's dot pointed at.
 struct InspectorView: View {
   let project: Project
   /// SwiftUI keeps a hidden inspector's toolbar items, so the tabs leave with the column here.
@@ -22,6 +24,7 @@ struct InspectorView: View {
       switch tab {
       case .session: SessionInspector(project: project)
       case .capabilities: CapabilitiesInspector(project: project)
+      case .permissions: PermissionsInspector(project: project)
       }
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -32,6 +35,7 @@ struct InspectorView: View {
           Picker("Inspector", selection: $tab) {
             Text("Session").tag(InspectorTab.session)
             Text("Skills & MCP").tag(InspectorTab.capabilities)
+            Text("Permissions").tag(InspectorTab.permissions)
           }
           .pickerStyle(.segmented)
           .labelsHidden()
@@ -253,7 +257,7 @@ private struct SkillRow: View {
 }
 
 /// `.help` only when there is something to say: an empty one still attaches a tooltip.
-private struct Tooltip: ViewModifier {
+struct Tooltip: ViewModifier {
   let text: String?
 
   func body(content: Content) -> some View {
