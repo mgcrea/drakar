@@ -73,14 +73,20 @@ extension-accept: ## Make the installed extension the reviewed snapshot (ledger 
 # gate: a stale Changelog.swift fails there rather than shipping notes that describe a
 # different build.
 #
-# DIVERGES from armada, whose two targets also render its website's release cards.
-# Drakar has no website half yet, so they write and check Changelog.swift alone.
+# It also renders the website's release cards, apps/website/public/changelog/
+# <version>.png, one per release whose section opens with a `**Title.**` summary.
+# Those are baked on a Mac (the title is set in SF Pro, which Linux would swap), so
+# `changelog` renders them and `changelog-check` only recomposes their SVGs and
+# compares hashes with apps/website/src/data/release-cards.json. That needs no font
+# and no sharp, so it runs wherever changelog-check does.
 
-changelog: ## Regenerate Changelog.swift from CHANGELOG.md
+changelog: ## Regenerate Changelog.swift and the site's release cards from CHANGELOG.md
 	@node scripts/generate-changelog.mjs
+	@pnpm -s -C apps/website cards
 
-changelog-check: ## Fail if Changelog.swift is stale against CHANGELOG.md
+changelog-check: ## Fail if Changelog.swift or a release card is stale against CHANGELOG.md
 	@node scripts/generate-changelog.mjs --check
+	@pnpm -s -C apps/website cards --check
 
 # node:test for scripts/: the CHANGELOG parse the appcast, the release body and the
 # What's New pane share, and the Sparkle signature check `appcast` will run. Not called

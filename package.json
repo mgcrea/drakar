@@ -19,9 +19,11 @@
     "lint:fix": "oxlint --fix",
     "format": "oxfmt --write .",
     "format:check": "oxfmt --check .",
-    "test:scripts": "node --test \"scripts/**/*.test.mjs\"",
+    "test:scripts": "node --test \"scripts/**/*.test.mjs\" \"apps/website/scripts/**/*.test.mjs\"",
     "changelog": "node scripts/generate-changelog.mjs",
-    "changelog:check": "node scripts/generate-changelog.mjs --check"
+    "changelog:check": "node scripts/generate-changelog.mjs --check",
+    "version:sync": "node scripts/generate-version.mjs",
+    "version:check": "node scripts/generate-version.mjs --check"
   },
   "devDependencies": {
     "oxfmt": "^0.66.0",

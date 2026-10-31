@@ -1,9 +1,11 @@
 // CHANGELOG.md, parsed once.
 //
-// Three things read this file and they must not disagree about it: the Sparkle
+// Four things read this file and they must not disagree about it: the Sparkle
 // appcast, which renders one section as HTML at release time; the GitHub release
-// body, which renders the same section as markdown; and the app's What's New
-// pane, which is generated from the most recent sections at build time. Two
+// body, which renders the same section as markdown; the app's What's New pane,
+// which is generated from the most recent sections at build time; and the
+// website's /changelog/ pages, which render every released section with the
+// appcast's HTML and lead with its summary (`Summary` below). Two
 // parsers over one hand-written file drift the first time somebody writes a
 // bullet in a shape neither anticipated, and the failure is silent in both
 // directions — the appcast keeps rendering while the pane quietly drops a
@@ -17,12 +19,8 @@
 // changing how the split works cannot move a byte of the appcast.
 //
 // Armada's, copied: the direct-distribution apps share no package. It DIVERGES
-// from armada twice:
+// from armada once:
 //
-//   - No release summary (`Summary`, `plain`, `postText` and their limits).
-//     Armada's exist for its website's /changelog/ pages, the social card each
-//     release gets, and the post that links to it. Drakar has no website yet,
-//     and a summary nothing renders is a limit nothing checks.
 //   - `pending`, from cadence: `## [1.0.0] - Unreleased` is a version written
 //     down before it has a date, which is what a build of 1.0.0 contains before
 //     the tag. `## [Unreleased]` stays the name for work no version owns yet.
@@ -51,13 +49,28 @@
  */
 
 /**
+ * What a release is, in one line and a sentence or two: the first paragraph
+ * under its `## ` heading, when that paragraph opens with a `**…**` title.
+ *
+ * It is what the website's page for the version leads with, what its social
+ * card shows, and what gets posted with the link, so it is written for somebody
+ * who has never opened the app. Optional: a lead paragraph without a bold title
+ * is prose, not a summary.
+ *
+ * `title` and `description` are the source's markdown; `plain` strips it for
+ * the places markup cannot go: a post, an og:description, a PNG.
+ *
+ * @typedef {{ title: string, description: string }} Summary
+ */
+
+/**
  * `lead` is the prose between the `## ` heading and the first `###`, one entry
  * per PARAGRAPH: wrapped lines joined, blank lines separating. Unlike a group's
  * lead, which the What's New pane renders line by line and so keeps its lines.
  *
  * `pending` is a version with no date yet: `## [1.0.0] - Unreleased`.
  *
- * @typedef {{ version: string, date: string, unreleased: boolean, pending: boolean, lead: string[], groups: Group[] }} Release
+ * @typedef {{ version: string, date: string, unreleased: boolean, pending: boolean, lead: string[], summary: Summary | null, groups: Group[] }} Release
  */
 
 /** The leading `**…**`, non-greedy so a headline containing a code span still ends at its own close. */
@@ -130,6 +143,7 @@ export const parse = (markdown) => {
         unreleased: version.toLowerCase() === "unreleased",
         pending: /-\s*Unreleased\s*$/i.test(heading),
         lead: [],
+        summary: null,
         groups: [],
       };
       releases.push(release);
@@ -170,8 +184,56 @@ export const parse = (markdown) => {
   flushBullet();
   flushLead();
 
+  for (const each of releases) each.summary = summarise(each.lead[0]);
   return releases;
 };
+
+// ─── The summary, for the website and the post ────────────────────────────────
+
+/**
+ * The longest title the release card lays out in two lines. The card wraps on
+ * an estimate of each character's width and refuses a third line
+ * (`composeReleaseCard` in apps/website/scripts/social-card.mjs), so this is the
+ * cheap bound and the test that asks the card itself is the real one.
+ */
+export const SUMMARY_TITLE_MAX = 64;
+
+/**
+ * The longest post the summary may make. 280 is X's limit; a link always counts
+ * as 23 characters there, plus the space before it.
+ */
+export const SUMMARY_POST_MAX = 280 - 24;
+
+/** @param {string | undefined} paragraph @returns {Summary | null} */
+const summarise = (paragraph) => {
+  const match = paragraph ? HEADLINE.exec(paragraph) : null;
+  if (!paragraph || !match) return null;
+  return { title: match[1], description: paragraph.slice(match[0].length).trim() };
+};
+
+/**
+ * Markdown out, for a post, a meta tag or a picture: code spans keep their text,
+ * a link keeps its words, emphasis goes.
+ *
+ * @param {string} text
+ * @returns {string}
+ */
+export const plain = (text) =>
+  text
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/(^|\W)[*_]([^*_]+)[*_](?=\W|$)/g, "$1$2")
+    .replace(/\s+/g, " ")
+    .trim();
+
+/**
+ * The text to post with a release's link: its title, then its description.
+ *
+ * @param {Summary} summary
+ * @returns {string}
+ */
+export const postText = (summary) => `${plain(summary.title)} ${plain(summary.description)}`.trim();
 
 // ─── What a user is shown ─────────────────────────────────────────────────────
 

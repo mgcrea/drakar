@@ -6,7 +6,18 @@ import { dirname, join } from "node:path";
 import { after, describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { HIDDEN_SECTIONS, parse, renderHTML, renderMarkdown, visibleGroups } from "./changelog.mjs";
+import { RELEASE_CARD, wrapLines } from "../../apps/website/scripts/social-card.mjs";
+import {
+  HIDDEN_SECTIONS,
+  parse,
+  plain,
+  postText,
+  renderHTML,
+  renderMarkdown,
+  SUMMARY_POST_MAX,
+  SUMMARY_TITLE_MAX,
+  visibleGroups,
+} from "./changelog.mjs";
 
 /**
  * The failures these guard against are silent in both directions.
@@ -352,5 +363,102 @@ A second paragraph of lead prose.
     const [opening, second] = renderMarkdown(release).split("\n\n");
     assert.match(opening, /^\*\*One line for the title\.\*\* Two sentences/);
     assert.equal(second, "A second paragraph of lead prose.");
+  });
+});
+
+describe("summaries", () => {
+  const SOURCE = `# Changelog
+
+## [2.0.0] - 2026-10-03
+
+**One line for the card.** Two sentences for the post, wrapped
+across lines the way the file wraps everything. With \`code\` and a [link](https://example.com).
+
+A second paragraph, which is lead prose but not the summary.
+
+### Fixed
+
+- **A fix.** Body.
+
+## [1.8.0] - 2026-09-01
+
+Lead prose with no bold title is prose, not a summary.
+
+### Fixed
+
+- **A fix.** Body.
+`;
+  const [withSummary, withoutSummary] = parse(SOURCE);
+
+  it("takes the first lead paragraph's bold title as the summary", () => {
+    assert.deepEqual(withSummary.summary, {
+      title: "One line for the card.",
+      description:
+        "Two sentences for the post, wrapped across lines the way the file wraps everything. " +
+        "With `code` and a [link](https://example.com).",
+    });
+  });
+
+  it("has no summary where the lead has no bold title", () => {
+    assert.equal(withoutSummary.summary, null);
+  });
+
+  it("strips markdown for the post", () => {
+    assert.equal(
+      plain("**Bold** with `code`, a [link](https://x.y) and *emphasis*."),
+      "Bold with code, a link and emphasis.",
+    );
+    assert.equal(
+      postText(withSummary.summary),
+      "One line for the card. Two sentences for the post, wrapped across lines the way the file " +
+        "wraps everything. With code and a link.",
+    );
+  });
+
+  /*
+   * The website's page for each version, its card and the post all come from
+   * these, and each has a limit nothing else checks: the card lays the title
+   * out in at most two lines, and the post has to fit beside its link on X.
+   * Every Drakar release was written with one, so every release owes one.
+   * `[Unreleased]` does not: its summary is written on release day.
+   *
+   * 1.1.0's post runs to 300 characters, over the limit. It was written before
+   * the site rendered summaries, and its section is already the shipped
+   * appcast's, so it is excused here by name rather than rewritten; its page's
+   * Post on X opens over the limit, to be trimmed in X's composer. No release
+   * after it is excused.
+   */
+  const LONG_POST_EXCUSED = new Set(["1.1.0"]);
+
+  it("every release has a summary that fits the card and the post", () => {
+    const real = parse(readFileSync(join(root, "CHANGELOG.md"), "utf8"));
+    const owing = real.filter((r) => !r.unreleased && !r.pending);
+    assert.ok(owing.length > 0, "no release at all; is the filter right?");
+    for (const release of owing) {
+      assert.ok(release.summary, `${release.version} has no **Title.** lead paragraph`);
+      const title = plain(release.summary.title);
+      assert.ok(
+        title.length <= SUMMARY_TITLE_MAX,
+        `${release.version}: the title is ${title.length} characters, over ${SUMMARY_TITLE_MAX}`,
+      );
+      // The card's own wrap, not just a character count: a short title of wide
+      // capitals can still need a third line, which the card refuses at
+      // `make changelog`, on release day, after everything else is green.
+      const lines = wrapLines(
+        title,
+        RELEASE_CARD.TITLE,
+        RELEASE_CARD.WIDTH - 2 * RELEASE_CARD.MARGIN,
+      );
+      assert.ok(
+        lines.length <= 2,
+        `${release.version}: the title needs ${lines.length} lines on the card`,
+      );
+      if (LONG_POST_EXCUSED.has(release.version)) continue;
+      const post = postText(release.summary);
+      assert.ok(
+        post.length <= SUMMARY_POST_MAX,
+        `${release.version}: the post is ${post.length} characters, over ${SUMMARY_POST_MAX}`,
+      );
+    }
   });
 });
