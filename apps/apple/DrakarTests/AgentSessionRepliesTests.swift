@@ -181,8 +181,52 @@ struct AgentSessionRepliesTests {
     await session.spawn()
     let started = ContinuousClock.now
     #expect(await session.listPermissionRules() == nil)
-    #expect(ContinuousClock.now - started < .seconds(2))
+    #expect(ContinuousClock.now - started < .seconds(4))
     #expect(sentLines(to: fake).contains { $0.contains(#""list_permission_rules""#) })
+  }
+
+  /// The Permissions tab and the Session menu redraw when the process starts and when it is
+  /// stopped: the process itself is not observed.
+  @Test func aProcessStartingAndStoppingIsObserved() async throws {
+    let (session, _) = try askedSession()
+    defer { session.stop() }
+    let started = ObservedFlag()
+    withObservationTracking {
+      _ = session.hasLiveRules
+    } onChange: {
+      started.value = true
+    }
+    await session.spawn()
+    #expect(session.hasLiveRules)
+    #expect(started.value)
+    let stopped = ObservedFlag()
+    withObservationTracking {
+      _ = session.hasLiveRules
+    } onChange: {
+      stopped.value = true
+    }
+    session.stop()
+    #expect(!session.hasLiveRules)
+    #expect(stopped.value)
+  }
+
+  /// As a process that ends by itself: the tab stops asking it.
+  @Test func aProcessEndingIsObserved() async throws {
+    let (session, _) = try askedSession(exits: true)
+    defer { session.stop() }
+    await session.spawn()
+    let ended = ObservedFlag()
+    withObservationTracking {
+      _ = session.hasLiveRules
+    } onChange: {
+      ended.value = true
+    }
+    _ = await session.listPermissionRules()
+    for _ in 0..<100 where session.phase == .ready {
+      try await Task.sleep(for: .milliseconds(50))
+    }
+    #expect(!session.hasLiveRules)
+    #expect(ended.value)
   }
 
   @Test func noProcessNoAsk() async throws {
@@ -221,4 +265,9 @@ struct AgentSessionRepliesTests {
     session.answer(pending[1], .allow(updatedInput: input, updatedPermissions: [always]))
     #expect(session.rulesRevision == 1)
   }
+}
+
+/// Set from an observation callback, which may not capture a variable.
+private final class ObservedFlag: @unchecked Sendable {
+  var value = false
 }

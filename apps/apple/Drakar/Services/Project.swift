@@ -1268,12 +1268,8 @@ final class Project {
   }
 
   /// Whether Open Plan can ask the shown session for its plan: a Claude Code process Drakar
-  /// drives, as its permission rules are read. `phase` is read too, and first: the process
-  /// is not observed, and the Session menu has to redraw when one starts or ends.
-  var canOpenPlanSelected: Bool {
-    guard let session = selected?.session else { return false }
-    return session.phase == .ready && session.hasLiveRules
-  }
+  /// drives, as its permission rules are read.
+  var canOpenPlanSelected: Bool { selected?.session.hasLiveRules ?? false }
 
   func openPlanSelected() async {
     if let selected { await openPlan(selected) }

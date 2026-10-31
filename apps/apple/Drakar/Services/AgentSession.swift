@@ -481,8 +481,10 @@ final class AgentSession {
   private var rewindsCode: Bool { offersCodeRewind && !transcript.isRunning }
 
   /// `listPermissionRules()` and `readPlan()` ask a process: a Claude Code one Drakar drives,
-  /// as the task controls read it.
-  var hasLiveRules: Bool { agent == .claude && controlsTasks }
+  /// as the task controls read it. `phase` is read too, and first: the process is not
+  /// observed, and the phase changes with it as one starts or ends, so what reads this
+  /// redraws then.
+  var hasLiveRules: Bool { phase == .ready && agent == .claude && controlsTasks }
 
   /// The running process's permission rules, session approvals and `--allowedTools` ones
   /// included. Nil at once without a process to ask, or after `controlReplyTimeout` or the
