@@ -249,4 +249,94 @@ struct PermissionRulesModelTests {
     await readingA?.value
     #expect(model.listing == .listed(b, live: true))
   }
+
+  /// A session with no process whose reads each take the rules as they are when it starts
+  /// and answer only when told to, as probes started one after another and finishing in any
+  /// order.
+  @MainActor private final class Probes {
+    var state: PermissionRulesState
+    var holds = false
+    var pending:
+      [(reply: CheckedContinuation<PermissionRulesAnswer?, Never>, read: PermissionRulesState)] =
+        []
+
+    init(_ rules: [PermissionRule]) {
+      state = PermissionRulesState(rules: rules)
+    }
+
+    var source: PermissionRulesModel.Source {
+      PermissionRulesModel.Source(
+        key: "a", isCodex: false, isLive: false,
+        list: {
+          let read = self.state
+          guard self.holds else { return .listed(read) }
+          return await withCheckedContinuation { self.pending.append(($0, read)) }
+        },
+        edit: { edit in
+          switch edit {
+          case .add(let rules, let behavior, let file):
+            self.state.rules += rules.map {
+              PermissionRule(
+                behavior: behavior, source: file.rawValue, rule: $0, editability: .persistent)
+            }
+            return .saved(warnings: [], stored: rules)
+          case .remove(let rule, _, _):
+            self.state.rules.removeAll { $0.rule == rule }
+            return .saved(warnings: [], stored: [])
+          }
+        })
+    }
+
+    func waitFor(_ count: Int) async {
+      while pending.count < count { await Task.yield() }
+    }
+
+    func answer(_ index: Int) {
+      pending[index].reply.resume(returning: .listed(pending[index].read))
+    }
+  }
+
+  private static let deny = PermissionRule(
+    behavior: .deny, source: "localSettings", rule: "Read(./secrets/**)",
+    editability: .persistent)
+
+  /// The second remove's probe answers first: the first's answer, older, is not shown, yet
+  /// it still says its rule is gone.
+  @Test func twoRemovesAnsweredOutOfOrderBothShow() async {
+    let probes = Probes([Self.npm, Self.deny])
+    let model = model()
+    await shown(model, probes.source)
+    probes.holds = true
+    let first = Task { await model.remove(Self.npm) }
+    await probes.waitFor(1)
+    let second = Task { await model.remove(Self.deny) }
+    await probes.waitFor(2)
+    #expect(model.removing == [Self.npm, Self.deny])
+    probes.answer(1)
+    await second.value
+    #expect(model.removing == [Self.npm])
+    probes.answer(0)
+    await first.value
+    #expect(model.removing.isEmpty)
+    #expect(model.note == nil)
+    #expect(model.listing == .listed(PermissionRulesState(rules: []), live: false))
+  }
+
+  /// Refresh during an add's probe answers first; the add's own probe still finds the rule.
+  @Test func aRefreshDuringAnAddsReadDoesNotHideIt() async {
+    let probes = Probes([])
+    let model = model()
+    await shown(model, probes.source)
+    probes.holds = true
+    let adding = Task { await model.add(Self.npm.rule, behavior: .allow, file: .localSettings) }
+    await probes.waitFor(1)
+    model.refresh()
+    await probes.waitFor(2)
+    probes.answer(1)
+    await model.reading?.value
+    probes.answer(0)
+    #expect(await adding.value == nil)
+    #expect(model.note == nil)
+    #expect(model.listing == .listed(PermissionRulesState(rules: [Self.npm]), live: false))
+  }
 }

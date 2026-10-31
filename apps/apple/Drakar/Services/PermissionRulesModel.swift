@@ -166,20 +166,21 @@ final class PermissionRulesModel {
   }
 
   /// Reads `source`'s listing and shows it, unless another read started meanwhile. The
-  /// state shown, nil for a failure or an answer dropped.
+  /// state read, nil for a failure, whether shown or not: a read taken after an edit says
+  /// whether that edit shows even when a later read overtook it on screen.
   private func list(_ source: Source) async -> PermissionRulesState? {
     generation += 1
     let current = generation
     let answer = await source.list()
-    guard current == generation else { return nil }
+    let isLatest = current == generation
     switch answer {
     case .listed(let state)?:
-      listing = .listed(state, live: source.isLive)
+      if isLatest { listing = .listed(state, live: source.isLive) }
       return state
     case .refused(let reason)?:
-      listing = .failed(reason)
+      if isLatest { listing = .failed(reason) }
     case nil:
-      listing = .failed(Self.noAnswer)
+      if isLatest { listing = .failed(Self.noAnswer) }
     }
     return nil
   }
@@ -195,7 +196,10 @@ final class PermissionRulesModel {
     for attempt in 0..<attempts {
       if attempt > 0 { try? await Task.sleep(for: rereadInterval) }
       guard isShowing(source) else { return nil }
-      if let state = await list(source), shows(state) { return true }
+      let state = await list(source)
+      // Read for a session no longer shown: its answer says nothing to show.
+      guard isShowing(source) else { return nil }
+      if let state, shows(state) { return true }
     }
     return isShowing(source) ? false : nil
   }
