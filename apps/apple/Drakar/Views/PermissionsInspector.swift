@@ -6,15 +6,18 @@ import SwiftUI
 /// over Deny, with the folders it may work in and the settings files Claude Code skipped.
 /// Rules in a settings file the edit command writes can be removed, and Add Rule… writes new
 /// ones. The listing is read when the tab shows, when another session is selected while it
-/// shows, after an answer that added rules, and on Refresh; never while the tab is hidden,
-/// since this view only exists while it shows.
+/// shows, after an answer that added rules, and on Refresh; never while the tab is hidden.
+/// SwiftUI keeps a hidden inspector's views, so the column's showing is passed in: it reads
+/// nothing while hidden, and reads again when shown.
 struct PermissionsInspector: View {
   let project: Project
+  /// Whether the inspector's column is on screen.
+  let isShown: Bool
   @State private var model = PermissionRulesModel()
 
   var body: some View {
     if let item = project.selected {
-      PermissionsDetails(item: item, model: model)
+      PermissionsDetails(item: item, model: model, isShown: isShown)
     } else {
       ContentUnavailableView(
         "No Session", systemImage: "lock.shield",
@@ -41,16 +44,19 @@ struct PermissionsInspector: View {
 }
 
 /// What a listing is read for: another session reads it anew; the same one reads it again
-/// once its process starts or goes, or after an answer added rules.
+/// once its process starts or goes, after an answer added rules, or when the column shows
+/// again.
 private struct RulesReading: Hashable {
   var session: ProjectSession.ID
   var isLive: Bool
   var revision: Int
+  var isShown: Bool
 }
 
 private struct PermissionsDetails: View {
   let item: ProjectSession
   let model: PermissionRulesModel
+  let isShown: Bool
   @State private var isAdding = false
   /// The session the last read was for: a change of `RulesReading` for the same one reads
   /// again, which `show` alone would not.
@@ -58,7 +64,8 @@ private struct PermissionsDetails: View {
 
   private var reading: RulesReading {
     RulesReading(
-      session: item.id, isLive: item.session.hasLiveRules, revision: item.session.rulesRevision)
+      session: item.id, isLive: item.session.hasLiveRules, revision: item.session.rulesRevision,
+      isShown: isShown)
   }
 
   /// The listing's state while it lists, else nil.
@@ -76,6 +83,8 @@ private struct PermissionsDetails: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
     .task(id: reading) {
+      // Hidden, nothing is read: no probe starts for a session clicked meanwhile.
+      guard isShown else { return }
       let isSameSession = readFor == reading.session
       // Taken afresh each time: whether the session's process answers changes with it.
       model.show(PermissionRulesModel.source(for: item))
@@ -371,8 +380,10 @@ private struct AddRuleSheet: View {
       HStack {
         Spacer()
         if isSaving { ProgressView().controlSize(.small) }
+        // Not while saving: the add goes on, and its refusal would reach a closed sheet.
         Button("Cancel", role: .cancel) { dismiss() }
           .keyboardShortcut(.cancelAction)
+          .disabled(isSaving)
         Button("Add", action: save)
           .keyboardShortcut(.defaultAction)
           .disabled(isBlank || isSaving)
@@ -381,6 +392,7 @@ private struct AddRuleSheet: View {
     }
     .padding(20)
     .frame(width: 440)
+    .interactiveDismissDisabled(isSaving)
   }
 
   /// Sends the rules; the sheet closes once they are saved and read back, and stays with a

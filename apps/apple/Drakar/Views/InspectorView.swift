@@ -24,7 +24,7 @@ struct InspectorView: View {
       switch tab {
       case .session: SessionInspector(project: project)
       case .capabilities: CapabilitiesInspector(project: project)
-      case .permissions: PermissionsInspector(project: project)
+      case .permissions: PermissionsInspector(project: project, isShown: isShown)
       }
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
