@@ -126,6 +126,25 @@ struct EditorDocumentTests {
     #expect(workspace.problem == "b.bin is not a text file.")
   }
 
+  /// No watcher sees a file outside the folder (a plan under the account's `plans/`):
+  /// opening it again reads the disk, so an untouched tab follows it and an edited one asks,
+  /// rather than a save writing over the newer text.
+  @Test func reopeningAFileOutsideTheFolderReadsTheDisk() throws {
+    let workspace = Workspace(folder: folder.appending(path: "project"))
+    let url = try file("plan.md", "one\n")
+    let document = try #require(workspace.open(url))
+    try "two\n".write(to: url, atomically: true, encoding: .utf8)
+    #expect(workspace.open(url) === document)
+    #expect(document.storage.string == "two\n")
+    #expect(document.conflict == nil)
+
+    type("mine\n", into: document)
+    try "three\n".write(to: url, atomically: true, encoding: .utf8)
+    _ = workspace.open(url)
+    #expect(document.conflict == "three\n")
+    #expect(document.storage.string == "two\nmine\n")
+  }
+
   @Test func pinsEachSelectionOnce() throws {
     let workspace = Workspace(folder: folder)
     let document = try #require(workspace.open(try file("a.txt", "alpha\nbeta\n")))

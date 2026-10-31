@@ -75,6 +75,10 @@ final class Workspace {
     let document: EditorDocument
     if let existing = documents.first(where: { $0.path == path }) {
       document = existing
+      // No watcher sees a file outside the folder (a plan under the account's `plans/`):
+      // read it now, so an untouched tab follows the disk and an edited one asks, rather
+      // than a save writing over newer text.
+      if !tree.isRelevant(path) { existing.diskChanged() }
     } else {
       switch TextFile.read(URL(filePath: path)) {
       case .success(let text):

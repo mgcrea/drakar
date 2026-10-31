@@ -57,10 +57,13 @@ struct OpenPlanTests {
     }.first
   }
 
+  /// The plan lives under the account's `plans/`, outside the project's folder.
   @Test func opensAnExistingPlan() async throws {
-    let plan = folder.appending(path: "plans/plan.md")
+    let plan = FileManager.default.temporaryDirectory.appending(
+      path: "drakar-plans-\(UUID().uuidString)/plan.md")
     try FileManager.default.createDirectory(
       at: plan.deletingLastPathComponent(), withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: plan.deletingLastPathComponent()) }
     try Data("# P".utf8).write(to: plan)
     let path = plan.path(percentEncoded: false)
     let (project, item) = try await project(
@@ -71,6 +74,11 @@ struct OpenPlanTests {
     #expect(active.path == FileTree.normalized(plan.standardized.path(percentEncoded: false)))
     #expect(project.workspace.documents.count == 1)
     #expect(lastNotice(item) == nil)
+    // Claude plans again; opening it again shows the new plan, not the tab's old text.
+    try Data("# P2".utf8).write(to: plan)
+    await project.openPlanSelected()
+    #expect(project.workspace.active === active)
+    #expect(active.storage.string == "# P2")
   }
 
   @Test func noPlanSaysSo() async throws {
