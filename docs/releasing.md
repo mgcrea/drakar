@@ -192,7 +192,10 @@ in 1.1.0.
    `txcd_10202000`, statement descriptor `MGCREA DRAKAR`, image `/product-image.png`), a one-time
    price of €14.99 with a $14.99 currency option, both set explicitly, and a Payment Link with
    `price_id`, `major` and `rung` in its metadata, required terms consent with the EU
-   withdrawal wording, automatic tax and tax IDs, redirecting to the Worker's `/thanks`.
+   withdrawal wording behind a link to `/terms/` ("I agree to the [Drakar licence
+   terms](https://drakar.mgcrea.io/terms/). ..."; the custom text replaces Stripe's own
+   terms link, so without it the box names no terms), automatic tax and tax IDs, redirecting to
+   the Worker's `/thanks`.
 
    |                | Live                                         | Test                                              |
    | -------------- | -------------------------------------------- | ------------------------------------------------- |
