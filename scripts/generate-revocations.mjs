@@ -173,8 +173,12 @@ const header = current.slice(0, declaration);
 // nobody in this repo chose, and a quote or a backslash in one would emit Swift
 // that does not compile.
 const swiftString = (value) => JSON.stringify(value);
-const list =
-  ids.length === 0 ? "[]" : `[\n${ids.map((id) => `    ${swiftString(id)},`).join("\n")}\n  ]`;
+// One id per line, trailing comma included, except when there is only one:
+// swift-format's TrailingComma rule reads a one-element literal as a single-line
+// one and fails `make format-swift-check` over the comma, which on a release tag
+// fails the App job the release needs.
+const items = ids.map((id) => `    ${swiftString(id)}`).join(",\n");
+const list = ids.length === 0 ? "[]" : `[\n${items}${ids.length > 1 ? "," : ""}\n  ]`;
 const next = `${header}nonisolated enum Revocations {\n  static let ids: Set<String> = ${list}\n}\n`;
 
 if (!hasDatabase && current !== next) {
