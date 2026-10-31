@@ -255,4 +255,67 @@ struct ClaudeBackendTests {
       from: process, at: .now)
     #expect(silent.signals == [.rewindAnswered(userMessageID: "u-c", dryRun: false, nil)])
   }
+
+  /// The rules and the plan go under their own `rules-` and `plan-` ids, and their replies
+  /// come back as signals for those ids; a reply to an id never sent says nothing.
+  @Test func rulesAndPlanRepliesBecomeSignals() throws {
+    let backend = ClaudeBackend()
+    let process = try process()
+    defer { process.terminate() }
+    let listed = try #require(try backend.send(.listPermissionRules, to: process))
+    #expect(listed.hasPrefix("rules-"))
+    #expect(UUID(uuidString: String(listed.dropFirst("rules-".count))) != nil)
+    // The spec's real reply: a project with a local allow and deny.
+    let state = backend.receive(
+      try line(
+        #"{"type":"control_response","response":{"subtype":"success","request_id":"\#(listed)","response":{"state":{"rules":[{"behavior":"allow","source":"localSettings","rule":"Bash(npm run test:*)","description":{"prefix":"Any Bash command starting with ","emphasis":"npm run test"},"editability":"persistent"},{"behavior":"deny","source":"localSettings","rule":"Read(./secrets/**)","editability":"persistent"}],"workspaceDirectories":[],"originalCwd":"/p/rules","managedOnly":false}}}}"#
+      ),
+      from: process, at: .now)
+    let rules = PermissionRulesState(rules: [
+      PermissionRule(
+        behavior: .allow, source: "localSettings", rule: "Bash(npm run test:*)",
+        description: .init(prefix: "Any Bash command starting with ", emphasis: "npm run test"),
+        editability: .persistent),
+      PermissionRule(
+        behavior: .deny, source: "localSettings", rule: "Read(./secrets/**)",
+        editability: .persistent),
+    ])
+    #expect(state.signals == [.permissionRulesAnswered(requestID: listed, .listed(rules))])
+    #expect(state.events.isEmpty)
+
+    let refusedID = try #require(try backend.send(.listPermissionRules, to: process))
+    let refused = backend.receive(
+      try line(
+        #"{"type":"control_response","response":{"subtype":"error","request_id":"\#(refusedID)","error":"Unsupported control request"}}"#
+      ),
+      from: process, at: .now)
+    #expect(
+      refused.signals == [
+        .permissionRulesAnswered(requestID: refusedID, .refused("Unsupported control request"))
+      ])
+
+    let planID = try #require(try backend.send(.getPlan, to: process))
+    #expect(planID.hasPrefix("plan-"))
+    let plan = backend.receive(
+      try line(
+        #"{"type":"control_response","response":{"subtype":"success","request_id":"\#(planID)","response":{"exists":false}}}"#
+      ),
+      from: process, at: .now)
+    let none = try #require(PlanReply(.object(["exists": .bool(false)])))
+    #expect(plan.signals == [.planAnswered(requestID: planID, none)])
+
+    // Answered once: the same id again, or one never sent, says nothing.
+    let again = backend.receive(
+      try line(
+        #"{"type":"control_response","response":{"subtype":"success","request_id":"\#(planID)","response":{"exists":false}}}"#
+      ),
+      from: process, at: .now)
+    #expect(again.signals.isEmpty)
+    let unknown = backend.receive(
+      try line(
+        #"{"type":"control_response","response":{"subtype":"success","request_id":"rules-x","response":{"state":{"rules":[]}}}}"#
+      ),
+      from: process, at: .now)
+    #expect(unknown.signals.isEmpty)
+  }
 }

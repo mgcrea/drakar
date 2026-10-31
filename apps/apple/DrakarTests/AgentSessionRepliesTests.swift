@@ -18,10 +18,12 @@ struct AgentSessionRepliesTests {
     try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
   }
 
-  /// A stand-in that writes `line` on start, then appends whatever it is sent to its stdin file.
-  private func standIn(writing line: String) throws -> URL {
+  /// A stand-in that writes `lines` on start, then appends whatever it is sent to its stdin
+  /// file.
+  private func standIn(writing lines: String...) throws -> URL {
     let script = folder.appending(path: "claude")
-    try Data("#!/bin/sh\nprintf '%s\\n' '\(line)'\ncat >> \"$0.stdin\"\n".utf8).write(to: script)
+    let writes = lines.map { "printf '%s\\n' '\($0)'\n" }.joined()
+    try Data("#!/bin/sh\n\(writes)cat >> \"$0.stdin\"\n".utf8).write(to: script)
     try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script.path)
     return script
   }
@@ -118,5 +120,105 @@ struct AgentSessionRepliesTests {
     defer { session.stop() }
     let reply = try await sentLine(to: script, containing: #""request_id":"h1""#)
     #expect(reply?.contains(#""subtype":"error""#) == true)
+  }
+
+  // MARK: Asking its process
+
+  private static let rulesReply =
+    #"{\"state\":{\"rules\":[{\"behavior\":\"allow\",\"source\":\"localSettings\",\"rule\":\"Bash(npm run test:*)\",\"editability\":\"persistent\"}],\"workspaceDirectories\":[],\"managedOnly\":false}}"#
+
+  /// A stand-in `claude` that answers each `list_permission_rules` with `rulesReply`, or with
+  /// nothing when `answers` is false, then ends 50 ms after it was asked when `exits`.
+  /// Every line it is sent goes to `$0.stdin`.
+  private func askedSession(answers: Bool = true, exits: Bool = false) throws -> (
+    AgentSession, URL
+  ) {
+    let fake = folder.appending(path: "claude")
+    let reply =
+      answers
+      ? #"id=${line#*\"request_id\":\"}; id=${id%%\"*}; printf '%s\n' "{\"type\":\"control_response\",\"response\":{\"subtype\":\"success\",\"request_id\":\"$id\",\"response\":\#(Self.rulesReply)}}""#
+      : ":"
+    let script = """
+      #!/bin/sh
+      while read -r line; do
+        printf '%s\\n' "$line" >> "$0.stdin"
+        case "$line" in
+          *'"list_permission_rules"'*)
+            \(reply)
+            \(exits ? "sleep 0.05; exit 0" : ":")
+            ;;
+        esac
+      done
+
+      """
+    try Data(script.utf8).write(to: fake)
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: fake.path)
+    let session = AgentSession(folder: folder)
+    session.executableOverride = fake
+    session.accounts = { [] }
+    session.makeTransport = { AgentProcess($0) }
+    return (session, fake)
+  }
+
+  @Test func listsRulesFromItsProcess() async throws {
+    let (session, _) = try askedSession()
+    defer { session.stop() }
+    await session.spawn()
+    #expect(session.hasLiveRules)
+    let rules = PermissionRulesState(rules: [
+      PermissionRule(
+        behavior: .allow, source: "localSettings", rule: "Bash(npm run test:*)",
+        editability: .persistent)
+    ])
+    #expect(await session.listPermissionRules() == .listed(rules))
+  }
+
+  /// The wait ends with the process, not with the timeout.
+  @Test func aProcessEndEndsTheWait() async throws {
+    let (session, fake) = try askedSession(answers: false, exits: true)
+    defer { session.stop() }
+    session.controlReplyTimeout = .seconds(5)
+    await session.spawn()
+    let started = ContinuousClock.now
+    #expect(await session.listPermissionRules() == nil)
+    #expect(ContinuousClock.now - started < .seconds(2))
+    #expect(sentLines(to: fake).contains { $0.contains(#""list_permission_rules""#) })
+  }
+
+  @Test func noProcessNoAsk() async throws {
+    let (session, fake) = try askedSession()
+    defer { session.stop() }
+    #expect(!session.hasLiveRules)
+    #expect(await session.listPermissionRules() == nil)
+    #expect(await session.readPlan() == nil)
+    #expect(sentLines(to: fake).isEmpty)
+  }
+
+  /// An "always allow" adds rules, which the Permissions tab reads again; a plain allow does
+  /// not.
+  @Test func anAlwaysAllowBumpsTheRevision() async throws {
+    let asking = { (id: String) in
+      #"{"type":"control_request","request_id":"\#(id)","request":{"subtype":"can_use_tool","tool_name":"Bash","input":{"command":"ls"},"tool_use_id":"toolu_\#(id)"}}"#
+    }
+    let script = try standIn(writing: asking("p1"), asking("p2"))
+    let session = AgentSession(folder: folder)
+    session.executableOverride = script
+    session.send("hello")
+    defer { session.stop() }
+    for _ in 0..<50 where session.transcript.pendingPermissions.count < 2 {
+      try await Task.sleep(for: .milliseconds(100))
+    }
+    let pending = session.transcript.pendingPermissions
+    try #require(pending.count == 2)
+    let input = JSONValue.object(["command": .string("ls")])
+    session.answer(pending[0], .allow(updatedInput: input, updatedPermissions: []))
+    #expect(session.rulesRevision == 0)
+    let always = JSONValue.object([
+      "type": .string("addRules"),
+      "rules": .array([.object(["toolName": .string("Bash"), "ruleContent": .string("ls")])]),
+      "behavior": .string("allow"), "destination": .string("session"),
+    ])
+    session.answer(pending[1], .allow(updatedInput: input, updatedPermissions: [always]))
+    #expect(session.rulesRevision == 1)
   }
 }

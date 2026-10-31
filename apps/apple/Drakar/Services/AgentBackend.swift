@@ -71,6 +71,17 @@ enum AgentCommand: Codable, Equatable {
   case taskOutput(taskID: String)
   /// A code rewind (`Rewinds`), sent without a note as the task controls are.
   case rewindFiles(userMessageID: String, dryRun: Bool)
+  /// Reads of the running process for the Permissions tab and Open Plan, sent without a note
+  /// as `rewindFiles` is: they change nothing a replay would need.
+  case listPermissionRules
+  case getPlan
+}
+
+/// How a running process answered for its permission rules.
+enum PermissionRulesAnswer: Equatable {
+  case listed(PermissionRulesState)
+  /// The CLI's error, or a sentence saying it gave no reply to read.
+  case refused(String)
 }
 
 struct BackendOutput {
@@ -107,4 +118,8 @@ enum SessionSignal: Equatable {
   /// A `rewindFiles` was answered, for the message and kind it was sent as. A refusal comes
   /// as a result with `canRewind` false and the CLI's error; nil for one with no text.
   case rewindAnswered(userMessageID: String, dryRun: Bool, RewindResult?)
+  /// A `listPermissionRules` was answered, under the id `send` returned for it.
+  case permissionRulesAnswered(requestID: String, PermissionRulesAnswer)
+  /// A `getPlan` was answered; nil for a refusal or a reply with nothing to read.
+  case planAnswered(requestID: String, PlanReply?)
 }

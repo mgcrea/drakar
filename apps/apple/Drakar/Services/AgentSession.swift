@@ -35,6 +35,16 @@ final class AgentSession {
   /// This process answered "File rewinding is not enabled.": it offers no code rewind again.
   /// Reset with `process`.
   private(set) var rewindNotEnabled = false
+  /// Bumped when an answer added permission rules ("always allow"), so that a rules listing
+  /// shown reads them again.
+  private(set) var rulesRevision = 0
+  /// How long `listPermissionRules()` and `readPlan()` wait for the process; tests shorten it.
+  @ObservationIgnored var controlReplyTimeout: Duration = .seconds(10)
+  /// Those reads waiting on the process, by request id: resumed by the answer, by their
+  /// timeout, or with nil when the process goes.
+  @ObservationIgnored private var controlReplies:
+    [String: (reply: CheckedContinuation<SessionSignal?, Never>, timeout: Task<Void, Never>)] =
+      [:]
   private(set) var transcript = Transcript()
   private(set) var phase: Phase = .idle
   /// The binary this session runs, for the footer and for bug reports.
@@ -146,6 +156,7 @@ final class AgentSession {
       if oldValue != nil {
         tasks.processEnded()
         rewinds.processEnded()
+        for id in Array(controlReplies.keys) { resumeControlReply(id, with: nil) }
       }
     }
   }
@@ -468,6 +479,52 @@ final class AgentSession {
   var offersCodeRewind: Bool { controlsTasks && !rewindNotEnabled }
 
   private var rewindsCode: Bool { offersCodeRewind && !transcript.isRunning }
+
+  /// `listPermissionRules()` asks a process: a Claude Code one Drakar drives, as the task
+  /// controls read it.
+  var hasLiveRules: Bool { agent == .claude && controlsTasks }
+
+  /// The running process's permission rules, session approvals and `--allowedTools` ones
+  /// included. Nil at once without a process to ask, or after `controlReplyTimeout` or the
+  /// process's end with no answer.
+  func listPermissionRules() async -> PermissionRulesAnswer? {
+    guard case .permissionRulesAnswered(_, let answer)? = await ask(.listPermissionRules) else {
+      return nil
+    }
+    return answer
+  }
+
+  /// The running process's plan, as `listPermissionRules()` asks it; nil also for a refusal.
+  func readPlan() async -> PlanReply? {
+    guard case .planAnswered(_, let reply)? = await ask(.getPlan) else { return nil }
+    return reply
+  }
+
+  /// Sends `command` and waits for the signal answering it. Not `write` nor `sendNoted`, as
+  /// `tasks.send`: a read the process cannot take changes nothing else, and a note would
+  /// have a replay send it again.
+  private func ask(_ command: AgentCommand) async -> SessionSignal? {
+    guard hasLiveRules, let process, let id = try? backend.send(command, to: process) else {
+      return nil
+    }
+    // Registered before any line is read: the reply is handled on this actor, after this.
+    return await withCheckedContinuation { continuation in
+      let limit = controlReplyTimeout
+      let timeout = Task { [weak self] in
+        try? await Task.sleep(for: limit)
+        guard !Task.isCancelled else { return }
+        self?.resumeControlReply(id, with: nil)
+      }
+      controlReplies[id] = (continuation, timeout)
+    }
+  }
+
+  /// Ends the wait for `id`, once: later answers for it find nothing.
+  private func resumeControlReply(_ id: String, with signal: SessionSignal?) {
+    guard let waiting = controlReplies.removeValue(forKey: id) else { return }
+    waiting.timeout.cancel()
+    waiting.reply.resume(returning: signal)
+  }
 
   /// A rewind took: the extension's line, left in the conversation once the sheet closes.
   func noteRewound() {
@@ -921,6 +978,8 @@ final class AgentSession {
       .answer(requestID: pending.requestID, decision: decision),
       effect: .answered(requestID: pending.requestID))
     notingPermissions { transcript.resolvePermission(requestID: pending.requestID) }
+    // An "always allow" added rules, which a listing shown reads again.
+    if case .allow(_, let updates) = decision, !updates.isEmpty { rulesRevision += 1 }
     onReplied?()
   }
 
@@ -1393,6 +1452,8 @@ final class AgentSession {
       // A dry run's refusal or a rewind's: either says it of the whole process.
       if result?.isNotEnabled == true { rewindNotEnabled = true }
       if rewinds.answered(signal) { noteRewound() }
+    case .permissionRulesAnswered(let id, _), .planAnswered(let id, _):
+      resumeControlReply(id, with: signal)
     case .unusable(let message):
       stop()
       phase = .failed(message)

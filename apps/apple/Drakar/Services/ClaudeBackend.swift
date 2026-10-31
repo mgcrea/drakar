@@ -18,6 +18,9 @@ final class ClaudeBackend: AgentBackend {
   /// Rewinds sent and not yet answered, under ids of the same kind: the message and kind
   /// each was sent for, since a refusal names neither.
   private var rewindRequests: [String: (userMessageID: String, dryRun: Bool)] = [:]
+  /// Rules and plan reads sent and not yet answered, under `rules-` and `plan-` UUID ids, so
+  /// that a reply to one never sent says nothing.
+  private var readRequests: Set<String> = []
 
   var notFoundMessage: String { ClaudeLaunch.notFound }
   let features = AgentFeatures.claude
@@ -51,6 +54,7 @@ final class ClaudeBackend: AgentBackend {
     requestCount = 0
     taskRequests.removeAll()
     rewindRequests.removeAll()
+    readRequests.removeAll()
     try process.send(.initialize(requestID: nextRequestID("init")))
     askAppliedSettings(process)
     if let first { try send(first, to: process) }
@@ -106,6 +110,14 @@ final class ClaudeBackend: AgentBackend {
       let id = "rewind-\(UUID().uuidString)"
       rewindRequests[id] = (userMessageID, dryRun)
       return (.rewindFiles(requestID: id, userMessageID: userMessageID, dryRun: dryRun), id)
+    case .listPermissionRules:
+      let id = "rules-\(UUID().uuidString)"
+      readRequests.insert(id)
+      return (.listPermissionRules(requestID: id), id)
+    case .getPlan:
+      let id = "plan-\(UUID().uuidString)"
+      readRequests.insert(id)
+      return (.getPlan(requestID: id), id)
     }
   }
 
@@ -190,6 +202,25 @@ final class ClaudeBackend: AgentBackend {
         : response.error.flatMap { $0.isEmpty ? nil : RewindResult(refusal: $0) }
       output.signals.append(
         .rewindAnswered(userMessageID: sent.userMessageID, dryRun: sent.dryRun, result))
+      return output
+    case .controlResponse(let response)
+    where ["rules-", "plan-"].contains(where: response.requestID.hasPrefix):
+      // One never sent by this backend, or answered already, says nothing.
+      guard readRequests.remove(response.requestID) != nil else { return output }
+      if response.requestID.hasPrefix("plan-") {
+        output.signals.append(
+          .planAnswered(
+            requestID: response.requestID,
+            response.isSuccess ? PlanReply(response.response) : nil))
+      } else {
+        let state = response.isSuccess ? PermissionRulesState(response.response) : nil
+        let refusal =
+          response.error.flatMap { $0.isEmpty ? nil : $0 }
+          ?? String(localized: "Claude Code didn't answer.")
+        output.signals.append(
+          .permissionRulesAnswered(
+            requestID: response.requestID, state.map { .listed($0) } ?? .refused(refusal)))
+      }
       return output
     case .system(.initialized(let info)):
       if let mode = info.permissionMode { output.signals.append(.modeAdopted(mode)) }

@@ -112,6 +112,8 @@ final class CodexBackend: AgentBackend {
     case .stopTask, .backgroundCall, .taskOutput: nil
     // Claude Code's only: nothing offers a code rewind on a Codex session.
     case .rewindFiles: nil
+    // Claude Code's only: a Codex session lists no permission rules and keeps no plan file.
+    case .listPermissionRules, .getPlan: nil
     }
   }
 }
