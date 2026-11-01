@@ -37,6 +37,7 @@ import SwiftUI
   var typed: RunnerSettings {
     let path = drakarPath.trimmingCharacters(in: .whitespacesAndNewlines)
     return RunnerSettings(
+      id: id,
       name: name.trimmingCharacters(in: .whitespacesAndNewlines),
       destination: destination.trimmingCharacters(in: .whitespacesAndNewlines),
       drakarPath: path.isEmpty ? RunnerSettings.defaultDrakarPath : path)
@@ -54,23 +55,26 @@ import SwiftUI
   @ObservationIgnored private let open:
     @MainActor (RunnerSettings) async throws(RunnerFailure) -> RunnerConnection.Opened
   private var saved: RunnerSettings?
+  /// The saved runner's, kept across its edits; a new one for a runner not saved yet.
+  @ObservationIgnored private var id = UUID()
 
-  /// The app's own of each unless a test gives its own: `install` puts the runner's host in
-  /// `SessionHost.runner`, `open` reaches the runner.
+  /// The app's own of each unless a test gives its own: `install` puts the runner in
+  /// `SessionHost.runner` (nil: `useRunner` with `defaults`), `open` reaches the runner.
   init(
     defaults: UserDefaults = .standard, role: RunnerRole = .shared,
-    install: @escaping @MainActor (RunnerSettings?) -> Void = SessionHost.useRunner,
+    install: (@MainActor (RunnerSettings?) -> Void)? = nil,
     open:
       @escaping @MainActor (RunnerSettings) async throws(RunnerFailure) -> RunnerConnection.Opened =
       RunnerConnection.open
   ) {
     self.defaults = defaults
     self.role = role
-    self.install = install
+    self.install = install ?? { SessionHost.useRunner($0, keptIn: defaults) }
     self.open = open
     accepts = role.accepts
     saved = RunnerSettings.read(from: defaults)
     if let saved {
+      id = saved.id
       name = saved.name
       destination = saved.destination
       drakarPath = saved.drakarPath
@@ -81,6 +85,8 @@ import SwiftUI
   func save() {
     RunnerSettings.write(typed, to: defaults)
     saved = RunnerSettings.read(from: defaults)
+    // No runner now: the next one saved is another.
+    if saved == nil { id = UUID() }
     install(saved)
   }
 

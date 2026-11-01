@@ -10,7 +10,9 @@ import Testing
 /// of the test's own. Never the person's runner, host or settings: the relay always gets
 /// `--directory` and `--defaults-suite`, and every helper is killed by its pid.
 ///
-/// Serialized: `RunnerSettings.sshExecutable` is one for the whole app.
+/// Serialized: `RunnerSettings.sshExecutable` and `SessionHost.runner` are one for the whole
+/// app, and this is the only suite that changes either; keep it so, or put every suite that
+/// does under one serialized parent.
 @MainActor
 @Suite("A runner's host, through ssh", .serialized, .timeLimit(.minutes(2)))
 struct RunnerHostTests {
@@ -163,6 +165,12 @@ struct RunnerHostTests {
     RunnerSettings.write(studio, to: defaults)
     #expect(RunnerSettings.read(from: defaults) == studio)
     #expect(RunnerSettings.read(from: defaults)?.drakarPath == "/Applications/Drakar.app")
+    // Settings kept before runners had an id are given one, the same at every read.
+    defaults.set(
+      Data(#"{"name":"Studio","destination":"me@studio"}"#.utf8), forKey: RunnerSettings.key)
+    let older = try #require(RunnerSettings.read(from: defaults))
+    #expect(older.name == "Studio" && older.drakarPath == "/Applications/Drakar.app")
+    #expect(RunnerSettings.read(from: defaults)?.id == older.id)
     // No destination, no runner.
     RunnerSettings.write(RunnerSettings(name: "Studio", destination: " "), to: defaults)
     #expect(RunnerSettings.read(from: defaults) == nil)
@@ -251,41 +259,133 @@ struct RunnerHostTests {
     #expect(host.failure != nil)
   }
 
-  /// Settings › Runner replacing the runner: the old host closes its connection and ends its
-  /// ssh, even one that would linger after its relay has gone, and never connects again.
-  @Test func aReplacedRunnerEndsItsSSH() async throws {
+  /// An `ssh` like `relayingSSH`'s that lingers once its relay has gone, as one on a network
+  /// that has dropped does, until it is ended. Each run's pid and destination are a line of
+  /// `sshPIDs` and `destinations`.
+  private func lingeringSSH() throws {
     let drakar = try #require(Bundle.main.executableURL).path(percentEncoded: false)
-    let pidFile = root.appending(path: "ssh.pid")
     try fakeSSH(
       """
-      echo $$ > '\(pidFile.path(percentEncoded: false))'
+      echo $$ >> '\(sshPIDs.path(percentEncoded: false))'
+      echo "$4" >> '\(destinations.path(percentEncoded: false))'
       echo run >> '\(runs.path(percentEncoded: false))'
       /usr/bin/env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin HOME="$HOME" USER="$USER" \
         LOGNAME="$LOGNAME" TMPDIR="$TMPDIR" '\(drakar)' --relay \
         --directory '\(directory.path(percentEncoded: false))' --defaults-suite '\(suite)'
       exec sleep 30
       """)
-    let helper = try #require(SessionHost.startHelper(in: directory))
+  }
+
+  private var sshPIDs: URL { root.appending(path: "ssh.pids") }
+  private var destinations: URL { root.appending(path: "ssh.destinations") }
+
+  private func lines(of file: URL) -> [String] {
+    ((try? String(contentsOf: file, encoding: .utf8)) ?? "").split(separator: "\n").map(String.init)
+  }
+
+  /// `SessionHost.runner` as Settings › Runner leaves it, put back as it was found.
+  private func withRunner(_ body: () async throws -> Void) async rethrows {
     let before = SessionHost.runner
     defer {
+      SessionHost.runner?.close()
       SessionHost.runner = before
-      finish([helper])
     }
-    SessionHost.useRunner(settings)
-    let host = try #require(SessionHost.runner)
-    let client = try #require(await host.client())
-    let text = try String(contentsOf: pidFile, encoding: .utf8)
-    let ssh = try #require(pid_t(text.trimmingCharacters(in: .whitespacesAndNewlines)))
-    #expect(kill(ssh, 0) == 0)
+    try await body()
+  }
 
-    SessionHost.useRunner(nil)
-    #expect(SessionHost.runner == nil)
-    #expect(host.isClosed)
-    #expect(await eventually(within: .seconds(5)) { client.isClosed })
-    #expect(!host.isAvailable)
-    #expect(await eventually(within: .seconds(5)) { kill(ssh, 0) != 0 })
-    #expect(await host.client() == nil)
-    #expect(sshRuns() == 1)
+  /// A rename is for show: the same host, its connection kept.
+  @Test func aRenamedRunnerKeepsItsConnection() async throws {
+    try lingeringSSH()
+    let helper = try #require(SessionHost.startHelper(in: directory))
+    defer { finish([helper]) }
+    try await withRunner {
+      SessionHost.useRunner(settings, keptIn: try #require(UserDefaults(suiteName: suite)))
+      let host = try #require(SessionHost.runner)
+      let client = try #require(await host.client())
+      var renamed = settings
+      renamed.name = "Studio upstairs"
+      SessionHost.useRunner(renamed)
+      #expect(SessionHost.runner === host)
+      #expect(host.endpoint == .runner(renamed))
+      #expect(!host.isClosed)
+      try await Task.sleep(for: .milliseconds(300))
+      #expect(!client.isClosed)
+      #expect(await host.client() === client)
+      #expect(sshRuns() == 1)
+    }
+  }
+
+  /// Another destination is the same host on another target: the old connection and its ssh
+  /// go, and the next connection is to the new destination.
+  @Test func aRetargetedRunnerReachesItsNewDestination() async throws {
+    try lingeringSSH()
+    let helper = try #require(SessionHost.startHelper(in: directory))
+    defer { finish([helper]) }
+    try await withRunner {
+      SessionHost.useRunner(settings, keptIn: try #require(UserDefaults(suiteName: suite)))
+      let host = try #require(SessionHost.runner)
+      let old = try #require(await host.client())
+      let oldSSH = try #require(lines(of: sshPIDs).first.flatMap { pid_t($0) })
+      var moved = settings
+      moved.destination = "studio.tail.ts.net"
+      SessionHost.useRunner(moved)
+      #expect(SessionHost.runner === host)
+      #expect(!host.isClosed)
+      #expect(host.endpoint == .runner(moved))
+      #expect(await eventually(within: .seconds(5)) { old.isClosed })
+      #expect(await eventually(within: .seconds(5)) { kill(oldSSH, 0) != 0 })
+      let new = try #require(await host.client())
+      #expect(new !== old)
+      #expect(lines(of: destinations) == ["studio.local", "studio.tail.ts.net"])
+    }
+  }
+
+  /// No runner closes the host for good: its connection and its ssh, even one that would
+  /// linger after its relay has gone, and it never connects again.
+  @Test func aClearedRunnerEndsItsSSH() async throws {
+    try lingeringSSH()
+    let helper = try #require(SessionHost.startHelper(in: directory))
+    defer { finish([helper]) }
+    try await withRunner {
+      SessionHost.useRunner(settings, keptIn: try #require(UserDefaults(suiteName: suite)))
+      let host = try #require(SessionHost.runner)
+      let client = try #require(await host.client())
+      let ssh = try #require(lines(of: sshPIDs).first.flatMap { pid_t($0) })
+      #expect(kill(ssh, 0) == 0)
+
+      SessionHost.useRunner(nil)
+      #expect(SessionHost.runner == nil)
+      #expect(host.isClosed)
+      #expect(await eventually(within: .seconds(5)) { client.isClosed })
+      #expect(!host.isAvailable)
+      #expect(await eventually(within: .seconds(5)) { kill(ssh, 0) != 0 })
+      #expect(await host.client() == nil)
+      #expect(sshRuns() == 1)
+    }
+  }
+
+  /// A runner saved without a name, as one saved without a Test is, takes its hostname the
+  /// first time it is reached, where it is kept too, and keeps its host.
+  @Test func anUnnamedRunnerIsNamedAfterItsHostname() async throws {
+    try relayingSSH()
+    let helper = try #require(SessionHost.startHelper(in: directory))
+    defer { finish([helper]) }
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    let unnamed = RunnerSettings(name: "", destination: "studio.local")
+    RunnerSettings.write(unnamed, to: defaults)
+    try await withRunner {
+      SessionHost.useRunner(unnamed, keptIn: defaults)
+      let host = try #require(SessionHost.runner)
+      let client = try #require(await host.client())
+      let hostname = try #require(host.facts?.hostname)
+      #expect(!hostname.isEmpty)
+      guard case .runner(let named) = host.endpoint else { throw CancellationError() }
+      #expect(named.name == hostname)
+      #expect(named.id == unnamed.id)
+      #expect(RunnerSettings.read(from: defaults)?.name == hostname)
+      #expect(SessionHost.runner === host)
+      #expect(!client.isClosed)
+    }
   }
 
   /// A stale relay (spec §3): the Mac's old connection still holds the process on the runner

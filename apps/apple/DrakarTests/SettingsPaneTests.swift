@@ -58,7 +58,8 @@ struct SettingsPaneTests {
 
 /// Settings › Runner (remote sessions spec §2, §3), its model over a defaults suite of each
 /// test's own, never the person's: no test reaches their settings, their runner or their ssh.
-/// A test that puts a host in `SessionHost.runner` puts back the one it found.
+/// The runner it saves goes to a sink of the test's own, never `SessionHost.runner`, which
+/// `RunnerHostTests` alone changes; and its opt-in's host is on a directory of its own.
 @MainActor
 @Suite("Settings › Runner", .serialized, .timeLimit(.minutes(1)))
 struct RunnerPaneTests {
@@ -66,6 +67,11 @@ struct RunnerPaneTests {
   private let defaults: UserDefaults
   private let root = URL(
     fileURLWithPath: "/tmp/dr-\(UUID().uuidString.prefix(6))", isDirectory: true)
+  /// What the pane put in `SessionHost.runner`, in order.
+  @MainActor private final class Installed {
+    var runners: [RunnerSettings?] = []
+  }
+  private let installed = Installed()
 
   init() throws {
     defaults = try #require(UserDefaults(suiteName: suite))
@@ -76,9 +82,28 @@ struct RunnerPaneTests {
     try? FileManager.default.removeItem(at: root)
   }
 
-  /// An opt-in of this test's own, on a host no test reaches (no `testDirectory`).
+  /// An opt-in of this test's own, its host on the test's own directory, read as the host is
+  /// made and put back at once, as `RunnerRoleTests` does; with no helper to start, so it
+  /// never runs one.
   private func role() -> RunnerRole {
-    RunnerRole(defaults: defaults, directory: root, host: SessionHost())
+    SessionHost.testDirectory = root.appending(path: "host", directoryHint: .isDirectory)
+    let host = SessionHost(helper: root.appending(path: "no-helper"))
+    SessionHost.testDirectory = nil
+    return RunnerRole(defaults: defaults, directory: root, host: host)
+  }
+
+  private func model(
+    open:
+      @escaping @MainActor (RunnerSettings) async throws(RunnerFailure) ->
+      RunnerConnection.Opened = { _ throws(RunnerFailure) in
+        throw RunnerFailure(message: "not reached in this test", stderr: "")
+      },
+    role: RunnerRole? = nil
+  ) -> RunnerPaneModel {
+    let installed = installed
+    return RunnerPaneModel(
+      defaults: defaults, role: role ?? self.role(), install: { installed.runners.append($0) },
+      open: open)
   }
 
   private func eventually(within limit: Duration = .seconds(5), _ condition: () -> Bool) async
@@ -111,57 +136,56 @@ struct RunnerPaneTests {
 
   /// Saving no destination removes the runner, and its host with it.
   @Test func anEmptyDestinationMeansNoRunner() {
-    let before = SessionHost.runner
-    defer {
-      SessionHost.runner = before
-      finish()
-    }
+    defer { finish() }
     RunnerSettings.write(RunnerSettings(name: "Studio", destination: "studio.local"), to: defaults)
-    let old = SessionHost(endpoint: .runner(RunnerSettings(name: "", destination: "studio.local")))
-    SessionHost.runner = old
-    let model = RunnerPaneModel(defaults: defaults, role: role())
+    let model = model()
     #expect(model.destination == "studio.local")
     model.destination = "  "
     #expect(model.canSave)
     model.save()
     #expect(RunnerSettings.read(from: defaults) == nil)
-    #expect(SessionHost.runner == nil)
-    #expect(old.isClosed)
+    #expect(installed.runners == [nil])
     #expect(!model.canSave)
   }
 
-  /// Saving replaces the runner's host, and lets the old one go; the same runner again keeps it.
+  /// Saving puts the runner in place; it keeps its id across its edits, and the same runner
+  /// again is not saved twice.
   @Test func savingARunnerMakesItsHost() throws {
-    let before = SessionHost.runner
-    defer {
-      SessionHost.runner = before
-      finish()
-    }
-    let model = RunnerPaneModel(defaults: defaults, role: role())
+    defer { finish() }
+    let model = model()
     #expect(model.drakarPath == "/Applications/Drakar.app")
     #expect(!model.canSave)
     model.name = "Studio"
     model.destination = " me@studio.local "
     model.save()
-    let saved = RunnerSettings(name: "Studio", destination: "me@studio.local")
-    #expect(RunnerSettings.read(from: defaults) == saved)
-    let host = try #require(SessionHost.runner)
-    #expect(host.isRunner)
-    #expect(host.endpoint == .runner(saved))
+    let saved = try #require(RunnerSettings.read(from: defaults))
+    #expect(saved.name == "Studio")
+    #expect(saved.destination == "me@studio.local")
+    #expect(saved.drakarPath == "/Applications/Drakar.app")
+    #expect(installed.runners == [saved])
+    #expect(!model.canSave)
 
-    model.save()
-    #expect(SessionHost.runner === host)
     model.drakarPath = "~/Applications/Drakar.app"
+    #expect(model.canSave)
     model.save()
-    #expect(SessionHost.runner !== host)
-    #expect(SessionHost.runner?.isRunner == true)
-    #expect(host.isClosed)
-    #expect(RunnerSettings.read(from: defaults)?.drakarPath == "~/Applications/Drakar.app")
+    let moved = try #require(RunnerSettings.read(from: defaults))
+    #expect(moved.id == saved.id)
+    #expect(moved.drakarPath == "~/Applications/Drakar.app")
+    #expect(installed.runners == [saved, moved])
+    // The pane opened again shows it, under the same id.
+    #expect(self.model().typed == moved)
+
+    // Removed, then another: another runner, another id.
+    model.destination = ""
+    model.save()
+    model.destination = "other.local"
+    model.save()
+    #expect(try #require(RunnerSettings.read(from: defaults)).id != saved.id)
   }
 
   /// Test reaches the runner as typed, unsaved: it shows the facts, names the runner after its
-  /// hostname when no name was typed, and closes the connection and its ssh. The runner's
-  /// host is not touched.
+  /// hostname when no name was typed, and closes the connection and its ssh. Nothing is put
+  /// in place.
   @Test func testingShowsTheFactsAndLetsGo() async throws {
     var links: [(client: HostClient, peer: Int32, ssh: Process)] = []
     defer {
@@ -173,32 +197,30 @@ struct RunnerPaneTests {
     }
     let stated = facts(from: .ssh)
     var opened: [RunnerSettings] = []
-    var installed = 0
     // A connection over a socket pair, carried by an ssh that would outlast the test.
-    let model = RunnerPaneModel(
-      defaults: defaults, role: role(), install: { _ in installed += 1 },
-      open: { settings throws(RunnerFailure) in
-        opened.append(settings)
-        var ends: [Int32] = [0, 0]
-        let ssh = Process()
-        ssh.executableURL = URL(filePath: "/bin/sleep")
-        ssh.arguments = ["30"]
-        guard socketpair(AF_UNIX, SOCK_STREAM, 0, &ends) == 0, (try? ssh.run()) != nil else {
-          throw RunnerFailure(message: "no fake runner", stderr: "")
-        }
-        let client = HostClient.connect(fd: ends[0])
-        links.append((client, ends[1], ssh))
-        return (client, stated, ssh)
-      })
+    let model = model(open: { settings throws(RunnerFailure) in
+      opened.append(settings)
+      var ends: [Int32] = [0, 0]
+      let ssh = Process()
+      ssh.executableURL = URL(filePath: "/bin/sleep")
+      ssh.arguments = ["30"]
+      guard socketpair(AF_UNIX, SOCK_STREAM, 0, &ends) == 0, (try? ssh.run()) != nil else {
+        throw RunnerFailure(message: "no fake runner", stderr: "")
+      }
+      let client = HostClient.connect(fd: ends[0])
+      links.append((client, ends[1], ssh))
+      return (client, stated, ssh)
+    })
     model.destination = "studio.local"
     await model.test()
-    #expect(opened == [RunnerSettings(name: "", destination: "studio.local")])
+    #expect(opened.map(\.destination) == ["studio.local"])
+    #expect(opened.map(\.name) == [""])
     #expect(model.check == .passed(stated))
     #expect(model.name == "studio")
     let first = try #require(links.first)
     #expect(await eventually { first.client.isClosed })
     #expect(await eventually { !first.ssh.isRunning })
-    #expect(installed == 0)
+    #expect(installed.runners.isEmpty)
     #expect(RunnerSettings.read(from: defaults) == nil)
 
     // Facts of another destination are not shown for this one, and a name typed is kept.
@@ -217,9 +239,7 @@ struct RunnerPaneTests {
     let failure = RunnerFailure(
       message: "ssh to studio.local ended before Drakar answered there.",
       stderr: "Permission denied (publickey).")
-    let model = RunnerPaneModel(
-      defaults: defaults, role: role(), install: { _ in },
-      open: { _ throws(RunnerFailure) in throw failure })
+    let model = model(open: { _ throws(RunnerFailure) in throw failure })
     model.destination = "studio.local"
     await model.test()
     #expect(model.check == .failed(failure))
@@ -234,7 +254,7 @@ struct RunnerPaneTests {
       role.apply()
       finish()
     }
-    let model = RunnerPaneModel(defaults: defaults, role: role)
+    let model = model(role: role)
     #expect(!model.accepts)
     let file = RunnerEnvironment.file(in: root).path(percentEncoded: false)
     model.accepts = true

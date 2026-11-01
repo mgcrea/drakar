@@ -23,20 +23,28 @@ import Synchronization
   static let shared = SessionHost(
     endpoint: .local, cooldown: .seconds(30), helper: helper, underTests: nil)
 
-  /// The configured runner's host, made for `RunnerSettings.current`; Settings › Runner puts
-  /// a new one here when the runner changes (`useRunner`). None under tests, which never
-  /// reach the person's runner.
+  /// The configured runner's host, made for `RunnerSettings.current`, and the same one for as
+  /// long as a runner is configured (`useRunner`). None under tests, which never reach the
+  /// person's runner.
   static var runner: SessionHost? =
     ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
-    ? nil : RunnerSettings.current.map { SessionHost(endpoint: .runner($0)) }
+    ? nil
+    : RunnerSettings.current.map { SessionHost(endpoint: .runner($0), keptIn: .standard) }
 
-  /// The runner Settings › Runner saved, nil for none: a host for it takes the place of the
-  /// one before, which is closed first, so two runners are never reached at once. The same
-  /// runner again keeps its host and the connection it has.
-  static func useRunner(_ settings: RunnerSettings?) {
-    guard runner?.endpoint != settings.map(Endpoint.runner) else { return }
-    runner?.close()
-    runner = settings.map { SessionHost(endpoint: .runner($0)) }
+  /// The runner Settings › Runner saved in `defaults`, nil for none. The host stays the one
+  /// the sessions on it hold, whatever the runner is renamed or retargeted to (`retarget`);
+  /// only no runner closes it, for good. Never two runners reached at once.
+  static func useRunner(_ settings: RunnerSettings?, keptIn defaults: UserDefaults = .standard) {
+    guard let settings else {
+      runner?.close()
+      runner = nil
+      return
+    }
+    if let runner {
+      runner.retarget(settings)
+    } else {
+      runner = SessionHost(endpoint: .runner(settings), keptIn: defaults)
+    }
   }
 
   /// Tests only: the directory a `SessionHost()` made under XCTest uses, read as it is made,
@@ -72,7 +80,8 @@ import Synchronization
   /// Tests only: the helper this instance started, if it started one.
   private(set) var started: pid_t?
 
-  let endpoint: Endpoint
+  /// A runner's changes as Settings › Runner saves them (`retarget`).
+  private(set) var endpoint: Endpoint
   var isRunner: Bool { endpoint != .local }
   /// What the runner's relay stated on the last connection made.
   private(set) var facts: RunnerFacts?
@@ -90,6 +99,10 @@ import Synchronization
   private var connection: HostClient?
   /// The ssh that carries a runner's `connection`, ended with it.
   private var ssh: Process?
+  /// Where a runner's settings are kept, for `name(after:)`.
+  private var settings: UserDefaults?
+  /// Moved on by each `retarget`: an attempt begun before it reached the old target.
+  private var target = 0
   private var connecting: Task<Outcome, Never>?
   private var reconnecting: Task<HostClient?, Never>?
   private var quietUntil: ContinuousClock.Instant?
@@ -136,12 +149,15 @@ import Synchronization
   /// a slow start costs one wait, not one per session. `helper` is for tests. A runner's is
   /// reached through `RunnerSettings.sshExecutable`, `testDirectory` or not: a test gives it
   /// a fake ssh that names the test's host directory to the relay.
+  /// `keptIn`: where a runner's settings are kept, for the name it is given from its
+  /// hostname when it has none.
   convenience init(
     endpoint: Endpoint = .local, cooldown: Duration = .seconds(30),
-    helper: URL = SessionHost.helper
+    helper: URL = SessionHost.helper, keptIn settings: UserDefaults? = nil
   ) {
     self.init(
       endpoint: endpoint, cooldown: cooldown, helper: helper, underTests: Self.testDirectory)
+    self.settings = settings
   }
 
   private init(endpoint: Endpoint, cooldown: Duration, helper: URL, underTests: URL?) {
@@ -149,6 +165,44 @@ import Synchronization
     self.cooldown = cooldown
     self.helper = helper
     self.underTests = underTests
+  }
+
+  /// Settings › Runner changed this runner. A new name is for show, and the connection stays.
+  /// Another destination or Drakar is another target: the connection to the old one goes, its
+  /// ssh with it, and the next `client()` or `reconnect()` reaches the new one, where a
+  /// session reattaches if it is the same Mac and ends as a lost connection does if not.
+  func retarget(_ new: RunnerSettings) {
+    guard case .runner(let old) = endpoint, old != new else { return }
+    endpoint = .runner(new)
+    guard old.destination != new.destination || old.drakarPath != new.drakarPath else { return }
+    // An attempt under way is to the old target: `connected()` drops what it brings.
+    target += 1
+    connecting = nil
+    quietUntil = nil
+    facts = nil
+    failure = nil
+    let connection = connection
+    self.connection = nil
+    isAvailable = false
+    taken = false
+    connection?.close()
+    if let ssh { RunnerConnection.end(ssh) }
+    ssh = nil
+  }
+
+  /// A runner kept without a name is named after its hostname, the first time it is reached
+  /// (spec §3), here and where it is kept, unless it was named meanwhile.
+  private func name(after hostname: String) {
+    guard case .runner(var current) = endpoint,
+      current.name.trimmingCharacters(in: .whitespaces).isEmpty, !hostname.isEmpty
+    else { return }
+    current.name = hostname
+    endpoint = .runner(current)
+    guard let settings, var kept = RunnerSettings.read(from: settings), kept.id == current.id,
+      kept.name.trimmingCharacters(in: .whitespaces).isEmpty
+    else { return }
+    kept.name = hostname
+    RunnerSettings.write(kept, to: settings)
   }
 
   /// The connection to the host, starting it when nothing answers. Nil when there is no host
@@ -173,22 +227,27 @@ import Synchronization
       isAvailable = false
       taken = false
     }
+    let target = target
     if let connecting {
       let outcome = await connecting.value
-      return isClosed ? nil : Self.client(of: outcome)
+      return isClosed || self.target != target ? nil : Self.client(of: outcome)
     }
     guard !cannotStart, isReachable else { return nil }
     if let quietUntil, ContinuousClock.now < quietUntil { return nil }
     let task = Task { await connect() }
     connecting = task
     let outcome = await task.value
+    guard !isClosed, self.target == target else {
+      // Closed or retargeted while it connected: this one is nobody's.
+      if self.target == target { connecting = nil }
+      if case .connected(let client, _, let ssh) = outcome {
+        client.close()
+        if let ssh { RunnerConnection.end(ssh) }
+      }
+      return nil
+    }
     connecting = nil
     switch outcome {
-    case .connected(let client, _, let ssh) where isClosed:
-      // Closed while it connected: this one is nobody's.
-      client.close()
-      if let ssh { RunnerConnection.end(ssh) }
-      return nil
     case .connected(let client, let pid, let ssh):
       quietUntil = nil
       hostPID = pid
@@ -399,15 +458,19 @@ import Synchronization
       guard let directory else { return .cannotStart }
       return await connect(in: directory)
     case .runner(let settings):
+      let target = target
       do {
         let (client, facts, ssh) = try await RunnerConnection.open(settings)
+        // Retargeted meanwhile: `connected()` drops it, and says nothing of the new target.
+        guard self.target == target else { return .connected(client, pid: nil, ssh: ssh) }
         self.facts = facts
         failure = nil
+        name(after: facts.hostname)
         return .connected(client, pid: nil, ssh: ssh)
       } catch {
         // Tried again after the cooldown: the network, the runner's login or its Drakar may
         // all come back.
-        failure = error
+        if self.target == target { failure = error }
         return .noAnswer
       }
     }
