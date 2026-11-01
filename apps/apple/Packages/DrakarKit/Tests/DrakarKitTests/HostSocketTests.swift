@@ -114,13 +114,17 @@ import Testing
     let host = try TestHost()
     defer { host.close() }
     var fds: [Int32] = [0, 0]
-    #expect(socketpair(AF_UNIX, SOCK_STREAM, 0, &fds) == 0)
+    try #require(socketpair(AF_UNIX, SOCK_STREAM, 0, &fds) == 0)
     let relay = try relay(fds[0], to: host)
     defer { for end in relay { end.close() } }
-    // Left blocking here: the client makes its descriptor non-blocking itself.
+    // Left unprepared here: the client prepares its descriptor itself.
     let client = HostClient.connect(fd: fds[1])
     defer { client.close() }
     #expect(fcntl(fds[1], F_GETFL) & O_NONBLOCK != 0)
+    var noSigPipe: Int32 = 0
+    var length = socklen_t(MemoryLayout<Int32>.size)
+    #expect(getsockopt(fds[1], SOL_SOCKET, SO_NOSIGPIPE, &noSigPipe, &length) == 0)
+    #expect(noSigPipe != 0)
 
     let welcome = try await within { try await client.hello(appVersion: "1") }
     #expect(welcome.protocol == HostWire.major)
@@ -134,6 +138,37 @@ import Testing
       return nil
     }
     #expect(records.map(\.kind) == [.in, .out])
+  }
+
+  /// An ssh that exits at once leaves a descriptor whose peer is gone, which macOS refuses
+  /// `SO_NOSIGPIPE` on: the client is disconnected from the start rather than writing to it,
+  /// which raises SIGPIPE and kills an app that has not ignored it yet. A request made at once
+  /// usually loses the race to the end of file, so it is made many times. Shut both ways as
+  /// well as closed: a stand-in agent another suite spawns meanwhile can inherit the peer and
+  /// keep it alive.
+  @Test func aClientWhosePeerIsGoneIsDisconnected() async throws {
+    for _ in 0..<500 {
+      var fds: [Int32] = [0, 0]
+      try #require(socketpair(AF_UNIX, SOCK_STREAM, 0, &fds) == 0)
+      Darwin.close(fds[0])
+      shutdown(fds[1], SHUT_RDWR)
+      let client = HostClient.connect(fd: fds[1])
+      defer { client.close() }
+      #expect(throws: HostClient.Failure.disconnected) {
+        try client.send(.write(id: "gone", bytes: Data("a\n".utf8)))
+      }
+    }
+    var fds: [Int32] = [0, 0]
+    try #require(socketpair(AF_UNIX, SOCK_STREAM, 0, &fds) == 0)
+    Darwin.close(fds[0])
+    shutdown(fds[1], SHUT_RDWR)
+    let client = HostClient.connect(fd: fds[1])
+    defer { client.close() }
+    await #expect(throws: HostClient.Failure.disconnected) {
+      try await self.within { try await client.hello(appVersion: "1") }
+    }
+    try await firstValue(client.disconnected)
+    #expect(client.isClosed)
   }
 
   @Test func theSocketIsTheUsersAlone() throws {

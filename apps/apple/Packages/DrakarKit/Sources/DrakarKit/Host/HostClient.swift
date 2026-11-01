@@ -47,11 +47,17 @@ public final class HostClient: @unchecked Sendable {
   /// Over any connected stream socket, such as one end of a socket pair whose other end is
   /// ssh's to a runner: the client owns `fd` from here and closes it with itself. The caller
   /// makes it close-on-exec before anything can be spawned with it, as only it can without a
-  /// race; non-blocking and no SIGPIPE are set here, which the app could not do otherwise.
-  /// Should that fail (a peer already gone), the first request reports the disconnection.
+  /// race; non-blocking and no SIGPIPE are set here, so the app need not.
+  ///
+  /// macOS refuses `SO_NOSIGPIPE` on a socket whose peer has gone (EINVAL), as it is after an
+  /// ssh that exited at once: the client is then closed before anything is written, since a
+  /// write would raise SIGPIPE, which kills an app that has not ignored it yet. Closed after
+  /// `init` starts the connection, so `disconnected` still yields.
   public static func connect(fd: Int32) -> HostClient {
-    try? UnixSocket.prepare(fd)
-    return HostClient(UnixConnection(fd: fd, label: "HostClient"))
+    let prepared = (try? UnixSocket.prepare(fd)) != nil
+    let client = HostClient(UnixConnection(fd: fd, label: "HostClient"))
+    if !prepared { client.close() }
+    return client
   }
 
   private init(_ connection: UnixConnection) {
