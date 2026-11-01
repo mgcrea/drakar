@@ -1,13 +1,14 @@
 import DrakarKit
 import Foundation
+import OSLog
 
 /// Whether this Mac takes sessions started from another Mac (spec §2): Settings › Runner's
 /// "Let my other Macs start sessions here", off by default, in the app's own defaults domain,
 /// which the relay shares.
 ///
-/// While it is on, the app keeps its host up and says where its sessions run. The host must
-/// only ever be started from here, in the person's GUI session: one the relay started under
-/// sshd would run every `claude` without the login Keychain.
+/// While it is on, the app keeps its host up and writes the environment its sessions get. The
+/// host is only ever started by the app, in the person's GUI session, never by the relay: one
+/// started under sshd would run every `claude` without the login Keychain.
 @MainActor final class RunnerRole {
   /// Off under tests: no test run writes the person's environment file or keeps their host
   /// up, whatever their own setting says.
@@ -29,6 +30,8 @@ import Foundation
   private let directory: URL?
   private let host: SessionHost
 
+  private static let log = Logger(subsystem: "io.mgcrea.Drakar", category: "runner")
+
   /// `defaults`, `directory` and `host` are for tests.
   init(defaults: UserDefaults = .standard, directory: URL?, host: SessionHost = .shared) {
     self.defaults = defaults
@@ -47,8 +50,15 @@ import Foundation
     guard let directory else { return }
     Task {
       let environment = await AgentSession.environment.value
-      // Without it, the relay falls back to the login shell ssh gives it, less ssh's own.
-      try? RunnerEnvironment.write(environment, to: RunnerEnvironment.file(in: directory))
+      // Turned off while the shell was read: nothing to write for.
+      guard accepts else { return }
+      do {
+        try RunnerEnvironment.write(environment, to: RunnerEnvironment.file(in: directory))
+      } catch {
+        // The relay then falls back to the login shell ssh gives it, less ssh's own.
+        Self.log.error(
+          "runner environment not written: \(error.localizedDescription, privacy: .public)")
+      }
     }
   }
 }

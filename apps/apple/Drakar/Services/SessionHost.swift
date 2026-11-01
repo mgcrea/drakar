@@ -153,11 +153,7 @@ import Synchronization
   /// host tried again with the start's backoff until one answers, every caller waiting on
   /// the same attempt. Nil once no host can be had.
   func reconnect() async -> HostClient? {
-    take(await reconnected())
-  }
-
-  private func reconnected() async -> HostClient? {
-    if let reconnecting { return await reconnecting.value }
+    if let reconnecting { return take(await reconnecting.value) }
     let task = Task { () -> HostClient? in
       var wait = Self.firstWait
       while true {
@@ -170,7 +166,7 @@ import Synchronization
     reconnecting = task
     let reconnected = await task.value
     reconnecting = nil
-    return reconnected
+    return take(reconnected)
   }
 
   /// Connected for as long as the runner's opt-in is on (spec §2): a connection now, and again
@@ -184,11 +180,25 @@ import Synchronization
     keeping = Task { [weak self] in
       var drop = dropped.makeAsyncIterator()
       repeat {
-        guard let self, await self.reconnected() != nil else { return }
-        // Stopped while a host was being found: nobody keeps this one.
+        guard let self, await self.keptConnection() else { return }
+        // Stopped while the last attempt was under way: nobody keeps this one.
         if Task.isCancelled { return self.closeIfUnused() }
       } while await drop.next() != nil
     }
+  }
+
+  /// `reconnect()`'s backoff, but the opt-in's own: stopping it ends the waits, and no
+  /// attempt begins after, so a host that never answers is not started again once the
+  /// opt-in is off. True once connected, even if stopped during that last attempt.
+  private func keptConnection() async -> Bool {
+    var wait = Self.firstWait
+    while !Task.isCancelled {
+      if await connected() != nil { return true }
+      guard !cannotStart, directory != nil else { return false }
+      do { try await Task.sleep(for: wait) } catch { return false }
+      wait = min(wait * 2, Self.longestWait)
+    }
+    return false
   }
 
   /// No more reconnecting for the opt-in. The connection closes only when the opt-in was all

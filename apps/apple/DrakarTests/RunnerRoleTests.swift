@@ -126,6 +126,41 @@ struct RunnerRoleTests {
     #expect(!client.isClosed)
   }
 
+  /// A window waiting on the connection for a `released` keeps it too.
+  @Test func notAcceptingLeavesAWatchedConnection() async throws {
+    let (role, host) = role()
+    defer { finish(role, host) }
+    let owner = NSObject()
+    host.watchReleases(for: owner, takes: { _ in false }, connected: {})
+    role.accepts = true
+    role.apply()
+    #expect(await eventually(within: .seconds(10)) { host.isAvailable })
+    role.accepts = false
+    role.apply()
+    #expect(host.isAvailable)
+    withExtendedLifetime(owner) {}
+  }
+
+  /// A host that never answers (here: a helper that exits at once): off stops the tries,
+  /// and no other helper is started however many cooldowns go by. Only the attempt under
+  /// way when it went off, bounded by `SessionHost`'s patience, may finish.
+  @Test func notAcceptingStopsTryingAHostThatDoesNotAnswer() async throws {
+    SessionHost.testDirectory = root.appending(path: "host", directoryHint: .isDirectory)
+    let host = SessionHost(cooldown: .milliseconds(100), helper: URL(filePath: "/usr/bin/true"))
+    SessionHost.testDirectory = nil
+    let role = RunnerRole(defaults: defaults, directory: root, host: host)
+    defer { finish(role, host) }
+    role.accepts = true
+    role.apply()
+    #expect(await eventually(within: .seconds(5)) { host.started != nil })
+    role.accepts = false
+    role.apply()
+    let last = host.started
+    try await Task.sleep(for: .seconds(8))
+    #expect(host.started == last)
+    #expect(!host.isAvailable)
+  }
+
   /// The connection drops (here: its host killed); the opt-in connects again, which starts
   /// another.
   @Test func aDroppedConnectionIsMadeAgain() async throws {
