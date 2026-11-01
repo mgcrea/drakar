@@ -207,8 +207,11 @@ final class SessionMonitor {
     guard included.insert(folder).inserted else { return }
     await ensureAccounts()
     let accounts = self.accounts
+    // What the launch and the watchers already read: only the folder's other transcripts
+    // are opened.
+    let cache = SessionSummaryCache(Array(byFile.values))
     let listed = await Task.detached {
-      SessionIndex.list(accounts: accounts, limit: 200, under: folder)
+      SessionIndex.list(accounts: accounts, limit: 200, under: folder, cache: cache)
     }.value
     merge(listed)
     // A linked worktree's transcripts are named after its own path, not the folder's.
@@ -222,7 +225,8 @@ final class SessionMonitor {
       worktrees.flatMap { entry in
         entry.sessionIDs.compactMap { id in
           SessionIndex.summary(
-            of: entry.folder.appending(path: "\(id).jsonl"), account: entry.account)
+            of: entry.folder.appending(path: "\(id).jsonl"), account: entry.account,
+            cache: cache)
         }
       }
     }.value

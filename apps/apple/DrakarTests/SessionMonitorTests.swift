@@ -108,6 +108,28 @@ struct SessionMonitorTests {
     monitor.stop()
   }
 
+  /// A project window opening re-reads none of the transcripts the launch already read: on a
+  /// busy Mac that was up to 200 files, 0.8 s cold, before its sidebar settled.
+  @Test func includeReusesTheSummariesAlreadyRead() async throws {
+    let (home, account, projects) = try fixture()
+    defer { try? FileManager.default.removeItem(at: home) }
+    let file = projects.appending(path: "kept.jsonl")
+    let date = Date(timeIntervalSince1970: 1e9)
+    func write(title: String) throws {
+      try Data((Self.line + "\n" + #"{"type":"ai-title","aiTitle":"\#(title)"}"#).utf8)
+        .write(to: file)
+      try FileManager.default.setAttributes([.modificationDate: date], ofItemAtPath: file.path)
+    }
+    try write(title: "Old")
+    let monitor = SessionMonitor(accounts: [account])
+    let listed = try #require(SessionIndex.list(accounts: [account]).first).file
+    await monitor.load(listed, account: account)
+    // Same size, same date: as far as any listing can tell, unchanged.
+    try write(title: "New")
+    await monitor.include(folder: "/w/drakar")
+    #expect(monitor.summaries(under: "/w/drakar").map(\.title) == ["Old"])
+  }
+
   @Test func includeWaitsForAccountDiscovery() async throws {
     let (home, account, projects) = try fixture()
     defer { try? FileManager.default.removeItem(at: home) }

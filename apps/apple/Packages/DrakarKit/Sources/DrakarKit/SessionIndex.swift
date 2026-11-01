@@ -193,13 +193,19 @@ public enum SessionIndex {
     return listed
   }
 
-  /// One transcript, summarized: what the monitor re-reads when a file changes.
-  public static func summary(of file: URL, account: ClaudeAccount) -> SessionSummary? {
+  /// One transcript, summarized: what the monitor re-reads when a file changes. A file
+  /// `cache` holds at its current size and date is not opened.
+  public static func summary(
+    of file: URL, account: ClaudeAccount, cache: SessionSummaryCache = SessionSummaryCache()
+  ) -> SessionSummary? {
     let keys: Set<URLResourceKey> = [.contentModificationDateKey, .fileSizeKey]
     guard let values = try? file.resourceValues(forKeys: keys) else { return nil }
-    return summarize(
-      file: file, account: account, modified: values.contentModificationDate ?? .distantPast,
-      size: values.fileSize ?? 0)
+    let (modified, size) = (values.contentModificationDate ?? .distantPast, values.fileSize ?? 0)
+    if var cached = cache.summary(of: file, modified: modified, size: size) {
+      cached.account = account
+      return cached
+    }
+    return summarize(file: file, account: account, modified: modified, size: size)
   }
 
   static func summarize(file: URL, account: ClaudeAccount, modified: Date, size: Int)
