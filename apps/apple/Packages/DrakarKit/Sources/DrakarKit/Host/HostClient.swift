@@ -41,7 +41,17 @@ public final class HostClient: @unchecked Sendable {
 
   /// Throws when nothing answers: no socket, or one a dead host left.
   public static func connect(socket: URL) throws -> HostClient {
-    HostClient(UnixConnection(fd: try UnixSocket.connected(to: socket), label: "HostClient"))
+    connect(fd: try UnixSocket.connected(to: socket))
+  }
+
+  /// Over any connected stream socket, such as one end of a socket pair whose other end is
+  /// ssh's to a runner: the client owns `fd` from here and closes it with itself. The caller
+  /// makes it close-on-exec before anything can be spawned with it, as only it can without a
+  /// race; non-blocking and no SIGPIPE are set here, which the app could not do otherwise.
+  /// Should that fail (a peer already gone), the first request reports the disconnection.
+  public static func connect(fd: Int32) -> HostClient {
+    try? UnixSocket.prepare(fd)
+    return HostClient(UnixConnection(fd: fd, label: "HostClient"))
   }
 
   private init(_ connection: UnixConnection) {

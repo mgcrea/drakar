@@ -96,6 +96,46 @@ import Testing
     #expect(held.first?.attachedApp == getpid())
   }
 
+  /// A stand-in for a runner's ssh and relay: `fd`'s lines copied to a connection of its own
+  /// on `host`'s socket and back, either end closing the other.
+  private func relay(_ fd: Int32, to host: TestHost) throws -> [UnixConnection] {
+    try UnixSocket.prepare(fd)
+    let near = UnixConnection(fd: fd, label: "relay-near")
+    let far = UnixConnection(
+      fd: try UnixSocket.connected(to: try host.socket), label: "relay-far")
+    near.start(line: { far.send($0) }, closed: { far.close() })
+    far.start(line: { near.send($0) }, closed: { near.close() })
+    return [near, far]
+  }
+
+  /// What ssh will hand the app for a runner: one end of a socket pair, the host at the far
+  /// end of whatever the other is plugged into.
+  @Test func aClientOverASocketPairTalksToTheHost() async throws {
+    let host = try TestHost()
+    defer { host.close() }
+    var fds: [Int32] = [0, 0]
+    #expect(socketpair(AF_UNIX, SOCK_STREAM, 0, &fds) == 0)
+    let relay = try relay(fds[0], to: host)
+    defer { for end in relay { end.close() } }
+    // Left blocking here: the client makes its descriptor non-blocking itself.
+    let client = HostClient.connect(fd: fds[1])
+    defer { client.close() }
+    #expect(fcntl(fds[1], F_GETFL) & O_NONBLOCK != 0)
+
+    let welcome = try await within { try await client.hello(appVersion: "1") }
+    #expect(welcome.protocol == HostWire.major)
+    let id = try await client.spawn(host.cat(), meta: Data())
+    let stream = client.attach(id, from: 0)
+    try client.send(.write(id: id, bytes: Data("a\n".utf8)))
+    let seen = try await events(stream, until: isOut("a\n"))
+    #expect(seen.first == .caughtUp(id: id, offset: 0))
+    let records = seen.compactMap { event -> HostRecord? in
+      if case .record(_, let record) = event { return record }
+      return nil
+    }
+    #expect(records.map(\.kind) == [.in, .out])
+  }
+
   @Test func theSocketIsTheUsersAlone() throws {
     let host = try TestHost()
     defer { host.close() }
