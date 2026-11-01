@@ -32,9 +32,14 @@ import Testing
       self.socket = socket[0]
       peer = socket[1]
       open = Mutex(Set(input + output + socket))
-      // The test's own writes to the socket must fail rather than kill the runner.
+      // The test's own ends: a write to a reader that left fails rather than killing the
+      // runner, and nothing blocks, so a broken pump fails the test instead of hanging it.
       var on: Int32 = 1
       setsockopt(peer, SOL_SOCKET, SO_NOSIGPIPE, &on, socklen_t(MemoryLayout<Int32>.size))
+      _ = fcntl(input[1], F_SETNOSIGPIPE, 1)
+      for fd in [input[1], output[0], peer] {
+        _ = fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK)
+      }
     }
 
     func pump() -> Task<Relay.End, Never> {
@@ -52,25 +57,50 @@ import Testing
     }
   }
 
-  /// `body`'s result, or a throw after 5 s: a pump that never ends fails the test.
+  /// `body`'s result, or a throw after 5 s: a pump that never ends fails the test. `body` is
+  /// not awaited past that, since `pump` cannot be cancelled.
   private func within<T: Sendable>(_ body: @escaping @Sendable () async throws -> T)
     async throws -> T
   {
-    try await withThrowingTaskGroup(of: T.self) { group in
-      group.addTask { try await body() }
-      group.addTask {
-        try await Task.sleep(for: .seconds(5))
-        throw TimedOut()
+    try await withCheckedThrowingContinuation { continuation in
+      let race = Race(continuation)
+      Task {
+        do { race.finish(.success(try await body())) } catch { race.finish(.failure(error)) }
       }
-      defer { group.cancelAll() }
-      return try #require(try await group.next())
+      Task {
+        try? await Task.sleep(for: .seconds(5))
+        race.finish(.failure(TimedOut()))
+      }
     }
   }
 
-  /// Runs blocking `body` on its own thread, off the cooperative pool.
+  /// The first result `within` gets resumes it; the other is dropped.
+  private final class Race<T: Sendable>: Sendable {
+    private let continuation: Mutex<CheckedContinuation<T, any Error>?>
+
+    init(_ continuation: CheckedContinuation<T, any Error>) {
+      self.continuation = Mutex(continuation)
+    }
+
+    func finish(_ result: Result<T, any Error>) {
+      continuation.withLock { $0.take() }?.resume(with: result)
+    }
+  }
+
+  /// Runs `body`, which waits in `poll`, on its own thread, off the cooperative pool.
   private static func onThread<T: Sendable>(_ body: @escaping @Sendable () -> T) async -> T {
     await withCheckedContinuation { continuation in
       Thread.detachNewThread { continuation.resume(returning: body()) }
+    }
+  }
+
+  /// Until the test's non-blocking `fd` is ready for `events`; false after 5 s.
+  private static func ready(_ fd: Int32, _ events: Int16) -> Bool {
+    var ready = pollfd(fd: fd, events: events, revents: 0)
+    while true {
+      let count = poll(&ready, 1, 5000)
+      if count < 0, errno == EINTR { continue }
+      return count > 0
     }
   }
 
@@ -78,14 +108,18 @@ import Testing
     var sent = 0
     while sent < data.count {
       let count = data.withUnsafeBytes { write(fd, $0.baseAddress! + sent, $0.count - sent) }
-      if count < 0, errno == EINTR { continue }
-      guard count > 0 else { return false }
-      sent += count
+      if count > 0 {
+        sent += count
+      } else if count < 0, errno == EAGAIN {
+        guard ready(fd, Int16(POLLOUT)) else { return false }
+      } else if count == 0 || errno != EINTR {
+        return false
+      }
     }
     return true
   }
 
-  /// Reads until `count` bytes or EOF.
+  /// Reads until `count` bytes, EOF, or 5 s without a byte.
   private static func read(_ fd: Int32, count: Int) -> [UInt8] {
     var data: [UInt8] = []
     var buffer = [UInt8](repeating: 0, count: 64 * 1024)
@@ -93,9 +127,13 @@ import Testing
       let got = buffer.withUnsafeMutableBytes {
         Darwin.read(fd, $0.baseAddress, min($0.count, count - data.count))
       }
-      if got < 0, errno == EINTR { continue }
-      guard got > 0 else { break }
-      data += buffer[..<got]
+      if got > 0 {
+        data += buffer[..<got]
+      } else if got < 0, errno == EAGAIN {
+        guard ready(fd, Int16(POLLIN)) else { break }
+      } else if got == 0 || errno != EINTR {
+        break
+      }
     }
     return data
   }
@@ -103,7 +141,7 @@ import Testing
   /// Zero once the other end has closed, with nothing left to read.
   private static func readsEOF(_ fd: Int32) -> Bool {
     var byte: UInt8 = 0
-    return Darwin.read(fd, &byte, 1) == 0
+    return ready(fd, Int16(POLLIN)) && Darwin.read(fd, &byte, 1) == 0
   }
 
   private static func random(_ count: Int) -> [UInt8] {
@@ -111,17 +149,24 @@ import Testing
     return (0..<count).map { _ in UInt8.random(in: .min ... .max, using: &generator) }
   }
 
-  @Test func bytesCrossBothWays() async throws {
+  /// Non-blocking, the socket is as Task 4's relay gets it from `UnixSocket.connected`: the
+  /// pump then meets `EAGAIN` and waits for room.
+  @Test(arguments: [false, true]) func bytesCrossBothWays(nonBlockingSocket: Bool) async throws {
     let wiring = try Wiring()
+    if nonBlockingSocket {
+      let flags = fcntl(wiring.socket, F_GETFL)
+      try #require(fcntl(wiring.socket, F_SETFL, flags | O_NONBLOCK) == 0)
+    }
     let pump = wiring.pump()
     let up = Self.random(1 << 20)
     let down = Self.random(1 << 20)
 
+    let (input, peer, output) = (wiring.input.write, wiring.peer, wiring.output.read)
     let (wroteUp, arrivedUp, wroteDown, arrivedDown) = try await within {
-      async let wroteUp = Self.onThread { Self.writeAll(wiring.input.write, up) }
-      async let readUp = Self.onThread { Self.read(wiring.peer, count: up.count) }
-      async let wroteDown = Self.onThread { Self.writeAll(wiring.peer, down) }
-      async let readDown = Self.onThread { Self.read(wiring.output.read, count: down.count) }
+      async let wroteUp = Self.onThread { Self.writeAll(input, up) }
+      async let readUp = Self.onThread { Self.read(peer, count: up.count) }
+      async let wroteDown = Self.onThread { Self.writeAll(peer, down) }
+      async let readDown = Self.onThread { Self.read(output, count: down.count) }
       return await (wroteUp, readUp, wroteDown, readDown)
     }
     #expect(wroteUp)
@@ -142,7 +187,8 @@ import Testing
     let end = try await within { await pump.value }
     #expect(end == .inputClosed)
     #expect(ContinuousClock.now - start < .seconds(1))
-    #expect(await Self.onThread { Self.readsEOF(wiring.peer) })
+    let peer = wiring.peer
+    #expect(try await within { await Self.onThread { Self.readsEOF(peer) } })
   }
 
   @Test func socketEOFEndsThePump() async throws {
@@ -152,7 +198,8 @@ import Testing
     wiring.close(wiring.peer)
     #expect(try await within { await pump.value } == .socketClosed)
     wiring.close(wiring.output.write)
-    #expect(await Self.onThread { Self.readsEOF(wiring.output.read) })
+    let output = wiring.output.read
+    #expect(try await within { await Self.onThread { Self.readsEOF(output) } })
   }
 
   /// ssh no longer takes stdout: the pump ends as for stdin's EOF, without a SIGPIPE.
@@ -161,8 +208,9 @@ import Testing
     let pump = wiring.pump()
 
     wiring.close(wiring.output.read)
-    #expect(Self.writeAll(wiring.peer, [1, 2, 3]))
+    let peer = wiring.peer
+    #expect(Self.writeAll(peer, [1, 2, 3]))
     #expect(try await within { await pump.value } == .inputClosed)
-    #expect(await Self.onThread { Self.readsEOF(wiring.peer) })
+    #expect(try await within { await Self.onThread { Self.readsEOF(peer) } })
   }
 }

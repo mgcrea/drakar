@@ -19,7 +19,9 @@ public enum Relay {
   /// Returns once both directions have stopped, so nothing touches the three descriptors
   /// after it returns; the caller still owns and closes them. They may be blocking or not,
   /// pipes or sockets: ssh hands the relay either. A write to a reader that left fails
-  /// rather than raising SIGPIPE, whatever the process does with that signal.
+  /// rather than raising SIGPIPE, whatever the process does with that signal; for an output
+  /// that is not a socket, that is `F_SETNOSIGPIPE`, which stays set on its file description
+  /// after the pump returns.
   public static func pump(input: Int32, output: Int32, socket: Int32) async -> End {
     await withCheckedContinuation { continuation in
       guard let pump = Pump(socket: socket, done: { continuation.resume(returning: $0) }) else {
@@ -82,17 +84,21 @@ public enum Relay {
     }
 
     /// One direction's end: what stopped it, or nil when the other direction's end woke it.
+    ///
+    /// The first end shuts the socket and wakes the other direction under the lock, so the
+    /// other cannot be the last to stop, close the wake pipe and let `pump` return in
+    /// between: nothing may touch the caller's socket after that. Neither call blocks: one
+    /// byte into an empty pipe, and a shutdown.
     func stopped(_ end: End?) {
-      let (first, isFirst, isLast) = state.withLock { state in
-        let isFirst = state.first == nil && end != nil
-        if isFirst { state.first = end }
+      let (first, isLast) = state.withLock { state in
+        if state.first == nil, let end {
+          state.first = end
+          shutdown(socket, SHUT_WR)
+          var byte: UInt8 = 0
+          _ = Darwin.write(wake.write, &byte, 1)
+        }
         state.running -= 1
-        return (state.first, isFirst, state.running == 0)
-      }
-      if isFirst {
-        shutdown(socket, SHUT_WR)
-        var byte: UInt8 = 0
-        _ = Darwin.write(wake.write, &byte, 1)
+        return (state.first, state.running == 0)
       }
       if isLast {
         Darwin.close(wake.read)
@@ -107,18 +113,27 @@ public enum Relay {
       var buffer = [UInt8](repeating: 0, count: 64 * 1024)
       return buffer.withUnsafeMutableBytes { buffer -> Stop? in
         while true {
-          guard wait(for: source, Int16(POLLIN)) else { return nil }
+          switch wait(for: source, Int16(POLLIN)) {
+          case .ready: break
+          case .woken: return nil
+          case .failed: return .source
+          }
           let count = read(source, buffer.baseAddress, buffer.count)
           if count < 0, errno == EINTR || errno == EAGAIN { continue }
           guard count > 0 else { return .source }
           var written = 0
           while written < count {
             let wrote = destination.write(buffer.baseAddress! + written, count - written)
-            if wrote >= 0 {
+            if wrote > 0 {
               written += wrote
-            } else if errno == EAGAIN {
-              guard wait(for: destination.fd, Int16(POLLOUT)) else { return nil }
-            } else if errno != EINTR {
+            } else if wrote < 0, errno == EAGAIN {
+              switch wait(for: destination.fd, Int16(POLLOUT)) {
+              case .ready: break
+              case .woken: return nil
+              case .failed: return .destination
+              }
+            } else if wrote == 0 || errno != EINTR {
+              // A failure, or a write that took nothing and would only repeat.
               return .destination
             }
           }
@@ -126,15 +141,19 @@ public enum Relay {
       }
     }
 
-    /// Until `fd` is ready for `events`: false when the wake pipe is readable first. A
-    /// failed poll counts as ready, so the read or write that follows reports the failure.
-    private func wait(for fd: Int32, _ events: Int16) -> Bool {
+    private enum Wait { case ready, woken, failed }
+
+    /// Until `fd` is ready for `events`, or the wake pipe is readable first. A failed poll
+    /// ends the direction rather than going on to a read that could block past the wake.
+    private func wait(for fd: Int32, _ events: Int16) -> Wait {
       var fds = [
         pollfd(fd: fd, events: events, revents: 0),
         pollfd(fd: wake.read, events: Int16(POLLIN), revents: 0),
       ]
-      while poll(&fds, 2, -1) < 0, errno == EINTR {}
-      return fds[1].revents == 0
+      while poll(&fds, 2, -1) < 0 {
+        guard errno == EINTR else { return .failed }
+      }
+      return fds[1].revents == 0 ? .ready : .woken
     }
   }
 }
