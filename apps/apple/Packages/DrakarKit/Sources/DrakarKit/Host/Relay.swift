@@ -12,6 +12,14 @@ public enum Relay {
     case socketClosed
   }
 
+  /// A descriptor connected to the host's socket at `url`, for `pump`: non-blocking, writes
+  /// to a host that left fail rather than raise SIGPIPE, and close-on-exec, so the `open`
+  /// the relay may spawn does not keep the connection. Throws when nothing listens there,
+  /// and `HostWire.PathTooLong` for a path `sun_path` cannot hold. The caller closes it.
+  public static func connectedSocket(to url: URL) throws -> Int32 {
+    try UnixSocket.connected(to: url)
+  }
+
   /// Copies `input` → `socket` and `socket` → `output` until either side ends, and says
   /// which ended first. The socket's write side is shut as soon as it does, so the host sees
   /// the app leave even before the caller closes it.

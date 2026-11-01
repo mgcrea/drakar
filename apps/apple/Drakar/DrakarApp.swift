@@ -4,7 +4,7 @@ import SupportKitUI
 import SwiftUI
 import UserNotifications
 
-@main
+/// The app, started by `DrakarMain` when the binary is not a relay.
 struct DrakarApp: App {
   @NSApplicationDelegateAdaptor private var delegate: AppDelegate
 

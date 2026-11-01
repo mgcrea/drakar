@@ -213,4 +213,26 @@ import Testing
     #expect(try await within { await pump.value } == .inputClosed)
     #expect(try await within { await Self.onThread { Self.readsEOF(peer) } })
   }
+
+  /// The relay's way to the host: a connected descriptor no `open` it spawns inherits, and a
+  /// throw when nothing listens there.
+  @Test func connectsToTheHostsSocket() throws {
+    let name = String(UUID().uuidString.prefix(6))
+    let directory = URL(fileURLWithPath: "/tmp/dr-\(name)", isDirectory: true)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let socket = try HostWire.socket(in: directory)
+    #expect(throws: (any Error).self) { try Relay.connectedSocket(to: socket) }
+
+    let listener = try UnixSocket.listening(at: socket)
+    defer { close(listener) }
+    let fd = try Relay.connectedSocket(to: socket)
+    defer { close(fd) }
+    #expect(fcntl(fd, F_GETFD) & FD_CLOEXEC != 0)
+    guard case .peer(let peer) = UnixSocket.accept(listener) else {
+      Issue.record("nobody connected")
+      return
+    }
+    close(peer)
+  }
 }
