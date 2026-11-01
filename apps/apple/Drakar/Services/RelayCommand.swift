@@ -1,14 +1,6 @@
 import DrakarKit
 import Foundation
 
-/// Whether this Mac takes sessions started from another Mac (spec §2): Settings › Runner's
-/// "Let my other Macs start sessions here", off by default, in the app's own defaults domain,
-/// which the relay shares.
-enum RunnerRole {
-  /// Not the main actor's: the relay reads it, and never runs the app.
-  nonisolated static let acceptsKey = "runner.acceptsSessions"
-}
-
 /// `Drakar --relay`, the runner's end of a remote session (spec §1). sshd starts it for the
 /// Mac's `ssh`: it states the runner's facts in one line on stdout, makes sure the runner's
 /// host is up, then copies bytes between its stdio and the host's socket until either side
@@ -89,11 +81,7 @@ nonisolated enum RelayCommand {
       )
       return .notAccepted
     }
-    let directory =
-      options.directory
-      ?? HostWire.directory(
-        bundleID: Bundle.main.bundleIdentifier ?? "io.mgcrea.Drakar",
-        home: FileManager.default.homeDirectoryForCurrentUser)
+    let directory = options.directory ?? SessionHost.hostDirectory
     let socket: URL
     do {
       socket = try HostWire.socket(in: directory)

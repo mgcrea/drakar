@@ -17,6 +17,13 @@ import Synchronization
   /// instead of none.
   static var testDirectory: URL?
 
+  /// The app's own host directory, which the relay finds too; never a test's.
+  nonisolated static var hostDirectory: URL {
+    HostWire.directory(
+      bundleID: Bundle.main.bundleIdentifier ?? "io.mgcrea.Drakar",
+      home: FileManager.default.homeDirectoryForCurrentUser)
+  }
+
   /// The helper in the bundle. Not `url(forAuxiliaryExecutable:)`, which looks only in
   /// `Contents/MacOS`.
   static var helper: URL {
@@ -47,6 +54,14 @@ import Synchronization
   private var connecting: Task<Outcome, Never>?
   private var reconnecting: Task<HostClient?, Never>?
   private var quietUntil: ContinuousClock.Instant?
+  /// A session took this connection through `client()` or `reconnect()`, or may be about to:
+  /// a runner turning its opt-in off leaves it open, as it is left today. Cleared as the
+  /// connection ends, never as one is made, which a session waiting on the same attempt
+  /// may have taken first.
+  private var taken = false
+  /// The runner's opt-in connecting, and again after each drop (`keepConnected`).
+  private var keeping: Task<Void, Never>?
+  private var drops: AsyncStream<Void>.Continuation?
   /// The windows showing processes another app holds read-only. Told when an app lets one
   /// go (`released`), asked in the order they began watching until one takes it, so that one
   /// attaches; and told of each new connection, which no `released` sent meanwhile reached.
@@ -92,11 +107,22 @@ import Synchronization
   /// to have now: under tests without `testDirectory`, while cooling down, or for good once
   /// `cannotStart`.
   func client() async -> HostClient? {
+    take(await connected())
+  }
+
+  private func take(_ client: HostClient?) -> HostClient? {
+    if client != nil { taken = true }
+    return client
+  }
+
+  /// `client()` for this type's own uses, which keep nothing open for a session.
+  private func connected() async -> HostClient? {
     if let connection {
       if !connection.isClosed { return connection }
       // Ended, and its `disconnected` not handled yet: this one is not to be had again.
       self.connection = nil
       isAvailable = false
+      taken = false
     }
     if let connecting { return Self.client(of: await connecting.value) }
     guard !cannotStart, let directory else { return nil }
@@ -127,11 +153,15 @@ import Synchronization
   /// host tried again with the start's backoff until one answers, every caller waiting on
   /// the same attempt. Nil once no host can be had.
   func reconnect() async -> HostClient? {
+    take(await reconnected())
+  }
+
+  private func reconnected() async -> HostClient? {
     if let reconnecting { return await reconnecting.value }
     let task = Task { () -> HostClient? in
       var wait = Self.firstWait
       while true {
-        if let client = await client() { return client }
+        if let client = await connected() { return client }
         guard !cannotStart, directory != nil else { return nil }
         try? await Task.sleep(for: wait)
         wait = min(wait * 2, Self.longestWait)
@@ -141,6 +171,45 @@ import Synchronization
     let reconnected = await task.value
     reconnecting = nil
     return reconnected
+  }
+
+  /// Connected for as long as the runner's opt-in is on (spec §2): a connection now, and again
+  /// after each drop, so the host's idle exit never fires while the app runs. The host is as
+  /// it always was: an app connected is what keeps it. One loop, however often it is asked.
+  func keepConnected() {
+    guard keeping == nil else { return }
+    let (dropped, drops) = AsyncStream.makeStream(
+      of: Void.self, bufferingPolicy: .bufferingNewest(1))
+    self.drops = drops
+    keeping = Task { [weak self] in
+      var drop = dropped.makeAsyncIterator()
+      repeat {
+        guard let self, await self.reconnected() != nil else { return }
+        // Stopped while a host was being found: nobody keeps this one.
+        if Task.isCancelled { return self.closeIfUnused() }
+      } while await drop.next() != nil
+    }
+  }
+
+  /// No more reconnecting for the opt-in. The connection closes only when the opt-in was all
+  /// that held it: no session took it and no window waits on it for a `released`. A host
+  /// that holds nothing then leaves as it does once the app quits; one that was taken stays
+  /// open as it would have without the opt-in.
+  func stopKeepingConnected() {
+    guard let keeping else { return }
+    keeping.cancel()
+    self.keeping = nil
+    drops?.finish()
+    drops = nil
+    closeIfUnused()
+  }
+
+  private func closeIfUnused() {
+    releaseWatchers.removeAll { $0.owner == nil }
+    guard keeping == nil, !taken, releaseWatchers.isEmpty, let connection else { return }
+    self.connection = nil
+    isAvailable = false
+    connection.close()
   }
 
   /// Writes what was sent to the host before returning, for an app about to exit.
@@ -156,7 +225,7 @@ import Synchronization
   /// What the host holds; nil when there is no host or it does not answer, which says
   /// nothing of what it holds.
   func listed() async -> [HeldProcess]? {
-    guard let client = await client() else { return nil }
+    guard let client = await connected() else { return nil }
     return await Self.within(Self.helloLimit) { try await client.list() }
   }
 
@@ -234,9 +303,7 @@ import Synchronization
     if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil {
       return underTests
     }
-    return HostWire.directory(
-      bundleID: Bundle.main.bundleIdentifier ?? "io.mgcrea.Drakar",
-      home: FileManager.default.homeDirectoryForCurrentUser)
+    return Self.hostDirectory
   }
 
   private func connect(in directory: URL) async -> Outcome {
@@ -289,9 +356,14 @@ import Synchronization
     }
     Task { [weak self] in
       for await _ in client.disconnected {}
-      guard let self, self.connection === client else { return }
-      self.connection = nil
-      self.isAvailable = false
+      guard let self else { return }
+      if self.connection === client {
+        self.connection = nil
+        self.isAvailable = false
+        self.taken = false
+      }
+      // Even for one already let go: whoever let it go may have found no host since.
+      self.drops?.yield()
     }
   }
 
