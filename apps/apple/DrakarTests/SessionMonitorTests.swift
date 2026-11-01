@@ -179,21 +179,17 @@ struct SessionMonitorTests {
   }
 
   /// The shell's account read once is not read again at the next launch: it goes in the
-  /// saved summaries like the others.
+  /// saved summaries like the others, and stays there through each launch's own early
+  /// save, made before the shell answered. (Checked on the file: a launch's watchers may
+  /// read a transcript again whenever FSEvents reports it, so what a monitor shows after a
+  /// write proves nothing about the cache.)
   @Test func theShellsAccountIsKeptForTheNextLaunch() async throws {
     let (home, account, _) = try fixture()
     defer { try? FileManager.default.removeItem(at: home) }
     let other = try shellAccount(in: home)
     let cacheFile = home.appending(path: "summaries.plist")
-    let file = other.directory.appending(path: "projects/-w-drakar/theirs.jsonl")
-    let date = Date(timeIntervalSince1970: 1e9)
-    func write(title: String) throws {
-      try Data((Self.line + "\n" + #"{"type":"ai-title","aiTitle":"\#(title)"}"#).utf8)
-        .write(to: file)
-      try FileManager.default.setAttributes([.modificationDate: date], ofItemAtPath: file.path)
-    }
     // A slow shell: it answers once the launch listing is done.
-    func launch() async throws -> SessionMonitor {
+    func launch() async throws {
       let (answer, answered) = AsyncStream<Void>.makeStream()
       let monitor = SessionMonitor(
         discover: { [account] },
@@ -206,24 +202,18 @@ struct SessionMonitorTests {
       for _ in 0..<40 where !ids(monitor).contains("theirs") {
         try await Task.sleep(for: .milliseconds(100))
       }
-      return monitor
+      monitor.stop()
+      await monitor.summariesSaved()
     }
-    try write(title: "Old")
-    let first = try await launch()
-    first.stop()
-    // Same size, same date: the next launch takes the saved summary.
-    try write(title: "New")
-    for _ in 0..<40 {
-      let saved = SessionSummaryCache.load(from: cacheFile)
-      let listed = SessionIndex.list(accounts: [other]).first
-      if let listed, saved.summary(of: listed.file, modified: date, size: listed.size) != nil {
-        break
-      }
-      try await Task.sleep(for: .milliseconds(100))
+    func savesTheirs() throws -> Bool {
+      let listed = try #require(SessionIndex.list(accounts: [other]).first)
+      return SessionSummaryCache.load(from: cacheFile)
+        .summary(of: listed.file, modified: listed.modified, size: listed.size) != nil
     }
-    let second = try await launch()
-    #expect(second.summaries(under: "/w/drakar").map(\.title) == ["Old"])
-    second.stop()
+    try await launch()
+    #expect(try savesTheirs())
+    try await launch()
+    #expect(try savesTheirs())
   }
 
   @Test func anOpenProjectGetsTheShellsAccountWhenItAnswers() async throws {

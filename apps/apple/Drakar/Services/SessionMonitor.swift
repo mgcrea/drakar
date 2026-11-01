@@ -209,6 +209,12 @@ final class SessionMonitor {
 
   private static let cacheWrites = DispatchQueue(label: "drakar.session-summaries", qos: .utility)
 
+  /// Returns once every save asked for so far is on disk: what a test waits on before it
+  /// plays the next launch.
+  func summariesSaved() async {
+    await withCheckedContinuation { done in Self.cacheWrites.async { done.resume() } }
+  }
+
   func start() async {
     guard watchers.isEmpty else { return }
     await ensureAccounts()
