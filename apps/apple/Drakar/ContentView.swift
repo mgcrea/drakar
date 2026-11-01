@@ -44,7 +44,9 @@ struct ContentView: View {
         }
         .inspector(isPresented: $inspectorShown) {
           InspectorView(project: project, isShown: inspectorShown)
-            .inspectorColumnWidth(min: 220, ideal: 280, max: 420)
+            // Wide enough for the toolbar's three tabs beside its two toggles: at 280 the tab
+            // picker fell into the toolbar's overflow menu.
+            .inspectorColumnWidth(min: 220, ideal: 320, max: 420)
             .background(ColumnSash(edge: .leading))
         }
         // The first window on the folder reads its lists, shown or not, so a change shows on

@@ -124,8 +124,8 @@ Protocol changes are the other half and have their own procedure (raising
 | `open_config` | has | Open the extension's settings (Drakar: its own Settings window) | `apps/apple/Drakar/Views/SettingsView.swift:292` | |
 | `open_config_file` | no | Open a Claude config file (settings.json) in the editor | | adopt: in an editor tab |
 | `get_status` | partial | Status dialog, /status (Drakar: the inspector shows id, model, context) | `apps/apple/Drakar/Views/SessionInspector.swift:144` | differ: the inspector |
-| `add_permission_rules` | has | Add allow or deny rules (Drakar: Add Rule… in the inspector's Permissions tab, and a prompt's "always allow" suggestions) | `apps/apple/Drakar/Views/PermissionsInspector.swift:333` | adopt: permissions promise |
-| `list_permission_rules` | has | List permission rules (Drakar: the inspector's Permissions tab) | `apps/apple/Drakar/Views/PermissionsInspector.swift:12` | adopt: permissions promise |
+| `add_permission_rules` | has | Add allow or deny rules (Drakar: Add Rule… in the inspector's Rules tab, and a prompt's "always allow" suggestions) | `apps/apple/Drakar/Views/PermissionsInspector.swift:333` | adopt: permissions promise |
+| `list_permission_rules` | has | List permission rules (Drakar: the inspector's Rules tab) | `apps/apple/Drakar/Views/PermissionsInspector.swift:12` | adopt: permissions promise |
 | `remove_permission_rule` | has | Remove a permission rule (Drakar: on a settings-file rule's row) | `apps/apple/Drakar/Views/PermissionsInspector.swift:265` | adopt: permissions promise |
 | `get_sandbox_dialog` | no | Load the Bash sandbox settings dialog | | skip: editors for files you own; Drakar opens the files |
 | `set_sandbox_setting` | no | Change a Bash sandbox setting | | skip: editors for files you own; Drakar opens the files |

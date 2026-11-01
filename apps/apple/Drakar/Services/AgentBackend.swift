@@ -71,7 +71,7 @@ enum AgentCommand: Codable, Equatable {
   case taskOutput(taskID: String)
   /// A code rewind (`Rewinds`), sent without a note as the task controls are.
   case rewindFiles(userMessageID: String, dryRun: Bool)
-  /// Reads of the running process for the Permissions tab and Open Plan, sent without a note
+  /// Reads of the running process for the Rules tab and Open Plan, sent without a note
   /// as `rewindFiles` is: they change nothing a replay would need.
   case listPermissionRules
   case getPlan

@@ -35,7 +35,7 @@ struct InspectorView: View {
           Picker("Inspector", selection: $tab) {
             Text("Session").tag(InspectorTab.session)
             Text("Skills & MCP").tag(InspectorTab.capabilities)
-            Text("Permissions").tag(InspectorTab.permissions)
+            Text("Rules").tag(InspectorTab.permissions)
           }
           .pickerStyle(.segmented)
           .labelsHidden()

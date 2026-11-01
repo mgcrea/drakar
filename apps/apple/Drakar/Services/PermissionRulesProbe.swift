@@ -2,7 +2,7 @@ import DrakarKit
 import Foundation
 
 /// A `claude` started in a project's folder only to be asked its permission rules, then let
-/// go, as `CapabilityProbe` does for skills and servers: for the Permissions tab when no
+/// go, as `CapabilityProbe` does for skills and servers: for the Rules tab when no
 /// session's process is there to ask.
 enum PermissionRulesProbe {
   static let initializeID = "rules-probe-init"

@@ -2,7 +2,7 @@ import DrakarKit
 import Foundation
 import Observation
 
-/// What the Permissions tab shows: the selected session's permission rules, from its own
+/// What the Rules tab shows: the selected session's permission rules, from its own
 /// process when Drakar drives one, else from a rules probe, and the rules it adds and
 /// removes through `claude edit-permission-rules`. The command writes a settings file, which
 /// a running process reads on its own time, so after an edit the listing is read again until

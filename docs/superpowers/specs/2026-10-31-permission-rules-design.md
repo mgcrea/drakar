@@ -58,7 +58,7 @@ persist frames server-side, never on Drakar's. It never creates a plan.
 
 ## 1. Permissions, a third inspector tab
 
-`InspectorTab.permissions`, labelled "Permissions", after "Skills & MCP". It shows the
+`InspectorTab.permissions`, labelled "Rules", after "Skills & MCP" (amended 2026-11-01: "Permissions" did not fit the inspector's 280 pt column beside the other two, and the picker fell into the toolbar's overflow menu). It shows the
 selected session's rules.
 
 **Where the listing comes from**

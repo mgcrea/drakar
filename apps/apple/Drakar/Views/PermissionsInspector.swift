@@ -2,7 +2,7 @@ import AppKit
 import DrakarKit
 import SwiftUI
 
-/// The inspector's Permissions tab: the selected session's permission rules, Allow over Ask
+/// The inspector's Rules tab: the selected session's permission rules, Allow over Ask
 /// over Deny, with the folders it may work in and the settings files Claude Code skipped.
 /// Rules in a settings file the edit command writes can be removed, and Add Rule… writes new
 /// ones. The listing is read when the tab shows, when another session is selected while it
