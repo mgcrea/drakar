@@ -35,6 +35,12 @@ final class SessionMonitor {
   @ObservationIgnored private var included: Set<String> = []
   @ObservationIgnored private var discovery: Task<Void, Never>?
   @ObservationIgnored private let discover: (() async -> [ClaudeAccount])?
+  /// Accounts named once the listing has begun: the login shell's `CLAUDE_CONFIG_DIR`.
+  @ObservationIgnored private let late: (() async -> [ClaudeAccount])?
+  /// Whether `start()` listed the newest sessions, and whether its watchers run: an account
+  /// arriving late gets whichever of the two the others already had.
+  @ObservationIgnored private var listedNewest = false
+  @ObservationIgnored private var watching = false
   /// Where the launch listing keeps its summaries for the next launch; nil reads every
   /// transcript each time, as tests do.
   @ObservationIgnored private let cacheFile: URL?
@@ -55,13 +61,21 @@ final class SessionMonitor {
   @ObservationIgnored private(set) var hasReadRegistries = false
 
   /// `accounts` for tests; the app discovers them, its shell's `CLAUDE_CONFIG_DIR` included.
-  /// `discover` replaces the login-shell discovery, for tests.
+  /// `discover` replaces the discovery of `~/.claude` and `~/.claude-*`, and `late` the
+  /// login shell's, for tests; a test giving `discover` alone has no late accounts.
   init(
     accounts: [ClaudeAccount] = [], discover: (() async -> [ClaudeAccount])? = nil,
-    cacheFile: URL? = nil
+    late: (() async -> [ClaudeAccount])? = nil, cacheFile: URL? = nil
   ) {
     self.accounts = accounts
     self.discover = discover
+    if let late {
+      self.late = late
+    } else if discover == nil {
+      self.late = { await Self.shellAccounts() }
+    } else {
+      self.late = nil
+    }
     self.cacheFile = cacheFile
   }
 
@@ -131,31 +145,58 @@ final class SessionMonitor {
   }
 
   /// Finds the accounts once, whoever asks first; later callers wait for the same answer.
+  /// The login shell is not waited for: it can take seconds, and only an account it alone
+  /// names (`CLAUDE_CONFIG_DIR` outside `~/.claude-*`) needs it, which joins when it answers.
   private func ensureAccounts() async {
     if let discovery { return await discovery.value }
     guard accounts.isEmpty else { return }
     let task = Task {
-      if let discover = self.discover {
-        self.accounts = await discover()
-      } else {
-        let extra =
-          (await AgentSession.environment.value)["CLAUDE_CONFIG_DIR"].map {
-            [URL(filePath: $0, directoryHint: .isDirectory)]
-          } ?? []
-        self.accounts = ClaudeAccount.discover(extra: extra)
-      }
+      self.accounts = await (self.discover ?? { ClaudeAccount.discover() })()
       for account in self.accounts {
         self.accountModels[account.directory] = ContextWindow.accountModelID(account)
+      }
+      if let late = self.late {
+        Task { await self.add(late()) }
       }
     }
     discovery = task
     await task.value
   }
 
+  /// The accounts the login shell's environment adds, if any.
+  private static func shellAccounts() async -> [ClaudeAccount] {
+    guard let directory = (await AgentSession.environment.value)["CLAUDE_CONFIG_DIR"] else {
+      return []
+    }
+    return ClaudeAccount.discover(extra: [URL(filePath: directory, directoryHint: .isDirectory)])
+  }
+
+  /// Accounts found after the listing began, read as the others were: their newest sessions
+  /// if the launch listed those, each open project's own, and their folders watched.
+  private func add(_ found: [ClaudeAccount]) async {
+    let known = Set(accounts.map(\.key))
+    let new = found.filter { !known.contains($0.key) }
+    guard !new.isEmpty else { return }
+    accounts += new
+    for account in new {
+      accountModels[account.directory] = ContextWindow.accountModelID(account)
+    }
+    if watching { new.forEach(watch) }
+    let (newest, folders) = (listedNewest, included)
+    let listed = await Task.detached {
+      (newest ? SessionIndex.list(accounts: new, limit: 500) : [])
+        + folders.flatMap { SessionIndex.list(accounts: new, limit: 200, under: $0) }
+    }.value
+    merge(listed)
+    readRegistries()
+    if watching { scanFolders(after: .zero) }
+  }
+
   func start() async {
     guard watchers.isEmpty else { return }
     await ensureAccounts()
     guard watchers.isEmpty else { return }
+    listedNewest = true
     let accounts = self.accounts
     for account in accounts where accountModels[account.directory] == nil {
       accountModels[account.directory] = ContextWindow.accountModelID(account)
@@ -176,28 +217,33 @@ final class SessionMonitor {
       Task.detached(priority: .utility) { try? SessionSummaryCache(listed).save(to: cacheFile) }
     }
     scanFolders(after: .zero)
-    for account in accounts {
-      for name in ["sessions", "projects"] {
-        let folder = account.directory.appending(path: name, directoryHint: .isDirectory)
-        if let watcher = FolderWatcher(
-          folder: folder,
-          onChange: { [weak self] paths in
-            self?.changed(paths, in: account)
-          })
-        {
-          watchers.append(watcher)
-        }
-      }
-    }
+    // Every account known by now, one that arrived during the listing included.
+    self.accounts.forEach(watch)
+    watching = true
     // A crashed session leaves its registry file behind: its pid is checked every second.
     sweep = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
       MainActor.assumeIsolated { self?.sweepDead() }
     }
   }
 
+  private func watch(_ account: ClaudeAccount) {
+    for name in ["sessions", "projects"] {
+      let folder = account.directory.appending(path: name, directoryHint: .isDirectory)
+      if let watcher = FolderWatcher(
+        folder: folder,
+        onChange: { [weak self] paths in
+          self?.changed(paths, in: account)
+        })
+      {
+        watchers.append(watcher)
+      }
+    }
+  }
+
   func stop() {
     for watcher in watchers { watcher.stop() }
     watchers = []
+    watching = false
     sweep?.invalidate()
     sweep = nil
   }

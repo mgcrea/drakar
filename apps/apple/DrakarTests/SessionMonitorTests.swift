@@ -130,6 +130,68 @@ struct SessionMonitorTests {
     #expect(monitor.summaries(under: "/w/drakar").map(\.title) == ["Old"])
   }
 
+  /// An account only the login shell names (`CLAUDE_CONFIG_DIR`), with one session under
+  /// `/w/drakar`, and a gate the test opens when the shell should answer.
+  private func shellAccount(in home: URL) throws -> ClaudeAccount {
+    let account = ClaudeAccount(directory: home.appending(path: "shell-config"), isDefault: false)
+    let projects = account.directory.appending(path: "projects/-w-drakar")
+    try FileManager.default.createDirectory(at: projects, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(
+      at: account.directory.appending(path: "sessions"), withIntermediateDirectories: true)
+    try Data(Self.line.utf8).write(to: projects.appending(path: "theirs.jsonl"))
+    return account
+  }
+
+  private func ids(_ monitor: SessionMonitor) -> Set<String> {
+    Set(monitor.summaries(under: "/w/drakar").map(\.sessionID))
+  }
+
+  /// A slow `.zshrc` held home's spinner for as long as the shell took, up to 5 s, though
+  /// only an account the shell alone names needs its answer.
+  @Test func startListsBeforeTheShellAnswers() async throws {
+    let (home, account, projects) = try fixture()
+    defer { try? FileManager.default.removeItem(at: home) }
+    try Data(Self.line.utf8).write(to: projects.appending(path: "mine.jsonl"))
+    let other = try shellAccount(in: home)
+    let (answer, answered) = AsyncStream<Void>.makeStream()
+    let monitor = SessionMonitor(
+      discover: { [account] },
+      late: {
+        for await _ in answer { break }
+        return [account, other]
+      })
+    await monitor.start()
+    #expect(monitor.isLoaded)
+    #expect(ids(monitor) == ["mine"])
+    answered.yield()
+    for _ in 0..<40 where ids(monitor).count < 2 {
+      try await Task.sleep(for: .milliseconds(100))
+    }
+    #expect(ids(monitor) == ["mine", "theirs"])
+    monitor.stop()
+  }
+
+  @Test func anOpenProjectGetsTheShellsAccountWhenItAnswers() async throws {
+    let (home, account, projects) = try fixture()
+    defer { try? FileManager.default.removeItem(at: home) }
+    try Data(Self.line.utf8).write(to: projects.appending(path: "mine.jsonl"))
+    let other = try shellAccount(in: home)
+    let (answer, answered) = AsyncStream<Void>.makeStream()
+    let monitor = SessionMonitor(
+      discover: { [account] },
+      late: {
+        for await _ in answer { break }
+        return [other]
+      })
+    await monitor.include(folder: "/w/drakar")
+    #expect(ids(monitor) == ["mine"])
+    answered.yield()
+    for _ in 0..<40 where ids(monitor).count < 2 {
+      try await Task.sleep(for: .milliseconds(100))
+    }
+    #expect(ids(monitor) == ["mine", "theirs"])
+  }
+
   @Test func includeWaitsForAccountDiscovery() async throws {
     let (home, account, projects) = try fixture()
     defer { try? FileManager.default.removeItem(at: home) }
