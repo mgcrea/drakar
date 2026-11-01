@@ -158,6 +158,7 @@ struct ContentView: View {
         enter(folder)
       }
       FolderIntake.shared.flush { WindowTabs.open(.project($0), asTab: true) }
+      FolderIntake.shared.isReady = true
     }
   }
 

@@ -525,7 +525,6 @@ private struct FeedbackToggle: View {
   }
 }
 
-/// Which `claude` runs, and under which account a new session starts.
 /// The `drakar` command, linked with one click, as VS Code's "Install 'code' command".
 private struct CommandLineSection: View {
   /// Where the link goes, once the login shell's PATH is known.
@@ -542,7 +541,7 @@ private struct CommandLineSection: View {
           } else {
             Text("Not installed")
           }
-          Button(installed ? "Reinstall" : "Install") { install() }
+          Button(installed ? "Reinstall" : "Install") { Task { await install() } }
             .disabled(directory == nil || CommandLineTool.bundledScript == nil)
             .accessibilityIdentifier("settings.installCommand")
         }
@@ -567,34 +566,33 @@ private struct CommandLineSection: View {
     }
   }
 
-  private func install() {
+  private func install() async {
     guard let directory, let script = CommandLineTool.bundledScript else { return }
     failure = nil
+    let place = ContentView.abbreviated(directory)
     do {
       try CommandLineTool.install(script: script, in: directory)
     } catch CocoaError.fileWriteNoPermission {
       // `/usr/local/bin` is root's on a Mac without Intel Homebrew: macOS asks for a password.
-      let command = CommandLineTool.privilegedCommand(script: script, in: directory)
-        .replacingOccurrences(of: "\\", with: "\\\\")
-        .replacingOccurrences(of: "\"", with: "\\\"")
-      var error: NSDictionary?
-      NSAppleScript(source: "do shell script \"\(command)\" with administrator privileges")?
-        .executeAndReturnError(&error)
-      // -128 is the password dialog's Cancel.
-      if let error, error[NSAppleScript.errorNumber] as? Int != -128 {
-        failure = String(
-          localized: "Could not link drakar in \(ContentView.abbreviated(directory)).")
+      if let problem = await CommandLineTool.installAsAdministrator(script: script, in: directory) {
+        failure = String(localized: "Could not link drakar in \(place): \(problem)")
       }
     } catch {
-      failure = String(
-        localized:
-          "\(ContentView.abbreviated(directory)) already has a file named drakar. Remove it, then install again."
-      )
+      let link = directory.appending(path: CommandLineTool.name).path(percentEncoded: false)
+      let isFile =
+        FileManager.default.fileExists(atPath: link)
+        && (try? FileManager.default.destinationOfSymbolicLink(atPath: link)) == nil
+      failure =
+        isFile
+        ? String(
+          localized: "\(place) already has a file named drakar. Remove it, then install again.")
+        : String(localized: "Could not link drakar in \(place): \(error.localizedDescription)")
     }
     installed = CommandLineTool.isInstalled(script: script, in: directory)
   }
 }
 
+/// Which `claude` runs, and under which account a new session starts.
 private struct ClaudeSection: View {
   @AppStorage(PreferenceKey.claudePath) private var claudePath = ""
   @AppStorage(PreferenceKey.newSessionAccount) private var accountPath = ""

@@ -10,6 +10,10 @@ final class FolderIntake {
 
   private let list: ProjectList
   private var pending: [URL] = []
+  /// Set once the first window has taken what was waiting: before that, a folder waits too,
+  /// even when a window could already open one, so that window becomes it rather than a
+  /// tab opening beside an empty home.
+  var isReady = false
 
   init(list: ProjectList = .shared) {
     self.list = list

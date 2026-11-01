@@ -83,6 +83,23 @@ struct CommandLineToolTests {
     #expect(CommandLineTool.isInstalled(script: current, in: bin))
   }
 
+  /// The AppleScript around it, run without the privileges: its string escaping must hand
+  /// the shell the command unchanged.
+  @Test func theAppleScriptRunsTheCommandUnchanged() throws {
+    defer { try? FileManager.default.removeItem(at: root) }
+    let script = try file("it's \"quoted\".sh")
+    let bin = root.appending(path: "Olivier's bin", directoryHint: .isDirectory)
+    let source = CommandLineTool.appleScript(script: script, in: bin)
+    #expect(source.hasSuffix(" with administrator privileges"))
+    let process = Process()
+    process.executableURL = URL(filePath: "/usr/bin/osascript")
+    process.arguments = ["-e", String(source.dropLast(" with administrator privileges".count))]
+    try process.run()
+    process.waitUntilExit()
+    #expect(process.terminationStatus == 0)
+    #expect(CommandLineTool.isInstalled(script: script, in: bin))
+  }
+
   @Test func thePrivilegedCommandNeverReplacesARealFile() throws {
     defer { try? FileManager.default.removeItem(at: root) }
     let script = try file("drakar.sh")
@@ -125,6 +142,53 @@ struct CommandLineToolTests {
     let (bare, dot) = (try run([]), try run(["."]))
     #expect(bare == "-a \(app) \(folder)\n")
     #expect(dot == bare)
+  }
+
+  /// `cd` follows an exported `CDPATH` and reads a leading `-` as an option: neither may
+  /// change which folder opens.
+  @Test func theScriptOpensExactlyTheFoldersNamed() throws {
+    defer { try? FileManager.default.removeItem(at: root) }
+    let bundled = try #require(CommandLineTool.bundledScript)
+    let resources = root.appending(path: "Copy.app/Contents/Resources", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: resources, withIntermediateDirectories: true)
+    let script = resources.appending(path: "drakar.sh")
+    try FileManager.default.copyItem(at: bundled, to: script)
+    let bin = root.appending(path: "bin", directoryHint: .isDirectory)
+    try CommandLineTool.install(script: script, in: bin)
+    let here = root.appending(path: "here", directoryHint: .isDirectory)
+    let elsewhere = root.appending(path: "elsewhere", directoryHint: .isDirectory)
+    for name in ["src", "-x", "two words"] {
+      try FileManager.default.createDirectory(
+        at: here.appending(path: name), withIntermediateDirectories: true)
+    }
+    try FileManager.default.createDirectory(
+      at: elsewhere.appending(path: "src"), withIntermediateDirectories: true)
+
+    // Stands in for `open`: one argument per line.
+    let open = root.appending(path: "print-arguments")
+    try Data("#!/bin/sh\nfor a in \"$@\"; do echo \"$a\"; done\n".utf8).write(to: open)
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: open.path)
+
+    let process = Process()
+    process.executableURL = bin.appending(path: "drakar")
+    process.arguments = ["src", "-x", "two words"]
+    process.currentDirectoryURL = here
+    process.environment = [
+      "PATH": "/usr/bin:/bin", "DRAKAR_OPEN": open.path(percentEncoded: false),
+      "CDPATH": elsewhere.path(percentEncoded: false),
+    ]
+    let pipe = Pipe()
+    process.standardOutput = pipe
+    try process.run()
+    process.waitUntilExit()
+    let output = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+    let base = here.path(percentEncoded: false).trimmingSuffix("/")
+    #expect(process.terminationStatus == 0)
+    #expect(
+      output.split(separator: "\n").map(String.init) == [
+        "-a", root.appending(path: "Copy.app").path(percentEncoded: false),
+        "\(base)/src", "\(base)/-x", "\(base)/two words",
+      ])
   }
 }
 

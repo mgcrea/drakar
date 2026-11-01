@@ -168,7 +168,62 @@ struct SessionMonitorTests {
       try await Task.sleep(for: .milliseconds(100))
     }
     #expect(ids(monitor) == ["mine", "theirs"])
+    // Watched like the others: a session it writes later shows up too.
+    try Data(Self.line.utf8).write(
+      to: other.directory.appending(path: "projects/-w-drakar/later.jsonl"))
+    for _ in 0..<40 where ids(monitor).count < 3 {
+      try await Task.sleep(for: .milliseconds(100))
+    }
+    #expect(ids(monitor) == ["mine", "theirs", "later"])
     monitor.stop()
+  }
+
+  /// The shell's account read once is not read again at the next launch: it goes in the
+  /// saved summaries like the others.
+  @Test func theShellsAccountIsKeptForTheNextLaunch() async throws {
+    let (home, account, _) = try fixture()
+    defer { try? FileManager.default.removeItem(at: home) }
+    let other = try shellAccount(in: home)
+    let cacheFile = home.appending(path: "summaries.plist")
+    let file = other.directory.appending(path: "projects/-w-drakar/theirs.jsonl")
+    let date = Date(timeIntervalSince1970: 1e9)
+    func write(title: String) throws {
+      try Data((Self.line + "\n" + #"{"type":"ai-title","aiTitle":"\#(title)"}"#).utf8)
+        .write(to: file)
+      try FileManager.default.setAttributes([.modificationDate: date], ofItemAtPath: file.path)
+    }
+    // A slow shell: it answers once the launch listing is done.
+    func launch() async throws -> SessionMonitor {
+      let (answer, answered) = AsyncStream<Void>.makeStream()
+      let monitor = SessionMonitor(
+        discover: { [account] },
+        late: {
+          for await _ in answer { break }
+          return [other]
+        }, cacheFile: cacheFile)
+      await monitor.start()
+      answered.yield()
+      for _ in 0..<40 where !ids(monitor).contains("theirs") {
+        try await Task.sleep(for: .milliseconds(100))
+      }
+      return monitor
+    }
+    try write(title: "Old")
+    let first = try await launch()
+    first.stop()
+    // Same size, same date: the next launch takes the saved summary.
+    try write(title: "New")
+    for _ in 0..<40 {
+      let saved = SessionSummaryCache.load(from: cacheFile)
+      let listed = SessionIndex.list(accounts: [other]).first
+      if let listed, saved.summary(of: listed.file, modified: date, size: listed.size) != nil {
+        break
+      }
+      try await Task.sleep(for: .milliseconds(100))
+    }
+    let second = try await launch()
+    #expect(second.summaries(under: "/w/drakar").map(\.title) == ["Old"])
+    second.stop()
   }
 
   @Test func anOpenProjectGetsTheShellsAccountWhenItAnswers() async throws {

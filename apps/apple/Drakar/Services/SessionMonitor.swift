@@ -40,6 +40,8 @@ final class SessionMonitor {
   /// Whether `start()` listed the newest sessions, and whether its watchers run: an account
   /// arriving late gets whichever of the two the others already had.
   @ObservationIgnored private var listedNewest = false
+  /// The summaries the last launch saved, as `start()` read them.
+  @ObservationIgnored private var saved: SessionSummaryCache?
   @ObservationIgnored private var watching = false
   /// Where the launch listing keeps its summaries for the next launch; nil reads every
   /// transcript each time, as tests do.
@@ -182,15 +184,30 @@ final class SessionMonitor {
       accountModels[account.directory] = ContextWindow.accountModelID(account)
     }
     if watching { new.forEach(watch) }
-    let (newest, folders) = (listedNewest, included)
+    // What the last launch saved of them, as for the others: the copy read at the start,
+    // since this launch's own save, made before the shell answered, has them no more.
+    let (newest, folders, cache) = (listedNewest, included, saved ?? SessionSummaryCache())
     let listed = await Task.detached {
-      (newest ? SessionIndex.list(accounts: new, limit: 500) : [])
-        + folders.flatMap { SessionIndex.list(accounts: new, limit: 200, under: $0) }
+      return (newest ? SessionIndex.list(accounts: new, limit: 500, cache: cache) : [])
+        + folders.flatMap {
+          SessionIndex.list(accounts: new, limit: 200, under: $0, cache: cache)
+        }
     }.value
     merge(listed)
     readRegistries()
+    if newest { saveSummaries() }
     if watching { scanFolders(after: .zero) }
   }
+
+  /// Saves the summaries read, for the next launch. In order: a later snapshot (with an
+  /// account the shell named late) never lands under an earlier one.
+  private func saveSummaries() {
+    guard let cacheFile else { return }
+    let summaries = Array(byFile.values)
+    Self.cacheWrites.async { try? SessionSummaryCache(summaries).save(to: cacheFile) }
+  }
+
+  private static let cacheWrites = DispatchQueue(label: "drakar.session-summaries", qos: .utility)
 
   func start() async {
     guard watchers.isEmpty else { return }
@@ -206,16 +223,15 @@ final class SessionMonitor {
     // Only the transcripts written since the last launch are opened: the rest come from the
     // summaries it saved, which saves reading a gigabyte or more before home can show.
     let cacheFile = self.cacheFile
-    let listed = await Task.detached {
+    let (listed, saved) = await Task.detached {
       let cache = cacheFile.map(SessionSummaryCache.load(from:)) ?? SessionSummaryCache()
-      return SessionIndex.list(accounts: accounts, limit: 500, cache: cache)
+      return (SessionIndex.list(accounts: accounts, limit: 500, cache: cache), cache)
     }.value
+    self.saved = saved
     merge(listed)
     readRegistries()
     isLoaded = true
-    if let cacheFile {
-      Task.detached(priority: .utility) { try? SessionSummaryCache(listed).save(to: cacheFile) }
-    }
+    saveSummaries()
     scanFolders(after: .zero)
     // Every account known by now, one that arrived during the listing included.
     self.accounts.forEach(watch)

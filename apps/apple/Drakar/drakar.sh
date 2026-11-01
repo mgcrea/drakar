@@ -28,12 +28,13 @@ while [ -L "$script" ]; do
   *) script=$(dirname "$script")/$link ;;
   esac
 done
-app=$(cd "$(dirname "$script")/../.." && pwd -P)
+app=$(CDPATH= cd -P -- "$(dirname "$script")/../.." && pwd -P)
 
 # Each argument, resolved, in place: the loop walks the list as it was, appending each
-# absolute path and dropping the argument it came from.
+# absolute path and dropping the argument it came from. `CDPATH=` and `--`: an exported
+# CDPATH would send `cd src` elsewhere (and make it print), and `-x` is a folder name.
 for target in "$@"; do
-  set -- "$@" "$(cd "$target" && pwd -P)"
+  set -- "$@" "$(CDPATH= cd -P -- "$target" && pwd -P)"
   shift
 done
 exec ${DRAKAR_OPEN:-open} -a "$app" "$@"

@@ -260,7 +260,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   /// none is up yet.
   func application(_ application: NSApplication, open urls: [URL]) {
     let open: ((URL) -> Void)? =
-      WindowTabs.openWindow == nil ? nil : { WindowTabs.open(.project($0), asTab: true) }
+      FolderIntake.shared.isReady ? { WindowTabs.open(.project($0), asTab: true) } : nil
     FolderIntake.shared.receive(urls, open: open)
   }
 

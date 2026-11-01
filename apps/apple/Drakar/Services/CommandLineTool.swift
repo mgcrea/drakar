@@ -38,6 +38,29 @@ enum CommandLineTool {
       + "ln -sfn \(quoted(script)) \(link)"
   }
 
+  /// `privilegedCommand` as an AppleScript, which asks for an administrator's password.
+  static func appleScript(script: URL, in directory: URL) -> String {
+    let command = privilegedCommand(script: script, in: directory)
+      .replacingOccurrences(of: "\\", with: "\\\\")
+      .replacingOccurrences(of: "\"", with: "\\\"")
+    return "do shell script \"\(command)\" with administrator privileges"
+  }
+
+  /// Runs `appleScript` in `osascript`: a process of its own, so every window keeps drawing
+  /// while the password dialog waits. Nil once linked, or when the person cancels;
+  /// otherwise what went wrong.
+  static func installAsAdministrator(script: URL, in directory: URL) async -> String? {
+    let source = appleScript(script: script, in: directory)
+    guard
+      let result = try? await ProcessRunner.run(
+        URL(filePath: "/usr/bin/osascript"), ["-e", source], timeout: .seconds(600))
+    else { return String(localized: "osascript could not start.") }
+    guard result.status != 0 else { return nil }
+    let errors = String(decoding: result.errors, as: UTF8.self)
+    // -128: the dialog's Cancel.
+    return errors.contains("(-128)") ? nil : errors.trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+
   /// Links `directory/drakar` to `script`, creating `directory` if needed and taking over
   /// a link that points elsewhere (a Drakar since moved, or another copy). A real file
   /// there is someone else's: that throws, and it is left alone.
