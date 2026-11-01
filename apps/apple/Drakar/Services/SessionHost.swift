@@ -24,11 +24,20 @@ import Synchronization
     endpoint: .local, cooldown: .seconds(30), helper: helper, underTests: nil)
 
   /// The configured runner's host, made for `RunnerSettings.current`; Settings › Runner puts
-  /// a new one here when the runner changes. None under tests, which never reach the person's
-  /// runner.
+  /// a new one here when the runner changes (`useRunner`). None under tests, which never
+  /// reach the person's runner.
   static var runner: SessionHost? =
     ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
     ? nil : RunnerSettings.current.map { SessionHost(endpoint: .runner($0)) }
+
+  /// The runner Settings › Runner saved, nil for none: a host for it takes the place of the
+  /// one before, which is closed first, so two runners are never reached at once. The same
+  /// runner again keeps its host and the connection it has.
+  static func useRunner(_ settings: RunnerSettings?) {
+    guard runner?.endpoint != settings.map(Endpoint.runner) else { return }
+    runner?.close()
+    runner = settings.map { SessionHost(endpoint: .runner($0)) }
+  }
 
   /// Tests only: the directory a `SessionHost()` made under XCTest uses, read as it is made,
   /// instead of none.
@@ -69,6 +78,8 @@ import Synchronization
   private(set) var facts: RunnerFacts?
   /// Why the last attempt to reach the runner failed; nil once one succeeds.
   private(set) var failure: RunnerFailure?
+  /// Let go for good (`close()`): nothing more is asked of it.
+  private(set) var isClosed = false
   /// Whether a process the runner holds is this Mac's (its `owner`), for `reattachRefused`.
   var ownsProcess: (HeldProcess) -> Bool = { _ in false }
 
@@ -77,6 +88,8 @@ import Synchronization
   /// `testDirectory` when this one was made.
   private let underTests: URL?
   private var connection: HostClient?
+  /// The ssh that carries a runner's `connection`, ended with it.
+  private var ssh: Process?
   private var connecting: Task<Outcome, Never>?
   private var reconnecting: Task<HostClient?, Never>?
   private var quietUntil: ContinuousClock.Instant?
@@ -104,7 +117,7 @@ import Synchronization
 
   private enum Outcome {
     /// `pid` is the host's, nil for a runner's, which is no process of this Mac.
-    case connected(HostClient, pid: Int32?)
+    case connected(HostClient, pid: Int32?, ssh: Process?)
     /// Spawned, or a socket took the connection, but no hello came in time.
     case noAnswer
     case cannotStart
@@ -160,7 +173,10 @@ import Synchronization
       isAvailable = false
       taken = false
     }
-    if let connecting { return Self.client(of: await connecting.value) }
+    if let connecting {
+      let outcome = await connecting.value
+      return isClosed ? nil : Self.client(of: outcome)
+    }
     guard !cannotStart, isReachable else { return nil }
     if let quietUntil, ContinuousClock.now < quietUntil { return nil }
     let task = Task { await connect() }
@@ -168,10 +184,15 @@ import Synchronization
     let outcome = await task.value
     connecting = nil
     switch outcome {
-    case .connected(let client, let pid):
+    case .connected(let client, _, let ssh) where isClosed:
+      // Closed while it connected: this one is nobody's.
+      client.close()
+      if let ssh { RunnerConnection.end(ssh) }
+      return nil
+    case .connected(let client, let pid, let ssh):
       quietUntil = nil
       hostPID = pid
-      adopt(client)
+      adopt(client, ssh: ssh)
     case .noAnswer:
       quietUntil = .now + cooldown
     case .cannotStart:
@@ -181,7 +202,7 @@ import Synchronization
   }
 
   private static func client(of outcome: Outcome) -> HostClient? {
-    if case .connected(let client, _) = outcome { return client }
+    if case .connected(let client, _, _) = outcome { return client }
     return nil
   }
 
@@ -248,6 +269,19 @@ import Synchronization
     drops?.finish()
     drops = nil
     closeIfUnused()
+  }
+
+  /// Lets go for good, as Settings › Runner does of a runner it no longer names: no more
+  /// connecting, the connection closed whoever took it, and its ssh ended. A session it
+  /// carried finds no host to reconnect to.
+  func close() {
+    isClosed = true
+    stopKeepingConnected()
+    let connection = connection
+    self.connection = nil
+    isAvailable = false
+    connection?.close()
+    if let ssh { RunnerConnection.end(ssh) }
   }
 
   private func closeIfUnused() {
@@ -356,8 +390,8 @@ import Synchronization
     return Self.hostDirectory
   }
 
-  /// Somewhere to connect to: a runner, or a host directory.
-  private var isReachable: Bool { isRunner || directory != nil }
+  /// Somewhere to connect to: a runner, or a host directory, while not closed for good.
+  private var isReachable: Bool { !isClosed && (isRunner || directory != nil) }
 
   private func connect() async -> Outcome {
     switch endpoint {
@@ -366,10 +400,10 @@ import Synchronization
       return await connect(in: directory)
     case .runner(let settings):
       do {
-        let (client, facts) = try await RunnerConnection.open(settings)
+        let (client, facts, ssh) = try await RunnerConnection.open(settings)
         self.facts = facts
         failure = nil
-        return .connected(client, pid: nil)
+        return .connected(client, pid: nil, ssh: ssh)
       } catch {
         // Tried again after the cooldown: the network, the runner's login or its Drakar may
         // all come back.
@@ -402,7 +436,7 @@ import Synchronization
     var spawned = false
     while true {
       if let (client, pid) = await Self.answering(socket, until: deadline) {
-        return .connected(client, pid: pid)
+        return .connected(client, pid: pid, ssh: nil)
       }
       if !spawned {
         // A socket a crashed host left is the new host's to remove, under its lock.
@@ -435,8 +469,9 @@ import Synchronization
     Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
   }
 
-  private func adopt(_ client: HostClient) {
+  private func adopt(_ client: HostClient, ssh: Process?) {
     connection = client
+    self.ssh = ssh
     isAvailable = true
     releaseWatchers.removeAll { $0.owner == nil }
     for watcher in releaseWatchers { watcher.connected() }
@@ -445,7 +480,10 @@ import Synchronization
     }
     Task { [weak self] in
       for await _ in client.disconnected {}
+      // Whoever ended the connection, its ssh serves nothing more.
+      if let ssh { RunnerConnection.end(ssh) }
       guard let self else { return }
+      if self.ssh === ssh { self.ssh = nil }
       if self.connection === client {
         self.connection = nil
         self.isAvailable = false

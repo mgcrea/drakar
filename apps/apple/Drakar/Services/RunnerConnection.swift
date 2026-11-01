@@ -31,12 +31,14 @@ enum RunnerConnection {
   /// How long an ssh that is ending is waited on for the rest of its stderr.
   private static let stderrLimit = Duration.seconds(2)
 
-  /// The runner's host, said hello to, and the runner's facts. Throws when ssh fails, the
+  /// A runner reached: its host's connection, its facts, and the ssh that carries it.
+  typealias Opened = (client: HostClient, facts: RunnerFacts, ssh: Process)
+
+  /// The runner's host, said hello to, the runner's facts, and the ssh that carries the
+  /// connection, for whoever lets the connection go to `end`. Throws when ssh fails, the
   /// relay states nothing within `factsLimit`, or the runner's Drakar is not one this build
   /// can talk to; ssh is ended then, whatever it was doing.
-  static func open(_ settings: RunnerSettings) async throws(RunnerFailure) -> (
-    HostClient, RunnerFacts
-  ) {
+  static func open(_ settings: RunnerSettings) async throws(RunnerFailure) -> Opened {
     let name = settings.displayName
     // ssh would take it for one of its options.
     guard !settings.destination.hasPrefix("-") else {
@@ -125,7 +127,14 @@ enum RunnerConnection {
           ?? String(localized: "Drakar's session host on \(name) did not answer."),
         ending: welcome == nil)
     }
-    return (client, facts)
+    return (client, facts, ssh)
+  }
+
+  /// Ends the ssh of a connection let go. Closing the connection alone leaves ssh to notice
+  /// its stdin has ended, which one whose network has gone, or whose relay is wedged, does
+  /// not do for minutes.
+  static func end(_ ssh: Process) {
+    if ssh.isRunning { ssh.terminate() }
   }
 
   /// `ssh -T -o BatchMode=yes <destination> <drakarPath>/Contents/MacOS/Drakar --relay`. ssh

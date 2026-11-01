@@ -251,6 +251,43 @@ struct RunnerHostTests {
     #expect(host.failure != nil)
   }
 
+  /// Settings › Runner replacing the runner: the old host closes its connection and ends its
+  /// ssh, even one that would linger after its relay has gone, and never connects again.
+  @Test func aReplacedRunnerEndsItsSSH() async throws {
+    let drakar = try #require(Bundle.main.executableURL).path(percentEncoded: false)
+    let pidFile = root.appending(path: "ssh.pid")
+    try fakeSSH(
+      """
+      echo $$ > '\(pidFile.path(percentEncoded: false))'
+      echo run >> '\(runs.path(percentEncoded: false))'
+      /usr/bin/env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin HOME="$HOME" USER="$USER" \
+        LOGNAME="$LOGNAME" TMPDIR="$TMPDIR" '\(drakar)' --relay \
+        --directory '\(directory.path(percentEncoded: false))' --defaults-suite '\(suite)'
+      exec sleep 30
+      """)
+    let helper = try #require(SessionHost.startHelper(in: directory))
+    let before = SessionHost.runner
+    defer {
+      SessionHost.runner = before
+      finish([helper])
+    }
+    SessionHost.useRunner(settings)
+    let host = try #require(SessionHost.runner)
+    let client = try #require(await host.client())
+    let text = try String(contentsOf: pidFile, encoding: .utf8)
+    let ssh = try #require(pid_t(text.trimmingCharacters(in: .whitespacesAndNewlines)))
+    #expect(kill(ssh, 0) == 0)
+
+    SessionHost.useRunner(nil)
+    #expect(SessionHost.runner == nil)
+    #expect(host.isClosed)
+    #expect(await eventually(within: .seconds(5)) { client.isClosed })
+    #expect(!host.isAvailable)
+    #expect(await eventually(within: .seconds(5)) { kill(ssh, 0) != 0 })
+    #expect(await host.client() == nil)
+    #expect(sshRuns() == 1)
+  }
+
   /// A stale relay (spec §3): the Mac's old connection still holds the process on the runner
   /// until the runner's sshd hangs it up. Its refusal of the new connection's attach is "still
   /// releasing" only for a process this Mac owns, and an attach after the old relay has gone

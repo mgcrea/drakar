@@ -4,8 +4,10 @@ import SwiftUI
 
 // MARK: - Settings
 
-/// The panes, and the order they sit in: General, Transcript, Theme, Attention, Updates,
-/// Licence, What's New, About.
+/// The panes, and the order they sit in: General, Transcript, Theme, Attention, Runner,
+/// Updates, Licence, What's New, About.
+///
+/// Runner follows the panes about how sessions behave: it says where they may run.
 ///
 /// Licence follows Updates: a key, the trial, and the Buy button while
 /// `LicenceLinks.isSelling`.
@@ -19,6 +21,7 @@ enum SettingsPane: String, SupportKitSettings.SettingsPane {
   case transcript
   case theme
   case attention
+  case runner
   case updates
   case licence
   case whatsNew
@@ -30,6 +33,7 @@ enum SettingsPane: String, SupportKitSettings.SettingsPane {
     case .transcript: "Transcript"
     case .theme: "Theme"
     case .attention: "Attention"
+    case .runner: "Runner"
     case .updates: "Updates"
     case .licence: "Licence"
     case .whatsNew: "What's New"
@@ -43,6 +47,7 @@ enum SettingsPane: String, SupportKitSettings.SettingsPane {
     case .transcript: "text.bubble"
     case .theme: "paintpalette"
     case .attention: "bell.badge"
+    case .runner: "macbook.and.imac"
     case .updates: "arrow.triangle.2.circlepath"
     case .licence: "key"
     case .whatsNew: "sparkles"
@@ -316,6 +321,7 @@ struct SettingsView: View {
       case .transcript: TranscriptPane()
       case .theme: ThemePane()
       case .attention: AttentionPane()
+      case .runner: RunnerSettingsPane()
       case .updates: UpdatesPane()
       case .licence: LicensePane()
       case .whatsNew: WhatsNewPane()

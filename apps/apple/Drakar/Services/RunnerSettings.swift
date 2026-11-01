@@ -9,7 +9,9 @@ struct RunnerSettings: Codable, Equatable {
   /// Anything `ssh` takes: a `~/.ssh/config` alias, `user@host`.
   var destination: String
   /// Drakar's bundle on the runner.
-  var drakarPath: String = "/Applications/Drakar.app"
+  var drakarPath: String = defaultDrakarPath
+
+  static let defaultDrakarPath = "/Applications/Drakar.app"
 
   static let key = "runner.settings"
 
