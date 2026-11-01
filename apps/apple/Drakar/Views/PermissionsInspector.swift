@@ -288,7 +288,8 @@ private struct RuleRow: View {
             .font(.body.monospaced())
         }
       }
-      .textSelection(.enabled)
+      // Not selectable: a selectable text's own menu (Cut, Paste, Font…) would take the
+      // right-click from the row's Remove Rule and Copy Rule.
       .frame(maxWidth: .infinity, alignment: .leading)
       Text(PermissionsInspector.sourceLabel(rule.source))
         .font(.caption)

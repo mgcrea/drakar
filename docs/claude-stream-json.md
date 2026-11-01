@@ -537,12 +537,16 @@ Drakar's Session › Open Plan (⌥⌘P), and the plan panel's "Open Plan File",
 refusal leave a notice in the conversation instead: "No plan in this session yet." or
 "Couldn't read the plan."
 
-- **Unverified: an edit to the plan file before approval.** The file opens editable. Whether
-  Claude reads back an edit made to it before the plan is approved (and so runs the edited
-  plan) has not been checked; it is the open question of the live check.
-- **Unverified: `path` and ExitPlanMode's `planFilePath` name the same file.** Both are under
-  the account's `plans/` ("Plans, todos and subagents"); that they agree for one session has
-  not been checked.
+Checked live in Drakar on 2026-11-01, 2.1.312, Opus 5.5:
+
+- **`path` is ExitPlanMode's `planFilePath`.** The file Claude wrote its plan to, the
+  `planFilePath` in its ExitPlanMode call, and `get_plan`'s `path` were the same
+  `~/.claude/plans/<slug>.md`.
+- **An edit to the plan file before approval reaches Claude, and may still be ignored.** The
+  approval's tool result ("User has approved your plan…") quotes the plan as the file holds
+  it at that moment, so a step added on disk was in what Claude received. Claude followed its
+  own version anyway and skipped the added step, in the one try made. Editing the plan file
+  is not a reliable way to change the plan; "keep planning" with feedback is.
 
 ## Prompts sent mid-turn, and the command list (verified 2026-10-06, 2.1.288)
 
