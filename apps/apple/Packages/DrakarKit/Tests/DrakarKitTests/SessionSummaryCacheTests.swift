@@ -48,7 +48,8 @@ struct SessionSummaryCacheTests {
     defer { try? FileManager.default.removeItem(at: home) }
     let cache = try staleTitleCache(for: file, account: account)
     let listed = try #require(SessionIndex.list(accounts: [account]).first).file
-    #expect(SessionIndex.summary(of: listed, account: account, cache: cache)?.title == "Cached title")
+    let summary = SessionIndex.summary(of: listed, account: account, cache: cache)
+    #expect(summary?.title == "Cached title")
   }
 
   @Test func readsOneFileAgainWhenItChanged() throws {
