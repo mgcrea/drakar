@@ -66,8 +66,10 @@ struct PermissionRulesProbeTests {
 
   @Test func anEarlyExitIsSaid() async throws {
     let claude = try standIn("read a\nexit 2")
+    // Well past the 20 s default: full app runs have stalled the main actor for ~50 s, long
+    // enough for the probe's own timer to say it took too long before the exit was read.
     let answer = await PermissionRulesProbe.run(
-      folder: folder, account: nil, executableOverride: claude)
+      folder: folder, account: nil, executableOverride: claude, timeout: .seconds(120))
     #expect(answer == .refused("Claude Code exited with status 2."))
   }
 
