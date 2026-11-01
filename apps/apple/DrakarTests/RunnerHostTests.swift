@@ -69,14 +69,23 @@ struct RunnerHostTests {
   /// An `ssh` that runs the relay as the runner's sshd would: this test host's binary, in the
   /// environment sshd gives a command, not the test host's, whose XCTest variables would have
   /// it load the tests as well.
+  /// Each run is a line in `runs`.
   private func relayingSSH() throws {
     let drakar = try #require(Bundle.main.executableURL).path(percentEncoded: false)
     try fakeSSH(
       """
+      echo run >> '\(runs.path(percentEncoded: false))'
       exec /usr/bin/env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin HOME="$HOME" USER="$USER" \
         LOGNAME="$LOGNAME" TMPDIR="$TMPDIR" '\(drakar)' --relay \
         --directory '\(directory.path(percentEncoded: false))' --defaults-suite '\(suite)'
       """)
+  }
+
+  private var runs: URL { root.appending(path: "ssh.runs") }
+
+  /// How many times the fake ssh ran.
+  private func sshRuns() -> Int {
+    ((try? String(contentsOf: runs, encoding: .utf8)) ?? "").split(separator: "\n").count
   }
 
   /// An `ssh` whose relay states `facts`, then says nothing more.
@@ -172,6 +181,14 @@ struct RunnerHostTests {
     #expect(
       RunnerConnection.arguments(spaced)[4]
         == "'/Users/me/Apps/Drakar Beta.app/Contents/MacOS/Drakar'")
+    // A leading `~/` is left for the runner's shell to expand.
+    var home = settings
+    home.drakarPath = "~/Applications/Drakar.app"
+    #expect(
+      RunnerConnection.arguments(home)[4] == "~/Applications/Drakar.app/Contents/MacOS/Drakar")
+    home.drakarPath = "~/My Apps/Drakar.app"
+    #expect(
+      RunnerConnection.arguments(home)[4] == "~/'My Apps/Drakar.app/Contents/MacOS/Drakar'")
   }
 
   @Test func aRunnerHostConnectsThroughSSH() async throws {
@@ -203,18 +220,25 @@ struct RunnerHostTests {
     #expect(host.facts == nil)
   }
 
+  /// The Mac that is behind is named: the runner when it is older, this Mac when it is newer.
   @Test func aRelayOfAnotherVersionAsksForAnUpdate() async throws {
     defer { finish() }
-    try statingSSH(facts(relay: 2))
-    let newer = SessionHost(endpoint: .runner(settings))
-    #expect(await newer.client() == nil)
-    #expect(newer.failure?.message == "Update Drakar on Studio")
-
+    func failure(stating facts: RunnerFacts) async throws -> String? {
+      try statingSSH(facts)
+      let host = SessionHost(endpoint: .runner(settings))
+      #expect(await host.client() == nil)
+      return host.failure?.message
+    }
+    let relay = RunnerFacts.relayVersion
+    #expect(try await failure(stating: facts(relay: relay + 1)) == "Update Drakar on this Mac")
+    #expect(try await failure(stating: facts(relay: relay - 1)) == "Update Drakar on Studio")
     // A relay of ours, whose Drakar speaks none of our host majors.
-    try statingSSH(facts(majors: [HostWire.major + 1]))
-    let other = SessionHost(endpoint: .runner(settings))
-    #expect(await other.client() == nil)
-    #expect(other.failure?.message == "Update Drakar on Studio")
+    #expect(
+      try await failure(stating: facts(majors: [HostWire.major + 1]))
+        == "Update Drakar on this Mac")
+    #expect(
+      try await failure(stating: facts(majors: [HostWire.major - 1]))
+        == "Update Drakar on Studio")
   }
 
   @Test func aSilentSSHGivesUp() async throws {
@@ -309,6 +333,36 @@ struct RunnerHostTests {
     #expect(await eventually { await attached(id, on: watcher).map { $0 != relay } ?? false })
     session.send("quick again")
     #expect(await eventually { sent("quick again") == 1 })
+  }
+
+  /// Stopped while it waits out a stale relay, a session asks the runner nothing more: no
+  /// listing, so no ssh started for one once the connection has gone.
+  @Test func aStoppedSessionStopsWaitingOnTheRunner() async throws {
+    try relayingSSH()
+    let helper = try #require(SessionHost.startHelper(in: directory))
+    defer { finish([helper]) }
+    let host = SessionHost(endpoint: .runner(settings))
+    host.ownsProcess = { _ in true }
+    let session = try await startedSession(on: host)
+    let id = try #require(session.hostID)
+    let watcher = try await watcher()
+    defer { watcher.close() }
+    let relay = try #require(await attached(id, on: watcher))
+    kill(relay, SIGSTOP)
+    defer { kill(relay, SIGKILL) }
+    await host.client()?.close()
+    #expect(await eventually { session.isReconnecting })
+    try await Task.sleep(for: .seconds(1))
+    #expect(session.isReconnecting)
+
+    session.stop()
+    // What the stop itself asks of the host is done before its connection goes.
+    try await Task.sleep(for: .milliseconds(500))
+    await host.client()?.close()
+    let before = sshRuns()
+    // Longer than the loop's longest wait, twice over.
+    try await Task.sleep(for: .seconds(4.5))
+    #expect(sshRuns() == before)
   }
 
   /// A process this Mac does not own, refused as attached to another app, is lost as it

@@ -315,20 +315,25 @@ import Testing
     _ = host.core.handle(.attach(id: id, from: 0), from: other)
 
     let again = try await connected(host)
+    let taken = Mutex(0)
     let refused = try await within {
       var seen: [AgentProcess.Event] = []
-      for await event in process.reattach(on: again) { seen.append(event) }
+      for await event in process.reattach(on: again, attached: { taken.withLock { $0 += 1 } }) {
+        seen.append(event)
+      }
       return seen
     }
     #expect(refused.last == .exited(status: -1, remainder: Data()))
     #expect(!process.isRunning)
+    #expect(taken.withLock { $0 } == 0)
 
     host.core.disconnected(other)
-    let live = process.reattach(on: again)
+    let live = process.reattach(on: again, attached: { taken.withLock { $0 += 1 } })
     #expect(process.isRunning)
     #expect(process.startFailure == nil)
     try process.send(line: Data("two\n".utf8))
     #expect(try await lines(of: live, through: "two") == [.invalid("two")])
+    #expect(taken.withLock { $0 } == 1)
     process.terminate()
   }
 

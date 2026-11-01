@@ -121,19 +121,22 @@ enum RunnerConnection {
       client.close()
       // No hello: the relay most likely left, saying why, and ssh with it.
       throw await failure(
-        welcome == nil
-          ? String(localized: "Drakar's session host on \(name) did not answer.")
-          : update(name), ending: welcome == nil)
+        welcome.map { update(name, runnerIsNewer: $0.protocol > HostWire.major) }
+          ?? String(localized: "Drakar's session host on \(name) did not answer."),
+        ending: welcome == nil)
     }
     return (client, facts)
   }
 
   /// `ssh -T -o BatchMode=yes <destination> <drakarPath>/Contents/MacOS/Drakar --relay`. ssh
   /// hands the command to the runner's shell as one line, so a path that shell would split is
-  /// quoted for it.
+  /// quoted for it, all but a leading `~/`, which the shell expands to the runner's home.
   static func arguments(_ settings: RunnerSettings) -> [String] {
     let relay = settings.drakarPath + "/Contents/MacOS/Drakar"
-    return ["-T", "-o", "BatchMode=yes", settings.destination, quotedForShell(relay), "--relay"]
+    let quoted =
+      relay.hasPrefix("~/")
+      ? "~/" + quotedForShell(String(relay.dropFirst(2))) : quotedForShell(relay)
+    return ["-T", "-o", "BatchMode=yes", settings.destination, quoted, "--relay"]
   }
 
   private static func quotedForShell(_ word: String) -> String {
@@ -153,14 +156,27 @@ enum RunnerConnection {
         message: String(localized: "\(name) answered with something other than Drakar: “\(start)”"),
         stderr: "")
     }
-    guard stated.relay == RunnerFacts.relayVersion, let facts = try? RunnerFacts.parse(line),
-      facts.hostMajors.contains(HostWire.major)
-    else { throw RunnerFailure(message: update(name), stderr: "") }
+    guard stated.relay == RunnerFacts.relayVersion else {
+      throw RunnerFailure(
+        message: update(name, runnerIsNewer: stated.relay > RunnerFacts.relayVersion), stderr: "")
+    }
+    // A relay of our version that states facts we cannot read is not the build it says.
+    guard let facts = try? RunnerFacts.parse(line) else {
+      throw RunnerFailure(message: update(name, runnerIsNewer: false), stderr: "")
+    }
+    guard facts.hostMajors.contains(HostWire.major) else {
+      // Newer only when every major it speaks is above ours; older, or none, it is behind.
+      let newer = !facts.hostMajors.isEmpty && facts.hostMajors.allSatisfy { $0 > HostWire.major }
+      throw RunnerFailure(message: update(name, runnerIsNewer: newer), stderr: "")
+    }
     return facts
   }
 
-  private static func update(_ name: String) -> String {
-    String(localized: "Update Drakar on \(name)")
+  /// The Mac that is behind is the one to update (spec §3).
+  private static func update(_ name: String, runnerIsNewer: Bool) -> String {
+    runnerIsNewer
+      ? String(localized: "Update Drakar on this Mac")
+      : String(localized: "Update Drakar on \(name)")
   }
 
   private static func cannotStart(_ error: Int32) -> String {

@@ -150,6 +150,8 @@ final class AgentSession {
   @ObservationIgnored private(set) var process: (any ProcessTransport)? {
     didSet {
       guard process !== oldValue else { return }
+      // A refusal of the next one's attach is no stale relay of this one's.
+      releasingUntil = nil
       // A new process has said nothing about rewinding yet.
       rewindNotEnabled = false
       // What the one before was asked will not be answered.
@@ -188,7 +190,8 @@ final class AgentSession {
   private(set) var isReconnecting = false
   /// Until when a runner's refusal to attach the process again, as attached to another app,
   /// is taken for this Mac's own stale relay still releasing it (remote sessions spec §3).
-  /// Set as a connection to a runner is lost.
+  /// Set as a connection to a runner is lost; cleared once the host takes the attach, or the
+  /// process changes.
   @ObservationIgnored private var releasingUntil: ContinuousClock.Instant?
   /// How long a stale relay may hold the process: the runner's sshd hangs it up within its
   /// `ClientAliveInterval 30` × `ClientAliveCountMax 3`, with room to spare.
@@ -1274,7 +1277,7 @@ final class AgentSession {
       }
       // The attach sends stderr's tail again, which holds all of this and more.
       self.diagnostics = ""
-      self.follow(hosted.reattach(on: client), of: hosted)
+      self.follow(hosted.reattach(on: client, attached: self.reattached(hosted)), of: hosted)
     }
   }
 
@@ -1298,6 +1301,8 @@ final class AgentSession {
       var wait = SessionHost.firstWait
       while releasing, ContinuousClock.now < deadline {
         try? await Task.sleep(for: min(wait, deadline - .now))
+        // Stopped, or another process since: nothing more is asked of the runner for it.
+        guard let self, self.stopCount == stops, self.process === hosted else { return }
         wait = min(wait * 2, SessionHost.longestWait)
         releasing = await sessionHost.reattachRefused(id)
       }
@@ -1311,9 +1316,19 @@ final class AgentSession {
         return self.fail(Self.message(forHostFailure: failure))
       }
       self.diagnostics = ""
-      self.follow(hosted.reattach(on: client), of: hosted)
+      self.follow(hosted.reattach(on: client, attached: self.reattached(hosted)), of: hosted)
     }
     return true
+  }
+
+  /// What a reattach of `hosted` is told once the host has taken it: no stale relay holds it.
+  private func reattached(_ hosted: HostedProcess) -> @Sendable () -> Void {
+    { [weak self] in
+      Task { @MainActor in
+        guard let self, self.process === hosted else { return }
+        self.releasingUntil = nil
+      }
+    }
   }
 
   private func receive(_ line: AgentProcess.Line, at time: Date) {

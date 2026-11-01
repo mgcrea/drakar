@@ -47,6 +47,8 @@ public final class HostedProcess: ProcessTransport, @unchecked Sendable {
     var forgets = false
     /// Requests made while the host is still spawning, sent in order once it has.
     var waiting: [@Sendable (String) -> HostRequest] = []
+    /// Told once, when the host has taken the attach now and sent what it owed.
+    var attached: (@Sendable () -> Void)?
     var pump: Task<Void, Never>?
   }
 
@@ -204,14 +206,18 @@ public final class HostedProcess: ProcessTransport, @unchecked Sendable {
   /// Attaches again on `client`, the connection the events came on having ended: what the
   /// process did meanwhile and after, each line once. Requests go on `client` from now on.
   /// After a refused attach (`Failure.lost`), which ended the events but not the process, it
-  /// is tried again, and runs until it says otherwise.
-  public func reattach(on client: HostClient) -> AsyncStream<AgentProcess.Event> {
+  /// is tried again, and runs until it says otherwise. `attached` is told once the host has
+  /// taken it and caught up, which a refusal never is.
+  public func reattach(
+    on client: HostClient, attached: (@Sendable () -> Void)? = nil
+  ) -> AsyncStream<AgentProcess.Event> {
     let (events, sink) = AsyncStream.makeStream(of: AgentProcess.Event.self)
     let (id, from, before) = state.withLock { state in
       if case .lost? = state.startFailure as? Failure, !state.exited {
         state.startFailure = nil
         state.running = true
       }
+      state.attached = attached
       state.client = client
       state.events = events
       state.sink = sink
@@ -331,7 +337,12 @@ public final class HostedProcess: ProcessTransport, @unchecked Sendable {
             sink.yield(event)
           }
         case .caughtUp(_, let offset):
-          state.withLock { $0.caughtUp = max($0.caughtUp, offset) }
+          let attached = state.withLock { state in
+            state.caughtUp = max(state.caughtUp, offset)
+            defer { state.attached = nil }
+            return state.attached
+          }
+          attached?()
           replaying?.resume(with: .success((backlog, offset)))
           replaying = nil
         case .stderr(_, let text):
