@@ -203,9 +203,15 @@ public final class HostedProcess: ProcessTransport, @unchecked Sendable {
 
   /// Attaches again on `client`, the connection the events came on having ended: what the
   /// process did meanwhile and after, each line once. Requests go on `client` from now on.
+  /// After a refused attach (`Failure.lost`), which ended the events but not the process, it
+  /// is tried again, and runs until it says otherwise.
   public func reattach(on client: HostClient) -> AsyncStream<AgentProcess.Event> {
     let (events, sink) = AsyncStream.makeStream(of: AgentProcess.Event.self)
     let (id, from, before) = state.withLock { state in
+      if case .lost? = state.startFailure as? Failure, !state.exited {
+        state.startFailure = nil
+        state.running = true
+      }
       state.client = client
       state.events = events
       state.sink = sink

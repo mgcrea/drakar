@@ -298,6 +298,40 @@ import Testing
     }
   }
 
+  /// A reattach refused while another app holds the process ends the events, not the process:
+  /// tried again once that app has let it go, it carries on.
+  @Test func aRefusedReattachCanBeTriedAgain() async throws {
+    let host = try TestHost()
+    defer { host.close() }
+    let client = try await connected(host)
+    let process = HostedProcess(client: client, configuration: host.cat(), meta: Data())
+    let events = try process.start()
+    try process.send(line: Data("one\n".utf8))
+    #expect(try await lines(of: events, through: "one") == [.invalid("one")])
+    try host.restart()
+    try await within { for await _ in events {} }
+    let id = try #require(process.id)
+    let other = host.core.connected(pid: 0)
+    _ = host.core.handle(.attach(id: id, from: 0), from: other)
+
+    let again = try await connected(host)
+    let refused = try await within {
+      var seen: [AgentProcess.Event] = []
+      for await event in process.reattach(on: again) { seen.append(event) }
+      return seen
+    }
+    #expect(refused.last == .exited(status: -1, remainder: Data()))
+    #expect(!process.isRunning)
+
+    host.core.disconnected(other)
+    let live = process.reattach(on: again)
+    #expect(process.isRunning)
+    #expect(process.startFailure == nil)
+    try process.send(line: Data("two\n".utf8))
+    #expect(try await lines(of: live, through: "two") == [.invalid("two")])
+    process.terminate()
+  }
+
   /// A host that sends part of a log and then nothing fails the replay once it has been
   /// quiet for the limit, and the process is let go of.
   @Test func aReplayTheHostStopsSendingFails() async throws {

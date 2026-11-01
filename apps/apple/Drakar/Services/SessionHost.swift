@@ -4,14 +4,31 @@ import Synchronization
 
 /// The app's way to the session host (spec §1, §5): finds the host on its socket, starts the
 /// bundled `DrakarHost` when nothing answers there, and keeps the one connection every
-/// hosted process shares.
+/// hosted process shares. A runner's host (remote sessions spec §3) is reached the same way
+/// once connected, through ssh and the runner's relay instead of a socket, and is never
+/// started from here.
 ///
 /// Off under tests unless a test names a directory, so no test reaches the person's host or
 /// leaves one running.
 @MainActor final class SessionHost {
+  enum Endpoint: Equatable {
+    /// This Mac's host.
+    case local
+    /// The host of the runner these settings reach.
+    case runner(RunnerSettings)
+  }
+
   /// Off under tests whatever `testDirectory` says: a suite running beside a test's host
   /// must not reach it through its sessions, nor start one nobody stops.
-  static let shared = SessionHost(cooldown: .seconds(30), helper: helper, underTests: nil)
+  static let shared = SessionHost(
+    endpoint: .local, cooldown: .seconds(30), helper: helper, underTests: nil)
+
+  /// The configured runner's host, made for `RunnerSettings.current`; Settings › Runner puts
+  /// a new one here when the runner changes. None under tests, which never reach the person's
+  /// runner.
+  static var runner: SessionHost? =
+    ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+    ? nil : RunnerSettings.current.map { SessionHost(endpoint: .runner($0)) }
 
   /// Tests only: the directory a `SessionHost()` made under XCTest uses, read as it is made,
   /// instead of none.
@@ -46,6 +63,15 @@ import Synchronization
   /// Tests only: the helper this instance started, if it started one.
   private(set) var started: pid_t?
 
+  let endpoint: Endpoint
+  var isRunner: Bool { endpoint != .local }
+  /// What the runner's relay stated on the last connection made.
+  private(set) var facts: RunnerFacts?
+  /// Why the last attempt to reach the runner failed; nil once one succeeds.
+  private(set) var failure: RunnerFailure?
+  /// Whether a process the runner holds is this Mac's (its `owner`), for `reattachRefused`.
+  var ownsProcess: (HeldProcess) -> Bool = { _ in false }
+
   private let helper: URL
   private let cooldown: Duration
   /// `testDirectory` when this one was made.
@@ -77,7 +103,8 @@ import Synchronization
   }
 
   private enum Outcome {
-    case connected(HostClient, pid: Int32)
+    /// `pid` is the host's, nil for a runner's, which is no process of this Mac.
+    case connected(HostClient, pid: Int32?)
     /// Spawned, or a socket took the connection, but no hello came in time.
     case noAnswer
     case cannotStart
@@ -85,19 +112,27 @@ import Synchronization
 
   /// The first wait after starting the helper, doubled up to `longestWait`; `client()` gives
   /// up after `patience`. A hello gets `helloLimit`, so a host that takes the connection but
-  /// never answers holds nothing up for long.
-  private static let firstWait = Duration.milliseconds(50)
-  private static let longestWait = Duration.seconds(2)
+  /// never answers holds nothing up for long. `reconnect()`, a session waiting out a
+  /// runner's stale relay, and the relay waiting for its host back off the same way.
+  nonisolated static let firstWait = Duration.milliseconds(50)
+  nonisolated static let longestWait = Duration.seconds(2)
   private static let patience = Duration.seconds(5)
   private static let helloLimit = Duration.seconds(2)
 
   /// `cooldown`: how long after a host that did not answer `client()` gives nil at once, so
-  /// a slow start costs one wait, not one per session. `helper` is for tests.
-  convenience init(cooldown: Duration = .seconds(30), helper: URL = SessionHost.helper) {
-    self.init(cooldown: cooldown, helper: helper, underTests: Self.testDirectory)
+  /// a slow start costs one wait, not one per session. `helper` is for tests. A runner's is
+  /// reached through `RunnerSettings.sshExecutable`, `testDirectory` or not: a test gives it
+  /// a fake ssh that names the test's host directory to the relay.
+  convenience init(
+    endpoint: Endpoint = .local, cooldown: Duration = .seconds(30),
+    helper: URL = SessionHost.helper
+  ) {
+    self.init(
+      endpoint: endpoint, cooldown: cooldown, helper: helper, underTests: Self.testDirectory)
   }
 
-  private init(cooldown: Duration, helper: URL, underTests: URL?) {
+  private init(endpoint: Endpoint, cooldown: Duration, helper: URL, underTests: URL?) {
+    self.endpoint = endpoint
     self.cooldown = cooldown
     self.helper = helper
     self.underTests = underTests
@@ -105,7 +140,8 @@ import Synchronization
 
   /// The connection to the host, starting it when nothing answers. Nil when there is no host
   /// to have now: under tests without `testDirectory`, while cooling down, or for good once
-  /// `cannotStart`.
+  /// `cannotStart`. A runner's is never started from here, and `failure` says why it could
+  /// not be reached.
   func client() async -> HostClient? {
     take(await connected())
   }
@@ -125,9 +161,9 @@ import Synchronization
       taken = false
     }
     if let connecting { return Self.client(of: await connecting.value) }
-    guard !cannotStart, let directory else { return nil }
+    guard !cannotStart, isReachable else { return nil }
     if let quietUntil, ContinuousClock.now < quietUntil { return nil }
-    let task = Task { await connect(in: directory) }
+    let task = Task { await connect() }
     connecting = task
     let outcome = await task.value
     connecting = nil
@@ -158,7 +194,7 @@ import Synchronization
       var wait = Self.firstWait
       while true {
         if let client = await connected() { return client }
-        guard !cannotStart, directory != nil else { return nil }
+        guard !cannotStart, isReachable else { return nil }
         try? await Task.sleep(for: wait)
         wait = min(wait * 2, Self.longestWait)
       }
@@ -194,7 +230,7 @@ import Synchronization
     var wait = Self.firstWait
     while !Task.isCancelled {
       if await connected() != nil { return true }
-      guard !cannotStart, directory != nil else { return false }
+      guard !cannotStart, isReachable else { return false }
       do { try await Task.sleep(for: wait) } catch { return false }
       wait = min(wait * 2, Self.longestWait)
     }
@@ -241,14 +277,16 @@ import Synchronization
 
   /// What the host holds, without starting one: with no socket there is no host, and nothing
   /// held. For a launch or a window opening, which have nothing to ask a host that isn't up.
+  /// A runner's is never started from here, so it is asked as it is.
   func heldIfRunning() async -> [HeldProcess] {
-    guard connection != nil || hasSocket else { return [] }
+    guard isRunner || connection != nil || hasSocket else { return [] }
     return await held()
   }
 
   /// What hosts of an older protocol hold (spec §5): each socket of a lower major in the
   /// directory is said hello to and listed, and nothing more is ever asked of it. All of it
-  /// is held elsewhere for this app, attached to an app or not.
+  /// is held elsewhere for this app, attached to an app or not. None on a runner, whose
+  /// relay reaches its host of our major alone.
   func heldByOlderHosts() async -> [HeldProcess] {
     guard let directory else { return [] }
     let version = Self.appVersion
@@ -289,7 +327,7 @@ import Synchronization
   }
 
   /// The registry is read again without what our host runs for this app; only for the app's
-  /// own host, not a test's.
+  /// own host, not a test's nor a runner's.
   private func hostedChanged() {
     if self === Self.shared { SessionMonitor.shared.hostedChanged() }
   }
@@ -309,11 +347,52 @@ import Synchronization
     return FileManager.default.fileExists(atPath: socket.path(percentEncoded: false))
   }
 
+  /// Nil for a runner, whose host is in a directory of the runner's.
   private var directory: URL? {
+    guard !isRunner else { return nil }
     if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil {
       return underTests
     }
     return Self.hostDirectory
+  }
+
+  /// Somewhere to connect to: a runner, or a host directory.
+  private var isReachable: Bool { isRunner || directory != nil }
+
+  private func connect() async -> Outcome {
+    switch endpoint {
+    case .local:
+      guard let directory else { return .cannotStart }
+      return await connect(in: directory)
+    case .runner(let settings):
+      do {
+        let (client, facts) = try await RunnerConnection.open(settings)
+        self.facts = facts
+        failure = nil
+        return .connected(client, pid: nil)
+      } catch {
+        // Tried again after the cooldown: the network, the runner's login or its Drakar may
+        // all come back.
+        failure = error
+        return .noAnswer
+      }
+    }
+  }
+
+  /// Asked once the host refused to attach `id` again: true while that refusal is this Mac's
+  /// own old connection, whose relay on the runner holds the process until the runner's sshd
+  /// hangs it up (spec §3, "A stale relay"). Only for a runner's process still running there,
+  /// attached to an app, and that `ownsProcess` says is this Mac's; never on a local host.
+  func reattachRefused(_ id: String) async -> Bool {
+    guard isRunner, let held = await listed()?.first(where: { $0.id == id }) else {
+      return false
+    }
+    return held.running && held.attachedApp != nil && ownsProcess(held)
+  }
+
+  /// The host's refusal of an attach to a process another app holds.
+  nonisolated static func isAttachedElsewhere(_ reason: String) -> Bool {
+    reason.hasSuffix(" is attached to another app")
   }
 
   private func connect(in directory: URL) async -> Outcome {
@@ -352,7 +431,7 @@ import Synchronization
     return (client, welcome.pid)
   }
 
-  private static var appVersion: String {
+  static var appVersion: String {
     Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
   }
 
@@ -378,7 +457,7 @@ import Synchronization
   }
 
   /// `body`'s result, or nil once `limit` has gone by or it throws.
-  private static func within<T: Sendable>(
+  static func within<T: Sendable>(
     _ limit: Duration, _ body: @escaping @Sendable () async throws -> T
   ) async -> T? {
     await withTaskGroup(of: T?.self) { group in

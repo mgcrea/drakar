@@ -186,6 +186,13 @@ final class AgentSession {
   /// The connection to the session host ended under the running process: nothing is sent
   /// until a new one is up and the process attached again (spec §5).
   private(set) var isReconnecting = false
+  /// Until when a runner's refusal to attach the process again, as attached to another app,
+  /// is taken for this Mac's own stale relay still releasing it (remote sessions spec §3).
+  /// Set as a connection to a runner is lost.
+  @ObservationIgnored private var releasingUntil: ContinuousClock.Instant?
+  /// How long a stale relay may hold the process: the runner's sshd hangs it up within its
+  /// `ClientAliveInterval 30` × `ClientAliveCountMax 3`, with room to spare.
+  private static let releasingLimit = Duration.seconds(180)
   /// The session host may hold this session's process, which the window is taking back:
   /// nothing is sent and no process starts until it has, or one would run beside it.
   var waitsForHost = false
@@ -1219,6 +1226,7 @@ final class AgentSession {
     case .exited(let status, _):
       if let hosted = process as? HostedProcess {
         if let failure = hosted.startFailure {
+          if waitsOutStaleRelay(hosted, refused: failure) { return }
           process = nil
           return fail(Self.message(forHostFailure: failure))
         }
@@ -1253,6 +1261,7 @@ final class AgentSession {
   private func connectionLost(_ hosted: HostedProcess) {
     guard process === hosted, hosted.isRunning else { return }
     isReconnecting = true
+    releasingUntil = sessionHost.isRunner ? .now + Self.releasingLimit : nil
     let stops = stopCount
     Task { [weak self, sessionHost] in
       let client = await sessionHost.reconnect()
@@ -1267,6 +1276,44 @@ final class AgentSession {
       self.diagnostics = ""
       self.follow(hosted.reattach(on: client), of: hosted)
     }
+  }
+
+  /// A reattach a runner refused because another app holds the process, when that app is
+  /// this Mac's own old connection: its relay holds the process until the runner's sshd hangs
+  /// it up (spec §3, "A stale relay"). The session shows reconnecting, not lost, and the
+  /// attach is tried again with `reconnect()`'s backoff once the host no longer says so, until
+  /// `releasingUntil`. False for any other refusal, or a process this Mac does not own, which
+  /// are lost as they always were.
+  private func waitsOutStaleRelay(_ hosted: HostedProcess, refused failure: any Error) -> Bool {
+    guard let deadline = releasingUntil, ContinuousClock.now < deadline,
+      case HostedProcess.Failure.lost(let reason) = failure,
+      SessionHost.isAttachedElsewhere(reason), let id = hosted.id
+    else { return false }
+    isReconnecting = true
+    let stops = stopCount
+    Task { [weak self, sessionHost] in
+      // Asked first, so a process this Mac does not own is lost at once, as before.
+      let wasReleasing = await sessionHost.reattachRefused(id)
+      var releasing = wasReleasing
+      var wait = SessionHost.firstWait
+      while releasing, ContinuousClock.now < deadline {
+        try? await Task.sleep(for: min(wait, deadline - .now))
+        wait = min(wait * 2, SessionHost.longestWait)
+        releasing = await sessionHost.reattachRefused(id)
+      }
+      guard let self, self.stopCount == stops, self.process === hosted else { return }
+      // Let go meanwhile: attached again. Refused again, this comes back here.
+      let client = wasReleasing && !releasing ? await sessionHost.reconnect() : nil
+      guard self.stopCount == stops, self.process === hosted else { return }
+      self.isReconnecting = false
+      guard let client else {
+        self.process = nil
+        return self.fail(Self.message(forHostFailure: failure))
+      }
+      self.diagnostics = ""
+      self.follow(hosted.reattach(on: client), of: hosted)
+    }
+    return true
   }
 
   private func receive(_ line: AgentProcess.Line, at time: Date) {

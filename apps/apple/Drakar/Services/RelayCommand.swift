@@ -46,9 +46,6 @@ nonisolated enum RelayCommand {
 
   /// How long the host has to answer, the app's launch included (spec §2).
   static let patience = Duration.seconds(15)
-  /// `SessionHost`'s backoff: the first wait, doubled up to the longest.
-  private static let firstWait = Duration.milliseconds(50)
-  private static let longestWait = Duration.seconds(2)
   /// Each `claude --version`: the Mac waits ten seconds for the facts, and the login shell
   /// may already have taken five of them.
   private static let versionLimit = Duration.seconds(3)
@@ -117,7 +114,7 @@ nonisolated enum RelayCommand {
   /// would live in sshd's context, without the login Keychain.
   private static func connect(to socket: URL, launching: Bool) async -> Int32? {
     let deadline = ContinuousClock.now + patience
-    var wait = firstWait
+    var wait = SessionHost.firstWait
     var launched = !launching
     while true {
       if let fd = try? Relay.connectedSocket(to: socket) { return fd }
@@ -128,7 +125,7 @@ nonisolated enum RelayCommand {
       let left = deadline - .now
       guard left > .zero else { return nil }
       try? await Task.sleep(for: min(wait, left))
-      wait = min(wait * 2, longestWait)
+      wait = min(wait * 2, SessionHost.longestWait)
     }
   }
 
