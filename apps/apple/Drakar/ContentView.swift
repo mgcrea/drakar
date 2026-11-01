@@ -152,6 +152,12 @@ struct ContentView: View {
       WindowTabs.openWindow = WindowTabs.openWindow ?? openWindow
       HeldWindows.shared.windowAppeared()
       openFromLaunchArguments()
+      // Folders handed over before any window was up (`drakar <folder>` launching Drakar):
+      // a home window becomes the first, and the rest open beside it.
+      if project == nil, route?.folder == nil, let folder = FolderIntake.shared.takeFirst() {
+        enter(folder)
+      }
+      FolderIntake.shared.flush { WindowTabs.open(.project($0), asTab: true) }
     }
   }
 

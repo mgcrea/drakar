@@ -9,6 +9,25 @@
 
 	     No ITSAppUsesNonExemptEncryption: that answers TestFlight's export-compliance
 	     question, and a Developer ID app never goes through TestFlight. -->
+	<!-- Folders, so `open -a Drakar <folder>` (what the `drakar` command runs) and a
+	     folder dropped on the Dock icon reach AppDelegate's application(_:open:).
+	     Alternate: Drakar never becomes the Finder's default for opening a folder. -->
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>Folder</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>public.folder</string>
+			</array>
+		</dict>
+	</array>
+
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.developer-tools</string>
 
