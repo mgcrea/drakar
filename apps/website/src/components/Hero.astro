@@ -4,9 +4,11 @@
  * thing being sold is a wide window, and a drawing of it at half the page width
  * would be too small to read.
  *
- * The headline says what Drakar is before what sets it apart: "Your" carries the
- * 2026-10-21 competitive brief's one claim the field's other clients cannot make,
- * and "one Mac window" the many sessions and accounts. The subhead explains "Your".
+ * The headline speaks to the reader Drakar was built for: someone who opens VS Code for
+ * the Claude Code extension, not to edit. The subhead gives the reasons to leave, each
+ * one checkable: the memory figure is docs/marketing/weight-2026-11-01.md (148 MiB
+ * against 875 MiB; launch time was a tie, so it is not claimed), then the agent
+ * features, then the claim no other client makes: your own claude and codex.
  */
 import { APP_VERSION, DOWNLOAD, PRICING, TRIAL } from "../config";
 import AppleGlyph from "./AppleGlyph.astro";
@@ -38,14 +40,15 @@ import Button from "./Button.astro";
     <h1
       class="m-0 max-w-[17ch] font-display text-[clamp(40px,6.4vw,76px)] leading-[1.0] font-semibold tracking-[-0.048em] text-balance"
     >
-      Your Claude Code and Codex, <span class="text-plate">in one Mac window.</span>
+      Close VS Code. <span class="text-plate">Keep Claude Code.</span>
     </h1>
 
     <p class="m-0 max-w-[60ch] text-[17px] leading-[1.6] text-pretty text-fg-dim">
-      Drakar runs the <code class="font-mono text-[0.92em] text-fg">claude</code> and
-      <code class="font-mono text-[0.92em] text-fg">codex</code> already on your Mac, on your own
-      subscription, and shows everything they do: the conversation, the tool calls, the permission
-      prompts and the diffs, with an editor beside them. Nothing to import, nothing bundled.
+      Everything you opened VS Code for, in a native window that uses a sixth of the memory. Run
+      sessions side by side across your accounts, send one prompt to all of them, or start a skill in
+      every subfolder. On the <code class="font-mono text-[0.92em] text-fg">claude</code> and
+      <code class="font-mono text-[0.92em] text-fg">codex</code> already on your Mac, and your own
+      subscription.
     </p>
 
     <div class="flex w-full flex-col items-center justify-center gap-3 pt-1 sm:w-auto sm:flex-row">
