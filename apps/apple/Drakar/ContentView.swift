@@ -61,7 +61,9 @@ struct ContentView: View {
             WindowCloseGuard.install(
               on: window, for: workspace,
               running: { [weak project] in project?.stoppedByClosing ?? 0 })
-            if let next = ReopenedWindows.shared.arrived(window, folder: project.folder) {
+            if let next = ReopenedWindows.shared.arrived(
+              window, folder: project.folder, runner: project.runner)
+            {
               WindowTabs.open(next, asTab: false)
             }
           }
@@ -85,7 +87,7 @@ struct ContentView: View {
           StoredProjectWriter(project: project) { stored in
             storedProject =
               (try? String(decoding: JSONEncoder().encode(stored), as: UTF8.self)) ?? ""
-            ProjectMemory.remember(stored, for: project.folder)
+            ProjectMemory.remember(stored, for: project.folder, runner: project.runner)
           })
       } else {
         HomeView(pick: pick, enter: enter)
@@ -135,7 +137,7 @@ struct ContentView: View {
     // because the title bar does not truncate: a long subtitle widened the detail column
     // past the window and pushed the sidebar off its leading edge.
     .navigationTitle(project?.folder.lastPathComponent ?? String(localized: "Projects"))
-    .navigationSubtitle(project.map { Self.shortened($0.folder) } ?? "")
+    .navigationSubtitle(project.map(Self.subtitle) ?? "")
     .onChange(of: route, initial: true) { open(route) }
     .onDisappear {
       // The window is gone: its sessions at work carry on in the session host, for the
@@ -179,23 +181,30 @@ struct ContentView: View {
   }
 
   /// The project for `route`, restored the first time from scene storage, or from what the
-  /// app remembers of the folder when the window comes back without it.
+  /// app remembers of the folder when the window comes back without it. A runner's folder is
+  /// none of the projects home lists, which are this Mac's.
   private func open(_ route: WindowRoute?) {
-    guard let folder = route?.folder else { return }
-    ProjectList.shared.track(folder)
-    if project?.folder.standardizedFileURL != folder.standardizedFileURL {
+    guard let route, let folder = route.folder else { return }
+    let runner = route.runner
+    if runner == nil { ProjectList.shared.track(folder) }
+    if project?.folder.standardizedFileURL != folder.standardizedFileURL
+      || project?.runner != runner
+    {
       let stored =
         (try? JSONDecoder().decode(StoredProject.self, from: Data(storedProject.utf8)))
-        ?? ProjectMemory.stored(for: folder)
-      let project = Project(folder: folder, restoring: stored)
+        ?? ProjectMemory.stored(for: folder, runner: runner)
+      let project = Project(folder: folder, runner: runner, restoring: stored)
       self.project = project
       OpenSessions.shared.register(project, window: windowID)
       // What the session host kept of the window's sessions since the last launch.
       project.takeBackHeld()
     }
     guard let project else { return }
-    for target in OpenSessions.shared.takePending(for: folder.path(percentEncoded: false)) {
-      project.attach(target)
+    // What the session picker sent is this Mac's.
+    if runner == nil {
+      for target in OpenSessions.shared.takePending(for: folder.path(percentEncoded: false)) {
+        project.attach(target)
+      }
     }
     if project.sessions.isEmpty { project.newSession() }
   }
@@ -244,8 +253,7 @@ struct ContentView: View {
 
   /// A project clicked on home: its open window comes forward, or this one becomes it.
   private func enter(_ folder: URL) {
-    let path = ProjectPath.normalize(folder)
-    if let window = OpenSessions.shared.window(forFolder: path) {
+    if let window = OpenSessions.shared.window(for: .project(folder)) {
       window.makeKeyAndOrderFront(nil)
       return
     }
@@ -271,9 +279,7 @@ struct ContentView: View {
   /// with the sessions attached, this picker window closing; or this window becoming it.
   private func show(_ next: WindowRoute, attaching targets: [ResumeTarget]) {
     guard case .project(let folder) = next else { return }
-    if let owner = OpenSessions.shared.projects.values.first(where: {
-      ProjectPath.normalize($0.folder) == folder
-    }) {
+    if let owner = OpenSessions.shared.project(for: next) {
       for target in targets { owner.attach(target) }
       owner.workspace.window?.makeKeyAndOrderFront(nil)
       dismiss()  // this picker window, with or without a route
@@ -283,10 +289,17 @@ struct ContentView: View {
     route = next
   }
 
+  /// The folder's path, shortened; for a runner's project, followed by the runner it is on,
+  /// and not written against this Mac's home, which is not the runner's.
+  static func subtitle(_ project: Project) -> String {
+    guard let name = project.runnerName else { return shortened(project.folder) }
+    return String(localized: "\(shortened(project.folder, abbreviating: false)) on \(name)")
+  }
+
   /// The folder's path as `abbreviated` writes it, or only its last two folders when
   /// that is long: `…/scratchpad/editor-probe`.
-  static func shortened(_ url: URL) -> String {
-    let path = abbreviated(url)
+  static func shortened(_ url: URL, abbreviating: Bool = true) -> String {
+    let path = abbreviating ? abbreviated(url) : url.path(percentEncoded: false)
     guard path.count > 40 else { return path }
     return "…/" + url.pathComponents.suffix(2).joined(separator: "/")
   }
@@ -442,12 +455,9 @@ private struct WindowLevel: NSViewRepresentable {
   private static let drakarWindows = NSHashTable<NSWindow>.weakObjects()
 
   /// A window for `route`, as a tab of the frontmost Drakar window when `asTab`. A project
-  /// already open comes forward instead: one window per folder.
+  /// already open comes forward instead: one window per folder, a runner's apart.
   static func open(_ route: WindowRoute, asTab: Bool) {
-    if let folder = route.folder,
-      let window = OpenSessions.shared.window(
-        forFolder: ProjectPath.normalize(folder))
-    {
+    if let window = OpenSessions.shared.window(for: route) {
       window.makeKeyAndOrderFront(nil)
       return
     }

@@ -169,7 +169,8 @@ struct HomeView: View {
   private var own: [String: (waiting: Int, running: Int)] {
     let owners = ProjectPath.Owners(list.tracked.paths)
     var counts: [String: (waiting: Int, running: Int)] = [:]
-    for project in OpenSessions.shared.projects.values {
+    // A runner's project is none of these, whatever its path.
+    for project in OpenSessions.shared.projects.values where project.runner == nil {
       guard let owner = owners.owner(of: project.folder.path(percentEncoded: false)) else {
         continue
       }

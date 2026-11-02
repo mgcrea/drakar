@@ -79,4 +79,68 @@ struct ReopenedWindowsTests {
     ReopenedWindows(defaults: defaults).save(windows)
     #expect(ReopenedWindows(defaults: defaults).saved == windows)
   }
+
+  // MARK: A runner's windows (remote sessions spec §4)
+
+  /// A runner's folder is on the runner: missing here, its window is reopened all the same,
+  /// and it is not the local folder at the same path.
+  @Test func aRunnerWindowIsReopenedThoughItsFolderIsMissingHere() {
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let reopened = ReopenedWindows(defaults: defaults)
+    let runner = UUID().uuidString
+    let missing = "/nowhere/\(UUID().uuidString)"
+    reopened.save([
+      .init(folder: missing, runner: runner),
+      .init(folder: missing),
+      .init(folder: path(first), joinsPrevious: true),
+    ])
+
+    #expect(reopened.begin(launchRoute: nil) == .runnerProject(runner: runner, folder: missing))
+    #expect(reopened.willReopen(missing, runner: runner))
+    #expect(!reopened.willReopen(missing))
+    // The local one at the same path is not the runner's.
+    #expect(reopened.arrived(window(), folder: URL(filePath: missing)) == nil)
+    let one = window()
+    #expect(
+      reopened.arrived(one, folder: URL(filePath: missing), runner: runner)
+        == .project(folder: path(first)))
+    let two = window()
+    #expect(reopened.arrived(two, folder: first) == nil)
+    #expect(one.tabbedWindows?.contains(two) == true)
+  }
+
+  /// Windows saved before runners existed name no runner, and read back as local.
+  @Test func windowsSavedBeforeRunnersReadBack() throws {
+    defer { defaults.removePersistentDomain(forName: suite) }
+    defaults.set(
+      Data(#"[{"folder":"/a","joinsPrevious":false}]"#.utf8), forKey: ReopenedWindows.key)
+    #expect(ReopenedWindows(defaults: defaults).saved == [.init(folder: "/a")])
+  }
+
+  @Test func aRouteRoundTrips() throws {
+    let runner = UUID().uuidString
+    let routes: [WindowRoute] = [
+      .runnerProject(runner: runner, folder: "/Users/r/x"), .project(folder: "/Users/r/x"),
+      .picker(),
+    ]
+    let back = try JSONDecoder().decode(
+      [WindowRoute].self, from: JSONEncoder().encode(routes))
+    #expect(back == routes)
+    #expect(back[0] != back[1])
+    #expect(back[0].runner == runner)
+    #expect(back[1].runner == nil)
+    #expect(back[0].folder == back[1].folder)
+    #expect(
+      WindowRoute.project(URL(filePath: "/Users/r/x/"), runner: runner)
+        == .runnerProject(runner: runner, folder: "/Users/r/x"))
+    #expect(WindowRoute.project(URL(filePath: "/Users/r/x/"), runner: nil) == back[1])
+  }
+
+  /// A route macOS stored for a window before runners existed still reopens it.
+  @Test func aRouteStoredBeforeRunnersStillDecodes() throws {
+    let stored = #"{"project":{"folder":"\/Users\/me\/x"}}"#
+    let route = try JSONDecoder().decode(WindowRoute.self, from: Data(stored.utf8))
+    #expect(route == .project(folder: "/Users/me/x"))
+    #expect(route.runner == nil)
+  }
 }

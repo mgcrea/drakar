@@ -343,15 +343,19 @@ struct StoredFork: Codable, Equatable {
 enum ProjectMemory {
   static let key = "drakar.projectSessions"
 
-  static func stored(for folder: URL, in defaults: UserDefaults = .standard) -> StoredProject? {
-    all(in: defaults)[path(of: folder)]
+  /// `runner`: the runner the folder is on, nil for this Mac's.
+  static func stored(
+    for folder: URL, runner: String? = nil, in defaults: UserDefaults = .standard
+  ) -> StoredProject? {
+    all(in: defaults)[path(of: folder, runner: runner)]
   }
 
   static func remember(
-    _ stored: StoredProject, for folder: URL, in defaults: UserDefaults = .standard
+    _ stored: StoredProject, for folder: URL, runner: String? = nil,
+    in defaults: UserDefaults = .standard
   ) {
     var all = all(in: defaults)
-    all[path(of: folder)] = stored.isEmpty ? nil : stored
+    all[path(of: folder, runner: runner)] = stored.isEmpty ? nil : stored
     defaults.set(try? JSONEncoder().encode(all), forKey: key)
   }
 
@@ -361,8 +365,10 @@ enum ProjectMemory {
     } ?? [:]
   }
 
-  private static func path(of folder: URL) -> String {
-    ProjectPath.normalize(folder)
+  /// A runner's folder under its runner's id, which no path of this Mac's starts with.
+  private static func path(of folder: URL, runner: String?) -> String {
+    let path = ProjectPath.normalize(folder)
+    return runner.map { "\($0):\(path)" } ?? path
   }
 }
 
@@ -370,6 +376,9 @@ enum ProjectMemory {
 @Observable
 final class Project {
   let folder: URL
+  /// The runner the folder is on (`RunnerSettings.id`), nil for this Mac's. A runner's
+  /// project is never the local one at the same path (remote sessions spec §4).
+  let runner: String?
   let workspace: Workspace
   private(set) var sessions: [ProjectSession] = []
   var selectedID: ProjectSession.ID?
@@ -389,8 +398,21 @@ final class Project {
   @ObservationIgnored var executableOverride: URL?
   /// Where the sessions this window doesn't hold are listed from; tests give it their own.
   @ObservationIgnored var monitor = SessionMonitor.shared
-  /// Where the window's sessions run and come back from; tests give their own.
-  @ObservationIgnored var sessionHost = SessionHost.shared
+  /// Where the window's sessions run and come back from: this Mac's host, or a runner
+  /// project's runner's while it is the runner the project names, read each time rather
+  /// than kept. None for a runner project whose runner is no longer the one set up: the
+  /// window cannot reach it. Tests give their own.
+  var sessionHost: SessionHost? {
+    get {
+      if let givenHost { return givenHost }
+      guard let runner else { return .shared }
+      return runnerHost().flatMap { $0.reaches(runner: runner) ? $0 : nil }
+    }
+    set { givenHost = newValue }
+  }
+  @ObservationIgnored private var givenHost: SessionHost?
+  /// The runner set up now (`SessionHost.runner`); tests give their own.
+  @ObservationIgnored var runnerHost: () -> SessionHost? = { SessionHost.runner }
   /// The session host's processes being taken back, so that two calls take each once.
   @ObservationIgnored private var adopting: Set<String> = []
   /// The session host's ids for the processes another app holds that rows here showed
@@ -424,8 +446,9 @@ final class Project {
   /// The pane that had the keys at the last quit, until it takes them back.
   @ObservationIgnored private var restoredFocus: FocusedPane?
 
-  init(folder: URL, restoring stored: StoredProject? = nil) {
+  init(folder: URL, runner: String? = nil, restoring stored: StoredProject? = nil) {
     self.folder = folder
+    self.runner = runner
     workspace = Workspace(folder: folder)
     capabilities = CapabilityStore.shared.capabilities(
       for: folder, account: AccountStore.shared.windowAccount(for: folder))
@@ -466,6 +489,15 @@ final class Project {
     workspace.onCodexSkillFilesChanged = { [weak self] in self?.codexSkillFilesChanged() }
   }
 
+  /// What to call a runner project's runner: its name as set up now, or that it is no longer
+  /// set up. Nil for this Mac's.
+  var runnerName: String? {
+    guard let runner else { return nil }
+    guard let host = runnerHost(), host.reaches(runner: runner), let name = host.runnerName
+    else { return String(localized: "a runner no longer set up") }
+    return name
+  }
+
   /// Whether `pane` is the one to take the keys back after a relaunch; true once.
   func claimsRestoredFocus(_ pane: FocusedPane) -> Bool {
     guard restoredFocus == pane else { return false }
@@ -490,7 +522,8 @@ final class Project {
       OpenSessions.shared.projects.values.filter { $0 !== self }
         .flatMap { $0.held.compactMap(\.sessionID) })
     // Asked even when the groups are kept, so that a view reading them redraws on a change.
-    let summaries = monitor.summaries(under: folder)
+    // This Mac's transcripts are none of a runner's folder's.
+    let summaries = runner == nil ? monitor.summaries(under: folder) : []
     let key = GroupsKey(
       generation: monitor.generation, others: others, attached: attached,
       inOtherWindows: inOtherWindows)
@@ -1458,11 +1491,12 @@ final class Project {
   @discardableResult func takeBackHeld() -> Task<Void, Never> {
     let waiting = sessions.filter { $0.session.resuming != nil && !$0.session.isProcessRunning }
     for item in waiting { item.session.waitsForHost = true }
+    let host = sessionHost
     return Task {
-      let held = await sessionHost.heldIfRunning()
+      let held = await host?.heldIfRunning() ?? []
       // The window closed meanwhile: no row is made and nothing is sent, and the batches
       // stay as stored for the next launch.
-      let olderHosts = await sessionHost.heldByOlderHosts()
+      let olderHosts = await host?.heldByOlderHosts() ?? []
       guard !isStopped else { return }
       await adoptHeld(held, olderHosts: olderHosts)
       restoreFanOuts()
@@ -1479,7 +1513,8 @@ final class Project {
   func adoptHeld(_ held: [HeldProcess], olderHosts: [HeldProcess] = []) async {
     let own = ProjectPath.normalize(folder.path(percentEncoded: false))
     let ours = { (process: HeldProcess) -> Bool in
-      guard !self.adopting.contains(process.id), !self.sessionHost.ended.contains(process.id),
+      guard !self.adopting.contains(process.id),
+        self.sessionHost?.ended.contains(process.id) != true,
         !self.sessions.contains(where: { $0.session.hostID == process.id }),
         let meta = try? JSONDecoder().decode(SessionMeta.self, from: process.meta)
       else { return false }
@@ -1513,7 +1548,7 @@ final class Project {
     let watched = Set(held.map(\.id)).intersection(elsewhere.map(\.id))
     guard !watched.isEmpty else { return }
     shownHeldElsewhere.formUnion(watched)
-    sessionHost.watchReleases(
+    sessionHost?.watchReleases(
       for: self, takes: { [weak self] id in self?.released(id) ?? false },
       connected: { [weak self] in Task { await self?.settleShown() } })
     // Let go of while its row was being made: no `released` says so again.
@@ -1526,7 +1561,7 @@ final class Project {
   private func released(_ id: String) -> Bool {
     guard isShownReadOnly(id), !adopting.contains(id) else { return false }
     Task {
-      guard let held = await sessionHost.listed() else { return }
+      guard let held = await sessionHost?.listed() else { return }
       await settle(id, among: held)
     }
     return true
@@ -1536,7 +1571,7 @@ final class Project {
   /// connection, which no `released` sent while there was none reached.
   private func settleShown() async {
     shownHeldElsewhere = shownHeldElsewhere.filter(isShownReadOnly)
-    guard !shownHeldElsewhere.isEmpty, let held = await sessionHost.listed() else { return }
+    guard !shownHeldElsewhere.isEmpty, let held = await sessionHost?.listed() else { return }
     for id in shownHeldElsewhere { await settle(id, among: held) }
   }
 
@@ -1569,7 +1604,7 @@ final class Project {
   /// with no row to show it.
   private func takeBack(_ process: HeldProcess) async {
     // Asked each time: a replay before this one may have cost the connection.
-    guard let client = await sessionHost.client(), !isStopped,
+    guard let client = await sessionHost?.client(), !isStopped,
       let session = await AgentSession(reattaching: process, client: client)
     else { return }
     if isStopped { return session.stop() }
@@ -1696,7 +1731,8 @@ final class Project {
   private func make(_ session: AgentSession) -> ProjectSession {
     if let executableOverride { session.executableOverride = executableOverride }
     session.windowFolder = folder
-    session.sessionHost = sessionHost
+    session.runner = runner
+    if let sessionHost { session.sessionHost = sessionHost }
     let item = ProjectSession(session: session)
     session.onTurnEnded = { [weak self, weak item] in
       guard let self, let item else { return }

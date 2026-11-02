@@ -12,17 +12,32 @@ enum WindowRoute: Codable, Hashable {
   case project(folder: String)
   /// `token` keeps two picker windows apart.
   case picker(token: UUID)
+  /// A folder on a runner (`RunnerSettings.id`), never the one at the same path here (remote
+  /// sessions spec §4). A case of its own, so that the routes macOS stored before runners
+  /// still decode.
+  case runnerProject(runner: String, folder: String)
 
-  static func project(_ url: URL) -> WindowRoute {
-    .project(folder: ProjectPath.normalize(url))
+  /// `runner`: nil for this Mac's folder.
+  static func project(_ url: URL, runner: String? = nil) -> WindowRoute {
+    let folder = ProjectPath.normalize(url)
+    guard let runner else { return .project(folder: folder) }
+    return .runnerProject(runner: runner, folder: folder)
   }
 
   static func picker() -> WindowRoute { .picker(token: UUID()) }
 
+  /// The project's folder, on the runner for a runner's.
   var folder: URL? {
-    if case .project(let folder) = self {
-      return URL(filePath: folder, directoryHint: .isDirectory)
+    switch self {
+    case .project(let folder), .runnerProject(_, let folder):
+      URL(filePath: folder, directoryHint: .isDirectory)
+    case .picker: nil
     }
+  }
+
+  /// The runner the project is on, nil for this Mac's or the picker.
+  var runner: String? {
+    if case .runnerProject(let runner, _) = self { return runner }
     return nil
   }
 }
@@ -102,11 +117,12 @@ final class OpenSessions {
   }
 
   /// The open projects' folders, which Drakar is the editor for by default. As the lock
-  /// file lists them: no trailing slash.
+  /// file lists them: no trailing slash. This Mac's only: a runner's folder is not one here,
+  /// whatever its path.
   var folders: [String] {
     Array(
       Set(
-        projects.values.map { ProjectPath.normalize($0.folder) }))
+        projects.values.filter { $0.runner == nil }.map { ProjectPath.normalize($0.folder) }))
   }
 
   /// The window holding `sessionID` as one of its own rows; one only watching it does not
@@ -128,11 +144,17 @@ final class OpenSessions {
       ?? ProjectPath.normalize(cwd)
   }
 
-  /// The window showing the project at `folder`, as `normalize` writes it.
-  func window(forFolder folder: String) -> NSWindow? {
-    projects.values.first {
-      ProjectPath.normalize($0.folder) == folder
-    }?.workspace.window
+  /// The open project `route` names: its folder, on its runner or here.
+  func project(for route: WindowRoute) -> Project? {
+    guard let folder = route.folder.map(ProjectPath.normalize) else { return nil }
+    return projects.values.first {
+      $0.runner == route.runner && ProjectPath.normalize($0.folder) == folder
+    }
+  }
+
+  /// The window showing the project `route` names.
+  func window(for route: WindowRoute) -> NSWindow? {
+    project(for: route)?.workspace.window
   }
 
   func requestAttach(_ target: ResumeTarget, in folder: String) {

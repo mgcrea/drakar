@@ -171,6 +171,10 @@ final class AgentSession {
   /// The project window the session belongs to, which its folder need not be (a subfolder,
   /// a worktree): a relaunched app reopens it from the meta.
   @ObservationIgnored var windowFolder: URL?
+  /// The runner its project is on (`RunnerSettings.id`), as its window gives it; nil for a
+  /// session of this Mac's (remote sessions spec §4).
+  @ObservationIgnored var runner: String?
+  var isOnRunner: Bool { runner != nil }
   /// What the last process was launched with and where the history stood then: the parts of
   /// `meta()` only a start sets.
   @ObservationIgnored private var launched: (start: AgentStart, history: HistoryMark)?

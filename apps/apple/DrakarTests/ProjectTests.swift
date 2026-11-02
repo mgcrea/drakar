@@ -740,4 +740,122 @@ struct ProjectTests {
     restored.workspace.activate(try #require(restored.workspace.active))
     #expect(!restored.workspace.holdsEditorFocus)
   }
+
+  // MARK: A runner's project (remote sessions spec §4)
+
+  /// The same path on a runner is another project: its own window, none of this Mac's
+  /// folders, none of the sessions this Mac's transcripts list there.
+  @Test func aRunnerProjectIsNotTheLocalOneAtTheSamePath() async throws {
+    let path = ProjectPath.normalize(folder)
+    let runner = UUID().uuidString
+    let account = ClaudeAccount(
+      directory: folder.appending(path: "claude-config", directoryHint: .isDirectory),
+      isDefault: false)
+    let transcripts = account.directory.appending(
+      path: "projects/\(ProjectPath.encodedPrefixes(for: path)[0])", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: transcripts, withIntermediateDirectories: true)
+    try Data(#"{"type":"user","cwd":"\#(path)","message":{"role":"user","content":"go"}}"#.utf8)
+      .write(to: transcripts.appending(path: "e1.jsonl"))
+    let monitor = SessionMonitor(accounts: [account])
+    await monitor.include(folder: path)
+
+    let local = Project(folder: folder)
+    let remote = Project(folder: folder, runner: runner)
+    #expect(local.runner == nil)
+    #expect(remote.runner == runner)
+    for project in [local, remote] {
+      project.monitor = monitor
+      project.showsEnded = true
+    }
+    let (here, there) = (UUID(), UUID())
+    OpenSessions.shared.register(local, window: here)
+    OpenSessions.shared.register(remote, window: there)
+    defer {
+      OpenSessions.shared.unregister(window: here)
+      OpenSessions.shared.unregister(window: there)
+    }
+
+    #expect(OpenSessions.shared.project(for: .project(folder: path)) === local)
+    #expect(
+      OpenSessions.shared.project(for: .runnerProject(runner: runner, folder: path)) === remote)
+    #expect(
+      OpenSessions.shared.project(for: .runnerProject(runner: UUID().uuidString, folder: path))
+        == nil)
+    // This Mac's folders, for the editor bridge and a session's owner, are the local one's.
+    #expect(OpenSessions.shared.folders.filter { $0 == path } == [path])
+    #expect(local.groups.ended.map(\.sessionID) == ["e1"])
+    #expect(remote.groups.ended.isEmpty)
+
+    OpenSessions.shared.unregister(window: here)
+    #expect(!OpenSessions.shared.folders.contains(path))
+    #expect(OpenSessions.shared.project(for: .project(folder: path)) == nil)
+    let sub = folder.appending(path: "sub").path(percentEncoded: false)
+    #expect(OpenSessions.shared.ownerFolder(forCwd: sub) == ProjectPath.normalize(sub))
+  }
+
+  /// What a window keeps of its project, kept apart from what the local one at the same path
+  /// keeps.
+  @Test func aRunnerProjectIsRememberedApart() throws {
+    let suite = "drakar-tests-\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let runner = UUID().uuidString
+    ProjectMemory.remember(
+      StoredProject(sessions: [target("a")], selected: "a"), for: folder, in: defaults)
+    ProjectMemory.remember(
+      StoredProject(sessions: [target("b")], selected: "b"), for: folder, runner: runner,
+      in: defaults)
+    #expect(ProjectMemory.stored(for: folder, in: defaults)?.selected == "a")
+    #expect(ProjectMemory.stored(for: folder, runner: runner, in: defaults)?.selected == "b")
+    #expect(
+      ProjectMemory.stored(for: folder, runner: UUID().uuidString, in: defaults) == nil)
+  }
+
+  /// A runner project's host is the runner's, read when it is used, and only while it is the
+  /// runner the project names; a local project's is this Mac's.
+  @Test func aRunnerProjectReachesOnlyItsOwnRunner() {
+    let settings = RunnerSettings(name: "Studio", destination: "studio.local")
+    let host = SessionHost(endpoint: .runner(settings))
+    defer { host.close() }
+    let local = Project(folder: folder)
+    local.runnerHost = { host }
+    #expect(local.sessionHost === SessionHost.shared)
+
+    let remote = Project(folder: folder, runner: settings.id.uuidString)
+    remote.runnerHost = { nil }
+    #expect(remote.sessionHost == nil)
+    #expect(remote.runnerName == "a runner no longer set up")
+    remote.runnerHost = { host }
+    #expect(remote.sessionHost === host)
+    #expect(remote.runnerName == "Studio")
+    // Renamed in place: the same runner.
+    var renamed = settings
+    renamed.name = "Studio upstairs"
+    host.retarget(renamed)
+    #expect(remote.sessionHost === host)
+    #expect(remote.runnerName == "Studio upstairs")
+
+    // Another runner set up since.
+    let other = SessionHost(endpoint: .runner(RunnerSettings(name: "Studio", destination: "x")))
+    defer { other.close() }
+    remote.runnerHost = { other }
+    #expect(remote.sessionHost == nil)
+    #expect(remote.runnerName == "a runner no longer set up")
+    // Cleared: closed for good.
+    host.close()
+    remote.runnerHost = { host }
+    #expect(remote.sessionHost == nil)
+  }
+
+  /// A runner project's sessions say so.
+  @Test func aRunnerProjectsSessionsAreOnTheRunner() {
+    let runner = UUID().uuidString
+    let remote = Project(folder: folder, runner: runner)
+    let item = remote.newSession()
+    #expect(item.session.runner == runner)
+    #expect(item.session.isOnRunner)
+    let local = Project(folder: folder).newSession()
+    #expect(local.session.runner == nil)
+    #expect(!local.session.isOnRunner)
+  }
 }

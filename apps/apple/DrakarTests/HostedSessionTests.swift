@@ -62,6 +62,26 @@ struct HostedSessionTests {
     return await condition()
   }
 
+  /// A meta a host kept from before runners (remote sessions spec §4) has no runner, origin
+  /// or owner, and still rebuilds its session; one that has them keeps them.
+  @Test func anOlderMetaStillDecodes() throws {
+    var meta = SessionMeta(
+      start: AgentStart(folder: folder, environment: [:], allowsBypass: false),
+      windowFolder: folder.path(percentEncoded: false), history: .none)
+    var older = try #require(
+      try JSONSerialization.jsonObject(with: JSONEncoder().encode(meta)) as? [String: Any])
+    for key in ["runner", "origin", "owner"] { older[key] = nil }
+    let decoded = try JSONDecoder().decode(
+      SessionMeta.self, from: JSONSerialization.data(withJSONObject: older))
+    #expect(decoded == meta)
+    #expect(decoded.runner == nil && decoded.origin == nil && decoded.owner == nil)
+
+    meta.runner = UUID().uuidString
+    meta.origin = "Olivier's MacBook"
+    meta.owner = "Olivier's MacBook"
+    #expect(try JSONDecoder().decode(SessionMeta.self, from: JSONEncoder().encode(meta)) == meta)
+  }
+
   /// The process lives in the host, and its meta names the window it belongs to, not only
   /// the folder it runs in.
   @Test func aSessionRunsThroughTheHost() async throws {

@@ -167,6 +167,19 @@ import Synchronization
     self.underTests = underTests
   }
 
+  /// Whether this is the host of the runner `id` names (`RunnerSettings.id`), and not let go
+  /// of: a rename or a new destination keeps the id, another runner set up does not.
+  func reaches(runner id: String) -> Bool {
+    guard !isClosed, case .runner(let settings) = endpoint else { return false }
+    return settings.id.uuidString == id
+  }
+
+  /// What the runner is called as set up now; nil for this Mac's host.
+  var runnerName: String? {
+    guard case .runner(let settings) = endpoint else { return nil }
+    return settings.displayName
+  }
+
   /// Settings › Runner changed this runner. A new name is for show, and the connection stays.
   /// Another destination or Drakar is another target: the connection to the old one goes, its
   /// ssh with it, and the next `client()` or `reconnect()` reaches the new one, where a

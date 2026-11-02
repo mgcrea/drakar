@@ -20,6 +20,16 @@ struct SessionMeta: Codable, Equatable {
   var fanOut: FanOutMark?
   /// Where the history stood when the process started: the rest is in the log.
   var history: HistoryMark
+  /// The runner the process runs on as the Mac that started it knows it
+  /// (`RunnerSettings.id`), nil for a session started on the Mac its host is on (remote
+  /// sessions spec §4). This one and the two below are optional so that a meta written
+  /// before runners still decodes.
+  var runner: String?
+  /// The Mac that started the session (`ThisMac.name`), set at the spawn and never changed.
+  var origin: String?
+  /// The Mac whose Drakar the session belongs to now: `origin` while that Mac holds it, nil
+  /// once it is handed to the runner's own Drakar (spec §5).
+  var owner: String?
 
   /// The meta says it only through what it resumes and the history it marks: a Codex
   /// session's is always counted in turns, a new thread's as 0.
