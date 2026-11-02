@@ -92,9 +92,13 @@ enum RunnerSection {
   @ObservationIgnored private var ending: [String: ContinuousClock.Instant] = [:]
   private static let endingLimit = Duration.seconds(10)
 
-  /// `host`: the runner set up; `project`: the open window a route names. Tests give their own.
+  /// `host`: the runner set up, none when the app hosts the tests, whose runner hosts are the
+  /// tests' own; `project`: the open window a route names. Tests give their own.
   init(
-    host: @escaping () -> SessionHost? = { SessionHost.runner },
+    host: @escaping () -> SessionHost? = {
+      ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil
+        ? SessionHost.runner : nil
+    },
     project: @escaping (WindowRoute) -> Project? = { OpenSessions.shared.project(for: $0) }
   ) {
     self.host = host
@@ -123,6 +127,8 @@ enum RunnerSection {
       return
     }
     let listed = await host.listed()
+    // Cleared or replaced meanwhile: what came back is of a runner no longer set up.
+    guard self.host() === host else { return }
     name = host.runnerName
     link =
       if host.isAvailable { .connected } else if let failure = host.failure {
@@ -150,6 +156,9 @@ enum RunnerSection {
       let name = host.runnerName ?? String(localized: "the runner")
       return String(localized: "Open it in Drakar on \(name)")
     }
+    // Shown though this app ended it (`RunnerSection.shown`): that end missed it, and the
+    // window may take it back now.
+    if host.ended.contains(row.id) { host.notEnding(row.id) }
     let route = WindowRoute.runnerProject(runner: runner, folder: row.folder)
     let window = project(route)
     enter(route)

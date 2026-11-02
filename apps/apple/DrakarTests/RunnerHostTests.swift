@@ -1380,12 +1380,14 @@ struct RunnerHostTests {
     await project.takeBackHeld().value
     // Let go of after the window took back what it had: brought back with no window to hear
     // it, or its tab closed while reconnecting.
-    let ids = try await cats(on: host, owners: ["Test MacBook", nil])
+    let ids = try await cats(on: host, owners: ["Test MacBook", nil, "Test MacBook"])
     let watcher = try await watcher()
     defer {
       for id in ids { try? watcher.send(.terminate(id: id, forget: true)) }
       watcher.close()
     }
+    // An end of this app's that missed it: it runs on, free.
+    host.ending(ids[2])
     let route = WindowRoute.runnerProject(
       runner: settings.id.uuidString, folder: ProjectPath.normalize(folder))
     let model = RunnerSectionModel(host: { host }, project: { $0 == route ? project : nil })
@@ -1403,6 +1405,45 @@ struct RunnerHostTests {
     #expect(await model.open(theirs) { entered.append($0) } == "Open it in Drakar on Studio")
     #expect(entered == [route])
     #expect(!project.sessions.contains { $0.session.hostID == ids[1] })
+
+    // Shown, and taken back on a click: the stale end is let go of.
+    let missed = try #require(model.rows.first { $0.id == ids[2] })
+    #expect(missed.state == .idle)
+    #expect(await model.open(missed) { _ in } == nil)
+    #expect(!host.ended.contains(ids[2]))
+    #expect(project.selected?.session.hostID == ids[2])
+  }
+
+  /// A tab closed while connected leaves nothing that keeps the window from a Bring Back:
+  /// taken over on the runner and brought back, the session comes back into the open window.
+  @Test func aRowClosedWhileConnectedComesBackOnBringBack() async throws {
+    _ = try installRunnerClaude()
+    try relayingSSH()
+    let helper = try #require(SessionHost.startHelper(in: directory))
+    defer { finish([helper]) }
+    let host = SessionHost(endpoint: .runner(settings))
+    let project = runnerProject(on: host)
+    defer { project.stopAll() }
+    // The window hears `released` from here on.
+    await project.takeBackHeld().value
+    let item = try await startedRow(in: project)
+    let id = try #require(item.session.hostID)
+    let watcher = try await watcher()
+    defer { watcher.close() }
+
+    project.remove(item)
+    #expect(await eventually { await isLetGo(id, on: watcher) })
+    // The runner's own Drakar takes it over, then brings it back: the test's connection
+    // stands in.
+    #expect(!isRefusal(await firstEvent(of: watcher.attach(id, from: 0))))
+    var meta = try #require(await meta(id, on: watcher))
+    meta.owner = nil
+    try watcher.send(.setMeta(id: id, meta: try JSONEncoder().encode(meta)))
+    meta.owner = ThisMac.name
+    try watcher.send(.setMeta(id: id, meta: try JSONEncoder().encode(meta)))
+    try watcher.send(.detach(id: id))
+    #expect(await eventually { project.sessions.contains { $0.session.hostID == id } })
+    #expect(await held(id, on: watcher)?.attachedApp != nil)
   }
 
   /// A tab closed while the window waits out its stale relay is not opened again when that

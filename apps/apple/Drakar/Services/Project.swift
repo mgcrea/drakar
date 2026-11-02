@@ -423,10 +423,10 @@ final class Project {
   /// The session host's ids for the processes another app holds that rows here showed
   /// read-only, which `released` or a new connection settles.
   @ObservationIgnored private var shownHeldElsewhere: Set<String> = []
-  /// A runner's processes whose rows were closed here while this Mac still owned them. One
-  /// closed while reconnecting stays with its stale relay, and the host says `released` once
-  /// that relay goes, as it does of a process brought back: not taken then, for it was closed
-  /// here. Home lists it, and opens it again (`reopen`).
+  /// A runner's processes whose rows were closed here while this Mac still owned them and was
+  /// reconnecting: such a one stays with its stale relay, and the host says `released` once
+  /// that relay goes, as it does of a process brought back. Not taken then, for it was closed
+  /// here; Home lists it, and opens it again (`reopen`).
   @ObservationIgnored private var closedHere: Set<String> = []
   /// The batches still sending or running, one banner each.
   private(set) var fanOuts: [FanOutBatch] = []
@@ -1820,8 +1820,12 @@ final class Project {
   }
 
   func remove(_ item: ProjectSession) {
-    // Handed over, its owner is gone: a Bring Back of it is for this window to take.
-    if item.session.isOnRunner, item.session.owner != nil, let id = item.session.hostID {
+    // Only while waiting out its own stale relay: a `detach` sent on a live connection is never
+    // answered `released` to this app, and a Bring Back after it is for this window to take.
+    // Handed over, its owner is gone, and a Bring Back of it is this window's too.
+    if item.session.isOnRunner, item.session.owner != nil, item.session.isReconnecting,
+      let id = item.session.hostID
+    {
       closedHere.insert(id)
     }
     item.session.stop()
