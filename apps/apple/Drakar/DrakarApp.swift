@@ -488,13 +488,14 @@ struct MentionTitle {
   }
 
   /// The windows the processes no app is attached to belong to, each once; none for a
-  /// process a Mac owns, which this Mac's host holds only as a runner (spec §5).
+  /// process a Mac owns, which this Mac's host holds only as a runner (spec §5), nor for one
+  /// whose tab was closed at work, which stays closed (`SessionMeta.closedAtWork`).
   static func folders(of held: [HeldProcess]) -> [String] {
     var seen: Set<String> = []
     return held.compactMap { process in
       guard process.attachedApp == nil,
         let meta = try? JSONDecoder().decode(SessionMeta.self, from: process.meta),
-        meta.mayBeTaken(by: ThisMac.name, onRunner: false)
+        meta.mayBeTaken(by: ThisMac.name, onRunner: false), meta.closedAtWork != true
       else { return nil }
       let folder = ProjectPath.normalize(meta.windowFolder)
       return seen.insert(folder).inserted ? folder : nil

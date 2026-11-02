@@ -30,6 +30,12 @@ struct SessionMeta: Codable, Equatable {
   /// The Mac whose Drakar the session belongs to now: `origin` while that Mac holds it, nil
   /// once it is handed to the runner's own Drakar (spec §5).
   var owner: String?
+  /// A tab closed while its agent worked (session tabs spec, Closing): the process goes on in
+  /// the host until its turn ends, and no window or launch takes it back on its own, only a
+  /// reopen from Home or Go to Session, which clears it. Every app reads the same mark from
+  /// the host, so a relaunch keeps it closed too. Nil when not closed, so that a meta written
+  /// before tabs still decodes.
+  var closedAtWork: Bool?
 
   /// The meta says it only through what it resumes and the history it marks: a Codex
   /// session's is always counted in turns, a new thread's as 0.

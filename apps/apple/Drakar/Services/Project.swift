@@ -74,6 +74,14 @@ struct BroadcastResult: Equatable {
   var skipped: Int
 }
 
+/// What closing a tab would lose, the one case it asks about (session tabs spec, Closing).
+enum CloseAsk: Equatable {
+  /// Text or attachments in its composer, never sent.
+  case unsentDraft
+  /// A turn running as the app's own child, with no session host to hand it to.
+  case stopsTurn
+}
+
 /// The Run in Each Subfolder sheet, on a skill, or with none yet to pick one.
 struct FanOutRequest: Identifiable {
   let id = UUID()
@@ -1566,13 +1574,20 @@ final class Project {
   /// process brought back to this Mac is one it shows nothing of; not a new connection, for
   /// what it finds free then may be a row closed here, which only Home opens again, unless its
   /// take-back never reached the runner (`takeBackOnceReached`).
-  func adoptHeld(_ held: [HeldProcess], olderHosts: [HeldProcess] = []) async {
+  ///
+  /// A process whose tab was closed at work (`SessionMeta.closedAtWork`) is taken back by no
+  /// window on its own, free or another app's; only `reopen(_:among:)` takes it
+  /// (`includingClosed`).
+  func adoptHeld(
+    _ held: [HeldProcess], olderHosts: [HeldProcess] = [], includingClosed: Bool = false
+  ) async {
     let own = ProjectPath.normalize(folder.path(percentEncoded: false))
     let ours = { (process: HeldProcess) -> Bool in
       guard !self.adopting.contains(process.id),
         self.sessionHost?.ended.contains(process.id) != true,
         !self.sessions.contains(where: { $0.session.hostID == process.id }),
-        let meta = try? JSONDecoder().decode(SessionMeta.self, from: process.meta)
+        let meta = try? JSONDecoder().decode(SessionMeta.self, from: process.meta),
+        includingClosed || meta.closedAtWork != true
       else { return false }
       return ProjectPath.normalize(meta.windowFolder) == own
     }
@@ -1690,11 +1705,18 @@ final class Project {
   }
 
   /// A process of the window's that Home opened again: taken back if the window may take it,
-  /// though its row was closed here, and shown.
+  /// though its row was closed here, and shown. One whose tab was closed at work loses the
+  /// mark, and its end with its turn, once taken back.
   func reopen(_ hostID: String, among held: [HeldProcess]) async {
     closedHere.remove(hostID)
-    await adoptHeld(held.filter { $0.id == hostID })
-    if let item = sessions.first(where: { $0.session.hostID == hostID }) { select(item) }
+    let process = held.filter { $0.id == hostID }
+    let closed = process.contains {
+      (try? JSONDecoder().decode(SessionMeta.self, from: $0.meta))?.closedAtWork == true
+    }
+    await adoptHeld(process, includingClosed: true)
+    guard let item = sessions.first(where: { $0.session.hostID == hostID }) else { return }
+    if closed { item.session.reopenedAfterClose() }
+    select(item)
   }
 
   private func isShownReadOnly(_ hostID: String) -> Bool {
@@ -1882,6 +1904,31 @@ final class Project {
   }
 
   func remove(_ item: ProjectSession) {
+    drop(item) { $0.stop() }
+  }
+
+  /// Closing a tab (session tabs spec, Closing): its session at work goes on in the session
+  /// host, marked closed, and ends with its turn (`AgentSession.closeTab()`); an idle one
+  /// stops as a removed row's does. The row goes either way. What closing would lose is
+  /// `closeAsk(for:)`'s, asked before.
+  func closeTab(_ item: ProjectSession) {
+    drop(item) { $0.closeTab() }
+  }
+
+  /// What closing `item`'s tab would lose, for the window to ask about first; nil when
+  /// nothing. The draft is said first: the turn is lost only with no host to hand it to.
+  func closeAsk(for item: ProjectSession) -> CloseAsk? {
+    if !item.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+      || !item.attachments.isEmpty
+    {
+      return .unsentDraft
+    }
+    if RunningSessions.stoppedByLeaving([item.session]) > 0 { return .stopsTurn }
+    return nil
+  }
+
+  /// `item`'s row out of the window once `stop` has let its session go.
+  private func drop(_ item: ProjectSession, stopping stop: (AgentSession) -> Void) {
     // Only while waiting out its own stale relay: a `detach` sent on a live connection is never
     // answered `released` to this app, and a Bring Back after it is for this window to take.
     // Handed over, its owner is gone, and a Bring Back of it is this window's too.
@@ -1890,7 +1937,7 @@ final class Project {
     {
       closedHere.insert(id)
     }
-    item.session.stop()
+    stop(item.session)
     sessions.removeAll { $0.id == item.id }
     marked.remove(item.id)
     fanOutFinished(item)
