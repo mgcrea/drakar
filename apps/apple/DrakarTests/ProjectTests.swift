@@ -858,4 +858,19 @@ struct ProjectTests {
     #expect(local.session.runner == nil)
     #expect(!local.session.isOnRunner)
   }
+
+  /// A runner session's `/` menu is what its own process lists, and empty until it has: no
+  /// probe of this Mac's `claude` runs for it, and it never speaks for this Mac's lists of the
+  /// folder. Its sessions are Claude Code's, whatever agent is asked for.
+  @Test func aRunnerSessionsCommandsAreItsOwn() {
+    let remote = Project(folder: folder, runner: UUID().uuidString)
+    remote.capabilities.probe = { _, _ in ProbeOutcome() }
+    defer { remote.capabilities.cancel() }
+    let session = remote.newSession(agent: .codex).session
+    #expect(session.agent == .claude)
+    remote.loadSlashCommands(for: session)
+    #expect(!remote.capabilities.isLoading)
+    #expect(remote.slashCommands(for: session).isEmpty)
+    #expect(!remote.speaksForProject(session))
+  }
 }

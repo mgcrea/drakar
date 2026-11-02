@@ -228,6 +228,30 @@ struct HostedSessionTests {
     session.stop()
   }
 
+  /// A runner project whose runner this Mac cannot reach runs nothing here: its session is
+  /// left with this Mac's host, which is not its runner's, and fails saying so, where a
+  /// session of this Mac's would have run its own `claude`.
+  @Test func aRunnerProjectItCannotReachRunsNothingHere() async throws {
+    let project = Project(folder: folder, runner: UUID().uuidString)
+    project.runnerHost = { nil }
+    project.executableOverride = fake
+    defer { project.stopAll() }
+    let session = project.newSession().session
+    session.accounts = { [] }
+    session.send("quick")
+    #expect(
+      await eventually {
+        if case .failed = session.phase { return true }
+        return false
+      })
+    if case .failed(let message) = session.phase { #expect(message.contains("runner")) }
+    #expect(!session.isProcessRunning)
+    try await Task.sleep(for: .milliseconds(300))
+    #expect(
+      !FileManager.default.fileExists(
+        atPath: fake.appendingPathExtension("stdin").path(percentEncoded: false)))
+  }
+
   /// A process the host cannot start fails the session as a child's failed start does,
   /// with why, rather than showing it stopped.
   @Test func aStartTheHostRefusesFailsTheSession() async throws {

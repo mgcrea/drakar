@@ -50,8 +50,10 @@ struct ContentView: View {
             .background(ColumnSash(edge: .leading))
         }
         // The first window on the folder reads its lists, shown or not, so a change shows on
-        // the toolbar button.
-        .task(id: ObjectIdentifier(project)) { project.capabilities.loadIfNeeded() }
+        // the toolbar button. Never a runner's folder, which this Mac's `claude` cannot list.
+        .task(id: ObjectIdentifier(project)) {
+          if project.runner == nil { project.capabilities.loadIfNeeded() }
+        }
         .focusedSceneValue(\.inspectorShown, $inspectorShown)
         // The window's closing, not this view's disappearing, stops the sessions: the editor
         // appearing with the first open file must not take the running ones with it.

@@ -14,9 +14,11 @@ struct SessionPills {
 
   private var catalog: ModelCatalog { .shared }
 
-  /// The list the session's pills offer: Codex's own, else the account's.
+  /// The list the session's pills offer: Codex's own, a runner session's own, else the
+  /// account's.
   static func models(for session: AgentSession, account: ClaudeAccount) -> [ModelOption]? {
-    session.agent == .codex
+    if session.isOnRunner { return session.models }
+    return session.agent == .codex
       ? ModelCatalog.shared.codexModels : ModelCatalog.shared.models(for: account)
   }
 
@@ -37,6 +39,8 @@ struct SessionPills {
       }
     }
     .onAppear {
+      // A runner session's list comes from its process alone: no probe of this Mac's.
+      if session.isOnRunner { return }
       if session.agent == .codex {
         catalog.loadCodex()
       } else {

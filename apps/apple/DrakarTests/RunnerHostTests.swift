@@ -527,6 +527,157 @@ struct RunnerHostTests {
     #expect(!session.isReconnecting)
   }
 
+  /// The runner's `claude`, for `aRunnerSessionRunsThroughTheRelay`: it answers `--version`,
+  /// writes down the environment it was started with, answers `initialize` with a command and
+  /// a model list, and runs a turn on "quick" that starts the session, reports a rate limit
+  /// and says something.
+  private static let runnerClaude = #"""
+    #!/bin/sh
+    case "$1" in --version) echo '2.1.0 (Claude Code)'; exit 0;; esac
+    env > "$0.env"
+    while read -r line; do
+      printf '%s\n' "$line" >> "$0.stdin"
+      case "$line" in
+        *'"subtype":"initialize"'*)
+          id=$(printf '%s' "$line" | sed -n 's/.*"request_id":"\([^"]*\)".*/\1/p')
+          printf '%s\n' '{"type":"control_response","response":{"subtype":"success","request_id":"'"$id"'","response":{"commands":[{"name":"runner-only","description":"","argumentHint":""}],"models":[{"value":"default","displayName":"Default"}]}}}'
+          ;;
+        *quick*)
+          printf '%s\n' '{"type":"system","subtype":"init","cwd":"/tmp","session_id":"s-runner","model":"m","permissionMode":"default"}'
+          printf '%s\n' '{"type":"rate_limit_event","rate_limit_info":{"unifiedWindows":{"five_hour":{"utilization":0.5,"resetsAt":4070908800}}}}'
+          printf '%s\n' '{"type":"assistant","message":{"id":"m-1","type":"message","role":"assistant","model":"m","content":[{"type":"text","text":"From the runner."}],"stop_reason":null},"parent_tool_use_id":null,"session_id":"s-runner"}'
+          printf '%s\n' '{"type":"result","subtype":"success","is_error":false,"result":"Done.","stop_reason":"end_turn","session_id":"s-runner"}'
+          ;;
+      esac
+    done
+
+    """#
+
+  /// A session of a runner's project (remote sessions spec §4): its `claude` is the one the
+  /// relay found on the PATH of the runner's environment file, started by the runner's host
+  /// with that environment and nothing of this Mac's. It reads no history and follows no
+  /// transcript here, though an account of this Mac's holds one of the same id, and what its
+  /// process says of the account stays with it.
+  @Test func aRunnerSessionRunsThroughTheRelay() async throws {
+    let bin = root.appending(path: "bin", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: bin, withIntermediateDirectories: true)
+    let claude = bin.appending(path: "claude")
+    try Data(Self.runnerClaude.utf8).write(to: claude)
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: claude.path)
+    try RunnerEnvironment.write(
+      ["PATH": "\(bin.path(percentEncoded: false)):/usr/bin:/bin", "DRAKAR_RUNNER_MARK": "1"],
+      to: RunnerEnvironment.file(in: root))
+    let macAccount = root.appending(path: "mac-account", directoryHint: .isDirectory)
+    let projects = macAccount.appending(path: "projects/p", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: projects, withIntermediateDirectories: true)
+    try Data("{}\n".utf8).write(to: projects.appending(path: "s-runner.jsonl"))
+    let mine = ClaudeAccount(directory: macAccount, isDefault: false)
+    try relayingSSH()
+    let helper = try #require(SessionHost.startHelper(in: directory))
+    defer { finish([helper]) }
+
+    let host = SessionHost(endpoint: .runner(settings))
+    let store = AccountStore(discover: { (accounts: [mine], shell: mine) })
+    let catalog = ModelCatalog()
+    let session = AgentSession(folder: folder)
+    session.accounts = { [mine] }
+    session.accountStore = store
+    session.catalog = catalog
+    // This Mac's stand-in, which a runner's session never runs.
+    session.executableOverride = fake
+    session.sessionHost = host
+    session.runner = settings.id.uuidString
+    session.send("quick")
+    #expect(
+      await eventually {
+        session.phase == .ready && !session.transcript.isRunning
+          && session.transcript.entries.contains { $0.kind == .text("From the runner.") }
+      })
+    defer { session.stop() }
+    #expect(session.isHosted)
+    #expect(session.executable == claude)
+    #expect(sent("quick") == 0)
+    let environment = try String(
+      contentsOf: claude.appendingPathExtension("env"), encoding: .utf8
+    ).split(separator: "\n").map(String.init)
+    #expect(environment.contains("DRAKAR_RUNNER_MARK=1"))
+    let macTMPDIR = try #require(ProcessInfo.processInfo.environment["TMPDIR"])
+    #expect(!environment.contains { $0.hasSuffix("=\(macTMPDIR)") })
+
+    // Its meta says where it runs and whose it is, here and as the runner's host keeps it.
+    let meta = try #require(session.meta())
+    #expect(meta.runner == settings.id.uuidString)
+    #expect(meta.origin == ThisMac.name && meta.owner == ThisMac.name)
+    #expect(meta.history == HistoryMark.none)
+    #expect(meta.start.runner == settings.id.uuidString)
+    let id = try #require(session.hostID)
+    let watcher = try await watcher()
+    defer { watcher.close() }
+    let held = try #require(
+      await answer(within: .seconds(5)) { try await watcher.list() }?.first { $0.id == id })
+    let kept = try JSONDecoder().decode(SessionMeta.self, from: held.meta)
+    #expect(kept.origin == ThisMac.name && kept.owner == ThisMac.name)
+    #expect(kept.runner == settings.id.uuidString)
+
+    // The account's limits and models are the session's, and its commands come from its own
+    // process.
+    let account = try #require(session.account)
+    #expect(session.usage?.fiveHour?.percent == 50)
+    #expect(store.usage(for: account) == nil)
+    #expect(store.usage(for: mine) == nil)
+    #expect(session.models?.map(\.value) == ["default"])
+    #expect(catalog.models(for: account) == nil)
+    #expect(session.reportedCommands?.map(\.name) == ["runner-only"])
+
+    // No transcript of this Mac's is looked for, nor followed once the process has gone.
+    #expect(session.hasLoadedHistory)
+    #expect(session.savedTarget == nil)
+    session.stop()
+    #expect(session.follower == nil)
+  }
+
+  /// A runner's session never runs on this Mac: a runner that cannot be reached, or a host
+  /// that is not this session's runner's, fails it by name, and this Mac's own `claude` is
+  /// never started in its place.
+  @Test func anUnreachableRunnerFailsItsSession() async throws {
+    defer { finish() }
+    try fakeSSH(
+      """
+      echo run >> '\(runs.path(percentEncoded: false))'
+      echo 'ssh: connect to host studio.local port 22: Connection refused' >&2
+      exit 255
+      """)
+    func failure(on host: SessionHost) async throws -> String {
+      let session = AgentSession(folder: folder)
+      session.accounts = { [] }
+      session.executableOverride = fake
+      session.sessionHost = host
+      session.runner = settings.id.uuidString
+      session.send("quick")
+      #expect(
+        await eventually {
+          if case .failed = session.phase { return true }
+          return false
+        })
+      #expect(!session.isProcessRunning)
+      guard case .failed(let message) = session.phase else { return "" }
+      return message
+    }
+
+    let unreachable = try await failure(on: SessionHost(endpoint: .runner(settings)))
+    #expect(unreachable.contains("Studio"))
+    #expect(sshRuns() == 1)
+    // Another runner's host, as a session made before its runner was set up again would hold:
+    // not asked at all.
+    let other = SessionHost(
+      endpoint: .runner(RunnerSettings(name: "Other", destination: "other.local")))
+    #expect(try await failure(on: other).contains("runner"))
+    // This Mac's own host, as a runner project's session it could not reach is left with.
+    #expect(try await failure(on: SessionHost()).contains("runner"))
+    #expect(sshRuns() == 1)
+    #expect(sent("quick") == 0)
+  }
+
   /// A session on `host`, its first turn over.
   private func startedSession(on host: SessionHost) async throws -> AgentSession {
     _ = await AgentSession.environment.value

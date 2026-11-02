@@ -32,7 +32,7 @@ protocol AgentBackend: AnyObject {
 struct AgentStart: Codable, Equatable {
   var folder: URL
   var resuming: ResumeTarget?
-  /// The login shell's.
+  /// The login shell's; a runner's whole (`runner`).
   var environment: [String: String]
   var executableOverride: URL?
   /// Nil or `default`: the agent's own.
@@ -44,6 +44,12 @@ struct AgentStart: Codable, Equatable {
   var name: String?
   /// The account picked for this session alone, over the folder's; Claude Code's only.
   var account: ClaudeAccount? = nil
+  /// The runner it starts on (`RunnerSettings.id`), nil for this Mac. Its environment,
+  /// executable and account are then the runner's, made whole from the runner's facts
+  /// (`ClaudeLaunch.make(onRunner:)`) and taken as they are, so that no Mac that launches or
+  /// replays it reads anything of its own for them. Optional so that a meta written before
+  /// runners still decodes.
+  var runner: String? = nil
 }
 
 struct AgentLaunch {

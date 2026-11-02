@@ -121,6 +121,88 @@ struct ClaudeLaunchTests {
     #expect(both.environment["CLAUDE_CODE_DISABLE_FILE_CHECKPOINTING"] == "1")
   }
 
+  /// A runner's facts, its environment and its `claude` as its relay states them.
+  private func runnerFacts(
+    environment: [String: String], claude: [String] = ["/runner/bin/claude"]
+  ) -> RunnerFacts {
+    RunnerFacts(
+      drakar: "9.9", build: "999", hostMajors: [HostWire.major], home: "/Users/r", user: "r",
+      hostname: "studio", environment: environment, environmentFrom: .gui,
+      claude: claude.map { ClaudeCandidate(path: $0, version: nil) },
+      accounts: ["/Users/r/.claude", "/Users/r/.claude-work"])
+  }
+
+  /// A runner's `claude` runs on the runner's environment and binary alone: nothing of this
+  /// Mac's, its own HOME and TMPDIR least of all, nor the account picked here in Settings.
+  @Test func runnerSpawnCarriesNothingOfTheMac() throws {
+    let mac = ProcessInfo.processInfo.environment
+    let macTMPDIR = try #require(mac["TMPDIR"])
+    #expect(mac["HOME"] != "/Users/r")
+    // An account picked here in Settings, which a session of this Mac's would start under.
+    let mine = folder.appending(path: ".claude-mine", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: mine, withIntermediateDirectories: true)
+    let suite = "drakar-tests-\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defaults.set(mine.path(percentEncoded: false), forKey: PreferenceKey.newSessionAccount)
+    defer { defaults.removePersistentDomain(forName: suite) }
+
+    let facts = runnerFacts(environment: ["PATH": "/runner/bin", "HOME": "/Users/r"])
+    let launch = ClaudeChoice.$testSuite.withValue(suite) {
+      ClaudeLaunch.make(onRunner: facts, folder: folder, account: nil, executable: nil)
+    }
+    #expect(launch.executable == URL(filePath: "/runner/bin/claude"))
+    #expect(launch.environment["HOME"] == "/Users/r")
+    #expect(launch.environment["PATH"] == "/runner/bin")
+    #expect(launch.environment["CLAUDE_CONFIG_DIR"] == nil)
+    #expect(launch.environment["CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING"] == "true")
+    #expect(!launch.environment.values.contains(macTMPDIR))
+    // The runner's own default account, not this Mac's.
+    #expect(launch.account?.key == "/Users/r/.claude")
+    #expect(launch.account?.isDefault == true)
+
+    // What the session's backend makes of it, and what a replay of its meta makes, on any
+    // Mac: the same, with nothing read here.
+    let start = AgentStart(
+      folder: folder, environment: launch.environment, executableOverride: launch.executable,
+      allowsBypass: false, account: launch.account, runner: UUID().uuidString)
+    let configuration = try #require(
+      ClaudeChoice.$testSuite.withValue(suite) { ClaudeBackend().launch(start) }.configuration)
+    #expect(configuration.executable == URL(filePath: "/runner/bin/claude"))
+    #expect(configuration.environment == launch.environment)
+    #expect(configuration.currentDirectory == folder)
+    #expect(!configuration.environment.values.contains(macTMPDIR))
+
+    // A `claude` picked for the runner wins over the first one found there.
+    let picked = ClaudeLaunch.make(
+      onRunner: facts, folder: folder, account: nil, executable: "/opt/homebrew/bin/claude")
+    #expect(picked.executable == URL(filePath: "/opt/homebrew/bin/claude"))
+    // None found there is none: not looked for on this Mac.
+    let none = ClaudeLaunch.make(
+      onRunner: runnerFacts(environment: ["PATH": "/usr/bin"], claude: []), folder: folder,
+      account: nil, executable: nil)
+    #expect(none.executable == nil)
+  }
+
+  /// An account of the runner's is named to its `claude` by its directory there.
+  @Test func aRunnerAccountNamesItsDirectory() {
+    let work = ClaudeAccount(
+      directory: URL(filePath: "/Users/r/.claude-work", directoryHint: .isDirectory),
+      isDefault: false)
+    let launch = ClaudeLaunch.make(
+      onRunner: runnerFacts(environment: ["PATH": "/runner/bin", "HOME": "/Users/r"]),
+      folder: folder, account: work, executable: nil)
+    #expect(launch.environment["CLAUDE_CONFIG_DIR"] == "/Users/r/.claude-work")
+    #expect(launch.account == work)
+    // The runner shell's own directory is its account when none is picked.
+    let shell = ClaudeLaunch.make(
+      onRunner: runnerFacts(
+        environment: ["PATH": "/runner/bin", "CLAUDE_CONFIG_DIR": "/Users/r/.claude-work"]),
+      folder: folder, account: nil, executable: nil)
+    #expect(shell.environment["CLAUDE_CONFIG_DIR"] == "/Users/r/.claude-work")
+    #expect(shell.account?.key == "/Users/r/.claude-work")
+    #expect(shell.account?.isDefault == false)
+  }
+
   /// The capability probe is never prompted: it keeps no checkpoints, which would leave an
   /// empty `file-history/<id>/` folder for each probe. A session started the same way does.
   @Test func theProbeKeepsNoCheckpoints() {

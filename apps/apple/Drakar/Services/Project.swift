@@ -655,10 +655,11 @@ final class Project {
     agent: AgentKind? = nil, folder: URL? = nil, account: ClaudeAccount? = nil,
     select shows: Bool = true
   ) -> ProjectSession {
+    // A runner's sessions are Claude Code's (remote sessions spec, Goals).
     let item = make(
       AgentSession(
-        folder: folder ?? self.folder, agent: agent ?? ClaudeChoice.defaultAgent,
-        account: account))
+        folder: folder ?? self.folder,
+        agent: runner == nil ? agent ?? ClaudeChoice.defaultAgent : .claude, account: account))
     sessions.insert(item, at: 0)
     if shows { select(item) }
     return item
@@ -709,6 +710,8 @@ final class Project {
   /// commands and skills for the project otherwise.
   func slashCommands(for session: AgentSession) -> [SkillEntry] {
     guard session.features.slashCommands else { return [] }
+    // A runner session's are what its own process listed: none before it has.
+    if session.isOnRunner { return session.reportedCommands ?? [] }
     switch session.agent {
     case .claude: return capabilities.lists.commands ?? capabilities.lists.skills ?? []
     case .codex: return codexSkills(for: session).skills ?? []
@@ -717,7 +720,8 @@ final class Project {
 
   /// The first `/` typed in `session` reads its agent's list.
   func loadSlashCommands(for session: AgentSession) {
-    guard session.features.slashCommands else { return }
+    // No probe of this Mac's `claude` lists a runner's folder.
+    guard session.features.slashCommands, !session.isOnRunner else { return }
     switch session.agent {
     case .claude: capabilities.loadIfNeeded()
     case .codex: codexSkills(for: session).loadIfNeeded()
@@ -1086,10 +1090,11 @@ final class Project {
 
   /// A session's `initialize` lists the project's skills only from the project's own
   /// folder, under the account the lists are for: a worktree is another checkout. The lists
-  /// are Claude Code's: a Codex session never speaks for them.
+  /// are Claude Code's: a Codex session never speaks for them. Nor does a runner's, whose
+  /// folder and account are the runner's, whatever their paths.
   func speaksForProject(_ session: AgentSession) -> Bool {
-    ProjectPath.normalize(session.folder)
-      == ProjectPath.normalize(folder)
+    !session.isOnRunner
+      && ProjectPath.normalize(session.folder) == ProjectPath.normalize(folder)
       && session.agent == .claude && session.account?.key == capabilities.accountKey
   }
 

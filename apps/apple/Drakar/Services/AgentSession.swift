@@ -122,6 +122,14 @@ final class AgentSession {
   @ObservationIgnored var accounts: () -> [ClaudeAccount] = { ClaudeAccount.discover() }
   /// Where the session's `rate_limit_event`s go; tests give it their own.
   @ObservationIgnored var accountStore: AccountStore = .shared
+  /// A runner session's account limits and models, as its process reports them: kept here,
+  /// for its account is the runner's, which this Mac's `AccountStore` and `ModelCatalog` do
+  /// not hold (remote sessions spec §4). Nil for a session of this Mac's.
+  private(set) var usage: AccountUsage?
+  private(set) var models: [ModelOption]?
+  /// What a runner session's `/` menu offers: the commands and skills its own process listed,
+  /// nil until it has. No probe of this Mac's lists a runner's folder.
+  private(set) var reportedCommands: [SkillEntry]?
 
   /// For the window's attention: a turn ended, a permission request or an MCP server's
   /// question arrived, the process stopped on its own.
@@ -175,9 +183,11 @@ final class AgentSession {
   /// session of this Mac's (remote sessions spec §4).
   @ObservationIgnored var runner: String?
   var isOnRunner: Bool { runner != nil }
-  /// What the last process was launched with and where the history stood then: the parts of
-  /// `meta()` only a start sets.
-  @ObservationIgnored private var launched: (start: AgentStart, history: HistoryMark)?
+  /// What the last process was launched with, where the history stood then, and where it
+  /// runs and whose it is: the parts of `meta()` only a start sets, or the meta a replay
+  /// rebuilt it from, so that no meta sent later drops them.
+  @ObservationIgnored private var launched:
+    (start: AgentStart, history: HistoryMark, placement: Placement)?
   /// The meta the host holds for the process, so that only a change is sent.
   @ObservationIgnored private var sentMeta: SessionMeta?
   /// Rebuilding from a log: what happened was told when it happened, so no callback runs.
@@ -226,7 +236,9 @@ final class AgentSession {
     [(text: String, context: String?, attachments: [AttachmentPreview], uuid: String)] = []
   /// The history could not be read: the reason stays in `phase` and nothing is sent.
   @ObservationIgnored private var historyFailed = false
-  @ObservationIgnored private var follower: TranscriptFollower?
+  /// Reads on in the transcript file another process writes; never one for a runner's
+  /// session, whose transcript is on the runner.
+  @ObservationIgnored private(set) var follower: TranscriptFollower?
   /// A prompt sent before the process existed, written right after `initialize`, and what
   /// the transcript showed of it.
   @ObservationIgnored private var pendingPrompt: AgentCommand?
@@ -292,7 +304,7 @@ final class AgentSession {
     fanOut = meta.fanOut
     executableOverride = meta.start.executableOverride
     windowFolder = URL(filePath: meta.windowFolder, directoryHint: .isDirectory)
-    launched = (meta.start, meta.history)
+    launched = (meta.start, meta.history, Placement(of: meta))
     let started = records.first?.time ?? .now
     historyLoad = Task {
       await self.readHistory(meta.history, at: started, through: meta.start.resuming?.resumeAt)
@@ -436,15 +448,18 @@ final class AgentSession {
   /// The record a relaunched app rebuilds the session from, for its last process; nil before
   /// one was launched.
   func meta() -> SessionMeta? {
-    launched.map { meta(start: $0.start, history: $0.history) }
+    launched.map { meta(start: $0.start, history: $0.history, placement: $0.placement) }
   }
 
-  private func meta(start: AgentStart, history: HistoryMark) -> SessionMeta {
+  private func meta(start: AgentStart, history: HistoryMark, placement: Placement)
+    -> SessionMeta
+  {
     SessionMeta(
       start: start, windowFolder: (windowFolder ?? folder).path(percentEncoded: false),
       name: name, modePick: modePick, modelPick: modelPick, effortPick: effortPick,
       accountPick: accountPick, sessionID: sessionID, savedTarget: savedTarget,
-      fanOut: fanOut, history: history)
+      fanOut: fanOut, history: history, runner: placement.runner, origin: placement.origin,
+      owner: placement.owner)
   }
 
   /// Hands the host the meta when it changed; only a hosted process keeps one.
@@ -703,6 +718,12 @@ final class AgentSession {
   /// not replay it, and transcripts run to megabytes, so it is read off the main thread.
   /// Every caller waits for the same load.
   func loadHistory() async {
+    // A runner's session starts new and its history is the host's log: nothing to read here.
+    if isOnRunner {
+      isLoadingHistory = false
+      hasLoadedHistory = true
+      return
+    }
     if historyLoad == nil {
       historyLoad = Task { await self.readHistory() }
     }
@@ -891,24 +912,48 @@ final class AgentSession {
     modePick = startingMode
     let effort = effortPick ?? (features.usesSettingsDefaults ? ClaudeChoice.defaultEffort : nil)
     let allowsBypass = ClaudeChoice.allowsBypass
-    let environment = await Self.environment.value
-    guard stillWanted(since: stops) else { return }
-    guard FileManager.default.fileExists(atPath: folder.path(percentEncoded: false)) else {
-      return fail(String(localized: "The folder \(folder.lastPathComponent) no longer exists."))
+    let start: AgentStart
+    // A runner's session is started from the runner's facts, which only its connection brings,
+    // and on that connection, or not at all: never on this Mac (remote sessions spec §4).
+    var onRunner: (client: HostClient, facts: RunnerFacts)? = nil
+    if let runner {
+      onRunner = await reach(runner: runner)
+      guard stillWanted(since: stops) else { return }
+      guard let onRunner else { return fail(unreachable(runner)) }
+      // Its folder is the runner's, which this Mac's disk says nothing of.
+      let launch = ClaudeLaunch.make(
+        onRunner: onRunner.facts, folder: folder, account: accountPick, executable: nil)
+      start = AgentStart(
+        folder: folder, resuming: nil, environment: launch.environment,
+        executableOverride: launch.executable, model: modelPick, mode: modePick, effort: effort,
+        allowsBypass: allowsBypass, name: unsentName, account: launch.account, runner: runner)
+    } else {
+      let environment = await Self.environment.value
+      guard stillWanted(since: stops) else { return }
+      guard FileManager.default.fileExists(atPath: folder.path(percentEncoded: false)) else {
+        return fail(String(localized: "The folder \(folder.lastPathComponent) no longer exists."))
+      }
+      start = AgentStart(
+        folder: folder, resuming: resuming, environment: environment,
+        executableOverride: executableOverride, model: modelPick, mode: modePick, effort: effort,
+        allowsBypass: allowsBypass, name: unsentName,
+        account: resuming == nil ? accountPick : nil)
     }
-    let start = AgentStart(
-      folder: folder, resuming: resuming, environment: environment,
-      executableOverride: executableOverride, model: modelPick, mode: modePick, effort: effort,
-      allowsBypass: allowsBypass, name: unsentName,
-      account: resuming == nil ? accountPick : nil)
     let launch = backend.launch(start)
     account = launch.account
-    guard let configuration = launch.configuration else { return fail(backend.notFoundMessage) }
+    guard let configuration = launch.configuration else {
+      return fail(runner != nil ? notFoundOnRunner : backend.notFoundMessage)
+    }
     executable = launch.executable
     let history = historyMark()
-    let meta = meta(start: start, history: history)
-    let process = await transport(for: configuration, meta: meta)
+    // Whose it is, said once at the spawn: this Mac started it and holds it.
+    let placement =
+      runner.map { Placement(runner: $0, origin: ThisMac.name, owner: ThisMac.name) }
+      ?? Placement()
+    let meta = meta(start: start, history: history, placement: placement)
+    let transport = await transport(for: configuration, meta: meta, onRunner: onRunner?.client)
     guard stillWanted(since: stops) else { return }
+    guard let process = transport else { return fail(runner.map(unreachable)) }
     // The last word before the process starts, with no await after it: a session live in
     // another process now is followed, not written to. The monitor may not have read the
     // registries yet at launch, so the account's own registry is read here too.
@@ -920,7 +965,7 @@ final class AgentSession {
     do {
       let stream = try process.start()
       self.process = process
-      launched = (start, history)
+      launched = (start, history, placement)
       sentMeta = meta
       // A switch the previous process never answered never will be.
       unansweredChanges.removeAll()
@@ -941,14 +986,52 @@ final class AgentSession {
   }
 
   /// The session host's process when there is a host, else the app's own child (spec §5).
-  /// Nothing spawns until `start()`: the session may still let it go unstarted.
-  private func transport(for configuration: AgentProcess.Configuration, meta: SessionMeta)
-    async -> any ProcessTransport
-  {
+  /// A runner's session's is the runner's host's, on the connection `runner` its spawn was
+  /// built on, and nil rather than a child of this Mac's. Nothing spawns until `start()`: the
+  /// session may still let it go unstarted.
+  private func transport(
+    for configuration: AgentProcess.Configuration, meta: SessionMeta,
+    onRunner runner: HostClient?
+  ) async -> (any ProcessTransport)? {
     if let makeTransport { return await makeTransport(configuration) }
+    if let runner {
+      guard let bytes = try? JSONEncoder().encode(meta) else { return nil }
+      return HostedProcess(client: runner, configuration: configuration, meta: bytes)
+    }
     guard let client = await sessionHost.client(), let bytes = try? JSONEncoder().encode(meta)
     else { return AgentProcess(configuration) }
     return HostedProcess(client: client, configuration: configuration, meta: bytes)
+  }
+
+  /// The connection to the runner `id` names and the facts its relay stated, connecting
+  /// first if need be. Nil unless this session's host is that runner's (`reaches`, never true
+  /// of this Mac's host), not let go of, and reached: a runner project's session left with
+  /// this Mac's host, or with a runner since cleared or replaced, is not started anywhere.
+  private func reach(runner id: String) async -> (client: HostClient, facts: RunnerFacts)? {
+    guard sessionHost.reaches(runner: id), let client = await sessionHost.client(),
+      let facts = sessionHost.facts
+    else { return nil }
+    return (client, facts)
+  }
+
+  /// Why a runner's session did not start: its runner out of reach now, by name and with why
+  /// when the host knows, or no longer the one set up.
+  private func unreachable(_ id: String) -> String {
+    guard sessionHost.reaches(runner: id), let name = sessionHost.runnerName else {
+      return String(
+        localized:
+          "Drakar can't reach this session's runner: it is no longer set up in Settings › Runner.")
+    }
+    let message = String(localized: "Drakar can't reach \(name) right now.")
+    guard let failure = sessionHost.failure else { return message }
+    return "\(message) \(failure.message)"
+  }
+
+  /// The runner has no `claude` its relay found.
+  private var notFoundOnRunner: String {
+    let name = sessionHost.runnerName ?? String(localized: "the runner")
+    return String(
+      localized: "Claude Code was not found on \(name). Install it there, then try again.")
   }
 
   /// Where the history stands as a process starts, the rest being in its log: Codex's
@@ -1076,6 +1159,8 @@ final class AgentSession {
   /// memory, aren't read again, and a session started here, which read no history, has a
   /// follower at all.
   private func followFromHere() {
+    // A runner's session writes its transcript on the runner: nothing here to follow.
+    guard !isOnRunner else { return }
     // As `ownTarget()` finds it, without saving it: a first turn that never finished keeps
     // no saved target.
     let own = savedTarget ?? (resuming?.forks == true ? nil : resuming) ?? locateTarget()
@@ -1494,9 +1579,15 @@ final class AgentSession {
   private func handle(_ signal: SessionSignal, at time: Date) {
     switch signal {
     case .rateLimit(let info):
-      if let account { accountStore.record(info, for: account, at: time) }
+      if isOnRunner {
+        if let reading = AccountUsage(live: info, at: time) { usage = reading.merged(usage) }
+      } else if let account {
+        accountStore.record(info, for: account, at: time)
+      }
     case .models(let models):
-      if agent == .codex {
+      if isOnRunner {
+        self.models = models
+      } else if agent == .codex {
         catalog.recordCodex(models)
       } else if let account {
         catalog.record(models, for: account)
@@ -1504,6 +1595,9 @@ final class AgentSession {
     case .modeAdopted(let mode):
       adopt(mode: mode)
     case .initialized(let reply):
+      if isOnRunner, let commands = Self.commands(fromInitialize: reply) {
+        reportedCommands = commands
+      }
       if isReplaying {
         replayedInitialize = .some(reply)
         replayedCommands = nil
@@ -1511,6 +1605,9 @@ final class AgentSession {
         onInitialized?(reply)
       }
     case .commandsChanged(let commands):
+      if isOnRunner, let listed = Self.commands(fromInitialize: commands) {
+        reportedCommands = listed
+      }
       if isReplaying { replayedCommands = commands } else { onCommandsChanged?(commands) }
     case .settingsApplied(let effort, let model, let autoModeDisabled):
       appliedEffort = effort
@@ -1543,7 +1640,8 @@ final class AgentSession {
   /// The transcript lands under whichever account the shell selected; look for it in each.
   /// It exists from the first prompt on, which is when the session gave its id.
   private func locateTarget() -> ResumeTarget? {
-    guard let id = sessionID else { return nil }
+    // A runner's session's transcript is on the runner, never in an account of this Mac's.
+    guard !isOnRunner, let id = sessionID else { return nil }
     return backend.locateTarget(
       sessionID: id, cwd: transcript.session?.cwd ?? folder.path(percentEncoded: false),
       in: accounts())
@@ -1624,6 +1722,29 @@ final class AgentSession {
       "\(home)/.local/bin", "/opt/homebrew/bin", "/usr/local/bin", environment["PATH"] ?? "",
     ].joined(separator: ":")
     return environment
+  }
+}
+
+extension AgentSession {
+  /// The `/` menu's list from an `initialize` reply or a `commands_changed` list, as the
+  /// project's lists take it: the commands, else the skills.
+  fileprivate static func commands(fromInitialize reply: JSONValue?) -> [SkillEntry]? {
+    ProjectCapabilities.commands(fromInitialize: reply)
+      ?? ProjectCapabilities.skills(fromInitialize: reply)
+  }
+
+  /// Where a process runs and whose it is, as its meta says them: nil throughout for a
+  /// process of this Mac's.
+  fileprivate struct Placement: Equatable {
+    var runner: String?
+    var origin: String?
+    var owner: String?
+  }
+}
+
+extension AgentSession.Placement {
+  fileprivate init(of meta: SessionMeta) {
+    self.init(runner: meta.runner, origin: meta.origin, owner: meta.owner)
   }
 }
 
