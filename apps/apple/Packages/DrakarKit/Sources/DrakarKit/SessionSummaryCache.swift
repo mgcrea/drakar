@@ -16,6 +16,8 @@ public struct SessionSummaryCache: Sendable {
   }
 
   /// The saved summary of `file`, while it still has the size and date it was read at.
+  /// Keyed by the path as the listing spells it: `/var/…` and `/private/var/…` are two
+  /// keys, so only summaries `SessionIndex.list` returned belong here.
   public func summary(of file: URL, modified: Date, size: Int) -> SessionSummary? {
     guard let summary = byFile[file.path(percentEncoded: false)],
       summary.size == size, summary.modified == modified
