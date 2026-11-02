@@ -1521,6 +1521,45 @@ struct RunnerHostTests {
     #expect(await meta(id, on: watcher)?.owner == nil)
   }
 
+  /// Taken over on the runner between the window's listing and its attach: the host refuses
+  /// the attach, and the row the window would have kept out of reach closes with the notice,
+  /// as a reconnect's does.
+  @Test func aTakeBackRacedByATakeOverClosesItsTab() async throws {
+    try relayingSSH()
+    let helper = try #require(SessionHost.startHelper(in: directory))
+    let name = namingThisMac()
+    defer {
+      ThisMac.name = name
+      finish([helper])
+    }
+    let host = SessionHost(endpoint: .runner(settings))
+    let project = runnerProject(on: host)
+    defer { project.stopAll() }
+    let notices = Notices()
+    project.noticeTakenOver = { item, runner in notices.said.append((item.id, runner)) }
+    let id = try #require(try await cats(on: host, owners: ["Test MacBook"]).first)
+    let watcher = try await watcher()
+    defer {
+      try? watcher.send(.terminate(id: id, forget: true))
+      watcher.close()
+    }
+    // As the window listed it: this Mac's, and free.
+    let listed = try #require(await held(id, on: watcher))
+    // The runner's own Drakar takes it over: the test's connection stands in.
+    #expect(!isRefusal(await firstEvent(of: watcher.attach(id, from: 0))))
+    var owned = try #require(await meta(id, on: watcher))
+    owned.owner = nil
+    try watcher.send(.setMeta(id: id, meta: try JSONEncoder().encode(owned)))
+    #expect(await eventually { await meta(id, on: watcher)?.owner == nil })
+
+    await project.adoptHeld([listed])
+    #expect(!project.sessions.contains { $0.session.hostID == id })
+    #expect(!project.sessions.contains { $0.session.isOutOfReach })
+    #expect(notices.said.count == 1)
+    #expect(notices.said.first?.runner == "Studio")
+    #expect(await held(id, on: watcher)?.attachedApp == getpid())
+  }
+
   /// A relay of the Mac's own that hangs on to a session it still owns keeps its tab, waiting
   /// it out as before, with the ownership its meta gives.
   @Test func aStaleRelayOfThisMacsKeepsItsTab() async throws {
@@ -1826,5 +1865,47 @@ struct RunnerHostTests {
           && !item.session.transcript.isRunning
       })
     #expect(item.session.isOnRunner && item.session.isHosted)
+  }
+
+  /// A runner window opened while its runner is out of reach, as a launch reopens it: the
+  /// take-back's listing never came, which is not a runner holding nothing. Once the runner is
+  /// reached, the window takes back what this Mac owns there, but not a row closed here.
+  @Test func aRunnerWindowOpenedOutOfReachTakesBackOnceReached() async throws {
+    _ = try installRunnerClaude()
+    try relayingSSH()
+    let helper = try #require(SessionHost.startHelper(in: directory))
+    let name = namingThisMac()
+    defer {
+      ThisMac.name = name
+      finish([helper])
+    }
+    let host = SessionHost(endpoint: .runner(settings), cooldown: .milliseconds(100))
+    let project = runnerProject(on: host)
+    defer { project.stopAll() }
+    // A row closed while it reconnected: Home's to open again, never a take-back's.
+    let closed = try await startedRow(in: project)
+    let closedID = try #require(closed.session.hostID)
+    let id = try #require(try await cats(on: host, owners: ["Test MacBook"]).first)
+    let watcher = try await watcher()
+    defer {
+      for id in [id, closedID] { try? watcher.send(.terminate(id: id, forget: true)) }
+      watcher.close()
+    }
+    try fakeSSH("exit 255")
+    let relay = try #require(await attached(closedID, on: watcher))
+    kill(relay, SIGKILL)
+    #expect(await eventually { closed.session.isReconnecting })
+    project.remove(closed)
+    #expect(await eventually { await isLetGo(closedID, on: watcher) })
+
+    await project.takeBackHeld().value
+    #expect(!project.sessions.contains { $0.session.hostID != nil })
+
+    try relayingSSH()
+    #expect(await eventually { await host.client() != nil })
+    #expect(await eventually { project.sessions.contains { $0.session.hostID == id } })
+    try await Task.sleep(for: .seconds(1))
+    #expect(!project.sessions.contains { $0.session.hostID == closedID })
+    #expect(await isLetGo(closedID, on: watcher))
   }
 }

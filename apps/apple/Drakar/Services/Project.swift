@@ -428,6 +428,10 @@ final class Project {
   /// that relay goes, as it does of a process brought back. Not taken then, for it was closed
   /// here; Home lists it, and opens it again (`reopen`).
   @ObservationIgnored private var closedHere: Set<String> = []
+  /// A runner window's take-back found its runner out of reach (`takeBackHeld`): no listing
+  /// came, which says nothing of what the runner holds for it. Taken back on the first new
+  /// connection a listing comes on, as the take-back would have.
+  @ObservationIgnored private var takeBackMissed = false
   /// The accounts a session rebuilt here, from a process the host holds, finds its picked
   /// account and its transcript in; tests give their own.
   @ObservationIgnored var accounts: () -> [ClaudeAccount] = { ClaudeAccount.discover() }
@@ -1538,11 +1542,14 @@ final class Project {
     for item in waiting { item.session.waitsForHost = true }
     let host = sessionHost
     return Task {
-      let held = await host?.heldIfRunning() ?? []
+      // A runner's out of reach is no runner holding nothing: taken back once it is reached.
+      let listed = host?.isRunner == true ? await host?.listed() : await host?.heldIfRunning()
+      let held = listed ?? []
       // The window closed meanwhile: no row is made and nothing is sent, and the batches
       // stay as stored for the next launch.
       let olderHosts = await host?.heldByOlderHosts() ?? []
       guard !isStopped else { return }
+      if host?.isRunner == true, listed == nil { takeBackMissed = true }
       await adoptHeld(held, olderHosts: olderHosts)
       restoreFanOuts()
       for item in waiting { item.session.waitsForHost = false }
@@ -1561,7 +1568,8 @@ final class Project {
   /// a runner's window takes what this Mac owns, and shows nothing of the rest, which it has
   /// no transcript of (Home lists it). A runner's window hears every `released`, for a
   /// process brought back to this Mac is one it shows nothing of; not a new connection, for
-  /// what it finds free then may be a row closed here, which only Home opens again.
+  /// what it finds free then may be a row closed here, which only Home opens again, unless its
+  /// take-back never reached the runner (`takeBackOnceReached`).
   func adoptHeld(_ held: [HeldProcess], olderHosts: [HeldProcess] = []) async {
     let own = ProjectPath.normalize(folder.path(percentEncoded: false))
     let ours = { (process: HeldProcess) -> Bool in
@@ -1605,7 +1613,12 @@ final class Project {
     shownHeldElsewhere.formUnion(watched)
     sessionHost?.watchReleases(
       for: self, takes: { [weak self] id in self?.released(id) ?? false },
-      connected: { [weak self] in Task { await self?.settleShown() } })
+      connected: { [weak self] in
+        Task {
+          await self?.settleShown()
+          await self?.takeBackOnceReached()
+        }
+      })
     // Let go of while its row was being made: no `released` says so again.
     if !watched.isEmpty { await settleShown() }
   }
@@ -1639,6 +1652,17 @@ final class Project {
       await settle(id, among: held)
     }
     return true
+  }
+
+  /// The take-back a runner window missed (`takeBackMissed`), once a listing comes: what this
+  /// Mac owns there and no app holds becomes the window's rows, as at a launch, but for the
+  /// rows closed here meanwhile, which only Home opens again. Once.
+  private func takeBackOnceReached() async {
+    guard takeBackMissed, !isStopped, let held = await sessionHost?.listed() else { return }
+    // Another connection's got there first.
+    guard takeBackMissed, !isStopped else { return }
+    takeBackMissed = false
+    await adoptHeld(held.filter { !closedHere.contains($0.id) })
   }
 
   /// What the host holds now, for each row showing one of its processes read-only: on a new
@@ -1685,10 +1709,29 @@ final class Project {
   /// stays as it was should the host refuse: another app took it first. A window that closed
   /// during the replay stops it as it stopped its rows: no process stays attached to this app
   /// with no row to show it. The session, once it has a row.
+  ///
+  /// On a runner, the runner's own Drakar may take the process over between the listing and
+  /// the attach: the host refuses it then, and the row would stay out of reach of a session
+  /// no longer this Mac's. Listed again, one this Mac no longer owns closes its tab with the
+  /// notice a reconnect gives (`takenOver`).
   @discardableResult private func takeBack(_ process: HeldProcess) async -> AgentSession? {
     guard let session = await reattached(process) else { return nil }
     if session.isOutOfReach, isShownReadOnly(process.id) { return nil }
+    var takenOver = false
+    if session.isOutOfReach, session.refusedAsHeldElsewhere, let host = sessionHost,
+      host.isRunner, case .notOwned = await host.ownership(of: process.id)
+    {
+      takenOver = true
+    }
+    guard !isStopped else {
+      session.stop()
+      return nil
+    }
     adopt(session, replacing: process.id)
+    if takenOver, let item = sessions.first(where: { $0.session === session }) {
+      self.takenOver(item)
+      return nil
+    }
     return session
   }
 
