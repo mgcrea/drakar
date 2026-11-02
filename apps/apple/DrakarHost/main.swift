@@ -1,5 +1,6 @@
 import DrakarKit
 import Foundation
+import IOKit.pwr_mgt
 
 // The session host (spec §1): holds the CLIs Drakar's sessions run, so they outlive the
 // app. Started by the app's `SessionHost`, detached; it leaves once it has nothing to hold.
@@ -43,12 +44,31 @@ do {
   exit(1)
 }
 
+/// The Mac kept from idle sleep while a turn an app marked (`keepAwake`) runs, as
+/// `caffeinate -i` would: an app that quit or closed its window leaves it to the host.
+/// Looked at with the idle check, so it lags a turn by up to 5 seconds.
+var awake: IOPMAssertionID?
+@MainActor func keepAwake(turns: Int) {
+  if turns == 0, let id = awake {
+    IOPMAssertionRelease(id)
+    awake = nil
+  } else if turns > 0, awake == nil {
+    var id = IOPMAssertionID(0)
+    let created = IOPMAssertionCreateWithName(
+      kIOPMAssertionTypePreventUserIdleSystemSleep as CFString,
+      IOPMAssertionLevel(kIOPMAssertionLevelOn),
+      "Drakar's session host: an agent is working" as CFString, &id)
+    if created == kIOReturnSuccess { awake = id }
+  }
+}
+
 /// Idle (nothing held, no app connected) for 30 seconds in a row, checked every 5.
 let idleLimit = 30.0
 let timer = DispatchSource.makeTimerSource(queue: .main)
 var idleSince: Date?
 timer.schedule(deadline: .now() + 5, repeating: 5)
 timer.setEventHandler {
+  keepAwake(turns: core.keptAwake)
   guard core.isIdle else {
     idleSince = nil
     return

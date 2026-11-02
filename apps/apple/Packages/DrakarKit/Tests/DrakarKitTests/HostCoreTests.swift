@@ -441,6 +441,54 @@ import Testing
     #expect(host.core.isIdle)
   }
 
+  /// A turn keeps the Mac awake until the process writes the line the app named, whoever is
+  /// attached by then; nil lets go sooner, and a process that ends lets go too.
+  @Test func aTurnKeepsTheMacAwakeUntilItsLine() async throws {
+    let host = try Host()
+    defer { host.close() }
+    let client = host.connect(pid: 42)
+    let id = try host.spawn("/bin/cat", from: client)
+    _ = host.core.handle(.attach(id: id, from: 0), from: client)
+    let end = bytes(#""type":"result""#)
+    #expect(host.core.handle(.keepAwake(id: id, until: end), from: client).isEmpty)
+    #expect(host.core.keptAwake == 1)
+
+    _ = host.core.handle(
+      .write(id: id, bytes: bytes(#"{"type":"assistant"}"# + "\n")), from: client)
+    #expect(await eventually { host.logged(id).count == 2 })
+    #expect(host.core.keptAwake == 1)
+
+    host.core.disconnected(client)
+    let other = host.connect(pid: 43)
+    _ = host.core.handle(.write(id: id, bytes: bytes(#"{"type":"result"}"# + "\n")), from: other)
+    #expect(await eventually { host.logged(id).count == 4 })
+    #expect(host.core.keptAwake == 0)
+
+    _ = host.core.handle(.keepAwake(id: id, until: end), from: other)
+    #expect(host.core.keptAwake == 1)
+    _ = host.core.handle(.keepAwake(id: id, until: nil), from: other)
+    #expect(host.core.keptAwake == 0)
+
+    _ = host.core.handle(.keepAwake(id: id, until: end), from: other)
+    _ = host.core.handle(.closeInput(id: id), from: other)
+    #expect(await eventually { host.hasExited(id) })
+    #expect(host.core.keptAwake == 0)
+    _ = host.core.handle(.keepAwake(id: id, until: end), from: other)
+    #expect(host.core.keptAwake == 0)
+  }
+
+  @Test func onlyTheAppAttachedMarksATurn() async throws {
+    let host = try Host()
+    defer { host.close() }
+    let client = host.connect(pid: 42)
+    let id = try host.spawn("/bin/cat", from: client)
+    _ = host.core.handle(.attach(id: id, from: 0), from: client)
+    let other = host.connect(pid: 43)
+    let replies = host.core.handle(.keepAwake(id: id, until: bytes("x")), from: other)
+    #expect(replies == [.refused(reason: "\(id) is attached to another app")])
+    #expect(host.core.keptAwake == 0)
+  }
+
   @Test func notesAreLoggedNotWritten() async throws {
     let host = try Host()
     defer { host.close() }

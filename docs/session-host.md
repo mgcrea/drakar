@@ -4,7 +4,7 @@
 and `codex app-server` processes Drakar's sessions run, so they outlive the app: a quit, a
 crash, a Sparkle update or a `make run` leaves them working, and the next launch attaches
 again and replays what they did meanwhile. This is the protocol as built (HostWire major 1,
-minor 3). The design and its reasons are in
+minor 4). The design and its reasons are in
 `docs/superpowers/specs/2026-10-25-session-host-design.md`, which lists where the build
 departed from it.
 
@@ -14,7 +14,8 @@ departed from it.
   with its three pipes, an opaque `meta` blob, a log of both directions on disk, the tail of
   its stderr, its exit status once it has one, and which app is attached. It frames lines on
   `\n` and nothing else: it never parses a line, a note or `meta`, and does not know Claude
-  Code from Codex. Every rule about sessions stays in the app.
+  Code from Codex. Every rule about sessions stays in the app. The one look inside a line is
+  `keepAwake`'s: whether it holds bytes the app named, which the host does not interpret.
 - **No host is a fallback, not a mode.** With no host (helper missing, spawn failing), the
   app runs sessions as its own children and says so; the footer reads "Stops when Drakar quits.".
 - **Tests never reach the real one.** Under XCTest (`XCTestConfigurationFilePath`) the app's
@@ -107,6 +108,7 @@ event it does not know, not the whole answer.
 | `setMeta {id, meta}` | none | Replaces the blob. |
 | `acknowledge {id}` | none | The app has the process's end: the host forgets it and deletes its log. Refused while it still runs. |
 | `detach {id}` | none | Minor 1. The app lets go: the process carries on with nobody attached. A no-op when nobody is. |
+| `keepAwake {id, until?}` | none | Minor 4. Marks a turn: until the process writes a line holding the bytes `until`, or ends, the host holds a `PreventUserIdleSystemSleep` assertion ("Drakar's session host: an agent is working"), with or without an app attached. `until` absent or empty takes the mark back. The app sends Claude Code's `"type":"result"` or Codex's `"method":"turn/completed"` (`AgentKind.turnEnd`) at a turn's start, and nothing when its window closes or it quits, so the mark outlives it. Checked with the idle check, so the assertion lags by up to 5 seconds. The app asks only a host that names minor 4 or later: an older one refuses it. |
 
 A request naming a process attached to another app is refused (`<id> is attached to another
 app`); `terminate` and `closeInput` are checked the same way. An unknown id is refused (`no process <id>`).
@@ -188,7 +190,7 @@ app; it reattaches from its offset.
   (`host-v<n>.sock`, `n` below its major), says `hello`, `list`s, and shows what it finds as
   sessions held elsewhere (read-only). It never attaches to them.
 - **Minor versions only add** fields, requests and events, and both sides ignore what they
-  do not know. Minor 0 → 1 added `detach`; 1 → 2 added `terminate`'s `forget`; 2 → 3 added `write`'s `logged` and `welcome`'s `minor`. `HostWire.major` / `HostWire.minor` are the
+  do not know. Minor 0 → 1 added `detach`; 1 → 2 added `terminate`'s `forget`; 2 → 3 added `write`'s `logged` and `welcome`'s `minor`; 3 → 4 added `keepAwake`. `HostWire.major` / `HostWire.minor` are the
   constants.
 - A Sparkle update replaces the bundle while the old host runs from its open inode; the new
   app then speaks to an older-built host of the same major, hence the rules above.

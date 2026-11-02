@@ -41,6 +41,9 @@ public final class HostCore: @unchecked Sendable {
     var pending: [HostChild.Output] = []
     /// A `terminate` asked for it to be forgotten once it ends (`store`).
     var forgets = false
+    /// What a line it writes holds to end the turn an app asked the Mac kept awake through
+    /// (`keepAwake`); nil once written, once it ends, or never asked.
+    var awakeUntil: Data?
   }
 
   /// `minor` is what `welcome` says: tests stand in an older host with nil.
@@ -101,6 +104,10 @@ public final class HostCore: @unchecked Sendable {
   /// No process held, running or ended and unacknowledged, and no app connected.
   public var isIdle: Bool { state.withLock { $0.held.isEmpty && $0.clients.isEmpty } }
 
+  /// Processes whose turn keeps the Mac awake (`keepAwake`): the host holds an assertion
+  /// while there is one.
+  public var keptAwake: Int { state.withLock { $0.held.values.count { $0.awakeUntil != nil } } }
+
   /// The direct replies to `request`. What an attach streams (backlog, `caughtUp`, then live
   /// records, stderr and the exit) goes through `deliver` instead, so it stays in order.
   /// A `write` returns once the CLI has taken the bytes, which waits on a CLI slow to read.
@@ -133,6 +140,10 @@ public final class HostCore: @unchecked Sendable {
       return acknowledge(id, from: client)
     case .detach(let id):
       return detach(id, from: client)
+    case .keepAwake(let id, let until):
+      return update(id, from: client) { held, _ in
+        held.awakeUntil = held.exitStatus == nil && until?.isEmpty == false ? until : nil
+      }
     }
   }
 
@@ -363,6 +374,7 @@ public final class HostCore: @unchecked Sendable {
   ) {
     switch output {
     case .line(let bytes):
+      if let until = held.awakeUntil, bytes.range(of: until) != nil { held.awakeUntil = nil }
       append(.out, bytes, to: id, &held, &out)
     case .stderr(let bytes, let end):
       // Past the exit the app has been told all; the tail still keeps it.
@@ -374,6 +386,7 @@ public final class HostCore: @unchecked Sendable {
       out.send(client, .stderr(id: id, text: String(decoding: unsent, as: UTF8.self)))
     case .exited(let status):
       held.exitStatus = status
+      held.awakeUntil = nil
       if let client = held.attached { out.send(client, .exited(id: id, status: status)) }
     }
   }

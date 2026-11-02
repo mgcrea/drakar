@@ -262,6 +262,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // owner's own yes and start checking from inside a test run.
     if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil {
       UpdateController.shared.startIfConsented()
+      // A test's sessions take no assertion, and mark nothing with a test's host.
+      KeepAwake.shared.start()
       // A runner keeps its host up and writes its environment (spec §2); never from a test
       // run, which the owner's own yes would otherwise reach.
       RunnerRole.shared.apply()

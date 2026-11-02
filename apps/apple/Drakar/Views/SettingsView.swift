@@ -124,6 +124,8 @@ enum PreferenceKey {
   static let editorLeads = "drakar.editorLeads"
   /// A launch has linked the `drakar` command once: a link removed since stays removed.
   static let commandLinked = "drakar.commandLinked"
+  /// Whether the Mac stays awake while an agent works (`KeepAwake`); on unless turned off.
+  static let keepsAwake = "drakar.keepsAwake"
 }
 
 /// What Settings picked for the sessions Drakar starts.
@@ -359,6 +361,7 @@ struct GeneralPane: View {
   @AppStorage(PreferenceKey.codexDefaultMode) private var codexDefaultMode = ""
   @AppStorage(PreferenceKey.allowsBypass) private var allowsBypass = true
   @AppStorage(PreferenceKey.editorLeads) private var editorLeads = false
+  @AppStorage(PreferenceKey.keepsAwake) private var keepsAwake = true
   @State private var codexPath: String?
 
   var body: some View {
@@ -402,6 +405,14 @@ struct GeneralPane: View {
           "Where the editor sits: files from a link, the file tree or Quick Open. View › Move Editor (⌥⌘E) switches it."
         )
       }
+      Section {
+        Toggle("Keep the Mac awake while an agent is working", isOn: $keepsAwake)
+          .accessibilityIdentifier("settings.keepsAwake")
+      } footer: {
+        Text(
+          "From a prompt to the end of its turn, even after you close its window or quit Drakar. The display still sleeps, and a laptop closed on battery sleeps anyway."
+        )
+      }
       ClaudeSection()
       CommandLineSection()
       Section {
@@ -419,6 +430,7 @@ struct GeneralPane: View {
     }
     .formStyle(.grouped)
     .onChange(of: editorScope) { IDEBridge.shared.refreshFolders() }
+    .onChange(of: keepsAwake) { KeepAwake.shared.apply() }
   }
 }
 

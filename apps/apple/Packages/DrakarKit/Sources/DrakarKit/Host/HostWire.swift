@@ -3,7 +3,7 @@ import Foundation
 /// What the app and the session host say to each other (spec §2). Newline-delimited JSON, one
 /// request or event per line.
 public enum HostWire {
-  public static let major = 1, minor = 3
+  public static let major = 1, minor = 4
 
   /// The socket's path would not fit `sockaddr_un.sun_path`.
   public struct PathTooLong: Error, Equatable {
@@ -69,6 +69,11 @@ public enum HostRequest: Codable, Sendable, Equatable {
   /// The app lets go of the process, which carries on: nobody is attached, and the other
   /// apps are told. Added in minor 1.
   case detach(id: String)
+  /// Keeps the Mac from idle sleep while the process runs, until it writes a line holding
+  /// `until`; nil lets go. The app's mark for a turn, which the host sees end with no app
+  /// attached: the one look it takes inside a line, for bytes the app names. Added in minor
+  /// 4; an older host refuses it, so the app asks only a host that names 4 or later.
+  case keepAwake(id: String, until: Data?)
 }
 
 public enum HostEvent: Codable, Sendable, Equatable {
