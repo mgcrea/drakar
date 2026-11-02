@@ -72,8 +72,7 @@ ClientAliveCountMax 3
 
 When the network drops without a clean close, the runner's relay stays attached to the
 session until sshd notices, and the Mac cannot take the session back before then. With these
-two lines that is about 90 seconds; the Mac shows the session as reconnecting meanwhile. Turn
-Remote Login off and on again so sshd reads them.
+two lines that is about 90 seconds; the Mac shows the session as reconnecting meanwhile.
 
 **One macOS account.** ssh logs in as the user who is logged in to the runner's desktop. The
 host, its socket, the opt-in and the sessions all belong to that user, and the host lets in
@@ -137,10 +136,13 @@ Host runner
   ServerAliveInterval 30
 ```
 
-`ServerAliveInterval` has ssh notice a network that went away. `ControlMaster` lets Test and
-reconnects ride the connection already open; its `ControlPath` is Drakar's own, so that an
-`ssh` to the same host under another alias never shares it. Check it from Terminal with
-`ssh -T -o BatchMode=yes runner true`, which must return without asking anything.
+`ServerAliveInterval` has ssh notice a network that went away. `ControlMaster` lets Test ride
+the connection already open; its `ControlPath` is Drakar's own, so that an `ssh` to the same
+host under another alias never shares it. Check it from Terminal with
+`ssh -T -o BatchMode=yes runner true`, which must return without asking anything. Once the
+key is tied to the relay (below), that runs the relay instead of `true`: it prints the
+runner's facts line and waits (Control-C ends it), or, with the opt-in off, says so and
+exits with 64.
 
 **Settings › Runner › Use a runner.** The ssh destination (the alias, or anything ssh takes,
 such as `you@runner.local`), the path to Drakar on the runner (`/Applications/Drakar.app`
@@ -154,7 +156,9 @@ Drakar runs. An empty destination is no runner.
 ## A key that can start only the relay (optional)
 
 On the runner, `~/.ssh/authorized_keys` can tie the Mac's Drakar key to the relay, so that
-the key opens no shell even if it leaks from the Mac:
+the key opens no shell even if it leaks from the Mac. It limits the shell, not the sessions:
+a leaked key still reaches the session host through the relay, and can start `claude` there
+with any prompt, in any folder.
 
 ```
 command="/Applications/Drakar.app/Contents/MacOS/Drakar --relay",restrict ssh-ed25519 AAAA… drakar@my-mac
@@ -194,9 +198,10 @@ there to be answered. **End Session**, from its window or its row in Home, is th
 end one, and the conversation cannot be resumed from the Mac after.
 
 **Home** lists the runner's sessions under the runner, apart from local projects: open in
-Drakar, with no window, on the runner (held by the runner's own Drakar), or ending. Clicking
-one with no window opens it again. **End Idle Sessions…** ends the ones not at work, since the
-runner keeps every session until it is ended.
+Drakar, with no window, on the runner (handed to the runner's own Drakar, or belonging to
+another Mac), or ending. Clicking one with no window opens it again. **End Idle Sessions…**
+ends this Mac's sessions that no window shows, working or not, since the runner keeps every
+session until it is ended: a run left going with its window closed is one of them.
 
 ## Handing a session over
 
@@ -209,8 +214,8 @@ tree and the editor.
   A window the Mac has open on that folder takes it at once; otherwise Home on the Mac lists
   it, to open with a click.
 - A session the Mac holds shows read-only in the runner's Drakar, "Belongs to <Mac>", with
-  **Take Over Here**. That works only while the Mac is not connected, so that someone at the
-  runner can carry on with a session whose Mac is away.
+  **Take Over Here**. That works once that Mac lets it go or loses its connection, so that
+  someone at the runner can carry on with a session whose Mac is away.
 
 ## What v1 leaves out
 

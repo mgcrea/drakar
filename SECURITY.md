@@ -48,13 +48,14 @@ In detail:
   the Mac what a session there needs, in one line: Drakar's version on the runner, its
   home, user and hostname, the environment of its logged-in desktop, the `claude` it finds
   and its Claude Code account folders; then it copies bytes between ssh and that socket
-  without reading them. It does that only once "Let my
-  other Macs start sessions here" is on in the runner's Settings › Runner, which is off until
-  someone at the runner turns it on; otherwise it says so and exits. It never starts the host
-  itself: if none answers, it asks macOS to open Drakar in the runner's logged-in desktop
-  (`/usr/bin/open -g -j -a`), which does. With no runner named and that setting off, none of
-  this runs. Setting one up, and a key that can start only the relay:
-  [docs/runner.md](docs/runner.md).
+  without reading them. It does that only once "Let my other Macs start sessions here" is on
+  in the runner's Settings › Runner, which is off until someone at the runner turns it on;
+  otherwise it says so and exits. It never starts the host itself: if none answers, it asks
+  macOS to open Drakar in the runner's logged-in desktop (`/usr/bin/open -g -j -a`), which
+  does. With no runner named and that setting off, none of this runs. Setting one up, and a
+  key that can start only the relay: [docs/runner.md](docs/runner.md). That key limits the
+  shell, not the sessions: whoever holds it still reaches the runner's session host through
+  the relay, and can start `claude` there with any prompt, in any folder.
 - **No licence call.** A licence key is checked on this Mac, against a public key built
   into the app, and the trial is counted on this Mac too.
 - **No entitlements, no sandbox.** Drakar spawns `claude` and `codex`, which work on your
