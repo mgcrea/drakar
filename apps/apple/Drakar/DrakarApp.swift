@@ -278,8 +278,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // Before the sessions stop: the windows on screen, for a launch macOS restores none.
     if ReopenedWindows.isEnabled { ReopenedWindows.shared.record() }
     for project in OpenSessions.shared.projects.values { project.stopAll() }
-    // What the stops asked of the host goes before the app does.
+    // What the stops asked of the host goes before the app does, the runner's as well.
     SessionHost.shared.flush()
+    SessionHost.runner?.flush()
     IDEBridge.shared.stop()
   }
 

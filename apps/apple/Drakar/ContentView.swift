@@ -113,8 +113,12 @@ struct ContentView: View {
             ForkToolbarButton(project: project)
           }
         }
-        ToolbarItem(placement: .primaryAction) {
-          HandoffToolbarItem(project: project)
+        // A runner's window hands its sessions over; a local one only on the runner's own
+        // Drakar, for a session a Mac started there or owns. No empty slot in any other.
+        if project.runner != nil || project.selected.flatMap({ Handoff($0, in: project) }) != nil {
+          ToolbarItem(placement: .primaryAction) {
+            HandoffToolbarItem(project: project)
+          }
         }
         if let session = project.selected?.session,
           let label = FolderToolbarItem.label(for: session, in: project.folder)
