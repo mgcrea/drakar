@@ -77,6 +77,27 @@ struct AgentSessionQueueTests {
     #expect(interrupt?.contains(#""cancel_queued":true"#) == true)
   }
 
+  /// The queued card's Send now stops the turn as Esc does: the queue is kept, to go at once.
+  @Test func sendNowInterruptsKeepingTheQueue() async throws {
+    let session = try await running()
+    defer { session.stop() }
+    session.send("second")
+    session.sendQueuedNow()
+    let interrupt = try await line(containing: #""subtype":"interrupt""#)
+    #expect(interrupt != nil)
+    #expect(interrupt?.contains("cancel_queued") == false)
+  }
+
+  @Test func sendNowWithNothingQueuedLeavesTheTurnAlone() async throws {
+    let session = try await running()
+    defer { session.stop() }
+    session.sendQueuedNow()
+    // The first prompt is written by then, so a second read sees any interrupt too.
+    _ = try await line(containing: "first")
+    let text = (try? String(contentsOf: stdin, encoding: .utf8)) ?? ""
+    #expect(!text.contains(#""subtype":"interrupt""#))
+  }
+
   /// A turn that ends with a prompt queued waits to say so, since the prompt usually starts the
   /// next one; when it is cancelled instead, the end is said after all, once.
   @Test func aTurnEndIsSaidOnceTheQueueEmptiesWithoutATurn() async throws {

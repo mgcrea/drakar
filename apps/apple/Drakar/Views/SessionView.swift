@@ -28,7 +28,14 @@ struct SessionView: View {
   var body: some View {
     TranscriptView(
       transcript: session.transcript, anchor: $item.scrollAnchor,
-      cancelQueued: session.features.cancelsQueued ? { session.cancelQueued($0) } : nil
+      cancelQueued: session.features.cancelsQueued ? { session.cancelQueued($0) } : nil,
+      // As Esc: not while a server's question waits, whose panel lets the turn go on.
+      sendQueuedNow: session.transcript.isRunning && !session.isReadOnly
+        && item.pendingElicitation == nil
+        ? {
+          session.sendQueuedNow()
+          item.focusRequest += 1
+        } : nil
     )
     .environment(\.askedQuestion, askedQuestion)
     .environment(\.taskControls, session.tasks)

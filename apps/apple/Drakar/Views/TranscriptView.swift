@@ -12,6 +12,8 @@ struct TranscriptView: View {
   @Binding var anchor: String?
   /// Takes back a prompt queued behind the turn; nil where the agent can't, so no Cancel.
   var cancelQueued: ((QueuedPrompt) -> Void)? = nil
+  /// Stops the turn so that the queue goes now; nil where it can't, so no Send now.
+  var sendQueuedNow: (() -> Void)? = nil
 
   @State private var position = ScrollPosition(edge: .bottom)
   /// Whether new output scrolls into view. Scrolling up to read stops it; scrolling back
@@ -66,9 +68,13 @@ struct TranscriptView: View {
           WorkingIndicator(status: workingStatus)
         }
         // Below the turn they wait behind, until the CLI takes each into the conversation.
+        // Send now on the first only: the queue goes whole and in order, so one further down
+        // would seem to jump ahead.
+        let first = transcript.queuedPrompts.first?.id
         ForEach(transcript.queuedPrompts) { prompt in
           QueuedPromptView(
-            prompt: prompt, cancel: cancelQueued.map { cancel in { cancel(prompt) } })
+            prompt: prompt, cancel: cancelQueued.map { cancel in { cancel(prompt) } },
+            sendNow: prompt.id == first ? sendQueuedNow : nil)
         }
       }
       .scrollTargetLayout()
@@ -603,10 +609,11 @@ struct OpenInEditorAction: Equatable {
 }
 
 /// A prompt sent while a turn ran, waiting for the CLI to take it: dimmed, labelled, and
-/// taken back with ×.
+/// taken back with ×, or sent at once with ↑, which stops the turn.
 private struct QueuedPromptView: View {
   let prompt: QueuedPrompt
   let cancel: (() -> Void)?
+  let sendNow: (() -> Void)?
 
   var body: some View {
     VStack(alignment: .leading, spacing: 4) {
@@ -623,6 +630,14 @@ private struct QueuedPromptView: View {
         Text(prompt.text)
           .textSelection(.enabled)
           .foregroundStyle(.secondary)
+        if let sendNow {
+          Button("Send Now", systemImage: "arrow.up.circle.fill", action: sendNow)
+            .labelStyle(.iconOnly)
+            .buttonStyle(.plain)
+            .foregroundStyle(.tertiary)
+            .help("Stop the turn and send this now (Esc)")
+            .accessibilityIdentifier("queued.sendNow")
+        }
         if let cancel {
           Button("Cancel", systemImage: "xmark.circle.fill", action: cancel)
             .labelStyle(.iconOnly)

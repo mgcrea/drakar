@@ -1343,6 +1343,13 @@ final class AgentSession {
     write(.interrupt(cancelQueued: !keepingQueued))
   }
 
+  /// The queued card's Send now: the turn stops as Esc stops it, and the CLI takes what was
+  /// queued at once, in order. Nothing queued, nothing stopped.
+  func sendQueuedNow() {
+    guard !transcript.queuedPrompts.isEmpty else { return }
+    interrupt(keepingQueued: true)
+  }
+
   /// Takes back a prompt sent while a turn ran, unless the CLI took it already; it leaves
   /// the queue on the CLI's `cancelled`.
   func cancelQueued(_ prompt: QueuedPrompt) {
