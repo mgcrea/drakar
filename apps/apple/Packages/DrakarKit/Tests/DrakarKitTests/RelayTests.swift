@@ -186,7 +186,8 @@ import Testing
     wiring.close(wiring.input.write)
     let end = try await within { await pump.value }
     #expect(end == .inputClosed)
-    #expect(ContinuousClock.now - start < .seconds(1))
+    // Prompt, not a hang (`within` catches that): CI's runner once took 1.19 s.
+    #expect(ContinuousClock.now - start < .seconds(3))
     let peer = wiring.peer
     #expect(try await within { await Self.onThread { Self.readsEOF(peer) } })
   }
