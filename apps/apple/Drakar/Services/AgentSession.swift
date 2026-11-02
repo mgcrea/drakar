@@ -376,9 +376,10 @@ final class AgentSession {
   /// its log as `init(replaying:meta:)` rebuilds one, then live on it, what the replay owes
   /// it sent first. One that ended meanwhile shows its end as it would live, and lets the
   /// host forget it. Nil for a meta this app cannot read. `throughRunner`: `client` reaches
-  /// a runner's host.
+  /// a runner's host. `accounts` as `init(replaying:meta:)` takes them.
   convenience init?(
-    reattaching held: HeldProcess, client: HostClient, throughRunner: Bool = false
+    reattaching held: HeldProcess, client: HostClient, throughRunner: Bool = false,
+    accounts: @escaping () -> [ClaudeAccount] = { ClaudeAccount.discover() }
   ) async {
     guard let meta = try? JSONDecoder().decode(SessionMeta.self, from: held.meta) else {
       return nil
@@ -391,7 +392,8 @@ final class AgentSession {
       replayed = .failure(error)
     }
     await self.init(
-      replaying: (try? replayed.get()) ?? [], meta: meta, throughRunner: throughRunner)
+      replaying: (try? replayed.get()) ?? [], meta: meta, throughRunner: throughRunner,
+      accounts: accounts)
     sentMeta = meta
     switch replayed {
     case .success:

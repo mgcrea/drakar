@@ -428,6 +428,9 @@ final class Project {
   /// that relay goes, as it does of a process brought back. Not taken then, for it was closed
   /// here; Home lists it, and opens it again (`reopen`).
   @ObservationIgnored private var closedHere: Set<String> = []
+  /// The accounts a session rebuilt here, from a process the host holds, finds its picked
+  /// account and its transcript in; tests give their own.
+  @ObservationIgnored var accounts: () -> [ClaudeAccount] = { ClaudeAccount.discover() }
   /// The batches still sending or running, one banner each.
   private(set) var fanOuts: [FanOutBatch] = []
   /// The window closed or went home: nothing it takes back or restores starts after that.
@@ -1591,7 +1594,7 @@ final class Project {
       if isStopped { return }
     }
     for process in elsewhere {
-      let session = await AgentSession(heldElsewhere: process)
+      let session = await AgentSession(heldElsewhere: process, accounts: accounts)
       adopting.remove(process.id)
       guard let session else { continue }
       if isStopped { return session.stop() }
@@ -1696,7 +1699,7 @@ final class Project {
     // Asked each time: a replay before this one may have cost the connection.
     guard let host = sessionHost, let client = await host.client(), !isStopped,
       let session = await AgentSession(
-        reattaching: process, client: client, throughRunner: host.isRunner)
+        reattaching: process, client: client, throughRunner: host.isRunner, accounts: accounts)
     else { return nil }
     if isStopped {
       session.stop()

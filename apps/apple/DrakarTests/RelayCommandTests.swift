@@ -6,8 +6,9 @@ import Testing
 
 /// `Drakar --relay`: the test host's own binary started as sshd would start it, on a host
 /// directory of each test's own under `/tmp` (`sun_path` holds 104 bytes), with its opt-in
-/// read from a defaults suite of the test's own. Never the person's host or settings: every
-/// relay here gets `--directory` and `--defaults-suite`, and every helper is killed by its pid.
+/// read from a defaults suite of the test's own. Never the person's host, settings or home:
+/// every relay here gets `--directory`, `--defaults-suite` and `--home`, and every helper is
+/// killed by its pid.
 ///
 /// Off the main actor, which the hosted suite keeps busy: a relay's timings are its own.
 @Suite("The relay a runner's sshd starts", .timeLimit(.minutes(1)))
@@ -15,12 +16,17 @@ struct RelayCommandTests {
   /// Where the runner's environment file goes, beside the host's directory.
   private let root: URL
   private let directory: URL
+  /// The runner's home its facts are found in, never the person's.
+  private let home: URL
   private let suite = "drakar-tests-\(UUID().uuidString)"
 
   init() throws {
     root = URL(fileURLWithPath: "/tmp/dr-\(UUID().uuidString.prefix(6))", isDirectory: true)
     directory = root.appending(path: "host", directoryHint: .isDirectory)
-    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    home = root.appending(path: "home", directoryHint: .isDirectory)
+    for directory in [directory, home] {
+      try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    }
   }
 
   private func finish(_ helpers: [pid_t] = []) {
@@ -46,6 +52,7 @@ struct RelayCommandTests {
     process.executableURL = try #require(Bundle.main.executableURL)
     process.arguments = [
       "--relay", "--directory", directory.path(percentEncoded: false), "--defaults-suite", suite,
+      "--home", home.path(percentEncoded: false),
     ]
     let inherited = ProcessInfo.processInfo.environment
     var environment = ["PATH": "/usr/bin:/bin:/usr/sbin:/sbin"]
@@ -263,13 +270,13 @@ struct RelayCommandTests {
     let file = RunnerEnvironment.file(in: root)
     try RunnerEnvironment.write(environment, to: file)
 
-    let gui = await RelayCommand.facts(environmentFile: file)
+    let gui = await RelayCommand.facts(environmentFile: file, home: home)
     #expect(gui.environmentFrom == .gui)
     #expect(gui.environment["MARK"] == "gui")
     #expect(gui.claude.first == ClaudeCandidate(path: claude.path, version: "2.1.300"))
     #expect(gui.accounts.contains(ProjectPath.normalize(account)))
     #expect(gui.hostMajors == [HostWire.major])
-    #expect(gui.home == ProjectPath.normalize(FileManager.default.homeDirectoryForCurrentUser))
+    #expect(gui.home == ProjectPath.normalize(home))
     #expect(gui.user == NSUserName())
     #expect(!gui.hostname.isEmpty)
 
@@ -278,9 +285,23 @@ struct RelayCommandTests {
     let session = ["SSH_CONNECTION", "SSH_CLIENT", "SSH_TTY", "SSH_AUTH_SOCK"]
     var shell = ["MARK": "shell", "PATH": "/usr/bin:/bin"]
     for key in session { shell[key] = "x" }
-    let ssh = await RelayCommand.facts(environmentFile: file) { [shell] in shell }
+    let ssh = await RelayCommand.facts(environmentFile: file, home: home) { [shell] in shell }
     #expect(ssh.environmentFrom == .ssh)
     #expect(ssh.environment["MARK"] == "shell")
     for key in session { #expect(ssh.environment[key] == nil) }
+  }
+
+  /// What tests give the relay is taken only with a host directory of theirs.
+  @Test func testOptionsNeedADirectory() {
+    let alone = RelayCommand.Options(arguments: [
+      "--relay", "--defaults-suite", "suite", "--home", "/tmp/home",
+    ])
+    #expect(alone.directory == nil && alone.defaultsSuite == nil && alone.home == nil)
+    let given = RelayCommand.Options(arguments: [
+      "--relay", "--directory", "/tmp/host", "--defaults-suite", "suite", "--home", "/tmp/home",
+    ])
+    #expect(given.directory?.path(percentEncoded: false) == "/tmp/host/")
+    #expect(given.defaultsSuite == "suite")
+    #expect(given.home?.path(percentEncoded: false) == "/tmp/home/")
   }
 }

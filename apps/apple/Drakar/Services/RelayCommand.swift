@@ -23,24 +23,33 @@ nonisolated enum RelayCommand {
     case pathTooLong = 70
   }
 
+  /// What tests give the relay. A Debug build's alone (the hosted tests run one): a release
+  /// relay reaches its own host, with its own opt-in, whatever an ssh command line says.
   struct Options {
     /// The host's directory, for tests: with it the relay never runs `open`.
     var directory: URL?
     /// The defaults suite the opt-in is read from, for tests, which run under the app's own
     /// bundle id and must not touch the person's settings. Only taken with `directory`.
     var defaultsSuite: String?
+    /// The home the facts are found in, for tests, which must not read the person's own nor
+    /// run its `claude`. Only taken with `directory`.
+    var home: URL?
 
     init(arguments: [String]) {
-      func value(after flag: String) -> String? {
-        guard let index = arguments.firstIndex(of: flag), index + 1 < arguments.count else {
-          return nil
+      #if DEBUG
+        func value(after flag: String) -> String? {
+          guard let index = arguments.firstIndex(of: flag), index + 1 < arguments.count else {
+            return nil
+          }
+          return arguments[index + 1]
         }
-        return arguments[index + 1]
-      }
-      directory = value(after: "--directory").map {
-        URL(filePath: $0, directoryHint: .isDirectory)
-      }
-      defaultsSuite = directory == nil ? nil : value(after: "--defaults-suite")
+        directory = value(after: "--directory").map {
+          URL(filePath: $0, directoryHint: .isDirectory)
+        }
+        guard directory != nil else { return }
+        defaultsSuite = value(after: "--defaults-suite")
+        home = value(after: "--home").map { URL(filePath: $0, directoryHint: .isDirectory) }
+      #endif
     }
   }
 
@@ -92,7 +101,9 @@ nonisolated enum RelayCommand {
     // Asked at once, so an app that has to be started comes up while the facts are gathered.
     let host = Task { await connect(to: socket, launching: options.directory == nil) }
     let environmentFile = RunnerEnvironment.file(in: directory.deletingLastPathComponent())
-    let facts = await facts(environmentFile: environmentFile)
+    let facts = await facts(
+      environmentFile: environmentFile,
+      home: options.home ?? FileManager.default.homeDirectoryForCurrentUser)
     // Nobody to read them: the Mac has gone already.
     guard let line = try? facts.line(), write(line, to: STDOUT_FILENO) else { return .ended }
 
@@ -145,9 +156,10 @@ nonisolated enum RelayCommand {
   /// What the relay states first (spec §1). The environment is the GUI session's, from the
   /// file the runner's app writes there; without it, the login shell's (`shellEnvironment`,
   /// replaced in tests), less the ssh session's own variables. The `claude` candidates and
-  /// accounts are found as Settings › General finds them locally, with that environment.
+  /// accounts are found as Settings › General finds them locally, with that environment, in
+  /// `home` (a test's own, never the person's).
   static func facts(
-    environmentFile: URL,
+    environmentFile: URL, home: URL = FileManager.default.homeDirectoryForCurrentUser,
     shellEnvironment: @Sendable () async -> [String: String]? = { await ShellEnvironment.read() }
   ) async -> RunnerFacts {
     let environment: [String: String]
@@ -160,7 +172,6 @@ nonisolated enum RelayCommand {
       environment = RunnerEnvironment.withoutSSH(shell)
       source = .ssh
     }
-    let home = FileManager.default.homeDirectoryForCurrentUser
     let installs = ClaudeLocator.installed(home: home, path: environment["PATH"])
     // Each asked at once, as Settings does: an npm install takes a while to answer.
     let claude = await withTaskGroup(of: (Int, ClaudeCandidate).self) { group in

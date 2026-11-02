@@ -7,8 +7,8 @@ import Testing
 /// A runner's host as the Mac reaches it, through `ssh` (spec §3): here a fake `ssh` of each
 /// test's own, which runs this test host's binary as the relay on a host directory of the
 /// test's own under `/tmp` (`sun_path` holds 104 bytes), its opt-in read from a defaults suite
-/// of the test's own. Never the person's runner, host or settings: the relay always gets
-/// `--directory` and `--defaults-suite`, and every helper is killed by its pid.
+/// of the test's own. Never the person's runner, host, settings or home: the relay always gets
+/// `--directory`, `--defaults-suite` and `--home`, and every helper is killed by its pid.
 ///
 /// Serialized: `RunnerSettings.sshExecutable` and `SessionHost.runner` are one for the whole
 /// app, and this is the only suite that changes either; keep it so, or put every suite that
@@ -23,6 +23,9 @@ struct RunnerHostTests {
   private let ssh: URL
   private let folder: URL
   private let fake: URL
+  /// The runner's home, as the relay states its facts from it: its default account, and no
+  /// `claude` of the person's.
+  private let home: URL
   private let suite = "drakar-tests-\(UUID().uuidString)"
   private let settings = RunnerSettings(name: "Studio", destination: "studio.local")
 
@@ -30,7 +33,8 @@ struct RunnerHostTests {
     root = URL(fileURLWithPath: "/tmp/dr-\(UUID().uuidString.prefix(6))", isDirectory: true)
     directory = root.appending(path: "host", directoryHint: .isDirectory)
     folder = root.appending(path: "project", directoryHint: .isDirectory)
-    for directory in [directory, folder] {
+    home = root.appending(path: "home", directoryHint: .isDirectory)
+    for directory in [directory, folder, home.appending(path: ".claude/projects")] {
       try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     }
     ssh = root.appending(path: "ssh")
@@ -80,7 +84,8 @@ struct RunnerHostTests {
       echo run >> '\(runs.path(percentEncoded: false))'
       exec /usr/bin/env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin HOME="$HOME" USER="$USER" \
         LOGNAME="$LOGNAME" TMPDIR="$TMPDIR" '\(drakar)' --relay \
-        --directory '\(directory.path(percentEncoded: false))' --defaults-suite '\(suite)'
+        --directory '\(directory.path(percentEncoded: false))' --defaults-suite '\(suite)' \
+        --home '\(home.path(percentEncoded: false))'
       """)
   }
 
@@ -272,7 +277,8 @@ struct RunnerHostTests {
       echo run >> '\(runs.path(percentEncoded: false))'
       /usr/bin/env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin HOME="$HOME" USER="$USER" \
         LOGNAME="$LOGNAME" TMPDIR="$TMPDIR" '\(drakar)' --relay \
-        --directory '\(directory.path(percentEncoded: false))' --defaults-suite '\(suite)'
+        --directory '\(directory.path(percentEncoded: false))' --defaults-suite '\(suite)' \
+        --home '\(home.path(percentEncoded: false))'
       exec sleep 30
       """)
   }
@@ -665,8 +671,7 @@ struct RunnerHostTests {
     let helper = try #require(SessionHost.startHelper(in: directory))
     defer { finish([helper]) }
     let host = SessionHost(endpoint: .runner(settings))
-    let standard = FileManager.default.homeDirectoryForCurrentUser
-      .appending(path: ".claude", directoryHint: .isDirectory)
+    let standard = home.appending(path: ".claude", directoryHint: .isDirectory)
     for picked in [
       ClaudeAccount(directory: standard, isDefault: true),
       ClaudeAccount(directory: shellAccount, isDefault: false),
@@ -857,6 +862,7 @@ struct RunnerHostTests {
   private func runnerProject(on host: SessionHost) -> Project {
     let project = Project(folder: folder, runner: settings.id.uuidString)
     project.sessionHost = host
+    project.accounts = { [] }
     return project
   }
 
@@ -1135,6 +1141,8 @@ struct RunnerHostTests {
     SessionHost.testDirectory = previous
     let project = Project(folder: folder)
     project.sessionHost = host
+    // Its sessions' transcripts would be looked for in the person's own accounts.
+    project.accounts = { [] }
     return project
   }
 
