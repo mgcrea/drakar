@@ -578,7 +578,7 @@ struct TwoAppsTests {
 /// What a request is, without what it carries: for checking what an app asked.
 private enum Asked: Equatable {
   case hello, list, spawn, attach, write, note, closeInput, terminate, setMeta, acknowledge
-  case detach, keepAwake
+  case detach, keepAwake, endWhen
 
   init(_ request: HostRequest) {
     self =
@@ -595,6 +595,7 @@ private enum Asked: Equatable {
       case .acknowledge: .acknowledge
       case .detach: .detach
       case .keepAwake: .keepAwake
+      case .endWhen: .endWhen
       }
   }
 }

@@ -3,7 +3,7 @@ import Foundation
 /// What the app and the session host say to each other (spec §2). Newline-delimited JSON, one
 /// request or event per line.
 public enum HostWire {
-  public static let major = 1, minor = 4
+  public static let major = 1, minor = 5
 
   /// The socket's path would not fit `sockaddr_un.sun_path`.
   public struct PathTooLong: Error, Equatable {
@@ -75,6 +75,11 @@ public enum HostRequest: Codable, Sendable, Equatable {
   /// takes inside a line, for bytes the app names. Added in minor 4; an older host refuses
   /// it, so the app asks only a host that names 4 or later.
   case keepAwake(id: String, until: [Data])
+  /// Ends the process, as a `terminate` that forgets does, once it writes a line holding any
+  /// of `until`; none takes it back. For an app letting go of an agent at work, which is to
+  /// end when its turn does: the same look inside a line as `keepAwake`'s. Added in minor 5;
+  /// an older host refuses it, so the app asks only a host that names 5 or later.
+  case endWhen(id: String, until: [Data])
 }
 
 public enum HostEvent: Codable, Sendable, Equatable {

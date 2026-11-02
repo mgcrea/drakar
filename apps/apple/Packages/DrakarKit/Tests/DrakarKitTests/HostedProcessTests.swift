@@ -169,6 +169,25 @@ import Testing
     }
   }
 
+  /// A host older than minor 5 is not sent `endWhen`. This one would act on it all the same,
+  /// so a line holding the marker would end the process if it were.
+  @Test func anOlderHostIsNotAskedToEnd() async throws {
+    let host = try TestHost(minor: 4)
+    defer { host.close() }
+    let client = try await connected(host)
+    let process = HostedProcess(client: client, configuration: host.cat(), meta: Data())
+    let events = try process.start()
+    try await within {
+      while process.id == nil { try await Task.sleep(for: .milliseconds(10)) }
+    }
+    process.endWhen(until: [Data("end".utf8)])
+    try process.send(line: Data("end\n".utf8))
+    try process.send(line: Data("after\n".utf8))
+    #expect(try await lines(of: events, through: "after") == [.invalid("end"), .invalid("after")])
+    #expect(process.isRunning)
+    process.terminate()
+  }
+
   /// A spawn the host refuses ends the events at once, and says why as a start that threw.
   @Test func aSpawnTheHostRefusesSaysWhy() async throws {
     let host = try TestHost()

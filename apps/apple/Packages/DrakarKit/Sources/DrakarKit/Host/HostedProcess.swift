@@ -139,6 +139,14 @@ public final class HostedProcess: ProcessTransport, @unchecked Sendable {
     try? request { .keepAwake(id: $0, until: until) }
   }
 
+  /// Has the host end the process, and forget it once ended, when it writes a line holding
+  /// any of `until`; none takes it back. For a tab closed while its agent works, which ends
+  /// once the turn does. Nothing is asked of a host older than minor 5, which would refuse it.
+  public func endWhen(until: [Data]) {
+    guard (hostMinor ?? 0) >= 5 else { return }
+    try? request { .endWhen(id: $0, until: until) }
+  }
+
   /// Lets the host forget the process once it has ended and the app has what it left.
   public func acknowledge() {
     try? request { .acknowledge(id: $0) }

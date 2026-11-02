@@ -495,6 +495,65 @@ import Testing
     #expect(host.core.keptAwake == 0)
   }
 
+  /// A tab closed while its agent works: the host ends the process once it writes a line
+  /// the app named, logged first, then forgets it and tells the other apps.
+  @Test func endWhenEndsTheProcessOnAMarkedLine() async throws {
+    let host = try Host()
+    defer { host.close() }
+    let client = host.connect(pid: 42)
+    let other = host.connect(pid: 43)
+    let id = try host.spawn("/bin/cat", from: client)
+    _ = host.core.handle(.attach(id: id, from: 0), from: client)
+    let end = [bytes(#""type":"result""#)]
+    #expect(host.core.handle(.endWhen(id: id, until: end), from: client).isEmpty)
+
+    let result = bytes(#"{"type":"result"}"# + "\n")
+    _ = host.core.handle(.write(id: id, bytes: result), from: client)
+    #expect(await eventually { host.held(id) == nil })
+    #expect(!FileManager.default.fileExists(atPath: host.log(id).path))
+    #expect(await eventually { host.inbox.of(other) == [.released(id: id)] })
+    #expect(host.inbox.records(client).map(\.kind) == [.in, .out])
+    #expect(host.inbox.records(client).last?.bytes == result)
+  }
+
+  @Test func endWhenIgnoresOtherLines() async throws {
+    let host = try Host()
+    defer { host.close() }
+    let client = host.connect(pid: 42)
+    let id = try host.spawn("/bin/cat", from: client)
+    _ = host.core.handle(.endWhen(id: id, until: [bytes(#""type":"result""#)]), from: client)
+    _ = host.core.handle(
+      .write(id: id, bytes: bytes(#"{"type":"assistant"}"# + "\n")), from: client)
+    #expect(await eventually { host.logged(id).count == 2 })
+    #expect(host.held(id)?.running == true)
+  }
+
+  @Test func anEmptyEndWhenTakesItBack() async throws {
+    let host = try Host()
+    defer { host.close() }
+    let client = host.connect(pid: 42)
+    let id = try host.spawn("/bin/cat", from: client)
+    _ = host.core.handle(.endWhen(id: id, until: [bytes(#""type":"result""#)]), from: client)
+    #expect(host.core.handle(.endWhen(id: id, until: []), from: client).isEmpty)
+    _ = host.core.handle(.write(id: id, bytes: bytes(#"{"type":"result"}"# + "\n")), from: client)
+    #expect(await eventually { host.logged(id).count == 2 })
+    #expect(host.held(id)?.running == true)
+  }
+
+  @Test func endWhenFromAnotherAppIsRefused() async throws {
+    let host = try Host()
+    defer { host.close() }
+    let client = host.connect(pid: 42)
+    let id = try host.spawn("/bin/cat", from: client)
+    _ = host.core.handle(.attach(id: id, from: 0), from: client)
+    let other = host.connect(pid: 43)
+    let replies = host.core.handle(.endWhen(id: id, until: [bytes("x")]), from: other)
+    #expect(replies == [.refused(reason: "\(id) is attached to another app")])
+    _ = host.core.handle(.write(id: id, bytes: bytes("x\n")), from: client)
+    #expect(await eventually { host.logged(id).count == 2 })
+    #expect(host.held(id)?.running == true)
+  }
+
   @Test func notesAreLoggedNotWritten() async throws {
     let host = try Host()
     defer { host.close() }

@@ -272,7 +272,7 @@ extension HostRequest {
     switch self {
     case .attach(let id, _), .write(let id, _, _), .note(let id, _), .closeInput(let id),
       .terminate(let id, _), .setMeta(let id, _), .acknowledge(let id), .detach(let id),
-      .keepAwake(let id, _):
+      .keepAwake(let id, _), .endWhen(let id, _):
       id
     case .hello, .list, .spawn:
       nil

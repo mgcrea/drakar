@@ -9,6 +9,12 @@ import Testing
     currentDirectory: URL(fileURLWithPath: "/tmp"))
   private let bytes = Data([0, 10, 0xFF])
 
+  @Test func endWhenRoundTrips() throws {
+    let request = HostRequest.endWhen(id: "x", until: [Data("a".utf8)])
+    let data = try JSONEncoder().encode(request)
+    #expect(try JSONDecoder().decode(HostRequest.self, from: data) == request)
+  }
+
   @Test func requestsAndEventsRoundTrip() throws {
     let requests: [HostRequest] = [
       .hello(protocol: 1, appVersion: "2.0"), .list, .spawn(configuration, meta: bytes),

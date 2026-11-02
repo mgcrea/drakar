@@ -44,6 +44,9 @@ public final class HostCore: @unchecked Sendable {
     /// What a line it writes holds when it stops working, for an app that asked the Mac
     /// kept awake until then (`keepAwake`); empty once written, once it ends, or never asked.
     var awakeUntil: [Data] = []
+    /// What a line it writes holds when the host is to end it and forget it, for an app that
+    /// let go of it at work (`endWhen`); empty once written, once it ends, or never asked.
+    var endsWhen: [Data] = []
   }
 
   /// `minor` is what `welcome` says: tests stand in an older host with nil.
@@ -143,6 +146,10 @@ public final class HostCore: @unchecked Sendable {
     case .keepAwake(let id, let until):
       return update(id, from: client) { held, _ in
         held.awakeUntil = held.exitStatus == nil ? until.filter { !$0.isEmpty } : []
+      }
+    case .endWhen(let id, let until):
+      return update(id, from: client) { held, _ in
+        held.endsWhen = held.exitStatus == nil ? until.filter { !$0.isEmpty } : []
       }
     }
   }
@@ -252,18 +259,20 @@ public final class HostCore: @unchecked Sendable {
     guard let child else { return refused }
     var failure: (any Error)?
     do { try child.write(bytes) } catch { failure = error }
-    let forgotten = withState { state, out -> HostLog? in
-      guard var held = state.held[id] else { return nil }
+    let (forgotten, ending) = withState { state, out -> (HostLog?, HostChild?) in
+      guard var held = state.held[id] else { return (nil, nil) }
       held.writes -= 1
       if failure == nil { append(.in, logged, to: id, &held, &out) }
+      var ending: HostChild?
       if held.writes == 0 {
         let pending = held.pending
         held.pending = []
-        for output in pending { take(output, from: id, &held, &out) }
+        for output in pending { ending = take(output, from: id, &held, &out) ?? ending }
       }
-      return store(held, as: id, in: &state, &out)
+      return (store(held, as: id, in: &state, &out), ending)
     }
     try? forgotten?.remove()
+    ending?.terminate()
     return failure.map { [.refused(reason: "could not write to \(id): \($0)")] } ?? []
   }
 
@@ -275,14 +284,21 @@ public final class HostCore: @unchecked Sendable {
     let refused = withState { state, out -> [HostEvent] in
       guard var held = state.held[id] else { return [Self.unknown(id)] }
       if let other = held.attached, other != client { return [Self.taken(id)] }
-      if held.exitStatus == nil { child = held.child }
-      if forgetting { held.forgets = true }
+      child = Self.end(&held, forgetting: forgetting)
       forgotten = store(held, as: id, in: &state, &out)
       return []
     }
     try? forgotten?.remove()
     child?.terminate()
     return refused
+  }
+
+  /// Marks `held` to be forgotten once it has ended, if `forgetting`, and gives the child to
+  /// terminate off the lock while it still runs: under the lock, a CLI slow to die would stall
+  /// every other process.
+  private static func end(_ held: inout Held, forgetting: Bool) -> HostChild? {
+    if forgetting { held.forgets = true }
+    return held.exitStatus == nil ? held.child : nil
   }
 
   /// The other apps are told it is `released`: nobody holds it any more, and it is gone.
@@ -339,16 +355,18 @@ public final class HostCore: @unchecked Sendable {
   // MARK: - The process's output
 
   private func received(_ output: HostChild.Output, from id: String) {
-    let forgotten = withState { state, out -> HostLog? in
-      guard var held = state.held[id] else { return nil }
+    let (forgotten, ending) = withState { state, out -> (HostLog?, HostChild?) in
+      guard var held = state.held[id] else { return (nil, nil) }
+      var ending: HostChild?
       if held.writes > 0 {
         held.pending.append(output)
       } else {
-        take(output, from: id, &held, &out)
+        ending = take(output, from: id, &held, &out)
       }
-      return store(held, as: id, in: &state, &out)
+      return (store(held, as: id, in: &state, &out), ending)
     }
     try? forgotten?.remove()
+    ending?.terminate()
   }
 
   /// Puts `held` back, unless it has ended and is to be forgotten: then it goes as an
@@ -368,26 +386,34 @@ public final class HostCore: @unchecked Sendable {
     return held.log
   }
 
+  /// Returns the child to terminate off the lock when the line is one `endWhen` named: it is
+  /// logged first, then the process ends as a `terminate` that forgets ends it.
   private func take(
     _ output: HostChild.Output, from id: String, _ held: inout Held,
     _ out: inout Outgoing
-  ) {
+  ) -> HostChild? {
     switch output {
     case .line(let bytes):
       if held.awakeUntil.contains(where: { bytes.range(of: $0) != nil }) { held.awakeUntil = [] }
       append(.out, bytes, to: id, &held, &out)
+      guard held.endsWhen.contains(where: { bytes.range(of: $0) != nil }) else { return nil }
+      held.endsWhen = []
+      return Self.end(&held, forgetting: true)
     case .stderr(let bytes, let end):
       // Past the exit the app has been told all; the tail still keeps it.
       guard held.exitStatus == nil, let client = held.attached, end > held.stderrSent else {
-        return
+        return nil
       }
       let unsent = bytes.suffix(min(bytes.count, end - held.stderrSent))
       held.stderrSent = end
       out.send(client, .stderr(id: id, text: String(decoding: unsent, as: UTF8.self)))
+      return nil
     case .exited(let status):
       held.exitStatus = status
       held.awakeUntil = []
+      held.endsWhen = []
       if let client = held.attached { out.send(client, .exited(id: id, status: status)) }
+      return nil
     }
   }
 
