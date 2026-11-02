@@ -441,15 +441,15 @@ import Testing
     #expect(host.core.isIdle)
   }
 
-  /// A turn keeps the Mac awake until the process writes the line the app named, whoever is
-  /// attached by then; nil lets go sooner, and a process that ends lets go too.
+  /// A turn keeps the Mac awake until the process writes a line the app named, whoever is
+  /// attached by then; none lets go sooner, and a process that ends lets go too.
   @Test func aTurnKeepsTheMacAwakeUntilItsLine() async throws {
     let host = try Host()
     defer { host.close() }
     let client = host.connect(pid: 42)
     let id = try host.spawn("/bin/cat", from: client)
     _ = host.core.handle(.attach(id: id, from: 0), from: client)
-    let end = bytes(#""type":"result""#)
+    let end = [bytes(#""type":"result""#), bytes(#""subtype":"can_use_tool""#)]
     #expect(host.core.handle(.keepAwake(id: id, until: end), from: client).isEmpty)
     #expect(host.core.keptAwake == 1)
 
@@ -466,7 +466,13 @@ import Testing
 
     _ = host.core.handle(.keepAwake(id: id, until: end), from: other)
     #expect(host.core.keptAwake == 1)
-    _ = host.core.handle(.keepAwake(id: id, until: nil), from: other)
+    _ = host.core.handle(.keepAwake(id: id, until: []), from: other)
+    #expect(host.core.keptAwake == 0)
+
+    _ = host.core.handle(.keepAwake(id: id, until: end), from: other)
+    let asks = #"{"type":"control_request","request":{"subtype":"can_use_tool"}}"#
+    _ = host.core.handle(.write(id: id, bytes: bytes(asks + "\n")), from: other)
+    #expect(await eventually { host.logged(id).count == 6 })
     #expect(host.core.keptAwake == 0)
 
     _ = host.core.handle(.keepAwake(id: id, until: end), from: other)
@@ -484,7 +490,7 @@ import Testing
     let id = try host.spawn("/bin/cat", from: client)
     _ = host.core.handle(.attach(id: id, from: 0), from: client)
     let other = host.connect(pid: 43)
-    let replies = host.core.handle(.keepAwake(id: id, until: bytes("x")), from: other)
+    let replies = host.core.handle(.keepAwake(id: id, until: [bytes("x")]), from: other)
     #expect(replies == [.refused(reason: "\(id) is attached to another app")])
     #expect(host.core.keptAwake == 0)
   }

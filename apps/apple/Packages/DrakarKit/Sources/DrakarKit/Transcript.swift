@@ -206,6 +206,9 @@ public struct Transcript: Sendable, Equatable {
   /// Bumped by every change, so a view can react to "something changed" without
   /// comparing the whole history.
   public private(set) var revision = 0
+  /// Times the agent stopped working: a turn ended, or it asked the person something. The
+  /// session host lets the Mac sleep at each, so work that goes on after one is marked again.
+  public private(set) var pauses = 0
 
   private var indexByID: [String: Int] = [:]
   private var promptCount = 0
@@ -404,6 +407,7 @@ public struct Transcript: Sendable, Equatable {
       isRunning = true
       turnEnd = nil
     case .turnEnded(let summary):
+      pauses += 1
       lastTurn = summary
       turnEnd = summary.outcome
       retry = nil
@@ -433,11 +437,13 @@ public struct Transcript: Sendable, Equatable {
     case .note(let note):
       addNote(note.isFailure ? .failure(note.text) : .notice(note.text), parent: note.parent)
     case .permissionRequested(let pending):
+      pauses += 1
       pendingPermissions.append(pending)
     case .permissionWithdrawn(let id):
       resolvePermission(requestID: id)
       withdrawElicitation(requestID: id)
     case .elicitationRequested(let pending):
+      pauses += 1
       pendingElicitations.append(pending)
     case .requestSent(let at):
       requestAt = at

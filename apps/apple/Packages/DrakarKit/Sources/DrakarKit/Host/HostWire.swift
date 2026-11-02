@@ -70,10 +70,11 @@ public enum HostRequest: Codable, Sendable, Equatable {
   /// apps are told. Added in minor 1.
   case detach(id: String)
   /// Keeps the Mac from idle sleep while the process runs, until it writes a line holding
-  /// `until`; nil lets go. The app's mark for a turn, which the host sees end with no app
-  /// attached: the one look it takes inside a line, for bytes the app names. Added in minor
-  /// 4; an older host refuses it, so the app asks only a host that names 4 or later.
-  case keepAwake(id: String, until: Data?)
+  /// any of `until`; none lets go. The app's mark for an agent at work, which the host sees
+  /// stop (a turn's end, a question for the person) with no app attached: the one look it
+  /// takes inside a line, for bytes the app names. Added in minor 4; an older host refuses
+  /// it, so the app asks only a host that names 4 or later.
+  case keepAwake(id: String, until: [Data])
 }
 
 public enum HostEvent: Codable, Sendable, Equatable {

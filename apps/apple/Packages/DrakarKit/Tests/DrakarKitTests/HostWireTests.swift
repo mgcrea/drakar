@@ -18,7 +18,7 @@ import Testing
       .setMeta(id: "a", meta: bytes),
       .acknowledge(id: "a"),
       .detach(id: "a"),
-      .keepAwake(id: "a", until: bytes), .keepAwake(id: "a", until: nil),
+      .keepAwake(id: "a", until: [bytes]), .keepAwake(id: "a", until: []),
     ]
     for request in requests {
       let data = try JSONEncoder().encode(request)

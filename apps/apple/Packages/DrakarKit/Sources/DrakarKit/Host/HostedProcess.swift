@@ -131,9 +131,10 @@ public final class HostedProcess: ProcessTransport, @unchecked Sendable {
     try? request { .setMeta(id: $0, meta: meta) }
   }
 
-  /// Has the host keep the Mac awake until the process writes a line holding `until`, or
-  /// ends; nil lets go. Nothing is asked of a host older than minor 4, which would refuse it.
-  public func keepAwake(until: Data?) {
+  /// Has the host keep the Mac awake until the process writes a line holding any of `until`,
+  /// or ends; none lets go. Nothing is asked of a host older than minor 4, which would refuse
+  /// it.
+  public func keepAwake(until: [Data]) {
     guard (hostMinor ?? 0) >= 4 else { return }
     try? request { .keepAwake(id: $0, until: until) }
   }

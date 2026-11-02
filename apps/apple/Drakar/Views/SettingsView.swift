@@ -410,7 +410,7 @@ struct GeneralPane: View {
           .accessibilityIdentifier("settings.keepsAwake")
       } footer: {
         Text(
-          "From a prompt to the end of its turn, even after you close its window or quit Drakar. The display still sleeps, and a laptop closed on battery sleeps anyway."
+          "From a prompt to the end of its turn, even after you close its window or quit Drakar, but not while it waits for you. The display still sleeps, and a laptop closed on battery sleeps anyway."
         )
       }
       ClaudeSection()

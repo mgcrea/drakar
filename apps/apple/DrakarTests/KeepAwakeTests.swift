@@ -24,23 +24,33 @@ struct KeepAwakeTests {
     }
   }
 
-  /// A Claude Code `result`, or a Codex `turn/completed`, and nothing else: not a tool's
-  /// result, nor a line quoting one.
-  @Test func theTurnEndMarksTheLinesThatEndATurnAndNoOther() throws {
-    var ends: [AgentKind: Int] = [:]
+  /// Claude Code's `result`, `can_use_tool` and `elicitation`, or Codex's `turn/completed`
+  /// and approval requests, and nothing else: not a tool's result, an elicitation's end, nor
+  /// a line quoting one.
+  @Test func thePausesMarkTheLinesWhereTheAgentStopsAndNoOther() throws {
+    var stops: [AgentKind: Int] = [:]
     for (agent, line) in try Self.fixtureLines() {
       let json = try #require(
         try JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any])
-      let endsTurn =
+      let request = (json["request"] as? [String: Any])?["subtype"] as? String
+      let stopsWork =
         switch agent {
-        case .claude: json["type"] as? String == "result"
-        case .codex: json["method"] as? String == "turn/completed"
+        case .claude:
+          json["type"] as? String == "result"
+            || (json["type"] as? String == "control_request"
+              && ["can_use_tool", "elicitation"].contains(request))
+        case .codex:
+          [
+            "turn/completed", "item/commandExecution/requestApproval",
+            "item/fileChange/requestApproval",
+          ].contains(json["method"] as? String)
         }
-      #expect((Data(line.utf8).range(of: agent.turnEnd) != nil) == endsTurn, "\(line.prefix(120))")
-      if endsTurn { ends[agent, default: 0] += 1 }
+      let marked = agent.pauses.contains { Data(line.utf8).range(of: $0) != nil }
+      #expect(marked == stopsWork, "\(line.prefix(120))")
+      if stopsWork { stops[agent, default: 0] += 1 }
     }
-    #expect(ends[.claude, default: 0] > 0)
-    #expect(ends[.codex, default: 0] > 0)
+    #expect(stops[.claude, default: 0] > 0)
+    #expect(stops[.codex, default: 0] > 0)
   }
 
   @Test func theAssertionSaysHowManySessionsWork() {
