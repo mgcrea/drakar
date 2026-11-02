@@ -52,6 +52,97 @@ struct CommandLineToolTests {
     #expect(CommandLineTool.isInstalled(script: current, in: bin))
   }
 
+  /// A home of the test's own, whose `.local/bin` the login shell's PATH names.
+  private func launchHome() -> (home: URL, path: String) {
+    let home = root.appending(path: "home", directoryHint: .isDirectory)
+    return (home, "/usr/bin:\(home.path(percentEncoded: false)).local/bin:/bin")
+  }
+
+  /// No password is needed for `~/.local/bin`, so the first launch links it unasked.
+  @Test func theFirstLaunchLinksIntoLocalBin() throws {
+    defer { try? FileManager.default.removeItem(at: root) }
+    let script = try file("drakar.sh")
+    let (home, path) = launchHome()
+    let outcome = CommandLineTool.linkAtLaunch(
+      script: script, path: path, home: home, offeredBefore: false)
+    #expect(outcome == .linked)
+    #expect(
+      CommandLineTool.isInstalled(script: script, in: home.appending(path: ".local/bin")))
+  }
+
+  /// `/usr/local/bin` would ask for a password: that stays Settings' button.
+  @Test func aLinkThatNeedsAPasswordIsLeftToSettings() throws {
+    defer { try? FileManager.default.removeItem(at: root) }
+    let script = try file("drakar.sh")
+    let (home, _) = launchHome()
+    let outcome = CommandLineTool.linkAtLaunch(
+      script: script, path: "/usr/bin:/bin", home: home, offeredBefore: false)
+    #expect(outcome == .leftToSettings)
+    #expect(!FileManager.default.fileExists(atPath: home.appending(path: ".local").path))
+  }
+
+  /// A Drakar that moved, or was reinstalled elsewhere, leaves a link to its old script:
+  /// that one is Drakar's, and is pointed at this copy at every launch.
+  @Test func aMovedDrakarsLinkIsRepaired() throws {
+    defer { try? FileManager.default.removeItem(at: root) }
+    let script = try file("drakar.sh")
+    let (home, path) = launchHome()
+    let bin = home.appending(path: ".local/bin", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: bin, withIntermediateDirectories: true)
+    try FileManager.default.createSymbolicLink(
+      atPath: bin.appending(path: "drakar").path(percentEncoded: false),
+      withDestinationPath: "/Volumes/Old/Drakar.app/Contents/Resources/drakar.sh")
+    let outcome = CommandLineTool.linkAtLaunch(
+      script: script, path: path, home: home, offeredBefore: true)
+    #expect(outcome == .linked)
+    #expect(CommandLineTool.isInstalled(script: script, in: bin))
+  }
+
+  /// A `drakar` that is not Drakar's (a file, or a link to something else) is never touched.
+  @Test func someoneElsesDrakarIsLeftAlone() throws {
+    defer { try? FileManager.default.removeItem(at: root) }
+    let script = try file("drakar.sh")
+    let (home, path) = launchHome()
+    let bin = home.appending(path: ".local/bin", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: bin, withIntermediateDirectories: true)
+    let link = bin.appending(path: "drakar").path(percentEncoded: false)
+    try FileManager.default.createSymbolicLink(
+      atPath: link, withDestinationPath: "/opt/longships/bin/drakar")
+    #expect(
+      CommandLineTool.linkAtLaunch(script: script, path: path, home: home, offeredBefore: false)
+        == .leftAlone)
+    #expect(
+      try FileManager.default.destinationOfSymbolicLink(atPath: link) == "/opt/longships/bin/drakar"
+    )
+    try FileManager.default.removeItem(atPath: link)
+    try Data("mine".utf8).write(to: URL(filePath: link))
+    #expect(
+      CommandLineTool.linkAtLaunch(script: script, path: path, home: home, offeredBefore: false)
+        == .leftAlone)
+    #expect(try Data(contentsOf: URL(filePath: link)) == Data("mine".utf8))
+  }
+
+  /// Linked once already, and gone since: the person removed it, and it stays removed.
+  @Test func aLinkThePersonRemovedIsNotPutBack() throws {
+    defer { try? FileManager.default.removeItem(at: root) }
+    let script = try file("drakar.sh")
+    let (home, path) = launchHome()
+    let outcome = CommandLineTool.linkAtLaunch(
+      script: script, path: path, home: home, offeredBefore: true)
+    #expect(outcome == .leftAlone)
+    #expect(!FileManager.default.fileExists(atPath: home.appending(path: ".local").path))
+  }
+
+  @Test func aLinkInPlaceIsLeftAsItIs() throws {
+    defer { try? FileManager.default.removeItem(at: root) }
+    let script = try file("drakar.sh")
+    let (home, path) = launchHome()
+    try CommandLineTool.install(script: script, in: home.appending(path: ".local/bin"))
+    #expect(
+      CommandLineTool.linkAtLaunch(script: script, path: path, home: home, offeredBefore: true)
+        == .alreadyLinked)
+  }
+
   @Test func neverReplacesARealFile() throws {
     defer { try? FileManager.default.removeItem(at: root) }
     let script = try file("drakar.sh")

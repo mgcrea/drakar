@@ -267,6 +267,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       RunnerRole.shared.apply()
       // The runner this Mac uses, connected for Home to list (spec §3); never from a test run.
       SessionHost.keepRunnerConnected()
+      // Not a development build either: every `make run` from a worktree would point the
+      // person's `drakar` at that build.
+      if !UpdateController.compiledAsDevelopmentBuild { Task { await Self.linkCommand() } }
+    }
+  }
+
+  /// The `drakar` command, linked unasked where that needs no password
+  /// (`CommandLineTool.linkAtLaunch`); Settings › General links it anywhere else.
+  private static func linkCommand() async {
+    guard let script = CommandLineTool.bundledScript else { return }
+    let path = (await AgentSession.environment.value)["PATH"]
+    let defaults = UserDefaults.standard
+    let outcome = CommandLineTool.linkAtLaunch(
+      script: script, path: path, home: FileManager.default.homeDirectoryForCurrentUser,
+      offeredBefore: defaults.bool(forKey: PreferenceKey.commandLinked))
+    if outcome == .linked || outcome == .alreadyLinked {
+      defaults.set(true, forKey: PreferenceKey.commandLinked)
     }
   }
 

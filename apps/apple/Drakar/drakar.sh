@@ -1,7 +1,8 @@
 #!/bin/sh
 # drakar [folder…]: opens each folder (the current one by default) as a project in Drakar,
-# as `code .` does for VS Code. Settings › General › Install links it into ~/.local/bin or
-# /usr/local/bin; it finds the app it sits in through that link, wherever the app is.
+# as `code .` does for VS Code. Drakar links it into ~/.local/bin at launch when the login
+# shell's PATH has that folder; Settings › General › Install links it there or into
+# /usr/local/bin. It finds the app it sits in through that link, wherever the app is.
 # DRAKAR_OPEN replaces `open`, for the app's tests.
 set -e
 

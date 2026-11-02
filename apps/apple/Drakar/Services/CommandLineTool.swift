@@ -26,6 +26,35 @@ enum CommandLineTool {
       == script.path(percentEncoded: false)
   }
 
+  enum LaunchOutcome: Equatable {
+    case linked
+    case alreadyLinked
+    /// The link would go in `/usr/local/bin`, which asks for a password: never unasked.
+    case leftToSettings
+    /// Someone else's `drakar`, or one the person removed after it was linked.
+    case leftAlone
+  }
+
+  /// What a launch does without asking: links `drakar` into `~/.local/bin` when the login
+  /// shell's PATH has it, the first time (`offeredBefore` false), and points a link a moved
+  /// or reinstalled Drakar left at this copy, every time. Only a link into some app's
+  /// `Contents/Resources/drakar.sh` counts as Drakar's; a file, or a link elsewhere, is
+  /// someone else's. Once linked, a `drakar` the person removed stays removed.
+  static func linkAtLaunch(script: URL, path: String?, home: URL, offeredBefore: Bool)
+    -> LaunchOutcome
+  {
+    let directory = directory(path: path, home: home)
+    guard directory == home.appending(path: ".local/bin") else { return .leftToSettings }
+    if isInstalled(script: script, in: directory) { return .alreadyLinked }
+    let link = directory.appending(path: name).path(percentEncoded: false)
+    if let target = try? FileManager.default.destinationOfSymbolicLink(atPath: link) {
+      guard target.hasSuffix(".app/Contents/Resources/\(name).sh") else { return .leftAlone }
+    } else if FileManager.default.fileExists(atPath: link) || offeredBefore {
+      return .leftAlone
+    }
+    return (try? install(script: script, in: directory)) == nil ? .leftAlone : .linked
+  }
+
   /// `install` as one shell command, for `do shell script … with administrator privileges`
   /// when `directory` is not writable (`/usr/local/bin` is root's on a Mac with no Intel
   /// Homebrew). It fails rather than replace a real file, as `install` does.

@@ -106,6 +106,8 @@ enum PreferenceKey {
   static let accentColor = "drakar.accentColor"
   /// Whether the editor sits left of the session; off, as the default, it opens to its right.
   static let editorLeads = "drakar.editorLeads"
+  /// A launch has linked the `drakar` command once: a link removed since stays removed.
+  static let commandLinked = "drakar.commandLinked"
 }
 
 /// What Settings picked for the sessions Drakar starts.
@@ -595,6 +597,8 @@ private struct CommandLineSection: View {
         : String(localized: "Could not link drakar in \(place): \(error.localizedDescription)")
     }
     installed = CommandLineTool.isInstalled(script: script, in: directory)
+    // Linked by hand counts as linked once: a launch never puts back one removed since.
+    if installed { UserDefaults.standard.set(true, forKey: PreferenceKey.commandLinked) }
   }
 }
 
