@@ -86,7 +86,7 @@ The empty window (last tab closed, or none yet) keeps today's "No session" state
   Elsewhere if another process has it, and comes back from there as today. No dialog.
 - **Session at work** (`AgentSession.isAtWork`: a turn running, or waiting on the person): handed to
   the session host, as closing the window does (`stop(handingOver: true)`), and its row leaves the
-  window, recorded in `closedHere` so the window does not take it straight back. It keeps working;
+  window, marked so the window does not take it straight back (below). It keeps working;
   Home and Go to Session list it, and opening it from either brings it back as a tab
   (`Project.reopen`). No dialog.
 - **A draft or attachments in the closed tab's composer:** kept on the session's stored state if the
@@ -103,10 +103,10 @@ A runner's session already carries on in its host whatever the stop; nothing cha
 
 **After a tab at work is closed** (settled after the builder check; calls, not the person's words):
 
-- It stays closed. The host IDs of tabs closed at work are kept in `StoredProject` (not only in
-  memory, and for this Mac's sessions as well as a runner's), so neither a window reopening nor a
-  relaunch takes the process back on its own: `adoptHeld` skips them, and `HeldWindows` opens no
-  window for a process every window closed.
+- It stays closed. The process's own `SessionMeta` says so (`closedAtWork`, set with `setMeta`
+  before the window lets go), so every window and every launch reads the same thing: neither a
+  window reopening nor a relaunch takes the process back on its own (`adoptHeld` skips it), and
+  `HeldWindows` opens no window for it.
 - Its process ends once its turn does: the window asks the host to end it when it next goes idle
   (a new host request, which bumps the protocol minor; `docs/session-host.md` gets the request). A
   turn waiting on the person counts as at work and is not ended by this. Once ended it is an Ended
