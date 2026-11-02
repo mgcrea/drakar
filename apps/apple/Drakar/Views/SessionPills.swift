@@ -28,6 +28,10 @@ struct SessionPills {
   var model: some View {
     let models = Self.models(for: session, account: account)
     return HStack(spacing: 6) {
+      // Left of the model, as the extension has it.
+      if let cache = Self.promptCache(of: session) {
+        PromptCacheLabel(cache: cache).font(.callout).foregroundStyle(.secondary)
+      }
       modelMenu(models)
       let levels = Self.effortLevels(session, models: models)
       if !levels.isEmpty { effortMenu(levels) }
@@ -48,6 +52,14 @@ struct SessionPills {
         catalog.load(folder: folder, account: account)
       }
     }
+  }
+
+  /// The session's prompt cache, once a reply has said anything of it; nil for an agent that
+  /// keeps none Drakar can reckon.
+  static func promptCache(of session: AgentSession) -> PromptCache? {
+    let cache = session.transcript.promptCache
+    guard session.features.showsPromptCache, cache.state(at: .now) != .unknown else { return nil }
+    return cache
   }
 
   var mode: some View { modeMenu(Self.models(for: session, account: account)) }
@@ -228,6 +240,37 @@ extension View {
   /// A composer pill's label: a capsule behind the model, only under the pointer for the mode.
   fileprivate func pill(filled: Bool) -> some View {
     modifier(PillChrome(filled: filled))
+  }
+}
+
+/// The prompt cache, as the extension shows it: the minutes left while warm, a dimmed timer
+/// once cold, and the sentence saying which on hover. Redrawn on each minute counted from the
+/// anchor, which is when either figure changes.
+struct PromptCacheLabel: View {
+  let cache: PromptCache
+
+  var body: some View {
+    TimelineView(.periodic(from: cache.anchor ?? .now, by: 60)) { context in
+      Face(state: cache.state(at: context.date))
+    }
+  }
+
+  private struct Face: View {
+    let state: PromptCache.State
+
+    var body: some View {
+      Group {
+        if case .warm(let minutes) = state {
+          Label("\(minutes)m", systemImage: "timer").monospacedDigit()
+        } else {
+          Image(systemName: "timer").foregroundStyle(.tertiary)
+        }
+      }
+      .help(state.help ?? "")
+      .accessibilityElement(children: .ignore)
+      .accessibilityLabel(state.help ?? "")
+      .accessibilityIdentifier("promptCache")
+    }
   }
 }
 
