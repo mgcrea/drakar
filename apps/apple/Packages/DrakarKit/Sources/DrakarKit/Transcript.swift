@@ -213,6 +213,9 @@ public struct Transcript: Sendable, Equatable {
   private var indexByID: [String: Int] = [:]
   private var promptCount = 0
   private var lastPromptID: String?
+  /// Where the first prompt stands, kept as entries arrive: `status` reads it after every
+  /// change, and a transcript with no prompt (a long tail of history) would be scanned whole.
+  private(set) var firstPromptIndex: Int?
   private var noticeCount = 0
   /// The entries thinking now, so the end of a turn can stop them without a scan.
   private var thinkingIDs: Set<String> = []
@@ -508,7 +511,10 @@ public struct Transcript: Sendable, Equatable {
     if let index = indexByID[item.id] {
       // A started item is empty by definition, and a thinking block can land whole with its
       // text withheld after its deltas showed some: never replace with nothing.
-      if replacing && !Self.isEmptyText(kind) { entries[index].kind = kind }
+      if replacing && !Self.isEmptyText(kind) {
+        entries[index].kind = kind
+        notePrompt(at: index)
+      }
       if replacing, let since = entries[index].thinkingSince {
         entries[index].thinkingSince = nil
         entries[index].thinkingDuration = time.timeIntervalSince(since)
@@ -591,10 +597,18 @@ public struct Transcript: Sendable, Equatable {
   private mutating func upsert(_ entry: Entry) {
     if let index = indexByID[entry.id] {
       entries[index] = entry
+      notePrompt(at: index)
     } else {
       indexByID[entry.id] = entries.count
       entries.append(entry)
+      notePrompt(at: entries.count - 1)
     }
+  }
+
+  private mutating func notePrompt(at index: Int) {
+    guard case .prompt = entries[index].kind, firstPromptIndex.map({ index < $0 }) ?? true
+    else { return }
+    firstPromptIndex = index
   }
 }
 

@@ -363,7 +363,7 @@ private struct ServersPane: View {
     }
   }
 
-  private var isRunning: Bool { project.selected?.session.transcript.isRunning ?? false }
+  private var isRunning: Bool { project.selected?.session.status.isRunning ?? false }
 }
 
 /// What reading the selected session's servers again hangs on.

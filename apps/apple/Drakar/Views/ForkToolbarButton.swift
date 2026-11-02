@@ -7,7 +7,7 @@ struct ForkToolbarButton: View {
   let project: Project
 
   var body: some View {
-    let running = project.selected?.session.transcript.isRunning == true
+    let running = project.selected?.session.status.isRunning == true
     Button("Fork Session", systemImage: "arrow.triangle.branch") { project.forkSelected() }
       .disabled(!project.canForkSelected)
       .help(

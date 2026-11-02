@@ -75,10 +75,10 @@ final class KeepAwake {
   static func working() -> [ObjectIdentifier: Int] {
     var working: [ObjectIdentifier: Int] = [:]
     for session in OpenSessions.shared.projects.values.flatMap(\.sessions).map(\.session)
-    where session.transcript.isRunning && !session.transcript.isWaitingOnPerson
+    where session.status.isRunning && !session.status.isWaitingOnPerson
       && !session.isReadOnly
     {
-      working[ObjectIdentifier(session)] = session.transcript.pauses
+      working[ObjectIdentifier(session)] = session.status.pauses
     }
     return working
   }

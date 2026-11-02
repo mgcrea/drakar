@@ -157,9 +157,7 @@ final class ProjectSession: Identifiable {
   /// session".
   var knownTitle: String? {
     if let title = session.title { return title }
-    for entry in session.transcript.entries {
-      if case .prompt(let text) = entry.kind { return String(text.prefix(80)) }
-    }
+    if let prompt = session.status.firstPrompt { return prompt }
     if let preview = unloadedPreview, let title = preview.title ?? preview.lastPrompt {
       return String(title.prefix(80))
     }
@@ -168,13 +166,13 @@ final class ProjectSession: Identifiable {
 
   /// The first MCP server's question waiting on the person.
   var pendingElicitation: Transcript.PendingElicitation? {
-    session.transcript.pendingElicitations.first
+    session.status.pendingElicitations.first
   }
 
   /// What the first waiting permission request wants, "Bash: make test", else what the
   /// first waiting question asks, "linear: Which team?".
   var waitingFor: String? {
-    if let pending = session.transcript.pendingPermissions.first {
+    if let pending = session.status.pendingPermissions.first {
       let name = pending.request.displayName ?? pending.request.toolName
       let summary = pending.request.summary
       return summary.isEmpty ? name : "\(name): \(summary)"
@@ -191,7 +189,7 @@ final class ProjectSession: Identifiable {
   /// question blocks its tool mid-turn as a permission does, so beside a plan or a choice it
   /// is the question's level that shows.
   var urgency: Urgency? {
-    let permission = session.transcript.pendingPermissions.first.map { pending in
+    let permission = session.status.pendingPermissions.first.map { pending in
       pending.request.isChoice || pending.request.isPlan ? Urgency.choice : .permission
     }
     let question: Urgency? = pendingElicitation == nil ? nil : .permission
@@ -205,10 +203,10 @@ final class ProjectSession: Identifiable {
 
   /// What it wants, for the row's second line and the notification.
   var wants: String? {
-    if let pending = session.transcript.pendingPermissions.first, pending.request.isChoice {
+    if let pending = session.status.pendingPermissions.first, pending.request.isChoice {
       return UserQuestion.list(pending.request.input).first?.question ?? waitingFor
     }
-    if let pending = session.transcript.pendingPermissions.first, pending.request.isPlan {
+    if let pending = session.status.pendingPermissions.first, pending.request.isPlan {
       return String(localized: "Claude has finished a plan and is waiting for your review.")
     }
     return waitingFor ?? closingAsk?.text
@@ -232,9 +230,9 @@ final class ProjectSession: Identifiable {
     let found: (messageID: String, ask: ClosingAsk)?
     // The file's summary stands in only while nothing is in memory: a session started here
     // has no history to read, and the summary of its file lags the live turn.
-    if session.transcript.entries.isEmpty, let preview {
+    if !session.status.hasEntries, let preview {
       found = preview.closingMessageID.flatMap { id in preview.closingAsk.map { (id, $0) } }
-    } else if let closing = session.transcript.closingText {
+    } else if let closing = session.status.closingText {
       found = detect(closing).map { (closing.messageID, $0) }
     } else {
       found = nil
@@ -254,17 +252,17 @@ final class ProjectSession: Identifiable {
   /// The gauge from what this session knows: its process's report, its own model, the
   /// account's, the newest message's.
   func gauge(accountModel: String?) -> ContextGauge? {
-    let transcript = session.transcript
-    if transcript.contextUsage == nil, let preview = unloadedPreview {
+    let status = session.status
+    if status.contextUsage == nil, let preview = unloadedPreview {
       return ContextGauge.make(
         usage: preview.context?.usage, reportedLimit: nil, initModelID: nil,
         attachmentModelID: preview.modelID, accountModelID: accountModel,
         messageModelID: preview.context?.modelID)
     }
     return ContextGauge.make(
-      usage: transcript.contextUsage, reportedLimit: session.reportedContext?.maxTokens,
-      initModelID: transcript.session?.model, attachmentModelID: nil,
-      accountModelID: accountModel, messageModelID: transcript.contextModelID)
+      usage: status.contextUsage, reportedLimit: session.reportedContext?.maxTokens,
+      initModelID: status.session?.model, attachmentModelID: nil,
+      accountModelID: accountModel, messageModelID: status.contextModelID)
   }
 
   /// When a Codex session's rollout file was last written, as of the last read: a Codex
@@ -639,7 +637,7 @@ final class Project {
   /// a session live elsewhere, which Drakar only watches.
   var yesOrNoSelected: ClosingAsk? {
     guard let selected, selected.session.canSend,
-      !selected.session.transcript.isWaitingOnPerson,
+      !selected.session.status.isWaitingOnPerson,
       let ask = selected.closingAsk, ask.isYesOrNo
     else { return nil }
     return ask
@@ -1022,9 +1020,7 @@ final class Project {
             // A row whose transcript holds no prompt never took the batch's: the quit came
             // while its spawn was unanswered, so the request was lost. It is sent again.
             if !row.session.isAtWork {
-              let tookPrompt = row.session.transcript.entries.contains {
-                if case .prompt = $0.kind { true } else { false }
-              }
+              let tookPrompt = row.session.status.firstPrompt != nil
               state = tookPrompt ? .finished : .waiting
               reused = state == .waiting
             }
@@ -1258,7 +1254,7 @@ final class Project {
   /// Whether `item` has a transcript to copy and no turn writing it: a fork taken mid-turn
   /// would copy a history that can end on a tool call with no result.
   func canFork(_ item: ProjectSession) -> Bool {
-    hasForkableTranscript(item) && !item.session.transcript.isRunning
+    hasForkableTranscript(item) && !item.session.status.isRunning
   }
 
   /// Never a runner session's: its transcript is on the runner, and nothing forks there in v1
@@ -1326,7 +1322,7 @@ final class Project {
   /// Whether `item` can be forked from one of its prompts: as `canFork`, and only Claude
   /// Code's, whose prompts carry the CLI's message uuids (a Codex prompt's is Drakar's own).
   func canForkFrom(_ item: ProjectSession) -> Bool {
-    offersForkFrom(item) && !item.session.transcript.isRunning
+    offersForkFrom(item) && !item.session.status.isRunning
   }
 
   /// As `canForkFrom` but for the turn: a prompt's menu shows the fork through a turn,
@@ -1866,7 +1862,7 @@ final class Project {
   /// A new session never started, nothing typed in it.
   private func isBlank(_ item: ProjectSession) -> Bool {
     item.session.phase == .idle && item.session.resuming == nil
-      && item.session.transcript.entries.isEmpty && item.draft.isEmpty
+      && !item.session.status.hasEntries && item.draft.isEmpty
       && item.attachments.isEmpty
   }
 
@@ -1919,7 +1915,7 @@ final class Project {
   }
 
   /// Sessions mid-turn.
-  var runningCount: Int { sessions.count { $0.session.transcript.isRunning } }
+  var runningCount: Int { sessions.count { $0.session.status.isRunning } }
 
   /// Sessions mid-turn that closing the window would interrupt: the session host keeps the
   /// others working.
@@ -1941,7 +1937,7 @@ final class Project {
     // Only an unsent fork's draft is read, so only typing there writes the window again.
     let forks = held.compactMap { item -> StoredFork? in
       let session = item.session
-      guard session.savedTarget == nil, session.transcript.session == nil,
+      guard session.savedTarget == nil, session.status.session == nil,
         let target = session.resuming, target.forks == true
       else { return nil }
       return StoredFork(target: target, name: session.name, draft: item.draft)

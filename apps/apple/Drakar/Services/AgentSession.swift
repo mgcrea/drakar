@@ -51,7 +51,13 @@ final class AgentSession {
   @ObservationIgnored private var controlReplies:
     [String: (reply: CheckedContinuation<SessionSignal?, Never>, timeout: Task<Void, Never>)] =
       [:]
-  private(set) var transcript = Transcript()
+  private(set) var transcript = Transcript() {
+    didSet { status = transcript.status }
+  }
+  /// What the rest of the app reads about this session: its row, its window's counts, Home,
+  /// attention, keep-awake. Assigned after every change but only observed to change when it
+  /// does, so readers are not redrawn per token as readers of `transcript` are.
+  private(set) var status = Transcript.Status()
   private(set) var phase: Phase = .idle
   /// The binary this session runs, for the footer and for bug reports.
   private(set) var executable: URL?
@@ -523,11 +529,11 @@ final class AgentSession {
   /// The session's id once known: the resumed one at once, a new one or a fork's from
   /// `system/init`. A fork never answers with the original's id, which another process owns.
   var sessionID: String? {
-    transcript.session?.sessionID ?? (resuming?.forks == true ? nil : resuming?.sessionID)
+    status.session?.sessionID ?? (resuming?.forks == true ? nil : resuming?.sessionID)
   }
 
   /// The session's name, or the title Claude Code gave it, from its history.
-  var title: String? { name ?? transcript.title }
+  var title: String? { name ?? status.title }
 
   var isProcessRunning: Bool { process != nil }
 
@@ -546,7 +552,7 @@ final class AgentSession {
   }
 
   /// Mid-turn, or waiting on the person: what a quit hands to the host rather than ends.
-  var isAtWork: Bool { transcript.isRunning || transcript.isWaitingOnPerson }
+  var isAtWork: Bool { status.isRunning || status.isWaitingOnPerson }
 
   /// The record a relaunched app rebuilds the session from, for its last process; nil before
   /// one was launched.
@@ -582,7 +588,7 @@ final class AgentSession {
   /// so a trial that ends mid-turn refuses only the next prompt.
   var canSend: Bool {
     !isReadOnly && !isMoving && !historyFailed && !isReconnecting && !waitsForHost
-      && !isOutOfReach && !isGoneOnRunner && !transcript.isRunning && phase != .starting
+      && !isOutOfReach && !isGoneOnRunner && !status.isRunning && phase != .starting
       && EntitlementMonitor.allowsWorkNow
   }
 
@@ -590,7 +596,7 @@ final class AgentSession {
   /// at the next tool boundary, or once the turn ends.
   var canQueue: Bool {
     !isReadOnly && !isMoving && !historyFailed && !isReconnecting && !waitsForHost
-      && !isOutOfReach && transcript.isRunning && process != nil
+      && !isOutOfReach && status.isRunning && process != nil
       && EntitlementMonitor.allowsWorkNow
   }
 
@@ -612,7 +618,7 @@ final class AgentSession {
   /// turn, disabled, rather than taking them away.
   var offersCodeRewind: Bool { controlsTasks && !rewindNotEnabled }
 
-  private var rewindsCode: Bool { offersCodeRewind && !transcript.isRunning }
+  private var rewindsCode: Bool { offersCodeRewind && !status.isRunning }
 
   /// `listPermissionRules()`, `readPlan()` and `servers` ask a process: a Claude Code one
   /// Drakar drives, as the task controls read it. `phase` is read too, and first: the
@@ -732,7 +738,7 @@ final class AgentSession {
   /// The model running now, as the process says it after a switch, with the `[1m]` its
   /// start reported when it is the same model; else its start's.
   var runningModel: String? {
-    let started = transcript.session?.model
+    let started = status.session?.model
     guard let appliedModel else { return started }
     if let started, started.replacingOccurrences(of: "[1m]", with: "") == appliedModel {
       return started
@@ -753,7 +759,7 @@ final class AgentSession {
     modePick = mode
     // Codex's running turn keeps its policy, but what Bypass lets through is accepted at
     // once (`CodexPolicy.letsThrough`): it already holds.
-    if !features.picksApplyAtOnce, transcript.isRunning, mode != .bypass {
+    if !features.picksApplyAtOnce, status.isRunning, mode != .bypass {
       pillNote = Self.fromNextTurn
     }
     guard let process else { return }
@@ -771,7 +777,7 @@ final class AgentSession {
     pillNote = nil
     let previous = modelPick
     modelPick = value
-    if !features.picksApplyAtOnce, transcript.isRunning {
+    if !features.picksApplyAtOnce, status.isRunning {
       pillNote = Self.fromNextTurn
     }
     guard let process else { return }
@@ -786,7 +792,7 @@ final class AgentSession {
     pillNote = nil
     let previous = effortPick
     effortPick = level
-    if !features.picksApplyAtOnce, transcript.isRunning {
+    if !features.picksApplyAtOnce, status.isRunning {
       pillNote = Self.fromNextTurn
     }
     guard let process else { return }
@@ -948,6 +954,8 @@ final class AgentSession {
   func catchUp() {
     guard isReadOnly, var follower else { return }
     try? follower.catchUp(&transcript)
+    // A read that reset the transcript, then threw, skipped its `didSet`.
+    status = transcript.status
     self.follower = follower
   }
 
@@ -1004,7 +1012,7 @@ final class AgentSession {
     if resuming?.forks == true || resuming == nil {
       // A first turn that never finished (End Session, a crash) left no saved target, but
       // the transcript exists from `system/init` on: look for it.
-      if savedTarget == nil, transcript.session?.sessionID != nil { savedTarget = locateTarget() }
+      if savedTarget == nil, status.session?.sessionID != nil { savedTarget = locateTarget() }
       // A session whose process ended goes on under its own id, never as a fork again.
       if let saved = savedTarget { resuming = saved }
     }
@@ -1250,7 +1258,7 @@ final class AgentSession {
   /// (`Transcript.unansweredQuestion`): offered again in place of the composer, as the
   /// extension offers it, while nothing runs or waits and until it is dismissed.
   var earlierQuestion: Transcript.ToolCall? {
-    guard canSend, !transcript.isWaitingOnPerson,
+    guard canSend, !status.isWaitingOnPerson,
       let call = transcript.unansweredQuestion, call.id != dismissedQuestionID
     else { return nil }
     return call
@@ -1316,7 +1324,7 @@ final class AgentSession {
   private func ownTarget() -> ResumeTarget? {
     if let savedTarget { return savedTarget }
     if let resuming, resuming.forks != true { return resuming }
-    if transcript.session?.sessionID != nil { savedTarget = locateTarget() }
+    if status.session?.sessionID != nil { savedTarget = locateTarget() }
     return savedTarget
   }
 
@@ -1335,10 +1343,10 @@ final class AgentSession {
   /// queue, as the extension's does: what was queued runs next. A question an MCP server
   /// waits on is cancelled first, so that the server is not left waiting on it.
   func interrupt(keepingQueued: Bool = false) {
-    guard transcript.isRunning else { return }
+    guard status.isRunning else { return }
     // Kept waiting while reconnecting, as `answer` keeps them: a cancel now would reach nobody.
     if !isReconnecting {
-      for pending in transcript.pendingElicitations { send(.cancel, to: pending) }
+      for pending in status.pendingElicitations { send(.cancel, to: pending) }
     }
     write(.interrupt(cancelQueued: !keepingQueued))
   }
@@ -1788,14 +1796,14 @@ final class AgentSession {
     let waiting = transcript.waitingCount
     var turnEnded = false
     let known = sessionID
-    var wasRunning = transcript.isRunning
+    var wasRunning = status.isRunning
     for event in output.events {
       transcript.apply(event, at: time)
       if case .turnEnded = event { turnEnded = true }
       // A queued prompt taken once the turn ended starts one with no `send`, which may
       // also end within these lines.
-      if !wasRunning, transcript.isRunning { rewinds.turnStarted() }
-      wasRunning = transcript.isRunning
+      if !wasRunning, status.isRunning { rewinds.turnStarted() }
+      wasRunning = status.isRunning
     }
     // A new or forked session has no id until `system/init`: a registry read before it
     // listed this row's own process as another app's, and nothing else would read it again.
@@ -1805,7 +1813,7 @@ final class AgentSession {
     if !isReplaying, transcript.waitingCount > waiting { onPermissionRequested?() }
     permissionsMayHaveChanged(from: waiting)
     if turnEndDeferred, output.signals.contains(.queueChanged) {
-      if transcript.isRunning {
+      if status.isRunning {
         turnEndDeferred = false
       } else if transcript.queuedPrompts.isEmpty {
         turnEndDeferred = false
@@ -2005,7 +2013,7 @@ final class AgentSession {
     // A runner's session's transcript is on the runner, never in an account of this Mac's.
     guard !isOnRunner, let id = sessionID else { return nil }
     return backend.locateTarget(
-      sessionID: id, cwd: transcript.session?.cwd ?? folder.path(percentEncoded: false),
+      sessionID: id, cwd: status.session?.cwd ?? folder.path(percentEncoded: false),
       in: accounts())
   }
 

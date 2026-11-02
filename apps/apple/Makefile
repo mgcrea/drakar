@@ -100,6 +100,13 @@ test-app: sparkle ## Run the app target's tests
 
 test-all: test test-app ## Every suite
 
+# Attaches to the Drakar already running, whichever build it is; for numbers worth comparing,
+# run a Release build made here (`make build-release`), since a notarized one refuses the attach.
+# SECONDS_PROFILED is how long to record.
+SECONDS_PROFILED ?= 30
+profile: ## Time-profile the running Drakar's main thread (SECONDS_PROFILED=30)
+	python3 -I scripts/profile.py --seconds $(SECONDS_PROFILED)
+
 # ── Build and relaunch ────────────────────────────────────────────────────────
 #
 # Copy-paste block, identical in every Mac app here. The canonical copy lives in
@@ -239,5 +246,5 @@ icon: ## Rebuild Drakar.icon from design/drakar-icon.svg
 clean: ## Remove build products
 	rm -rf $(DERIVED_DATA) $(KIT)/.build
 
-.PHONY: help sparkle build build-release test test-app test-all quit run \
+.PHONY: help sparkle build build-release test test-app test-all profile quit run \
 	swift-format-version format-swift format-swift-check blame-setup icon clean

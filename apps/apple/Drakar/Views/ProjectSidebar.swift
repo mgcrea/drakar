@@ -349,7 +349,7 @@ struct SessionListView: View {
   /// As for one row, once for the marked rows still working. A runner's is let go, not
   /// stopped, by any stop but End Session's, so it does not count.
   private func confirmIfRunning(_ items: [ProjectSession], then action: @escaping () -> Void) {
-    let working = items.filter { $0.session.transcript.isRunning && !$0.session.isOnRunner }
+    let working = items.filter { $0.session.status.isRunning && !$0.session.isOnRunner }
       .count
     guard working > 0 else { return action() }
     let alert = NSAlert()
@@ -365,7 +365,7 @@ struct SessionListView: View {
 
   /// Mid-turn, stopping loses the turn: ask first. A runner's is let go instead, as above.
   private func confirmIfRunning(_ item: ProjectSession, then action: @escaping () -> Void) {
-    guard item.session.transcript.isRunning, !item.session.isOnRunner else { return action() }
+    guard item.session.status.isRunning, !item.session.isOnRunner else { return action() }
     let alert = NSAlert()
     alert.messageText = String(localized: "“\(item.displayTitle)” is still working.")
     alert.informativeText = String(localized: "Stopping it now ends the turn part-way.")
@@ -552,7 +552,7 @@ enum RowState {
     let session = item.session
     if let urgency = item.urgency {
       self.init(urgency)
-    } else if session.transcript.isRunning {
+    } else if session.status.isRunning {
       self = .working
     } else if item.hasStopped {
       self = .stopped
