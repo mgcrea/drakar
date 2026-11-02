@@ -47,6 +47,14 @@ import Synchronization
     }
   }
 
+  /// The runner's host kept connected while the app runs and a runner is set up (spec §3), so
+  /// that Home can list it: at launch, and each time Settings › Runner saves a runner. The
+  /// app's alone, never `useRunner`'s: a runner's host a test makes never connects by itself.
+  /// Clearing the runner stops it, as `close()` does.
+  static func keepRunnerConnected() {
+    runner?.keepConnected()
+  }
+
   /// Tests only: the directory a `SessionHost()` made under XCTest uses, read as it is made,
   /// instead of none.
   static var testDirectory: URL?
@@ -183,6 +191,13 @@ import Synchronization
   func reaches(runner id: String) -> Bool {
     guard !isClosed, case .runner(let settings) = endpoint else { return false }
     return settings.id.uuidString == id
+  }
+
+  /// The runner's id as set up (`RunnerSettings.id`), which its windows and metas name it by;
+  /// nil for this Mac's host.
+  var runnerID: String? {
+    guard case .runner(let settings) = endpoint else { return nil }
+    return settings.id.uuidString
   }
 
   /// What the runner is called as set up now; nil for this Mac's host.

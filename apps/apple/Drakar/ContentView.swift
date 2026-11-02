@@ -192,6 +192,7 @@ struct ContentView: View {
     guard let route, let folder = route.folder else { return }
     let runner = route.runner
     if runner == nil { ProjectList.shared.track(folder) }
+    var takingBack: Task<Void, Never>?
     if project?.folder.standardizedFileURL != folder.standardizedFileURL
       || project?.runner != runner
     {
@@ -202,7 +203,7 @@ struct ContentView: View {
       self.project = project
       OpenSessions.shared.register(project, window: windowID)
       // What the session host kept of the window's sessions since the last launch.
-      project.takeBackHeld()
+      takingBack = project.takeBackHeld()
     }
     guard let project else { return }
     // What the session picker sent is this Mac's.
@@ -212,6 +213,14 @@ struct ContentView: View {
       }
     }
     if project.sessions.isEmpty { project.newSession() }
+    // New Session on Runner…: shown once what the runner holds for the window is in, which
+    // may have taken the blank row's place.
+    if OpenSessions.shared.takeNewSessionRequest(for: route) {
+      Task {
+        await takingBack?.value
+        project.showNewSession()
+      }
+    }
   }
 
   /// Back to home in this window: the questions a close asks (unsaved tabs, sessions mid-turn),
@@ -256,13 +265,14 @@ struct ContentView: View {
     route = .picker()
   }
 
-  /// A project clicked on home: its open window comes forward, or this one becomes it.
-  private func enter(_ folder: URL) {
-    if let window = OpenSessions.shared.window(for: .project(folder)) {
+  /// A project clicked on home, this Mac's or a runner's: its open window comes forward, or
+  /// this one becomes it.
+  private func enter(_ next: WindowRoute) {
+    if let window = OpenSessions.shared.window(for: next) {
       window.makeKeyAndOrderFront(nil)
       return
     }
-    route = .project(folder)
+    route = next
   }
 
   /// A session picked in this picker window: shown where it already is, or in the project

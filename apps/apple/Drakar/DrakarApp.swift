@@ -57,11 +57,14 @@ struct DrakarApp: App {
 }
 
 /// File > New Tab (⌘T) and New Window (⇧⌘N) open home; ⌘N belongs to New Session.
-/// Open Project… (⌘O) tracks a folder and opens it in a new tab; Close Project (⇧⌘H)
-/// goes back to home in this window.
+/// Open Project… (⌘O) tracks a folder and opens it in a new tab; New Session on Runner…
+/// starts one in a folder of the runner set up; Close Project (⇧⌘H) goes back to home in
+/// this window.
 private struct NewWindowCommand: View {
   @Environment(\.openWindow) private var openWindow
   @FocusedValue(\.closeProject) private var closeProject
+  /// The runner Settings › Runner keeps, read here only so the menu follows it.
+  @AppStorage(RunnerSettings.key) private var runner: Data?
 
   var body: some View {
     Button("New Tab") {
@@ -74,6 +77,11 @@ private struct NewWindowCommand: View {
     Divider()
     Button("Open Project…") { openProject() }
       .keyboardShortcut("o")
+    Button("New Session on Runner…") {
+      WindowTabs.openWindow = WindowTabs.openWindow ?? openWindow
+      NewRunnerSession.ask()
+    }
+    .disabled(runner == nil)
     Button("Close Project") { closeProject?() }
       .keyboardShortcut("h", modifiers: [.command, .shift])
       .disabled(closeProject == nil)
@@ -256,6 +264,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       // A runner keeps its host up and writes its environment (spec §2); never from a test
       // run, which the owner's own yes would otherwise reach.
       RunnerRole.shared.apply()
+      // The runner this Mac uses, connected for Home to list (spec §3); never from a test run.
+      SessionHost.keepRunnerConnected()
     }
   }
 

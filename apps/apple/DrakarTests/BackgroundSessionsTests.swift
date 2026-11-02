@@ -61,6 +61,27 @@ struct BackgroundSessionsTests {
     #expect(counts.isEmpty)
   }
 
+  /// A process a Mac started on this Mac as its runner, and holds still, is that Mac's: it is
+  /// no session of the local project at its path, which never takes it back (remote sessions
+  /// spec §4, §5). Once the runner's own Drakar has it, it is one of this Mac's like any other.
+  @Test func runnerProcessesAreNotCountedForALocalProjectAtTheSamePath() throws {
+    var meta = SessionMeta(
+      start: AgentStart(
+        folder: URL(filePath: "/w/parcelle"), environment: [:], allowsBypass: false,
+        runner: "R"),
+      windowFolder: "/w/parcelle", history: .none, runner: "R", origin: "MacBook",
+      owner: "MacBook")
+    let owned = HeldProcess(
+      id: "a", meta: try JSONEncoder().encode(meta), running: true, logLength: 0)
+    #expect(BackgroundSessions.count(held: [owned], live: [], owners: owners).isEmpty)
+    meta.owner = nil
+    let handedOver = HeldProcess(
+      id: "b", meta: try JSONEncoder().encode(meta), running: true, logLength: 0)
+    #expect(
+      BackgroundSessions.count(held: [owned, handedOver], live: [], owners: owners)
+        == ["/w/parcelle": 1])
+  }
+
   @Test func aProcessOutsideEveryProjectIsNotCounted() throws {
     let counts = BackgroundSessions.count(
       held: [try held("a", window: "/w/elsewhere")], live: [], owners: owners)

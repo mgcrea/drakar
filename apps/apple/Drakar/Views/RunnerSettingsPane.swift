@@ -59,7 +59,8 @@ import SwiftUI
   @ObservationIgnored private var id = UUID()
 
   /// The app's own of each unless a test gives its own: `install` puts the runner in
-  /// `SessionHost.runner` (nil: `useRunner` with `defaults`), `open` reaches the runner.
+  /// `SessionHost.runner` (nil: `useRunner` with `defaults`, kept connected as at launch),
+  /// `open` reaches the runner.
   init(
     defaults: UserDefaults = .standard, role: RunnerRole = .shared,
     install: (@MainActor (RunnerSettings?) -> Void)? = nil,
@@ -69,7 +70,11 @@ import SwiftUI
   ) {
     self.defaults = defaults
     self.role = role
-    self.install = install ?? { SessionHost.useRunner($0, keptIn: defaults) }
+    self.install =
+      install ?? {
+        SessionHost.useRunner($0, keptIn: defaults)
+        SessionHost.keepRunnerConnected()
+      }
     self.open = open
     accepts = role.accepts
     saved = RunnerSettings.read(from: defaults)

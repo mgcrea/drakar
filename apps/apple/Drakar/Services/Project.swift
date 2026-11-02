@@ -423,6 +423,11 @@ final class Project {
   /// The session host's ids for the processes another app holds that rows here showed
   /// read-only, which `released` or a new connection settles.
   @ObservationIgnored private var shownHeldElsewhere: Set<String> = []
+  /// A runner's processes whose rows were closed here while this Mac still owned them. One
+  /// closed while reconnecting stays with its stale relay, and the host says `released` once
+  /// that relay goes, as it does of a process brought back: not taken then, for it was closed
+  /// here. Home lists it, and opens it again (`reopen`).
+  @ObservationIgnored private var closedHere: Set<String> = []
   /// The batches still sending or running, one banner each.
   private(set) var fanOuts: [FanOutBatch] = []
   /// The window closed or went home: nothing it takes back or restores starts after that.
@@ -668,6 +673,11 @@ final class Project {
     sessions.insert(item, at: 0)
     if shows { select(item) }
     return item
+  }
+
+  /// New Session on Runner…: the window's blank row shown, or a new one made.
+  func showNewSession() {
+    if let blank = sessions.first(where: isBlank) { select(blank) } else { newSession() }
   }
 
   /// Whether a skill can go to `target`: a new session whenever work may be sent (the
@@ -1593,6 +1603,7 @@ final class Project {
     // the one let go is its own, brought back to this Mac: it asks, and lets the other
     // windows ask too.
     if sessionHost?.isRunner == true {
+      guard !closedHere.contains(id) else { return false }
       Task {
         guard !isStopped, let held = await sessionHost?.listed() else { return }
         await adoptHeld(held.filter { $0.id == id })
@@ -1633,6 +1644,14 @@ final class Project {
       adopt(session, replacing: id)
       await session.loadHistory()
     }
+  }
+
+  /// A process of the window's that Home opened again: taken back if the window may take it,
+  /// though its row was closed here, and shown.
+  func reopen(_ hostID: String, among held: [HeldProcess]) async {
+    closedHere.remove(hostID)
+    await adoptHeld(held.filter { $0.id == hostID })
+    if let item = sessions.first(where: { $0.session.hostID == hostID }) { select(item) }
   }
 
   private func isShownReadOnly(_ hostID: String) -> Bool {
@@ -1801,6 +1820,10 @@ final class Project {
   }
 
   func remove(_ item: ProjectSession) {
+    // Handed over, its owner is gone: a Bring Back of it is for this window to take.
+    if item.session.isOnRunner, item.session.owner != nil, let id = item.session.hostID {
+      closedHere.insert(id)
+    }
     item.session.stop()
     sessions.removeAll { $0.id == item.id }
     marked.remove(item.id)
@@ -1872,6 +1895,8 @@ final class Project {
     session.windowFolder = folder
     session.runner = runner
     if let sessionHost { session.sessionHost = sessionHost }
+    // Asked again at each spawn: the runner may be reached by then, though it was not now.
+    if runner != nil { session.currentHost = { [weak self] in self?.sessionHost } }
     let item = ProjectSession(session: session)
     session.onTurnEnded = { [weak self, weak item] in
       guard let self, let item else { return }

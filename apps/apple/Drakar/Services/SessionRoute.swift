@@ -100,6 +100,8 @@ final class OpenSessions {
   private(set) var projects: [UUID: Project] = [:]
   /// Sessions picked before their project's window existed, by folder.
   @ObservationIgnored private var pending: [String: [ResumeTarget]] = [:]
+  /// Runner windows New Session on Runner… opens, each to show a new session once open.
+  @ObservationIgnored private var newSessions: Set<WindowRoute> = []
 
   func register(_ project: Project, window: UUID) {
     projects[window] = project
@@ -163,6 +165,15 @@ final class OpenSessions {
 
   func takePending(for folder: String) -> [ResumeTarget] {
     pending.removeValue(forKey: ProjectPath.normalize(folder)) ?? []
+  }
+
+  func requestNewSession(in route: WindowRoute) {
+    newSessions.insert(route)
+  }
+
+  /// Whether the window opening on `route` is to show a new session, asked once.
+  func takeNewSessionRequest(for route: WindowRoute) -> Bool {
+    newSessions.remove(route) != nil
   }
 
   /// A transcript changed on disk: a read-only session following it catches up, and its

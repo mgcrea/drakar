@@ -7,8 +7,9 @@ import UniformTypeIdentifiers
 struct HomeView: View {
   /// A session picked: `forking` when it is open in another process.
   let pick: (SessionSummary, Bool) -> Void
-  /// A project entered: this window becomes it, or its open window comes forward.
-  let enter: (URL) -> Void
+  /// A project entered, this Mac's or a runner's: this window becomes it, or its open window
+  /// comes forward.
+  let enter: (WindowRoute) -> Void
 
   @State private var query = ""
   @State private var choosingFolder = false
@@ -21,6 +22,10 @@ struct HomeView: View {
   /// What the session host holds, read again whenever the registry changes: a window
   /// handing its sessions over, or one ending, changes it.
   @State private var held: [HeldProcess] = []
+  /// The runner set up, if any, and what its host holds.
+  @State private var runner = RunnerSectionModel()
+  /// The runner Settings › Runner keeps, read here only to know when one is set up.
+  @AppStorage(RunnerSettings.key) private var runnerSettings: Data?
 
   private var monitor: SessionMonitor { .shared }
   private var list: ProjectList { .shared }
@@ -34,7 +39,9 @@ struct HomeView: View {
       UpdateConsentCard()
       if !monitor.isLoaded {
         ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
-      } else if list.tracked.projects.isEmpty && suggestions.isEmpty && query.isEmpty {
+      } else if list.tracked.projects.isEmpty && suggestions.isEmpty && query.isEmpty
+        && runner.name == nil
+      {
         ContentUnavailableView {
           Label("Add a project to start", systemImage: "folder.badge.plus")
         } actions: {
@@ -58,6 +65,15 @@ struct HomeView: View {
     }
     .onAppear { resort() }
     .task(id: monitor.liveSessions) { held = await SessionHost.shared.heldIfRunning() }
+    // Nothing tells the Mac what the runner's host holds as it changes: it is asked while home
+    // is on screen, and only while a runner is set up.
+    .task(id: runnerSettings) {
+      await runner.refresh()
+      while runnerSettings != nil, !Task.isCancelled {
+        try? await Task.sleep(for: .seconds(3))
+        await runner.refresh()
+      }
+    }
     .onChange(of: query) { resort() }
     .onChange(of: list.tracked.paths) { resort() }
     .onChange(of: monitor.isLoaded) { resort() }
@@ -101,7 +117,7 @@ struct HomeView: View {
         Section("Projects") {
           ForEach(projects) { entry in
             Button {
-              enter(entry.url)
+              enter(.project(entry.url))
             } label: {
               ProjectRow(
                 entry: entry, stats: stats[entry.path] ?? ProjectStats(),
@@ -116,6 +132,7 @@ struct HomeView: View {
       } else if !query.isEmpty {
         Text("No matching projects").foregroundStyle(.secondary)
       }
+      RunnerSectionView(model: runner, query: query, enter: enter)
       if !shownSuggestions.isEmpty {
         Section("Recent Folders") {
           ForEach(shownSuggestions) { suggestion in
@@ -203,7 +220,7 @@ struct HomeView: View {
   }
 
   @ViewBuilder private func menu(for entry: TrackedProjects.Entry) -> some View {
-    Button("Open") { enter(entry.url) }
+    Button("Open") { enter(.project(entry.url)) }
     Button("Open in New Tab") { WindowTabs.open(.project(entry.url), asTab: true) }
     Button("Open in New Window") { WindowTabs.open(.project(entry.url), asTab: false) }
     Divider()

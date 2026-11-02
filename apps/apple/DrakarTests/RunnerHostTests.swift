@@ -1305,4 +1305,178 @@ struct RunnerHostTests {
     #expect(mac.sessions.contains { $0.id == item.id })
     #expect(notices.said.isEmpty)
   }
+
+  // MARK: - Home's runner section (spec §4, §5)
+
+  /// Processes of `cat` on `host`'s runner, for the test's folder, one for each owner: what
+  /// the runner's host holds as a Mac's session it detached, or one a Mac does not own.
+  private func cats(on host: SessionHost, owners: [String?]) async throws -> [String] {
+    let client = try #require(await host.client())
+    let cat = AgentProcess.Configuration(
+      executable: URL(filePath: "/bin/cat"), arguments: [], environment: [:],
+      currentDirectory: folder)
+    var ids: [String] = []
+    for owner in owners {
+      let meta = SessionMeta(
+        start: AgentStart(
+          folder: folder, environment: [:], allowsBypass: false,
+          runner: settings.id.uuidString),
+        windowFolder: folder.path(percentEncoded: false), history: .none,
+        runner: settings.id.uuidString, origin: "Test MacBook", owner: owner)
+      ids.append(try await client.spawn(cat, meta: try JSONEncoder().encode(meta)))
+    }
+    return ids
+  }
+
+  /// End Idle Sessions… ends what this Mac left on the runner and nothing else: not what an
+  /// app holds, nor what the runner's own Drakar or another Mac has.
+  @Test func endIdleSessionsEndsOnlyIdleOnes() async throws {
+    try relayingSSH()
+    let helper = try #require(SessionHost.startHelper(in: directory))
+    let name = namingThisMac()
+    defer {
+      ThisMac.name = name
+      finish([helper])
+    }
+    let host = SessionHost(endpoint: .runner(settings))
+    let ids = try await cats(on: host, owners: ["Test MacBook", "Test MacBook", "Other Mac", nil])
+    let watcher = try await watcher()
+    defer {
+      for id in ids { try? watcher.send(.terminate(id: id, forget: true)) }
+      watcher.close()
+    }
+    // Held by an app, as this Mac's window holds its own: the test's connection stands in.
+    #expect(!isRefusal(await firstEvent(of: watcher.attach(ids[1], from: 0))))
+
+    let model = RunnerSectionModel(host: { host })
+    await model.refresh()
+    #expect(model.name == "Studio")
+    #expect(model.link == .connected)
+    let states = Dictionary(uniqueKeysWithValues: model.rows.map { ($0.id, $0.state) })
+    #expect(states == [ids[0]: .idle, ids[1]: .here, ids[2]: .onTheRunner, ids[3]: .onTheRunner])
+    #expect(model.idleCount == 1)
+
+    await model.endIdle()
+    #expect(await eventually { await held(ids[0], on: watcher) == nil })
+    for id in ids.dropFirst() { #expect(await held(id, on: watcher)?.running == true) }
+    await model.refresh()
+    #expect(model.idleCount == 0)
+    #expect(model.rows.map(\.id).sorted() == Array(ids.dropFirst()).sorted())
+  }
+
+  /// A click on a row of this Mac's, its window open already, takes it into that window,
+  /// which no reconnect does by itself; one the Mac does not own says where to open it.
+  @Test func clickingAnIdleRowTakesItIntoTheOpenWindow() async throws {
+    try relayingSSH()
+    let helper = try #require(SessionHost.startHelper(in: directory))
+    let name = namingThisMac()
+    defer {
+      ThisMac.name = name
+      finish([helper])
+    }
+    let host = SessionHost(endpoint: .runner(settings))
+    let project = runnerProject(on: host)
+    defer { project.stopAll() }
+    await project.takeBackHeld().value
+    // Let go of after the window took back what it had: brought back with no window to hear
+    // it, or its tab closed while reconnecting.
+    let ids = try await cats(on: host, owners: ["Test MacBook", nil])
+    let watcher = try await watcher()
+    defer {
+      for id in ids { try? watcher.send(.terminate(id: id, forget: true)) }
+      watcher.close()
+    }
+    let route = WindowRoute.runnerProject(
+      runner: settings.id.uuidString, folder: ProjectPath.normalize(folder))
+    let model = RunnerSectionModel(host: { host }, project: { $0 == route ? project : nil })
+    await model.refresh()
+    let idle = try #require(model.rows.first { $0.id == ids[0] })
+    #expect(idle.state == .idle)
+    var entered: [WindowRoute] = []
+    #expect(await model.open(idle) { entered.append($0) } == nil)
+    #expect(entered == [route])
+    #expect(project.selected?.session.hostID == ids[0])
+    #expect(await held(ids[0], on: watcher)?.attachedApp != nil)
+
+    let theirs = try #require(model.rows.first { $0.id == ids[1] })
+    #expect(theirs.state == .onTheRunner)
+    #expect(await model.open(theirs) { entered.append($0) } == "Open it in Drakar on Studio")
+    #expect(entered == [route])
+    #expect(!project.sessions.contains { $0.session.hostID == ids[1] })
+  }
+
+  /// A tab closed while the window waits out its stale relay is not opened again when that
+  /// relay goes and the host says `released`: it was closed here, and Home lists it. Bring
+  /// Back still reaches the window (`bringBackReturnsIt`), as a process it never closed.
+  @Test func aRowClosedDuringAStaleRelayIsLeftToHome() async throws {
+    _ = try installRunnerClaude()
+    try relayingSSH()
+    let helper = try #require(SessionHost.startHelper(in: directory))
+    defer { finish([helper]) }
+    let host = SessionHost(endpoint: .runner(settings))
+    let project = runnerProject(on: host)
+    defer { project.stopAll() }
+    // The window hears `released` from here on.
+    await project.takeBackHeld().value
+    let item = try await startedRow(in: project)
+    let id = try #require(item.session.hostID)
+    let watcher = try await watcher()
+    defer { watcher.close() }
+    let relay = try #require(await attached(id, on: watcher))
+    kill(relay, SIGSTOP)
+    var hungUp = false
+    defer { if !hungUp { kill(relay, SIGKILL) } }
+    await host.client()?.close()
+    #expect(await eventually { item.session.isReconnecting })
+
+    project.remove(item)
+    // Connected again, as the window is when the stale relay goes.
+    #expect(await host.client() != nil)
+    try await Task.sleep(for: .seconds(1))
+    kill(relay, SIGKILL)
+    hungUp = true
+    #expect(await eventually { await isLetGo(id, on: watcher) })
+    try await Task.sleep(for: .seconds(2.5))
+    #expect(await isLetGo(id, on: watcher))
+    #expect(!project.sessions.contains { $0.session.hostID == id })
+
+    let model = RunnerSectionModel(host: { host }, project: { _ in project })
+    await model.refresh()
+    let row = try #require(model.rows.first { $0.id == id })
+    #expect(row.state == .idle)
+    #expect(await model.open(row) { _ in } == nil)
+    #expect(project.sessions.contains { $0.session.hostID == id })
+  }
+
+  /// A runner window's row made while the window could not reach its runner asks for the
+  /// runner's host again at its next prompt, and runs there once it can.
+  @Test func aRowMadeBeforeItsRunnerWasReachedRunsOnceItIs() async throws {
+    _ = try installRunnerClaude()
+    try relayingSSH()
+    let helper = try #require(SessionHost.startHelper(in: directory))
+    defer { finish([helper]) }
+    let host = SessionHost(endpoint: .runner(settings))
+    let project = Project(folder: folder, runner: settings.id.uuidString)
+    var runner: SessionHost?
+    project.runnerHost = { runner }
+    defer { project.stopAll() }
+    let item = project.newSession()
+    item.session.accounts = { [] }
+    item.session.send("quick")
+    #expect(
+      await eventually {
+        if case .failed = item.session.phase { return true }
+        return false
+      })
+    #expect(sshRuns() == 0)
+
+    runner = host
+    item.session.send("quick")
+    #expect(
+      await eventually {
+        item.session.phase == .ready && item.session.hostID != nil
+          && !item.session.transcript.isRunning
+      })
+    #expect(item.session.isOnRunner && item.session.isHosted)
+  }
 }

@@ -176,6 +176,10 @@ final class AgentSession {
     ((AgentProcess.Configuration) async -> any ProcessTransport)?
   /// The host a spawn tries first; tests give their own.
   @ObservationIgnored var sessionHost = SessionHost.shared
+  /// A runner's session's host as its window reaches it now, asked at each spawn: a row made
+  /// while the window could not reach its runner starts there once it can. Nil, or none
+  /// reached, keeps `sessionHost`.
+  @ObservationIgnored var currentHost: (() -> SessionHost?)?
   /// The project window the session belongs to, which its folder need not be (a subfolder,
   /// a worktree): a relaunched app reopens it from the meta.
   @ObservationIgnored var windowFolder: URL?
@@ -971,6 +975,7 @@ final class AgentSession {
     if let runner {
       // Claude Code's alone in v1, and never a Codex row a runner window was handed.
       guard agent == .claude else { return fail(Self.claudeOnlyOnRunner) }
+      if let host = currentHost?() { sessionHost = host }
       onRunner = await reach(runner: runner)
       guard stillWanted(since: stops) else { return }
       guard let onRunner else { return fail(unreachable(runner)) }
