@@ -205,14 +205,85 @@ nonisolated enum Changelog {
 
   // <generated:changelog> generated from CHANGELOG.md by `make changelog` — do not edit by hand
 
-  /// The most recent 2 releases, newest first.
+  /// The most recent 3 releases, newest first.
   ///
   /// Split into one `let` per release rather than a single nested literal.
   /// Swift's expression type-checker is superlinear in the depth of an array
   /// literal, and this one is releases of sections of entries of strings — the
   /// exact shape that turns into a multi-second type-check with no diagnostic.
   // swift-format-ignore
-  static let releases: [Release] = [v1_1_0, v1_0_0]
+  static let releases: [Release] = [v1_2_0, v1_1_0, v1_0_0]
+
+  // swift-format-ignore
+  private static let v1_2_0: Release = Release(
+    version: "1.2.0",
+    date: "2026-11-02",
+    sections: [
+      Section(
+        name: "Added",
+        lead: [],
+        entries: [
+          Entry(
+            ordinal: 0,
+            headline: "Sessions on another Mac.",
+            body: [
+              "Name a second Mac in Settings › Runner, reached through your own ssh, and a session's `claude` runs there, in a folder there, with that Mac's MCP servers and screen, while you follow it, answer its prompts and send yours from your Mac. Home lists the runner's sessions and starts new ones there, and closing the window or quitting leaves them running. The runner takes nothing until \"Let my other Macs start sessions here\" is on in its own Settings. Setting one up is in [docs/runner.md](https://github.com/mgcrea/drakar/blob/main/docs/runner.md).",
+            ]),
+          Entry(
+            ordinal: 1,
+            headline: "Permission rules.",
+            body: [
+              "The inspector's Rules tab lists the rules a session runs under and where each comes from, and adds or removes yours, with or without a session running.",
+            ]),
+          Entry(
+            ordinal: 2,
+            headline: "Open Plan.",
+            body: [
+              "Session › Open Plan (⌥⌘P) opens the session's plan file in a tab.",
+            ]),
+          Entry(
+            ordinal: 3,
+            headline: "The `drakar` command.",
+            body: [
+              "`drakar .` opens a folder in Drakar, as `code .` does in VS Code, and so do `open -a Drakar` and a folder dropped on the Dock icon. Drakar links the command into `~/.local/bin` when your shell's PATH has it; Settings › General installs it elsewhere.",
+            ]),
+          Entry(
+            ordinal: 4,
+            headline: "The Mac stays awake while an agent works,",
+            body: [
+              "even through a quit, and may sleep again once the agent finishes or waits for you. Settings › General turns it off.",
+            ]),
+          Entry(
+            ordinal: 5,
+            headline: "Reconnect a failed MCP server.",
+            body: [
+              "While a session runs, the inspector's MCP pane lists that session's own servers, and a failed one reconnects without restarting the session: its tools are there at the next prompt.",
+            ]),
+        ]),
+      Section(
+        name: "Changed",
+        lead: [],
+        entries: [
+          Entry(
+            ordinal: 6,
+            headline: nil,
+            body: [
+              "Home and a project's sidebar list sessions without waiting for your login shell, so a slow `.zshrc` no longer holds the spinner, and a project window opens faster on a long history.",
+            ]),
+          Entry(
+            ordinal: 7,
+            headline: nil,
+            body: [
+              "Settings groups its panes in three sections: how sessions behave, this build, and the licence.",
+            ]),
+          Entry(
+            ordinal: 8,
+            headline: nil,
+            body: [
+              "The prompt cache timer sits left of the model in the composer, as in the VS Code extension.",
+            ]),
+        ]),
+    ])
 
   // swift-format-ignore
   private static let v1_1_0: Release = Release(

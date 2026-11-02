@@ -4,9 +4,43 @@ Notable changes to this repository. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and every published artifact follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
-Releases are tagged `app-v<version>` the way the sibling repos are, `app-v1.1.0` being the newest.
+Releases are tagged `app-v<version>` the way the sibling repos are, `app-v1.2.0` being the newest.
 The GitHub release notes, the Sparkle update dialog and the app's What's New pane are all rendered
 from this file, which is the curated summary. `### Internal` sections are left out of all three.
+
+## [1.2.0] - 2026-11-02
+
+**Sessions on another Mac.** A second Mac kept on can run your Claude Code sessions, its screen
+and all, while you follow and answer them from yours. And permission rules get a tab, `drakar .`
+opens a folder, and the Mac stays awake while an agent works.
+
+### Added
+
+- **Sessions on another Mac.** Name a second Mac in Settings › Runner, reached through your own
+  ssh, and a session's `claude` runs there, in a folder there, with that Mac's MCP servers and
+  screen, while you follow it, answer its prompts and send yours from your Mac. Home lists the
+  runner's sessions and starts new ones there, and closing the window or quitting leaves them
+  running. The runner takes nothing until "Let my other Macs start sessions here" is on in its
+  own Settings. Setting one up is in
+  [docs/runner.md](https://github.com/mgcrea/drakar/blob/main/docs/runner.md).
+- **Permission rules.** The inspector's Rules tab lists the rules a session runs under and where
+  each comes from, and adds or removes yours, with or without a session running.
+- **Open Plan.** Session › Open Plan (⌥⌘P) opens the session's plan file in a tab.
+- **The `drakar` command.** `drakar .` opens a folder in Drakar, as `code .` does in VS Code, and
+  so do `open -a Drakar` and a folder dropped on the Dock icon. Drakar links the command into
+  `~/.local/bin` when your shell's PATH has it; Settings › General installs it elsewhere.
+- **The Mac stays awake while an agent works,** even through a quit, and may sleep again once the
+  agent finishes or waits for you. Settings › General turns it off.
+- **Reconnect a failed MCP server.** While a session runs, the inspector's MCP pane lists that
+  session's own servers, and a failed one reconnects without restarting the session: its tools
+  are there at the next prompt.
+
+### Changed
+
+- Home and a project's sidebar list sessions without waiting for your login shell, so a slow
+  `.zshrc` no longer holds the spinner, and a project window opens faster on a long history.
+- Settings groups its panes in three sections: how sessions behave, this build, and the licence.
+- The prompt cache timer sits left of the model in the composer, as in the VS Code extension.
 
 ## [1.1.0] - 2026-10-30
 
