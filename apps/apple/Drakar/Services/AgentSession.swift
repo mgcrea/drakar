@@ -224,6 +224,13 @@ final class AgentSession {
   /// The Mac that owns the process `heldElsewhere` names, as its meta says (remote sessions
   /// spec §5): a row on the runner's own Drakar that may take it over, never on its own.
   private(set) var belongsTo: String?
+  /// The host refused to give the process back because another app holds it: what a
+  /// reattach that left the session out of reach says of why.
+  @ObservationIgnored private(set) var refusedAsHeldElsewhere = false
+  /// A runner's session whose process the runner's host lists as no longer this Mac's: taken
+  /// over on the runner while this Mac was away (remote sessions spec §5). Told once the
+  /// session has let go of it, for its window to close its tab.
+  @ObservationIgnored var onTakenOver: (() -> Void)?
   /// The longest a replay held the main actor between two of its waits; for tests.
   @ObservationIgnored private(set) var longestReplayHold = Duration.zero
   /// The turns Codex's thread holds, as `throughTurns` counts them.
@@ -303,8 +310,11 @@ final class AgentSession {
     throughRunner: Bool = false,
     accounts: @escaping () -> [ClaudeAccount] = { ClaudeAccount.discover() }
   ) async {
+    // Reached as a runner, the runner's transcript paths are none of this Mac's: a target the
+    // runner's own Drakar saved while it held the session is left to it.
     self.init(
-      folder: meta.start.folder, resuming: meta.savedTarget ?? meta.start.resuming,
+      folder: meta.start.folder,
+      resuming: throughRunner ? meta.start.resuming : meta.savedTarget ?? meta.start.resuming,
       agent: meta.agent,
       account: Self.accountPick(of: meta, throughRunner: throughRunner, among: accounts),
       backend: backend)
@@ -363,6 +373,7 @@ final class AgentSession {
       // Its process carries on in the host, out of reach: not shown alive and silent.
       process = nil
       isOutOfReach = true
+      refusedAsHeldElsewhere = Self.isHeldElsewhere(error)
       notingPermissions { transcript.processExited() }
       phase = .failed(Self.message(forReattachFailure: error))
     }
@@ -1479,6 +1490,12 @@ final class AgentSession {
     Task { [weak self, sessionHost] in
       let client = await sessionHost.reconnect()
       guard let self, self.stopCount == stops, self.process === hosted else { return }
+      // Taken over on the runner meanwhile, held there or let go since: not this Mac's to
+      // attach, whatever the host would allow.
+      if client != nil, await self.isTakenOver(hosted) {
+        guard self.stopCount == stops, self.process === hosted else { return }
+        return self.takenOver()
+      }
       self.isReconnecting = false
       guard let client else {
         self.process = nil
@@ -1520,6 +1537,12 @@ final class AgentSession {
       // Let go meanwhile: attached again. Refused again, this comes back here.
       let client = wasReleasing && !releasing ? await sessionHost.reconnect() : nil
       guard self.stopCount == stops, self.process === hosted else { return }
+      // Refused because the runner's own Drakar took it over, or let go and no longer this
+      // Mac's: its tab closes rather than failing in place.
+      if await self.isTakenOver(hosted) {
+        guard self.stopCount == stops, self.process === hosted else { return }
+        return self.takenOver()
+      }
       self.isReconnecting = false
       guard let client else {
         self.process = nil
@@ -1529,6 +1552,35 @@ final class AgentSession {
       self.follow(hosted.reattach(on: client, attached: self.reattached(hosted)), of: hosted)
     }
     return true
+  }
+
+  /// Whether the runner's host lists `hosted`'s process as no longer this Mac's
+  /// (`SessionHost.ownsProcess`). False for a session of this Mac's, for a process the host
+  /// no longer has, and when it does not answer: those go on as before.
+  private func isTakenOver(_ hosted: HostedProcess) async -> Bool {
+    guard isOnRunner, sessionHost.isRunner, let id = hosted.id,
+      let held = await sessionHost.listed()?.first(where: { $0.id == id })
+    else { return false }
+    return !sessionHost.ownsProcess(held)
+  }
+
+  /// Lets go of a process taken over on the runner, attached to nothing here, and says so to
+  /// the window, which closes the tab.
+  private func takenOver() {
+    isReconnecting = false
+    process = nil
+    notingPermissions { transcript.processExited() }
+    if phase == .ready || phase == .starting { phase = .exited(status: 0) }
+    onTakenOver?()
+  }
+
+  /// A refusal of an attach because another app holds the process.
+  private static func isHeldElsewhere(_ error: any Error) -> Bool {
+    switch error {
+    case HostClient.Failure.refused(let reason), HostedProcess.Failure.lost(let reason):
+      SessionHost.isAttachedElsewhere(reason)
+    default: false
+    }
   }
 
   /// What a reattach of `hosted` is told once the host has taken it: no stale relay holds it.

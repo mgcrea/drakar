@@ -413,6 +413,11 @@ final class Project {
   @ObservationIgnored private var givenHost: SessionHost?
   /// The runner set up now (`SessionHost.runner`); tests give their own.
   @ObservationIgnored var runnerHost: () -> SessionHost? = { SessionHost.runner }
+  /// Says that a tab closed on a session taken over on its runner, and where; tests give
+  /// their own.
+  @ObservationIgnored var noticeTakenOver: (ProjectSession, String) -> Void = {
+    Attention.shared.takenOver($0, on: $1)
+  }
   /// The session host's processes being taken back, so that two calls take each once.
   @ObservationIgnored private var adopting: Set<String> = []
   /// The session host's ids for the processes another app holds that rows here showed
@@ -1639,6 +1644,16 @@ final class Project {
   /// during the replay stops it as it stopped its rows: no process stays attached to this app
   /// with no row to show it. The session, once it has a row.
   @discardableResult private func takeBack(_ process: HeldProcess) async -> AgentSession? {
+    guard let session = await reattached(process) else { return nil }
+    if session.isOutOfReach, isShownReadOnly(process.id) { return nil }
+    adopt(session, replacing: process.id)
+    return session
+  }
+
+  /// `process` attached and replayed, out of reach if the host refused it, and no row's yet.
+  /// Nil with no host, a meta this app cannot read, or a window closed meanwhile, which
+  /// stops it.
+  private func reattached(_ process: HeldProcess) async -> AgentSession? {
     // Asked each time: a replay before this one may have cost the connection.
     guard let host = sessionHost, let client = await host.client(), !isStopped,
       let session = await AgentSession(
@@ -1648,8 +1663,6 @@ final class Project {
       session.stop()
       return nil
     }
-    if session.isOutOfReach, isShownReadOnly(process.id) { return nil }
-    adopt(session, replacing: process.id)
     return session
   }
 
@@ -1694,22 +1707,42 @@ final class Project {
   /// Take Over Here, on the runner's own Drakar, for a row showing read-only a session a Mac
   /// owns: taken while that Mac does not hold it, and this Mac's from then on, so that Mac
   /// leaves it alone when it comes back. Nil once taken, or the process gone (the row
-  /// settles as for any `released`); else why not, the Mac holding it now.
+  /// settles as for any `released`); else why not: the Mac holds it now, or the host could
+  /// not give it.
   func takeOver(_ item: ProjectSession) async -> String? {
     guard canTakeOver(item), let id = item.session.heldElsewhere,
       let owner = item.session.belongsTo, !adopting.contains(id)
     else { return nil }
     let inUse = String(localized: "In use on \(owner)")
-    guard let held = await sessionHost?.listed(),
-      let process = held.first(where: { $0.id == id })
-    else { return nil }
+    let unreachable = String(localized: "Drakar can't reach the session host.")
+    guard let held = await sessionHost?.listed() else { return unreachable }
+    guard let process = held.first(where: { $0.id == id }) else { return nil }
     guard process.attachedApp == nil else { return inUse }
     adopting.insert(id)
     defer { adopting.remove(id) }
-    // Refused if that Mac attached meanwhile: the row stays as it was.
-    guard let session = await takeBack(process) else { return inUse }
+    guard let session = await reattached(process) else {
+      return isStopped ? nil : unreachable
+    }
+    // The row stays as it was.
+    guard !session.isOutOfReach else {
+      // That Mac attached meanwhile.
+      if session.refusedAsHeldElsewhere { return inUse }
+      return String(
+        localized:
+          "Drakar could not take this session over: the session host would not give its process back. It runs on there, still \(owner)'s."
+      )
+    }
+    adopt(session, replacing: id)
     session.claim()
     return nil
+  }
+
+  /// A runner's session taken over on the runner while this Mac was away (spec §5): its tab
+  /// closes, the window with its last, and a notice says where it went.
+  private func takenOver(_ item: ProjectSession) {
+    remove(item)
+    if sessions.isEmpty { workspace.window?.close() }
+    noticeTakenOver(item, sessionHost?.runnerName ?? String(localized: "the runner"))
   }
 
   func canTakeOver(_ item: ProjectSession) -> Bool {
@@ -1857,6 +1890,10 @@ final class Project {
       Attention.shared.permissionRequested(item, in: self)
     }
     session.onPermissionsChanged = { Attention.shared.refresh() }
+    session.onTakenOver = { [weak self, weak item] in
+      guard let self, let item else { return }
+      self.takenOver(item)
+    }
     session.onPromptSent = { Attention.shared.refresh() }
     session.onReplied = { [weak self, weak item] in
       guard let self, let item else { return }

@@ -199,6 +199,14 @@ final class Attention: NSObject, UNUserNotificationCenterDelegate {
       wantsAnswer: false)
   }
 
+  /// A runner's session was taken over on the runner while this Mac was away, and its tab
+  /// closed (remote sessions spec §5): said even in front of the person, whose tab is gone.
+  func takenOver(_ item: ProjectSession, on runner: String) {
+    post(
+      title: item.displayTitle, body: String(localized: "Taken over on \(runner)."),
+      sessionID: item.sessionID ?? UUID().uuidString, wantsAnswer: false)
+  }
+
   private func inView(_ item: ProjectSession, in project: Project) -> Bool {
     Self.isInView(
       appIsActive: NSApp.isActive, windowIsKey: project.workspace.window?.isKeyWindow == true,

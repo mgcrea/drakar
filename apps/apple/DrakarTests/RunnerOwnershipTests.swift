@@ -28,13 +28,14 @@ struct RunnerOwnershipTests {
   /// A runner session's meta as the Mac `owner` names wrote it, started by `origin`.
   private func meta(
     owner: String?, origin: String? = "Other Mac", sessionID: String? = nil,
-    accountPick: ClaudeAccount? = nil
+    accountPick: ClaudeAccount? = nil, savedTarget: ResumeTarget? = nil
   ) -> SessionMeta {
     SessionMeta(
       start: AgentStart(
         folder: folder, environment: [:], allowsBypass: false, runner: "runner-id"),
       windowFolder: folder.path(percentEncoded: false), accountPick: accountPick,
-      sessionID: sessionID, history: .none, runner: "runner-id", origin: origin, owner: owner)
+      sessionID: sessionID, savedTarget: savedTarget, history: .none, runner: "runner-id",
+      origin: origin, owner: owner)
   }
 
   private func held(_ meta: SessionMeta, attachedApp: Int32? = nil) throws -> HeldProcess {
@@ -123,6 +124,26 @@ struct RunnerOwnershipTests {
     #expect(onRunner.runner == "runner-id")
     #expect(onRunner.isOnRunner)
     #expect(onRunner.accountPick == theMacs)
+  }
+
+  /// A target the runner's own Drakar saved while it held the session is a runner path: the
+  /// runner's replay resumes it, a Mac's never carries it.
+  @Test func aRunnersSavedTargetStaysOnTheRunner() async throws {
+    defer { cleanUp() }
+    let file = scratch.appending(path: "s-1.jsonl")
+    try Data().write(to: file)
+    let saved = ResumeTarget(
+      sessionID: "s-1", cwd: folder.path(percentEncoded: false),
+      file: file.path(percentEncoded: false),
+      accountDirectory: scratch.path(percentEncoded: false), accountIsDefault: true)
+    let held = meta(owner: ThisMac.name, savedTarget: saved)
+
+    let local = await AgentSession(replaying: [], meta: held, accounts: { [] })
+    #expect(local.resuming == saved)
+    let onRunner = await AgentSession(
+      replaying: [], meta: held, throughRunner: true, accounts: { [] })
+    #expect(onRunner.resuming == nil)
+    #expect(onRunner.savedTarget == nil)
   }
 
   /// On the runner's own Drakar, a session a Mac holds is shown read-only, following the

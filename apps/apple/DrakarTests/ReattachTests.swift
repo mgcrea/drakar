@@ -868,6 +868,23 @@ struct ReattachTests {
         return kept.owner == nil && kept.origin == "Other Mac" && kept.runner == "runner-id"
       })
   }
+
+  /// Take Over Here says why when the host is not there to give the process, rather than
+  /// that the Mac holds it.
+  @Test func takeOverHereSaysWhenTheHostIsGone() async throws {
+    defer { cleanUp() }
+    let app = app()
+    let (mac, _) = try await heldByAMac(owner: "Other Mac")
+    defer { mac.close() }
+    let window = window(on: app)
+    defer { window.stopAll() }
+    await window.adoptHeld(await app.held())
+    let row = try #require(window.sessions.first)
+
+    host.stop()
+    #expect(await window.takeOver(row) == "Drakar can't reach the session host.")
+    #expect(window.sessions.first?.session.heldElsewhere != nil)
+  }
 }
 
 /// A task on the main actor every 10 ms, timing the longest gap between two of its turns:

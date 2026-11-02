@@ -1173,4 +1173,136 @@ struct RunnerHostTests {
     #expect(held.attachedApp != nil && held.attachedApp != getpid())
     #expect(await meta(id, on: watcher)?.owner == "Test MacBook")
   }
+
+  /// A Mac's window on its session, which the runner's own Drakar shows read-only, out of
+  /// reach of the runner while its ssh fails: the relay that carried it hung up, the process
+  /// free. Its host cools down briefly, so the Mac comes back soon once ssh works again
+  /// (`relayingSSH()`). The notices it would post, recorded.
+  private func awayFromTheRunner() async throws -> (
+    mac: Project, item: ProjectSession, runner: Project, shown: ProjectSession, id: String,
+    notices: Notices
+  ) {
+    let host = SessionHost(endpoint: .runner(settings), cooldown: .milliseconds(100))
+    let mac = runnerProject(on: host)
+    let notices = Notices()
+    mac.noticeTakenOver = { item, runner in notices.said.append((item.id, runner)) }
+    let item = try await startedRow(in: mac)
+    let id = try #require(item.session.hostID)
+    let runner = runnersOwnDrakar()
+    await runner.takeBackHeld().value
+    let shown = try #require(runner.sessions.first { $0.session.heldElsewhere == id })
+
+    try fakeSSH("exit 255")
+    let watcher = try await watcher()
+    defer { watcher.close() }
+    let relay = try #require(await attached(id, on: watcher))
+    kill(relay, SIGKILL)
+    #expect(await eventually { item.session.isReconnecting })
+    #expect(await eventually { await isLetGo(id, on: watcher) })
+    return (mac, item, runner, shown, id, notices)
+  }
+
+  @MainActor final class Notices {
+    var said: [(row: ProjectSession.ID, runner: String)] = []
+  }
+
+  /// Taken over on the runner while the Mac was away and let go there since: free again, but
+  /// no longer the Mac's, so the Mac's window does not attach to it when it reconnects. Its
+  /// tab closes, with a notice of where the session went.
+  @Test func aSessionTakenOverWhileAwayIsNotTakenBack() async throws {
+    _ = try installRunnerClaude()
+    try relayingSSH()
+    let helper = try #require(SessionHost.startHelper(in: directory))
+    let name = namingThisMac()
+    defer {
+      ThisMac.name = name
+      finish([helper])
+    }
+    let (mac, item, runner, shown, id, notices) = try await awayFromTheRunner()
+    defer {
+      mac.stopAll()
+      runner.stopAll()
+    }
+    #expect(await runner.takeOver(shown) == nil)
+    let taken = try #require(runner.sessions.first { $0.session.hostID == id }?.session)
+    (taken.process as? HostedProcess)?.detach()
+    let watcher = try await watcher()
+    defer { watcher.close() }
+    #expect(await eventually { await isLetGo(id, on: watcher) })
+
+    try relayingSSH()
+    #expect(await eventually { !mac.sessions.contains { $0.id == item.id } })
+    #expect(notices.said.map(\.row) == [item.id])
+    #expect(notices.said.first?.runner == "Studio")
+    #expect(!item.session.isProcessRunning)
+    // Let alone: still free, and still no Mac's.
+    try await Task.sleep(for: .milliseconds(500))
+    #expect(await isLetGo(id, on: watcher))
+    #expect(await meta(id, on: watcher)?.owner == nil)
+  }
+
+  /// Taken over and still held on the runner: the Mac's tab closes at once, with a notice,
+  /// rather than failing in place or waiting out a relay of its own that is not there.
+  @Test func aSessionTakenOverAndHeldThereClosesTheMacsTab() async throws {
+    _ = try installRunnerClaude()
+    try relayingSSH()
+    let helper = try #require(SessionHost.startHelper(in: directory))
+    let name = namingThisMac()
+    defer {
+      ThisMac.name = name
+      finish([helper])
+    }
+    let (mac, item, runner, shown, id, notices) = try await awayFromTheRunner()
+    defer {
+      mac.stopAll()
+      runner.stopAll()
+    }
+    #expect(await runner.takeOver(shown) == nil)
+
+    try relayingSSH()
+    #expect(
+      await eventually(within: .seconds(10)) { !mac.sessions.contains { $0.id == item.id } })
+    #expect(notices.said.map(\.row) == [item.id])
+    let watcher = try await watcher()
+    defer { watcher.close() }
+    #expect(await held(id, on: watcher)?.attachedApp == getpid())
+  }
+
+  /// A relay of the Mac's own that hangs on to a session it still owns keeps its tab, waiting
+  /// it out as before, with the ownership its meta gives.
+  @Test func aStaleRelayOfThisMacsKeepsItsTab() async throws {
+    _ = try installRunnerClaude()
+    try relayingSSH()
+    let helper = try #require(SessionHost.startHelper(in: directory))
+    let name = namingThisMac()
+    defer {
+      ThisMac.name = name
+      finish([helper])
+    }
+    let host = SessionHost(endpoint: .runner(settings))
+    let mac = runnerProject(on: host)
+    defer { mac.stopAll() }
+    let notices = Notices()
+    mac.noticeTakenOver = { item, runner in notices.said.append((item.id, runner)) }
+    let item = try await startedRow(in: mac)
+    let id = try #require(item.session.hostID)
+    let watcher = try await watcher()
+    defer { watcher.close() }
+    let relay = try #require(await attached(id, on: watcher))
+    kill(relay, SIGSTOP)
+    var hungUp = false
+    defer { if !hungUp { kill(relay, SIGKILL) } }
+    await host.client()?.close()
+    #expect(await eventually { item.session.isReconnecting })
+    try await Task.sleep(for: .seconds(2))
+    #expect(item.session.isReconnecting)
+    #expect(mac.sessions.contains { $0.id == item.id })
+
+    kill(relay, SIGKILL)
+    hungUp = true
+    #expect(await eventually { !item.session.isReconnecting })
+    #expect(item.session.isHosted && item.session.hostID == id)
+    #expect(mac.sessions.contains { $0.id == item.id })
+    #expect(notices.said.isEmpty)
+  }
 }
