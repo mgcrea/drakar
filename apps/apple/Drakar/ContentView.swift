@@ -26,129 +26,13 @@ struct ContentView: View {
   var body: some View {
     Group {
       if let project {
-        let workspace = project.workspace
-        NavigationSplitView {
-          ProjectSidebar(project: project)
-            .navigationSplitViewColumnWidth(min: 200, ideal: 240)
-            // The split view's own edge is half a point to aim at.
-            .background(ColumnSash(edge: .trailing))
-        } detail: {
-          SplitPanes(
-            fraction: $editorFraction, showsSide: !workspace.documents.isEmpty,
-            edge: editorLeads ? .leading : .trailing
-          ) {
-            EditorView(workspace: workspace)
-          } main: {
-            SelectedSessionPane(project: project)
-          }
-        }
-        .inspector(isPresented: $inspectorShown) {
-          InspectorView(project: project, isShown: inspectorShown)
-            // Wide enough for the toolbar's three tabs beside its two toggles: at 280 the tab
-            // picker fell into the toolbar's overflow menu.
-            .inspectorColumnWidth(min: 220, ideal: 320, max: 420)
-            .background(ColumnSash(edge: .leading))
-        }
-        // The first window on the folder reads its lists, shown or not, so a change shows on
-        // the toolbar button. Never a runner's folder, which this Mac's `claude` cannot list.
-        .task(id: ObjectIdentifier(project)) {
-          if project.runner == nil { project.capabilities.loadIfNeeded() }
-        }
-        .focusedSceneValue(\.inspectorShown, $inspectorShown)
-        // The window's closing, not this view's disappearing, stops the sessions: the editor
-        // appearing with the first open file must not take the running ones with it.
-        .background(
-          WindowReader { window in
-            workspace.window = window
-            WindowCloseGuard.install(
-              on: window, for: workspace,
-              running: { [weak project] in project?.stoppedByClosing ?? 0 })
-            if let next = ReopenedWindows.shared.arrived(
-              window, folder: project.folder, runner: project.runner)
-            {
-              WindowTabs.open(next, asTab: false)
-            }
-          }
-        )
-        // The dot in the close button, as in every document window.
-        .onChange(of: workspace.unsavedDocuments.isEmpty, initial: true) { _, clean in
-          workspace.window?.isDocumentEdited = !clean
-        }
-        // A runner's window has no editor: Save, Open Quickly and Find in Project have none
-        // of its to act on.
-        .focusedSceneValue(\.workspace, project.runner == nil ? workspace : nil)
-        .focusedSceneValue(\.project, project)
-        .focusedSceneValue(\.closeProject, closeProject)
-        .sheet(isPresented: quickOpenShown(workspace)) { QuickOpenView(workspace: workspace) }
-        .sheet(isPresented: searchShown(workspace)) { ProjectSearchView(workspace: workspace) }
-        .sheet(item: fanOutRequest(project)) { request in
-          SkillFanOutSheet(project: project, request: request)
-        }
-        .onChange(of: appearsActive, initial: true) { _, active in
-          if active { workspace.becameActive() }
-        }
-        .background(
-          StoredProjectWriter(project: project) { stored in
-            storedProject =
-              (try? String(decoding: JSONEncoder().encode(stored), as: UTF8.self)) ?? ""
-            ProjectMemory.remember(stored, for: project.folder, runner: project.runner)
-          })
+        projectView(project)
       } else {
         HomeView(pick: pick, enter: enter)
       }
     }
     .frame(minWidth: 680, minHeight: 440)
-    .toolbar {
-      if let project {
-        ToolbarItem(placement: .navigation) {
-          Button("Projects", systemImage: "square.grid.2x2") { closeProject() }
-            .help("Close this project and go back to the projects (⇧⌘H)")
-            .accessibilityIdentifier("window.closeProject")
-        }
-        ToolbarItem(placement: .primaryAction) {
-          YesNoToolbarItem(project: project)
-        }
-        if project.runner == nil {
-          ToolbarItem(placement: .primaryAction) {
-            ForkToolbarButton(project: project)
-          }
-        }
-        // A runner's window hands its sessions over; a local one only on the runner's own
-        // Drakar, for a session a Mac started there or owns. No empty slot in any other.
-        if project.runner != nil || project.selected.flatMap({ Handoff($0, in: project) }) != nil {
-          ToolbarItem(placement: .primaryAction) {
-            HandoffToolbarItem(project: project)
-          }
-        }
-        if let session = project.selected?.session,
-          let label = FolderToolbarItem.label(for: session, in: project.folder)
-        {
-          ToolbarItem(placement: .primaryAction) {
-            FolderToolbarItem(folder: session.folder, label: label, runner: project.runnerName)
-          }
-        }
-        ToolbarItem(placement: .primaryAction) {
-          // A runner session runs under the runner shell's own account, which no picker here
-          // chooses (Ruling 11): the runner and its usage instead, as its sessions report it.
-          if let name = project.runnerName {
-            RunnerToolbarItem(name: name, session: project.selected?.session)
-          } else {
-            AccountToolbarItem(folder: project.folder)
-          }
-        }
-        ToolbarItem(placement: .primaryAction) {
-          InspectorToggle(project: project, isShown: $inspectorShown)
-        }
-      }
-      ToolbarItem(placement: .primaryAction) {
-        Toggle(isOn: $keepsOnTop) {
-          Label("Keep on Top", systemImage: keepsOnTop ? "pin.fill" : "pin")
-        }
-        .toggleStyle(.button)
-        .help(keepsOnTop ? "Stop keeping this window on top" : "Keep this window on top")
-        .accessibilityIdentifier("window.keepOnTop")
-      }
-    }
+    .toolbar { toolbar }
     .background(WindowLevel(floats: keepsOnTop))
     .background(WindowReader { WindowTabs.adopt($0) })
     .onAppear { WindowTabs.openWindow = openWindow }
@@ -164,23 +48,157 @@ struct ContentView: View {
       project?.stopAll(handingOver: true)
       OpenSessions.shared.unregister(window: windowID)
     }
-    .task {
-      if ReopenedWindows.isEnabled, !Self.isDebugLaunch,
-        let first = ReopenedWindows.shared.begin(launchRoute: route)
-      {
-        route = first
+    .task { windowAppeared() }
+  }
+
+  /// The project's sessions over its files, the selected session and the editor beside it.
+  private func projectView(_ project: Project) -> some View {
+    let workspace = project.workspace
+    return NavigationSplitView {
+      ProjectSidebar(project: project)
+        .navigationSplitViewColumnWidth(min: 200, ideal: 240)
+        // The split view's own edge is half a point to aim at.
+        .background(ColumnSash(edge: .trailing))
+    } detail: {
+      SplitPanes(
+        fraction: $editorFraction, showsSide: !workspace.documents.isEmpty,
+        edge: editorLeads ? .leading : .trailing
+      ) {
+        EditorView(workspace: workspace)
+      } main: {
+        SelectedSessionPane(project: project)
       }
-      WindowTabs.openWindow = WindowTabs.openWindow ?? openWindow
-      HeldWindows.shared.windowAppeared()
-      openFromLaunchArguments()
-      // Folders handed over before any window was up (`drakar <folder>` launching Drakar):
-      // a home window becomes the first, and the rest open beside it.
-      if project == nil, route?.folder == nil, let folder = FolderIntake.shared.takeFirst() {
-        enter(folder)
-      }
-      FolderIntake.shared.flush { WindowTabs.open(.project($0), asTab: true) }
-      FolderIntake.shared.isReady = true
     }
+    .inspector(isPresented: $inspectorShown) {
+      InspectorView(project: project, isShown: inspectorShown)
+        // Wide enough for the toolbar's three tabs beside its two toggles: at 280 the tab
+        // picker fell into the toolbar's overflow menu.
+        .inspectorColumnWidth(min: 220, ideal: 320, max: 420)
+        .background(ColumnSash(edge: .leading))
+    }
+    // The first window on the folder reads its lists, shown or not, so a change shows on
+    // the toolbar button. Never a runner's folder, which this Mac's `claude` cannot list.
+    .task(id: ObjectIdentifier(project)) {
+      if project.runner == nil { project.capabilities.loadIfNeeded() }
+    }
+    .focusedSceneValue(\.inspectorShown, $inspectorShown)
+    // The window's closing, not this view's disappearing, stops the sessions: the editor
+    // appearing with the first open file must not take the running ones with it.
+    .background(WindowReader { window in found(window, for: project) })
+    // The dot in the close button, as in every document window.
+    .onChange(of: workspace.unsavedDocuments.isEmpty, initial: true) { _, clean in
+      workspace.window?.isDocumentEdited = !clean
+    }
+    // A runner's window has no editor: Save, Open Quickly and Find in Project have none
+    // of its to act on.
+    .focusedSceneValue(\.workspace, project.runner == nil ? workspace : nil)
+    .focusedSceneValue(\.project, project)
+    .focusedSceneValue(\.closeProject, closeProject)
+    .sheet(isPresented: quickOpenShown(workspace)) { QuickOpenView(workspace: workspace) }
+    .sheet(isPresented: searchShown(workspace)) { ProjectSearchView(workspace: workspace) }
+    .sheet(item: fanOutRequest(project)) { request in
+      SkillFanOutSheet(project: project, request: request)
+    }
+    .onChange(of: appearsActive, initial: true) { _, active in
+      if active { workspace.becameActive() }
+    }
+    .background(StoredProjectWriter(project: project) { remember($0, of: project) })
+  }
+
+  /// The project's window, once it has one.
+  private func found(_ window: NSWindow, for project: Project) {
+    let workspace = project.workspace
+    workspace.window = window
+    WindowCloseGuard.install(
+      on: window, for: workspace,
+      running: { [weak project] in project?.stoppedByClosing ?? 0 })
+    if let next = ReopenedWindows.shared.arrived(
+      window, folder: project.folder, runner: project.runner)
+    {
+      WindowTabs.open(next, asTab: false)
+    }
+  }
+
+  private func remember(_ stored: StoredProject, of project: Project) {
+    storedProject =
+      (try? String(decoding: JSONEncoder().encode(stored), as: UTF8.self)) ?? ""
+    ProjectMemory.remember(stored, for: project.folder, runner: project.runner)
+  }
+
+  @ToolbarContentBuilder private var toolbar: some ToolbarContent {
+    if let project {
+      projectToolbar(project)
+    }
+    ToolbarItem(placement: .primaryAction) {
+      Toggle(isOn: $keepsOnTop) {
+        Label("Keep on Top", systemImage: keepsOnTop ? "pin.fill" : "pin")
+      }
+      .toggleStyle(.button)
+      .help(keepsOnTop ? "Stop keeping this window on top" : "Keep this window on top")
+      .accessibilityIdentifier("window.keepOnTop")
+    }
+  }
+
+  @ToolbarContentBuilder private func projectToolbar(_ project: Project) -> some ToolbarContent {
+    ToolbarItem(placement: .navigation) {
+      Button("Projects", systemImage: "square.grid.2x2") { closeProject() }
+        .help("Close this project and go back to the projects (⇧⌘H)")
+        .accessibilityIdentifier("window.closeProject")
+    }
+    ToolbarItem(placement: .primaryAction) {
+      YesNoToolbarItem(project: project)
+    }
+    if project.runner == nil {
+      ToolbarItem(placement: .primaryAction) {
+        ForkToolbarButton(project: project)
+      }
+    }
+    // A runner's window hands its sessions over; a local one only on the runner's own
+    // Drakar, for a session a Mac started there or owns. No empty slot in any other.
+    if project.runner != nil || project.selected.flatMap({ Handoff($0, in: project) }) != nil {
+      ToolbarItem(placement: .primaryAction) {
+        HandoffToolbarItem(project: project)
+      }
+    }
+    if let session = project.selected?.session,
+      let label = FolderToolbarItem.label(for: session, in: project.folder)
+    {
+      ToolbarItem(placement: .primaryAction) {
+        FolderToolbarItem(folder: session.folder, label: label, runner: project.runnerName)
+      }
+    }
+    ToolbarItem(placement: .primaryAction) {
+      // A runner session runs under the runner shell's own account, which no picker here
+      // chooses (Ruling 11): the runner and its usage instead, as its sessions report it.
+      if let name = project.runnerName {
+        RunnerToolbarItem(name: name, session: project.selected?.session)
+      } else {
+        AccountToolbarItem(folder: project.folder)
+      }
+    }
+    ToolbarItem(placement: .primaryAction) {
+      InspectorToggle(project: project, isShown: $inspectorShown)
+    }
+  }
+
+  /// The window appeared: what reopens at launch, the debug arguments, and the folders
+  /// handed over before it.
+  private func windowAppeared() {
+    if ReopenedWindows.isEnabled, !Self.isDebugLaunch,
+      let first = ReopenedWindows.shared.begin(launchRoute: route)
+    {
+      route = first
+    }
+    WindowTabs.openWindow = WindowTabs.openWindow ?? openWindow
+    HeldWindows.shared.windowAppeared()
+    openFromLaunchArguments()
+    // Folders handed over before any window was up (`drakar <folder>` launching Drakar):
+    // a home window becomes the first, and the rest open beside it.
+    if project == nil, route?.folder == nil, let folder = FolderIntake.shared.takeFirst() {
+      enter(.project(folder))
+    }
+    FolderIntake.shared.flush { WindowTabs.open(.project($0), asTab: true) }
+    FolderIntake.shared.isReady = true
   }
 
   /// Launched with a debug argument that opens its own project: nothing is reopened.
