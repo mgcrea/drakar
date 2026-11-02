@@ -52,10 +52,12 @@ In detail:
   in the runner's Settings › Runner, which is off until someone at the runner turns it on;
   otherwise it says so and exits. It never starts the host itself: if none answers, it asks
   macOS to open Drakar in the runner's logged-in desktop (`/usr/bin/open -g -j -a`), which
-  does. With no runner named and that setting off, none of this runs. Setting one up, and a
-  key that can start only the relay: [docs/runner.md](docs/runner.md). That key limits the
-  shell, not the sessions: whoever holds it still reaches the runner's session host through
-  the relay, and can start `claude` there with any prompt, in any folder.
+  does. With no runner named and that setting off, none of this runs. Setting one up:
+  [docs/runner.md](docs/runner.md). The key Drakar uses is a login key for the runner, and
+  tying it to the relay in `authorized_keys` does not make it less: the session host starts
+  whatever program a client asks for, so whoever holds that key can run any program on the
+  runner as you. The forced command takes away the login shell, the terminal and forwarding,
+  not that.
 - **No licence call.** A licence key is checked on this Mac, against a public key built
   into the app, and the trial is counted on this Mac too.
 - **No entitlements, no sandbox.** Drakar spawns `claude` and `codex`, which work on your

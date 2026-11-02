@@ -141,8 +141,9 @@ the connection already open; its `ControlPath` is Drakar's own, so that an `ssh`
 host under another alias never shares it. Check it from Terminal with
 `ssh -T -o BatchMode=yes runner true`, which must return without asking anything. Once the
 key is tied to the relay (below), that runs the relay instead of `true`: it prints the
-runner's facts line and waits (Control-C ends it), or, with the opt-in off, says so and
-exits with 64.
+runner's facts line and waits (Control-C ends it); or it prints the facts line, finds no
+session host within 15 seconds, says so and exits with 69; or, with the opt-in off, it says
+so and exits with 64.
 
 **Settings › Runner › Use a runner.** The ssh destination (the alias, or anything ssh takes,
 such as `you@runner.local`), the path to Drakar on the runner (`/Applications/Drakar.app`
@@ -153,12 +154,14 @@ its Drakar, its `claude` and their versions, its accounts. A failure shows ssh's
 no host within 15 seconds). **Save** keeps the runner, and the Mac stays connected to it while
 Drakar runs. An empty destination is no runner.
 
-## A key that can start only the relay (optional)
+## Tying the key to the relay (optional)
 
 On the runner, `~/.ssh/authorized_keys` can tie the Mac's Drakar key to the relay, so that
-the key opens no shell even if it leaks from the Mac. It limits the shell, not the sessions:
-a leaked key still reaches the session host through the relay, and can start `claude` there
-with any prompt, in any folder.
+it opens no login shell, no terminal and no forwarding. That narrows how the key is used,
+not what it can do. **Treat it as a login key for the runner.** Through the relay it reaches
+the session host, and the host starts whatever program a client asks for (it is how Drakar
+starts `claude`, and it checks nothing about the program), so whoever holds the key can run
+any program on the runner as you, `/bin/sh` included.
 
 ```
 command="/Applications/Drakar.app/Contents/MacOS/Drakar --relay",restrict ssh-ed25519 AAAA… drakar@my-mac
@@ -198,8 +201,8 @@ there to be answered. **End Session**, from its window or its row in Home, is th
 end one, and the conversation cannot be resumed from the Mac after.
 
 **Home** lists the runner's sessions under the runner, apart from local projects: open in
-Drakar, with no window, on the runner (handed to the runner's own Drakar, or belonging to
-another Mac), or ending. Clicking one with no window opens it again. **End Idle Sessions…**
+Drakar, with no window, on the runner (the runner's own Drakar's, or another Mac's), or
+ending. Clicking one with no window opens it again. **End Idle Sessions…**
 ends this Mac's sessions that no window shows, working or not, since the runner keeps every
 session until it is ended: a run left going with its window closed is one of them.
 
