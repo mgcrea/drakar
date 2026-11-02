@@ -353,4 +353,32 @@ struct PermissionRulesModelTests {
       #expect(PermissionsInspector.sourceLabel(source) == label)
     }
   }
+
+  /// A runner session's rules are asked of its live process alone: with none, the tab says
+  /// where they are and no `claude` of this Mac's runs to list them, and an edit is refused
+  /// rather than written into this Mac's settings files at the runner's path.
+  @Test func aRunnerSessionsRulesNeverRunThisMacsClaude() async throws {
+    let folder = FileManager.default.temporaryDirectory.appending(
+      path: "drakar-rules-\(UUID().uuidString)", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: folder) }
+    let marker = folder.appending(path: "ran")
+    let claude = folder.appending(path: "claude")
+    try Data("#!/bin/sh\ntouch '\(marker.path(percentEncoded: false))'\n".utf8).write(to: claude)
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: claude.path)
+    let session = AgentSession(folder: folder)
+    session.executableOverride = claude
+    session.runner = UUID().uuidString
+    let name = try #require(session.runnerName)
+    let source = PermissionRulesModel.source(for: ProjectSession(session: session))
+    #expect(!source.isLive)
+    #expect(await source.list() == .refused(PermissionRulesModel.onRunner(name)))
+    let edit = PermissionRuleEdit.add(
+      rules: ["Bash(ls)"], behavior: .allow, file: .localSettings)
+    #expect(await source.edit(edit) == .refused(PermissionRulesModel.editsOnRunner(name)))
+    #expect(!FileManager.default.fileExists(atPath: marker.path(percentEncoded: false)))
+    #expect(
+      !FileManager.default.fileExists(
+        atPath: folder.appending(path: ".claude").path(percentEncoded: false)))
+  }
 }

@@ -508,10 +508,7 @@ final class Project {
   /// What to call a runner project's runner: its name as set up now, or that it is no longer
   /// set up. Nil for this Mac's.
   var runnerName: String? {
-    guard let runner else { return nil }
-    guard let host = runnerHost(), host.reaches(runner: runner), let name = host.runnerName
-    else { return String(localized: "a runner no longer set up") }
-    return name
+    runner.map { SessionHost.name(ofRunner: $0, on: runnerHost()) }
   }
 
   /// Whether `pane` is the one to take the keys back after a relaunch; true once.
@@ -1126,7 +1123,8 @@ final class Project {
   func speaksForProject(_ session: AgentSession) -> Bool {
     !session.isOnRunner
       && ProjectPath.normalize(session.folder) == ProjectPath.normalize(folder)
-      && session.agent == .claude && session.account?.key == capabilities.accountKey
+      && session.agent == .claude
+      && capabilities.accountKey.map { session.account?.key == $0 } == true
   }
 
   /// `handler` hears each change to a file either agent reads the project's skills from, as

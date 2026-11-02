@@ -703,10 +703,11 @@ struct RunnerHostTests {
     defer { project.stopAll() }
     let item = try await startedRow(in: project)
     let session = item.session
-    #expect(!session.hasEndedOnRunner)
+    #expect(session.goneOnRunnerText == nil)
     session.send("end-now")
     #expect(await eventually { !session.isProcessRunning })
-    #expect(session.hasEndedOnRunner)
+    #expect(session.isGoneOnRunner)
+    #expect(session.goneOnRunnerText == AgentSession.endedOnRunner("Studio"))
     #expect(!session.canSend)
     session.send("again")
     try await Task.sleep(for: .milliseconds(500))
@@ -715,6 +716,55 @@ struct RunnerHostTests {
       (try? String(contentsOf: claude.appendingPathExtension("stdin"), encoding: .utf8)) ?? ""
     #expect(!stdin.contains("again"))
     #expect(AgentSession.endedOnRunner("Studio").contains("on Studio"))
+  }
+
+  /// A runner session whose connection was given up, its process maybe still running there,
+  /// takes no prompt either, and says it cannot be reached, not that it ended.
+  @Test func aLostRunnerSessionSaysItCannotBeReached() async throws {
+    _ = try installRunnerClaude()
+    try relayingSSH()
+    let helper = try #require(SessionHost.startHelper(in: directory))
+    defer { finish([helper]) }
+    let host = SessionHost(endpoint: .runner(settings))
+    let project = runnerProject(on: host)
+    defer { project.stopAll() }
+    let session = try await startedRow(in: project).session
+    let id = try #require(session.hostID)
+    // Cleared in Settings meanwhile: a closed host is final (Ruling 10).
+    host.close()
+    #expect(await eventually { !session.isProcessRunning })
+    #expect(session.isGoneOnRunner)
+    let name = try #require(session.runnerName)
+    #expect(session.goneOnRunnerText == AgentSession.outOfReachOnRunner(name))
+    #expect(!session.canSend)
+    // It runs on there.
+    let watcher = try await watcher()
+    defer { watcher.close() }
+    #expect(await held(id, on: watcher) != nil)
+  }
+
+  /// A runner session another app holds, refused when taken back, is out of this window's
+  /// reach while its process carries on: it says so, and takes no prompt.
+  @Test func aRefusedReattachSaysItCannotBeReached() async throws {
+    _ = try installRunnerClaude()
+    try relayingSSH()
+    let helper = try #require(SessionHost.startHelper(in: directory))
+    defer { finish([helper]) }
+    let project = runnerProject(on: SessionHost(endpoint: .runner(settings)))
+    defer { project.stopAll() }
+    let id = try #require(try await startedRow(in: project).session.hostID)
+    let watcher = try await watcher()
+    defer { watcher.close() }
+    let process = try #require(await held(id, on: watcher))
+    // Still attached to this window's connection: another app's, as the watcher sees it.
+    let session = try #require(
+      await AgentSession(reattaching: process, client: watcher, throughRunner: true))
+    #expect(session.isOnRunner)
+    #expect(!session.isProcessRunning)
+    #expect(session.isGoneOnRunner)
+    let name = try #require(session.runnerName)
+    #expect(session.goneOnRunnerText == AgentSession.outOfReachOnRunner(name))
+    #expect(!session.canSend)
   }
 
   /// A runner's session never runs on this Mac: a runner that cannot be reached, or a host

@@ -161,6 +161,7 @@ final class AgentSession {
   @ObservationIgnored private(set) var process: (any ProcessTransport)? {
     didSet {
       guard process !== oldValue else { return }
+      if process != nil { sawEndOnRunner = false }
       // A refusal of the next one's attach is no stale relay of this one's.
       releasingUntil = nil
       // A new process has said nothing about rewinding yet.
@@ -190,18 +191,24 @@ final class AgentSession {
   /// session of this Mac's (remote sessions spec §4).
   @ObservationIgnored var runner: String?
   var isOnRunner: Bool { runner != nil }
-  /// What to call the runner a runner session runs on, as its host names it now; nil for a
-  /// session of this Mac's.
+  /// What to call the runner a runner session runs on, as its window names it
+  /// (`SessionHost.name(ofRunner:on:)`); nil for a session of this Mac's.
   var runnerName: String? {
-    guard let runner else { return nil }
-    guard sessionHost.reaches(runner: runner), let name = sessionHost.runnerName else {
-      return String(localized: "the runner")
-    }
-    return name
+    runner.map { SessionHost.name(ofRunner: $0, on: currentHost?() ?? sessionHost) }
   }
-  /// A runner session whose process has ended: nothing resumes it in v1, so a prompt now would
-  /// start another conversation in its place. Its window offers a new session instead.
-  var hasEndedOnRunner: Bool { isOnRunner && launched != nil && process == nil }
+  /// A runner session this window can no longer send to: its process ended, or went out of
+  /// its reach (a connection given up, a reattach refused) while it may run on there. Nothing
+  /// resumes it in v1, so a prompt now would start another conversation in its place: its
+  /// window offers a new session instead, and says which (`goneOnRunnerText`).
+  var isGoneOnRunner: Bool { isOnRunner && launched != nil && process == nil }
+  /// Its process was seen to end, or to be let go for good (End Session, taken over), rather
+  /// than lost from reach. Cleared by the next process.
+  private(set) var sawEndOnRunner = false
+  /// What the composer's place says of a runner session it can no longer send to.
+  var goneOnRunnerText: String? {
+    guard isGoneOnRunner, let name = runnerName else { return nil }
+    return sawEndOnRunner ? Self.endedOnRunner(name) : Self.outOfReachOnRunner(name)
+  }
   /// What the last process was launched with, where the history stood then, and where it
   /// runs and whose it is: the parts of `meta()` only a start sets, or the meta a replay
   /// rebuilt it from, so that no meta sent later drops them.
@@ -551,7 +558,7 @@ final class AgentSession {
   /// so a trial that ends mid-turn refuses only the next prompt.
   var canSend: Bool {
     !isReadOnly && !isMoving && !historyFailed && !isReconnecting && !waitsForHost
-      && !isOutOfReach && !hasEndedOnRunner && !transcript.isRunning && phase != .starting
+      && !isOutOfReach && !isGoneOnRunner && !transcript.isRunning && phase != .starting
       && EntitlementMonitor.allowsWorkNow
   }
 
@@ -968,7 +975,7 @@ final class AgentSession {
   /// may have opened the session (`isReadOnly`): after each, either ends the spawn.
   private func spawn(unlessStoppedSince stops: Int) async {
     guard stopCount == stops, process == nil, phase != .starting, !isMoving, !waitsForHost,
-      !isOutOfReach, !hasEndedOnRunner
+      !isOutOfReach, !isGoneOnRunner
     else { return }
     if resuming?.forks == true || resuming == nil {
       // A first turn that never finished (End Session, a crash) left no saved target, but
@@ -1110,6 +1117,14 @@ final class AgentSession {
   /// What the composer's place says once a runner session's process has ended.
   static func endedOnRunner(_ runner: String) -> String {
     String(localized: "This session has ended on \(runner). It can't be resumed from this Mac.")
+  }
+
+  /// What it says once its process went out of this window's reach, which may run on there.
+  static func outOfReachOnRunner(_ runner: String) -> String {
+    String(
+      localized:
+        "Drakar can't reach this session on \(runner). Its process may still be running there; this window can't send to it."
+    )
   }
 
   /// What a runner's session of another agent fails with.
@@ -1343,6 +1358,8 @@ final class AgentSession {
     isReconnecting = false
     // The cancelled event task will not report the exit, so it is recorded here.
     process = nil
+    // End Session's, unlike a detach, which leaves the process to run on there.
+    if isOnRunner, ending, wasRunning { sawEndOnRunner = true }
     if wasRunning { followFromHere() }
     permissionMode = nil
     appliedEffort = nil
@@ -1497,6 +1514,7 @@ final class AgentSession {
       }
       notingPermissions { transcript.processExited() }
       process = nil
+      sawEndOnRunner = isOnRunner
       followFromHere()
       permissionMode = nil
       appliedEffort = nil
@@ -1607,6 +1625,7 @@ final class AgentSession {
   private func takenOver() {
     isReconnecting = false
     process = nil
+    sawEndOnRunner = true
     notingPermissions { transcript.processExited() }
     if phase == .ready || phase == .starting { phase = .exited(status: 0) }
     onTakenOver?()

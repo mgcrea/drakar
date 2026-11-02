@@ -192,6 +192,15 @@ import Synchronization
 
   /// Whether this is the host of the runner `id` names (`RunnerSettings.id`), and not let go
   /// of: a rename or a new destination keeps the id, another runner set up does not.
+  /// What a window calls the runner `id` names, through `host`: its name as set up now, or
+  /// that it is no longer set up. Never empty. One name for every place that says it.
+  static func name(ofRunner id: String, on host: SessionHost?) -> String {
+    guard let host, host.reaches(runner: id),
+      let name = host.runnerName?.trimmingCharacters(in: .whitespaces), !name.isEmpty
+    else { return String(localized: "a runner no longer set up") }
+    return name
+  }
+
   func reaches(runner id: String) -> Bool {
     guard !isClosed, case .runner(let settings) = endpoint else { return false }
     return settings.id.uuidString == id

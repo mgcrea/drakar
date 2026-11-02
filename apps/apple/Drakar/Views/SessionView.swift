@@ -20,8 +20,8 @@ struct SessionView: View {
   /// The account the session runs, or will start, under. A runner session's is the runner's
   /// alone, and none of this Mac's stands in before it starts: its pills read the session's
   /// own lists, never an account's.
-  private var account: ClaudeAccount {
-    if session.isOnRunner { return session.account ?? project.capabilities.account }
+  private var account: ClaudeAccount? {
+    if session.isOnRunner { return session.account }
     return session.effectiveAccount ?? AccountStore.shared.windowAccount(for: project.folder)
   }
 
@@ -129,11 +129,11 @@ struct SessionView: View {
               .padding(.bottom, 6)
               .frame(maxWidth: .infinity)
           }
-          if session.hasEndedOnRunner {
+          if let gone = session.goneOnRunnerText {
             // Nothing resumes it from here: a prompt would start another conversation in its
             // place, so a new session is offered for what it was (remote sessions spec §4).
             Docked {
-              EndedOnRunnerBanner(runner: session.runnerName ?? "") {
+              GoneOnRunnerBanner(text: gone, runner: session.runnerName ?? gone) {
                 project.newSession(folder: session.folder)
               }
             }
@@ -197,7 +197,7 @@ struct SessionView: View {
         SessionFooter(
           item: item,
           windowAccount: session.isOnRunner
-            ? account : AccountStore.shared.windowAccount(for: project.folder),
+            ? nil : AccountStore.shared.windowAccount(for: project.folder),
           elsewhere: session.isReadOnly ? elsewhere : nil)
       }
       // What scrolls under fades out above the card, and is gone by the footer's line.
@@ -489,17 +489,19 @@ private struct ProblemBanner: View {
   }
 }
 
-/// In place of the composer once a runner session's process has ended: nothing resumes it
-/// from this Mac in v1, so New Session starts another on the same runner folder.
-private struct EndedOnRunnerBanner: View {
+/// In place of the composer once a runner session's process has ended or gone out of reach:
+/// nothing resumes it from this Mac in v1, so New Session starts another on the same runner
+/// folder.
+private struct GoneOnRunnerBanner: View {
+  let text: String
   let runner: String
   let newSession: () -> Void
 
   var body: some View {
     HStack {
-      Label(AgentSession.endedOnRunner(runner), systemImage: "stop.circle")
+      Label(text, systemImage: "stop.circle")
         .foregroundStyle(.secondary)
-        .accessibilityIdentifier("session.endedOnRunner")
+        .accessibilityIdentifier("session.goneOnRunner")
       Spacer()
       Button("New Session", action: newSession)
         .help("Start a new session in this folder on \(runner).")
@@ -658,8 +660,8 @@ private struct PromptCacheLabel: View {
 
 private struct SessionFooter: View {
   let item: ProjectSession
-  /// The account new sessions in the window start under.
-  let windowAccount: ClaudeAccount
+  /// The account new sessions in the window start under; none in a runner's window.
+  let windowAccount: ClaudeAccount?
   /// Set for a session another process runs: its state comes from there.
   let elsewhere: (status: ElsewhereStatus, host: String)?
 
@@ -736,7 +738,12 @@ private struct SessionFooter: View {
   /// The session's account, or for one not started yet the account it will start under;
   /// marked as its sidebar row is when it is not the window's.
   @ViewBuilder private var account: some View {
-    let account = session.effectiveAccount ?? windowAccount
+    if let account = session.effectiveAccount ?? windowAccount {
+      accountLabel(account)
+    }
+  }
+
+  @ViewBuilder private func accountLabel(_ account: ClaudeAccount) -> some View {
     let profile = AccountStore.shared.profile(for: account)
     let label = Label(
       profile.plan.map { "\(profile.name) (\($0))" } ?? profile.name,
@@ -746,7 +753,7 @@ private struct SessionFooter: View {
       ? String(
         localized: "Starts under the account in \(ContentView.abbreviated(account.directory))")
       : String(localized: "Runs under the account in \(ContentView.abbreviated(account.directory))")
-    if account.key == windowAccount.key {
+    if account.key == windowAccount?.key {
       label.help(help)
     } else {
       label

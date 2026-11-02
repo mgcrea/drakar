@@ -129,7 +129,7 @@ struct SessionListView: View {
             item: item, isSelected: item.id == project.selectedID,
             windowAccount: project.runner == nil
               ? AccountStore.shared.windowAccount(for: project.folder)
-              : project.capabilities.account,
+              : nil,
             subfolder: ProjectPath.child(
               of: item.session.folder.path(percentEncoded: false),
               below: project.folder.path(percentEncoded: false))
@@ -379,8 +379,8 @@ struct SessionListView: View {
 struct SessionRow: View {
   let item: ProjectSession
   let isSelected: Bool
-  /// The account new sessions in this window start under.
-  let windowAccount: ClaudeAccount
+  /// The account new sessions in this window start under; none in a runner's window.
+  let windowAccount: ClaudeAccount?
   /// The project's subfolder it runs in, when not the project's own.
   var subfolder: String? = nil
 
@@ -434,7 +434,7 @@ struct SessionRow: View {
   /// runs under the runner shell's own (Ruling 11).
   private var otherAccount: ClaudeAccount? {
     guard item.session.features.showsAccount, !item.session.isOnRunner,
-      let account = item.session.effectiveAccount, account.key != windowAccount.key
+      let account = item.session.effectiveAccount, account.key != windowAccount?.key
     else { return nil }
     return account
   }

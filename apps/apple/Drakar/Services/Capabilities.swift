@@ -8,9 +8,10 @@ import Observation
 @Observable
 final class Capabilities {
   let folder: URL
-  /// The account the lists are for: the probe runs under it.
-  let account: ClaudeAccount
-  var accountKey: String { account.key }
+  /// The account the lists are for: the probe runs under it. None for a runner window's,
+  /// which no probe reads and no session starts under (`onRunner`).
+  let account: ClaudeAccount?
+  var accountKey: String? { account?.key }
   /// The last lists read; a failed reload leaves them.
   private(set) var lists = ProjectCapabilities()
   /// Why the last reading has no skills, or no servers.
@@ -22,7 +23,7 @@ final class Capabilities {
   private(set) var hasLoaded = false
 
   /// Stands in for the probe, in tests: the folder and the account to probe it under.
-  @ObservationIgnored var probe: (URL, ClaudeAccount) async -> ProbeOutcome = {
+  @ObservationIgnored var probe: (URL, ClaudeAccount?) async -> ProbeOutcome = {
     await CapabilityProbe.run(folder: $0, account: $1)
   }
   /// Where the probe's model list goes; tests give their own.
@@ -31,7 +32,7 @@ final class Capabilities {
   @ObservationIgnored private var rerun = false
   @ObservationIgnored private var observers: [UUID: (CapabilityChanges) -> Void] = [:]
 
-  init(folder: URL, account: ClaudeAccount) {
+  init(folder: URL, account: ClaudeAccount?) {
     self.folder = folder
     self.account = account
   }
@@ -102,7 +103,9 @@ final class Capabilities {
   }
 
   private func apply(_ outcome: ProbeOutcome) {
-    if let models = outcome.capabilities.models { catalog.record(models, for: account) }
+    if let models = outcome.capabilities.models, let account {
+      catalog.record(models, for: account)
+    }
     var next = lists
     if let skills = outcome.capabilities.skills { next.skills = skills }
     if let commands = outcome.capabilities.commands { next.commands = commands }
@@ -136,11 +139,10 @@ extension Capabilities {
 
   /// A runner window's lists (remote sessions spec §4): none of `CapabilityStore`'s, which
   /// are this Mac's folders under this Mac's accounts, and never read by a probe of this
-  /// Mac's `claude`, which would run in a path that is not the runner's folder here. Its
-  /// account is named after the folder, one nothing runs under.
+  /// Mac's `claude`, which would run in a path that is not the runner's folder here. It has
+  /// no account: none of this Mac's is the runner's, and none is made up to stand in.
   static func onRunner(folder: URL) -> Capabilities {
-    let entry = Capabilities(
-      folder: folder, account: ClaudeAccount(directory: folder, isDefault: false))
+    let entry = Capabilities(folder: folder, account: nil)
     entry.probe = { _, _ in .failed(notListedOnRunner) }
     return entry
   }

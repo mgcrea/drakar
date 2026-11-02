@@ -49,6 +49,7 @@ final class SkillsManager {
   @ObservationIgnored var accountFor: (URL?) -> ClaudeAccount = { SkillsManager.account(for: $0) }
   @ObservationIgnored var openFolders: () -> [URL] = { SkillsManager.openProjectFolders() }
   @ObservationIgnored var projectAt: (URL) -> Project? = { SkillsManager.openProject(at: $0) }
+  @ObservationIgnored var isOnlyOnRunner: (URL) -> Bool = { SkillsManager.isOnlyOnRunner($0) }
   @ObservationIgnored var codexFor: (URL) -> CodexSkills = {
     CodexSkillStore.shared.skills(for: $0)
   }
@@ -136,7 +137,10 @@ final class SkillsManager {
     open(Self.windowID)
   }
 
+  /// Never a folder only a runner's window has open: its skills are the runner's, and reading
+  /// this Mac's disk and `claude` at its path would show this Mac's as its (spec §4).
   func choose(project folder: URL?) {
+    if let folder, isOnlyOnRunner(folder) { return }
     let folder = folder.map { URL(filePath: $0.skillPath, directoryHint: .isDirectory) }
     guard folder?.skillPath != project?.skillPath else { return }
     project = folder
@@ -374,6 +378,19 @@ final class SkillsManager {
     Set(projects.filter { $0.runner == nil }.map(\.folder.skillPath)).sorted().map {
       URL(filePath: $0, directoryHint: .isDirectory)
     }
+  }
+
+  /// The folder Window › Skills opens on from `project`'s window: none from a runner's.
+  static func folder(of project: Project?) -> URL? {
+    project?.runner == nil ? project?.folder : nil
+  }
+
+  /// Whether `folder` is open only in runners' windows, none of this Mac's.
+  static func isOnlyOnRunner(
+    _ folder: URL, among projects: [Project] = Array(OpenSessions.shared.projects.values)
+  ) -> Bool {
+    let windows = projects.filter { $0.folder.skillPath == folder.skillPath }
+    return !windows.isEmpty && windows.allSatisfy { $0.runner != nil }
   }
 
   /// The window on `folder` of this Mac's, never a runner's at the same path.

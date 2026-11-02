@@ -279,12 +279,10 @@ struct SessionMovesRunTests {
     let reports = await SessionMoves.run(
       [candidate], to: b, locate: { $0 == "s6" ? session : nil }, liveIDs: { [] },
       host: { _ in "x" })
+    let name = try #require(session.runnerName)
     #expect(
-      reports == [
-        SessionMoves.Report(title: "s6", outcome: .failed(SessionMoves.onRunner("the runner")))
-      ])
-    #expect(
-      reports.first.map { SessionMoves.summary([$0], to: "B") }?.contains("the runner") == true)
+      reports == [SessionMoves.Report(title: "s6", outcome: .failed(SessionMoves.onRunner(name)))])
+    #expect(reports.first.map { SessionMoves.summary([$0], to: "B") }?.contains(name) == true)
     #expect(session.savedTarget?.accountDirectory == a.key)
     #expect(
       FileManager.default.fileExists(atPath: candidate.transcript.path(percentEncoded: false)))

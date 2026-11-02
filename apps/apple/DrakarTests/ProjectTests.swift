@@ -936,7 +936,7 @@ struct ProjectTests {
       // Its lists: not the store's entry for the path, and a refresh runs no probe here.
       let entry = CapabilityStore.shared.capabilities(for: folder, account: picked)
       #expect(remote.capabilities !== entry)
-      #expect(remote.capabilities.account.key != picked.key)
+      #expect(remote.capabilities.account == nil)
       remote.loadFanOutSkills()
       #expect(!remote.capabilities.isLoading)
 
@@ -950,10 +950,13 @@ struct ProjectTests {
   }
 
   /// A runner window's lists say why they are empty, and nothing of this Mac's ran.
-  @Test func aRunnerWindowsListsSayWhy() async {
+  @Test func aRunnerWindowsListsSayWhy() async throws {
     let remote = Project(folder: folder, runner: UUID().uuidString)
     remote.capabilities.refresh()
-    while remote.capabilities.isLoading { await Task.yield() }
+    for _ in 0..<100 where remote.capabilities.isLoading {
+      try await Task.sleep(for: .milliseconds(20))
+    }
+    #expect(!remote.capabilities.isLoading)
     #expect(remote.capabilities.skillsProblem == Capabilities.notListedOnRunner)
     #expect(remote.capabilities.lists.skills == nil)
   }

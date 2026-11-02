@@ -168,7 +168,7 @@ struct CapabilityStoreTests {
     let store = CapabilityStore()
     let work = ClaudeAccount(directory: URL(filePath: "/tmp/.claude-work"), isDefault: false)
     let entry = store.capabilities(for: folder, account: work)
-    final class Probed { var accounts: [ClaudeAccount] = [] }
+    final class Probed { var accounts: [ClaudeAccount?] = [] }
     let probed = Probed()
     entry.probe = { _, account in
       probed.accounts.append(account)

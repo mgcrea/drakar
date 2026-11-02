@@ -69,7 +69,7 @@ final class PermissionRulesModel {
   static func source(for item: ProjectSession) -> Source {
     let session = item.session
     let isLive = session.hasLiveRules
-    if let runner = session.runnerName {
+    if session.isOnRunner, let runner = session.runnerName {
       return Source(
         key: item.id, isCodex: false, isLive: isLive,
         list: {

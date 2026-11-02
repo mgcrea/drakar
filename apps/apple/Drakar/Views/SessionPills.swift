@@ -9,17 +9,18 @@ import SwiftUI
 struct SessionPills {
   let session: AgentSession
   let folder: URL
-  /// The account the session runs, or will start, under: whose models the menu lists.
-  let account: ClaudeAccount
+  /// The account the session runs, or will start, under: whose models the menu lists. None
+  /// for a runner session not started yet, whose list is its process's own.
+  let account: ClaudeAccount?
 
   private var catalog: ModelCatalog { .shared }
 
   /// The list the session's pills offer: Codex's own, a runner session's own, else the
   /// account's.
-  static func models(for session: AgentSession, account: ClaudeAccount) -> [ModelOption]? {
+  static func models(for session: AgentSession, account: ClaudeAccount?) -> [ModelOption]? {
     if session.isOnRunner { return session.models }
-    return session.agent == .codex
-      ? ModelCatalog.shared.codexModels : ModelCatalog.shared.models(for: account)
+    if session.agent == .codex { return ModelCatalog.shared.codexModels }
+    return account.flatMap { ModelCatalog.shared.models(for: $0) }
   }
 
   /// The model, its effort when it takes one, and why the last change was refused if it was
@@ -43,7 +44,7 @@ struct SessionPills {
       if session.isOnRunner { return }
       if session.agent == .codex {
         catalog.loadCodex()
-      } else {
+      } else if let account {
         catalog.load(folder: folder, account: account)
       }
     }
@@ -123,7 +124,9 @@ struct SessionPills {
   private var loadingText: String {
     if session.agent == .codex { return String(localized: "Loading Codex's models…") }
     // A runner session's list is its process's: none of this Mac's store's for the path.
-    if session.isOnRunner { return String(localized: "Its models are listed once it starts.") }
+    guard !session.isOnRunner, let account else {
+      return String(localized: "Its models are listed once it starts.")
+    }
     let probe = CapabilityStore.shared.capabilities(for: folder, account: account)
     if probe.isLoading || !probe.hasLoaded { return String(localized: "Loading models…") }
     return probe.skillsProblem ?? String(localized: "This Claude Code version didn't list models.")
@@ -205,7 +208,7 @@ struct SessionPills {
   }
 
   /// ⇧Tab: the next offered mode.
-  static func cycle(_ session: AgentSession, account: ClaudeAccount) {
+  static func cycle(_ session: AgentSession, account: ClaudeAccount?) {
     let offered = offeredModes(session, models: models(for: session, account: account))
     let current = PermissionMode(rawValue: session.shownMode) ?? .ask
     session.setMode(PermissionMode.next(after: current, among: offered))

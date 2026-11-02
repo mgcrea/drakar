@@ -404,5 +404,26 @@ struct SkillsManagerTests {
     #expect(
       SkillsManager.openProjectFolders(among: [remote, local]).map(\.skillPath)
         == [project.skillPath])
+    #expect(SkillsManager.isOnlyOnRunner(project, among: [remote]))
+    #expect(!SkillsManager.isOnlyOnRunner(project, among: [remote, local]))
+    #expect(!SkillsManager.isOnlyOnRunner(project, among: []))
+  }
+
+  /// Window › Skills from a runner's window opens on no project, and a folder only a runner's
+  /// window has open is never chosen: nothing of this Mac's disk or `claude` is read for it.
+  @Test func windowSkillsNeverOpensOnARunnerFolder() async throws {
+    defer { cleanUp() }
+    let remote = Project(folder: project, runner: UUID().uuidString)
+    #expect(SkillsManager.folder(of: remote) == nil)
+    #expect(SkillsManager.folder(of: Project(folder: project)) == project)
+    let stubs = Stubs()
+    let manager = manager(stubs)
+    manager.isOnlyOnRunner = { $0.skillPath == self.project.skillPath }
+    manager.choose(project: project)
+    try await settle(manager)
+    #expect(manager.project == nil)
+    #expect(stubs.claude[project.skillPath] == nil)
+    #expect(stubs.codex[project.skillPath] == nil)
+    #expect(!manager.records.contains { $0.name == "deploy" })
   }
 }

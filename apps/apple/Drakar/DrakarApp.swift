@@ -349,7 +349,8 @@ private struct SkillsCommand: View {
 
   var body: some View {
     Button("Skills") {
-      SkillsManager.shared.show(project: project?.folder) { openWindow(id: $0) }
+      // A runner's window opens it on no project: its skills are the runner's.
+      SkillsManager.shared.show(project: SkillsManager.folder(of: project)) { openWindow(id: $0) }
     }
     Divider()
   }
