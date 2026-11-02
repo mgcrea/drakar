@@ -22,6 +22,10 @@ struct TranscriptView: View {
   /// follow has a chance to catch up, and would read as "the user left".
   @State private var isFollowing = true
   @State private var isAtBottom = true
+  /// A scroll the user is making, finger down or coasting: the follow holds off until it rests,
+  /// or each delta would pull the transcript back down under them and the scroll would end
+  /// at the bottom it was leaving.
+  @State private var isUserScrolling = false
   /// The entries in view, as of the last change: the scroll is judged at rest only after
   /// they stopped changing, so the anchor is taken from here and not from the next change.
   @State private var visibleIDs: [String] = []
@@ -109,10 +113,15 @@ struct TranscriptView: View {
       isAtBottom = atBottom
     }
     .onScrollPhaseChange { old, new in
-      if new == .idle, old == .interacting || old == .decelerating { isFollowing = isAtBottom }
+      isUserScrolling = new == .tracking || new == .interacting || new == .decelerating
+      if new == .idle, old == .interacting || old == .decelerating {
+        isFollowing = isAtBottom
+        // Output that arrived during the scroll was held back.
+        if isFollowing { position.scrollTo(edge: .bottom) }
+      }
     }
     .onChange(of: transcript.revision) {
-      if isFollowing { position.scrollTo(edge: .bottom) }
+      if isFollowing && !isUserScrolling { position.scrollTo(edge: .bottom) }
     }
     .accessibilityIdentifier("transcript")
     // A card floating below the toolbar, not an inset: the scroll view's top inset is part
