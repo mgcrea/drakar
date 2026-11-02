@@ -304,6 +304,9 @@ final class AgentSession {
     fanOut = meta.fanOut
     executableOverride = meta.start.executableOverride
     windowFolder = URL(filePath: meta.windowFolder, directoryHint: .isDirectory)
+    // A runner's from the first: its replay keeps what the process reported to itself, and a
+    // stop before a window adopts it lets it go rather than ending it.
+    runner = meta.runner
     launched = (meta.start, meta.history, Placement(of: meta))
     let started = records.first?.time ?? .now
     historyLoad = Task {
@@ -1270,26 +1273,42 @@ final class AgentSession {
   /// working for nobody. `waitingOutStaleRelay` for a runner's session, whose process this
   /// Mac's own stale relay may still hold (spec §3), the host refusing anything of it until
   /// then: the end waits for it to go, as the session would have, and is sent after. It is
-  /// marked ended at once (`SessionHost.ending`), so no window takes it back meanwhile.
+  /// marked ended at once then (`SessionHost.ending`), so no window takes it back meanwhile.
   private func end(
     _ hosted: HostedProcess, onceReconnected host: SessionHost, waitingOutStaleRelay: Bool
   ) {
-    if let id = hosted.id { host.ending(id) }
+    let id = hosted.id
+    if waitingOutStaleRelay, let id { host.ending(id) }
     Task {
-      if waitingOutStaleRelay, let id = hosted.id {
+      if waitingOutStaleRelay, let id {
         let deadline = ContinuousClock.now + Self.releasingLimit
         var wait = SessionHost.firstWait
-        while ContinuousClock.now < deadline, await host.reattachRefused(id) {
+        var refused = await host.reattachRefused(id)
+        while refused, ContinuousClock.now < deadline {
           try? await Task.sleep(for: min(wait, deadline - .now))
           wait = min(wait * 2, SessionHost.longestWait)
+          refused = await host.reattachRefused(id)
         }
+        // Given up: the stale relay outlived the limit, or the runner is no longer set up.
+        // The process runs on there, silently, so it is not kept as ended: Home and a
+        // window's take-back still see it, and End Idle Sessions… is the way to end it then.
+        guard !refused, let client = await host.reconnect() else {
+          return host.notEnding(id)
+        }
+        return Self.end(hosted, on: client)
       }
       guard let client = await host.reconnect() else { return }
-      _ = hosted.reattach(on: client)
-      hosted.forgetWhenEnded()
-      hosted.closeInput()
-      hosted.terminate()
+      if let id { host.ending(id) }
+      Self.end(hosted, on: client)
     }
+  }
+
+  /// Ends `hosted` for good on `client`, which it is attached to again first.
+  private static func end(_ hosted: HostedProcess, on client: HostClient) {
+    _ = hosted.reattach(on: client)
+    hosted.forgetWhenEnded()
+    hosted.closeInput()
+    hosted.terminate()
   }
 
   /// `stop()`, then the process's own exit, which can take a moment: a `claude` that is

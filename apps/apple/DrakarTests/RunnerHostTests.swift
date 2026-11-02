@@ -883,6 +883,75 @@ struct RunnerHostTests {
       })
   }
 
+  /// An End Session given up on, its runner no longer set up mid-wait, leaves the process
+  /// running there and no longer counted ended, for Home and a take-back to see.
+  @Test func anEndGivenUpOnIsNotKeptEnded() async throws {
+    _ = try installRunnerClaude()
+    try relayingSSH()
+    let helper = try #require(SessionHost.startHelper(in: directory))
+    defer { finish([helper]) }
+    let host = SessionHost(endpoint: .runner(settings))
+    host.ownsProcess = { _ in true }
+    let project = runnerProject(on: host)
+    defer { project.stopAll() }
+    let item = try await startedRow(in: project)
+    let id = try #require(item.session.hostID)
+    let watcher = try await watcher()
+    defer { watcher.close() }
+    let relay = try #require(await attached(id, on: watcher))
+    kill(relay, SIGSTOP)
+    defer { kill(relay, SIGKILL) }
+    await host.client()?.close()
+    #expect(await eventually { item.session.isReconnecting })
+
+    project.end(item)
+    #expect(host.ended.contains(id))
+    host.close()
+    #expect(await eventually { !host.ended.contains(id) })
+    #expect(await held(id, on: watcher)?.running == true)
+  }
+
+  /// A runner's process taken back after a relaunch is the runner's from its replay: what it
+  /// reported stays on the session, and a stop before any window adopts it (the window closed
+  /// during the replay) lets it go rather than ending it.
+  @Test func aRunnerSessionTakenBackIsLetGoOnAStop() async throws {
+    _ = try installRunnerClaude()
+    try relayingSSH()
+    let helper = try #require(SessionHost.startHelper(in: directory))
+    defer { finish([helper]) }
+    let host = SessionHost(endpoint: .runner(settings))
+    let project = runnerProject(on: host)
+    let item = try await startedRow(in: project)
+    let id = try #require(item.session.hostID)
+    // The runner's default account, which this Mac's own may share a key with: what this
+    // Mac's stores hold for it must be the same after the replay.
+    let account = try #require(item.session.account)
+    let usage = AccountStore.shared.usage(for: account)
+    let models = ModelCatalog.shared.models(for: account)
+    let watcher = try await watcher()
+    defer { watcher.close() }
+    project.stopAll(handingOver: true)
+    #expect(await eventually { await isLetGo(id, on: watcher) })
+
+    let client = try #require(await host.client())
+    let process = try #require(await held(id, on: watcher))
+    let session = try #require(await AgentSession(reattaching: process, client: client))
+    #expect(session.isOnRunner)
+    #expect(session.runner == settings.id.uuidString)
+    // The replayed rate limit and models are the session's, not this Mac's records.
+    #expect(session.account == account)
+    #expect(session.usage?.fiveHour?.percent == 50)
+    #expect(session.models?.map(\.value) == ["default"])
+    #expect(AccountStore.shared.usage(for: account) == usage)
+    #expect(ModelCatalog.shared.models(for: account) == models)
+    #expect(await eventually { await held(id, on: watcher)?.attachedApp != nil })
+
+    session.stop()
+    #expect(await eventually { await isLetGo(id, on: watcher) })
+    try await Task.sleep(for: .milliseconds(500))
+    #expect(await isLetGo(id, on: watcher))
+  }
+
   /// Closed while it waits out a stale relay, a runner's session is let go: nothing ends it,
   /// and once the relay has gone the host keeps it, no app's.
   @Test func closingDuringAStaleRelayLeavesTheSessionToItsHost() async throws {

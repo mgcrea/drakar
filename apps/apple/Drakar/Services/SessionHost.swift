@@ -443,6 +443,11 @@ import Synchronization
     ended.insert(id)
   }
 
+  /// An end given up on: the process runs on, and is shown again like any other.
+  func notEnding(_ id: String) {
+    ended.remove(id)
+  }
+
   private func released(_ id: String) {
     releaseWatchers.removeAll { $0.owner == nil }
     _ = releaseWatchers.first { $0.takes(id) }
