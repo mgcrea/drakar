@@ -129,4 +129,22 @@ struct ElicitationPanelTests {
     #expect(two == .picks(["core", "web"]))
     #expect(ElicitationPanel.picking("core", false, in: two) == .picks(["web"]))
   }
+
+  /// A link to open opens in this Mac's browser, as ever; on a runner, one that calls back to
+  /// `localhost`, itself or by a link it carries, says that the callback lands on this Mac.
+  @Test func aLocalhostElicitationOnARunnerSaysWhereItLands() throws {
+    let direct = try #require(URL(string: "http://localhost:8765/callback?code=x"))
+    let carried = try #require(
+      URL(
+        string:
+          "https://auth.example.com/authorize?redirect_uri=http%3A%2F%2F127.0.0.1%3A9000%2Fcb"))
+    let elsewhere = try #require(
+      URL(string: "https://auth.example.com/authorize?redirect_uri=https%3A%2F%2Fapp.example.com"))
+    for url in [direct, carried] {
+      let note = try #require(ElicitationPanel.localhostNote(url, runner: "Studio"))
+      #expect(note.contains("this Mac") && note.contains("Studio"))
+      #expect(ElicitationPanel.localhostNote(url, runner: nil) == nil)
+    }
+    #expect(ElicitationPanel.localhostNote(elsewhere, runner: "Studio") == nil)
+  }
 }

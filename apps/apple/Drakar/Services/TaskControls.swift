@@ -36,6 +36,10 @@ final class TaskControls {
   /// The transcript of a session that knows its id but saved no target yet (a new one in
   /// its first turn), looked for without saving anything.
   @ObservationIgnored var locateTranscript: () -> URL? = { nil }
+  /// The runner the session runs on, by name; nil for a session of this Mac's. A runner's
+  /// files are there: no transcript nor output file of its is read here, whatever this Mac
+  /// holds at the same path (remote sessions spec §4).
+  @ObservationIgnored var runner: () -> String? = { nil }
   @ObservationIgnored private let timeout: Duration
   /// Bumped by each request for an id: a timeout clears a wait only if no later request
   /// for that id started one of its own.
@@ -70,6 +74,7 @@ final class TaskControls {
 
   /// `transcriptFile`, else the one `locateTranscript` finds, kept once found.
   func resolvedTranscriptFile() -> URL? {
+    guard runner() == nil else { return nil }
     if let transcriptFile { return transcriptFile }
     guard let located = locateTranscript() else { return nil }
     transcriptFile = located
@@ -84,9 +89,10 @@ final class TaskControls {
 
   /// The task's output now: the tail of its output file when it is known, which reaches
   /// neither the process nor the session host's log, read anywhere; else asked of the
-  /// process (`fetchOutput`). A file that cannot be read leaves the last tail shown.
+  /// process (`fetchOutput`). A file that cannot be read leaves the last tail shown. A
+  /// runner's task writes its file there: the process is asked.
   func readOutput(taskID: String, file: URL?) {
-    guard let file else { return fetchOutput(taskID: taskID) }
+    guard let file, runner() == nil else { return fetchOutput(taskID: taskID) }
     if let output = TaskOutput(tailOf: file) { outputs[taskID] = output }
   }
 

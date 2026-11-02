@@ -122,6 +122,8 @@ struct SessionPills {
 
   private var loadingText: String {
     if session.agent == .codex { return String(localized: "Loading Codex's models…") }
+    // A runner session's list is its process's: none of this Mac's store's for the path.
+    if session.isOnRunner { return String(localized: "Its models are listed once it starts.") }
     let probe = CapabilityStore.shared.capabilities(for: folder, account: account)
     if probe.isLoading || !probe.hasLoaded { return String(localized: "Loading models…") }
     return probe.skillsProblem ?? String(localized: "This Claude Code version didn't list models.")

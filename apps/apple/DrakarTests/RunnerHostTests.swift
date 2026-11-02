@@ -549,6 +549,7 @@ struct RunnerHostTests {
           printf '%s\n' '{"type":"assistant","message":{"id":"m-1","type":"message","role":"assistant","model":"m","content":[{"type":"text","text":"From the runner."}],"stop_reason":null},"parent_tool_use_id":null,"session_id":"s-runner"}'
           printf '%s\n' '{"type":"result","subtype":"success","is_error":false,"result":"Done.","stop_reason":"end_turn","session_id":"s-runner"}'
           ;;
+        *end-now*) exit 0;;
       esac
     done
 
@@ -561,14 +562,15 @@ struct RunnerHostTests {
   /// process says of the account stays with it.
   /// `runnerClaude` where the relay finds it first: in the first directory of the PATH the
   /// runner's environment file gives, ahead of any `claude` the person has.
-  private func installRunnerClaude() throws -> URL {
+  private func installRunnerClaude(environment extra: [String: String] = [:]) throws -> URL {
     let bin = root.appending(path: "bin", directoryHint: .isDirectory)
     try FileManager.default.createDirectory(at: bin, withIntermediateDirectories: true)
     let claude = bin.appending(path: "claude")
     try Data(Self.runnerClaude.utf8).write(to: claude)
     try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: claude.path)
     try RunnerEnvironment.write(
-      ["PATH": "\(bin.path(percentEncoded: false)):/usr/bin:/bin", "DRAKAR_RUNNER_MARK": "1"],
+      ["PATH": "\(bin.path(percentEncoded: false)):/usr/bin:/bin", "DRAKAR_RUNNER_MARK": "1"]
+        .merging(extra) { _, new in new },
       to: RunnerEnvironment.file(in: root))
     return claude
   }
@@ -647,6 +649,72 @@ struct RunnerHostTests {
     #expect(session.savedTarget == nil)
     session.stop()
     #expect(session.follower == nil)
+  }
+
+  /// No account picked here reaches a runner session (Ruling 11): it runs under the account
+  /// its shell names there, even when the pick is `~/.claude` at the very path the runner
+  /// lists as its own, which taken as the runner's default would drop the shell's
+  /// `CLAUDE_CONFIG_DIR`. Its meta names no account of this Mac's.
+  @Test func aPickedAccountNeverReachesTheRunner() async throws {
+    let shellAccount = root.appending(path: "runner-account", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(
+      at: shellAccount.appending(path: "projects"), withIntermediateDirectories: true)
+    let claude = try installRunnerClaude(
+      environment: ["CLAUDE_CONFIG_DIR": shellAccount.path(percentEncoded: false)])
+    try relayingSSH()
+    let helper = try #require(SessionHost.startHelper(in: directory))
+    defer { finish([helper]) }
+    let host = SessionHost(endpoint: .runner(settings))
+    let standard = FileManager.default.homeDirectoryForCurrentUser
+      .appending(path: ".claude", directoryHint: .isDirectory)
+    for picked in [
+      ClaudeAccount(directory: standard, isDefault: true),
+      ClaudeAccount(directory: shellAccount, isDefault: false),
+    ] {
+      // As a fan-out's or a restored one's pick reaches a row, past `newSession`.
+      let session = AgentSession(folder: folder, account: picked)
+      session.accounts = { [] }
+      session.sessionHost = host
+      session.runner = settings.id.uuidString
+      session.send("quick")
+      #expect(await eventually { session.phase == .ready && !session.transcript.isRunning })
+      defer { session.stop(ending: true) }
+      let environment = try String(
+        contentsOf: claude.appendingPathExtension("env"), encoding: .utf8
+      ).split(separator: "\n").map(String.init)
+      #expect(environment.contains("CLAUDE_CONFIG_DIR=\(shellAccount.path(percentEncoded: false))"))
+      let account = try #require(session.account)
+      #expect(ProjectPath.normalize(account.directory) == ProjectPath.normalize(shellAccount))
+      #expect(session.effectiveAccount == account)
+      let meta = try #require(session.meta())
+      #expect(meta.accountPick == nil)
+      #expect(meta.start.account == account)
+    }
+  }
+
+  /// A runner session whose process ended takes no other prompt: nothing resumes it, and one
+  /// sent would start another conversation in its place. Its composer offers a new session.
+  @Test func anEndedRunnerSessionStartsNoOtherConversation() async throws {
+    let claude = try installRunnerClaude()
+    try relayingSSH()
+    let helper = try #require(SessionHost.startHelper(in: directory))
+    defer { finish([helper]) }
+    let project = runnerProject(on: SessionHost(endpoint: .runner(settings)))
+    defer { project.stopAll() }
+    let item = try await startedRow(in: project)
+    let session = item.session
+    #expect(!session.hasEndedOnRunner)
+    session.send("end-now")
+    #expect(await eventually { !session.isProcessRunning })
+    #expect(session.hasEndedOnRunner)
+    #expect(!session.canSend)
+    session.send("again")
+    try await Task.sleep(for: .milliseconds(500))
+    #expect(!session.isProcessRunning)
+    let stdin =
+      (try? String(contentsOf: claude.appendingPathExtension("stdin"), encoding: .utf8)) ?? ""
+    #expect(!stdin.contains("again"))
+    #expect(AgentSession.endedOnRunner("Studio").contains("on Studio"))
   }
 
   /// A runner's session never runs on this Mac: a runner that cannot be reached, or a host

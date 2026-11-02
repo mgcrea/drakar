@@ -12,14 +12,19 @@ struct ProjectSidebar: View {
   @SceneStorage("drakar.filesCollapsed") private var filesCollapsed = true
 
   var body: some View {
-    VerticalSplit(
-      fraction: $fraction, collapsesTop: sessionsCollapsed, collapsesBottom: filesCollapsed
-    ) {
+    if project.runner != nil {
+      // A runner's folder has no files here (remote sessions spec §4): its sessions alone.
       SessionListView(project: project, isCollapsed: $sessionsCollapsed)
-    } bottom: {
-      FileTreeView(workspace: project.workspace, isCollapsed: $filesCollapsed)
+    } else {
+      VerticalSplit(
+        fraction: $fraction, collapsesTop: sessionsCollapsed, collapsesBottom: filesCollapsed
+      ) {
+        SessionListView(project: project, isCollapsed: $sessionsCollapsed)
+      } bottom: {
+        FileTreeView(workspace: project.workspace, isCollapsed: $filesCollapsed)
+      }
+      .focusedSceneValue(\.filesCollapsed, $filesCollapsed)
     }
-    .focusedSceneValue(\.filesCollapsed, $filesCollapsed)
   }
 }
 
@@ -48,7 +53,12 @@ struct SessionListView: View {
       header
       if !isCollapsed { list }
     }
-    .task { await monitor.include(folder: project.folder.path(percentEncoded: false)) }
+    // This Mac's transcripts under the path are none of a runner's folder's.
+    .task {
+      if project.runner == nil {
+        await monitor.include(folder: project.folder.path(percentEncoded: false))
+      }
+    }
   }
 
   private var header: some View {
@@ -117,7 +127,9 @@ struct SessionListView: View {
         ForEach(held) { item in
           SessionRow(
             item: item, isSelected: item.id == project.selectedID,
-            windowAccount: AccountStore.shared.windowAccount(for: project.folder),
+            windowAccount: project.runner == nil
+              ? AccountStore.shared.windowAccount(for: project.folder)
+              : project.capabilities.account,
             subfolder: ProjectPath.child(
               of: item.session.folder.path(percentEncoded: false),
               below: project.folder.path(percentEncoded: false))
@@ -211,7 +223,9 @@ struct SessionListView: View {
     Button("Rename…") { RenameSessionPrompt.run(for: item) }
       .disabled(!project.canRename(item))
     // Hidden for an agent that cannot fork (Codex), disabled while a turn runs.
-    if item.session.features.forks, (item.session.resuming ?? item.session.savedTarget) != nil {
+    if item.session.features.forks, !item.session.isOnRunner,
+      (item.session.resuming ?? item.session.savedTarget) != nil
+    {
       Button("Fork a Copy") { project.fork(item) }
         .disabled(!project.canFork(item))
     }
@@ -235,7 +249,7 @@ struct SessionListView: View {
     }
     if item.sessionID != nil || item.session.savedTarget != nil { Divider() }
     if let id = item.sessionID { copyIDButton(id) }
-    if let file = item.session.savedTarget?.transcriptFile {
+    if let file = item.session.savedTarget?.transcriptFile, !item.session.isOnRunner {
       Button("Show Transcript in Finder") { NSWorkspace.shared.activateFileViewerSelecting([file]) }
     }
   }
@@ -416,9 +430,10 @@ struct SessionRow: View {
 
   private var state: RowState { RowState(item) }
 
-  /// The session's account when it is not the window's.
+  /// The session's account when it is not the window's. None for a runner's: every one there
+  /// runs under the runner shell's own (Ruling 11).
   private var otherAccount: ClaudeAccount? {
-    guard item.session.features.showsAccount,
+    guard item.session.features.showsAccount, !item.session.isOnRunner,
       let account = item.session.effectiveAccount, account.key != windowAccount.key
     else { return nil }
     return account

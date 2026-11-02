@@ -88,6 +88,11 @@ enum SessionMoves {
     var reports: [Report] = []
     for candidate in candidates {
       let session = locate(candidate.sessionID)
+      // Its files are on the runner, whatever this Mac holds at the same path.
+      if let runner = session?.runnerName {
+        reports.append(Report(title: candidate.title, outcome: .failed(onRunner(runner))))
+        continue
+      }
       let plan = classify(
         sessionID: candidate.sessionID, held: session.map(held), liveIDs: liveIDs(),
         host: host(candidate))
@@ -128,6 +133,11 @@ enum SessionMoves {
       reports.append(Report(title: candidate.title, outcome: outcome))
     }
     return reports
+  }
+
+  /// Why a runner session does not move: its account and its files are the runner's.
+  static func onRunner(_ runner: String) -> String {
+    String(localized: "It runs on \(runner), whose accounts this Mac does not move.")
   }
 
   /// `Moved 12 sessions to Skitrust. Not moved: 2 running in VS Code, 1 already on Skitrust.`
@@ -193,8 +203,9 @@ extension SessionMoves {
   /// along. Asks nothing when there is nothing to move.
   static func offer(folder: URL, from source: ClaudeAccount, to target: ClaudeAccount) {
     let path = ProjectPath.normalize(folder)
+    // A runner's window at the same path holds none of this Mac's sessions.
     let held = OpenSessions.shared.projects.values
-      .filter { ProjectPath.normalize($0.folder) == path }
+      .filter { $0.runner == nil && ProjectPath.normalize($0.folder) == path }
       .flatMap(\.held)
       .compactMap { item in item.session.savedTarget.map { (target: $0, title: item.displayTitle) }
       }
@@ -249,8 +260,9 @@ extension SessionMoves {
   }
 
   /// Nil for a session never prompted: it has no files, and starts on the window's account.
+  /// Nil for a runner's, refused (remote sessions spec §4).
   static func candidate(for item: ProjectSession) -> Candidate? {
-    guard item.session.features.moves else { return nil }
+    guard item.session.features.moves, !item.session.isOnRunner else { return nil }
     return item.session.savedTarget.map {
       Candidate(
         sessionID: $0.sessionID, title: item.displayTitle, transcript: $0.transcriptFile,

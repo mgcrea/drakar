@@ -174,4 +174,24 @@ struct SubagentFeedTests {
     await feed.refresh()
     #expect(feed.transcript == nil)
   }
+
+  /// A runner's subagent writes its file on the runner: its card says so, and reads no file
+  /// of this Mac's, though one is at the path; its task's output is asked of the process.
+  @Test func aRunnerSubagentSaysWhereItRuns() throws {
+    defer { cleanUp() }
+    #expect(SubagentFeed.onRunner("Studio").contains("on Studio"))
+    var asked: [AgentCommand] = []
+    let controls = TaskControls(availability: { true }, send: { asked.append($0) })
+    controls.transcriptFile = transcriptFile
+    controls.locateTranscript = { transcriptFile }
+    #expect(controls.resolvedTranscriptFile() == transcriptFile)
+    controls.runner = { "Studio" }
+    #expect(controls.resolvedTranscriptFile() == nil)
+
+    let output = projects.appending(path: "task.output")
+    try Data("this Mac's file\n".utf8).write(to: output)
+    controls.readOutput(taskID: "t1", file: output)
+    #expect(controls.outputs["t1"] == nil)
+    #expect(asked == [.taskOutput(taskID: "t1")])
+  }
 }

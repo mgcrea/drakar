@@ -5,9 +5,17 @@ import SwiftUI
 
 /// A window's folder as an editor: the file tree, the open tabs, and what is selected,
 /// kept in step with the disk while the agent writes to it.
+///
+/// A runner's window has none of that (remote sessions spec §4): its folder is on the runner,
+/// and this Mac's disk at the same path is another folder or none. Its workspace keeps only
+/// what the window itself needs (its `NSWindow`, the pane with the keys): no tree is read,
+/// nothing watched, no file opened, and no other window, the editor bridge or a file link
+/// takes it for an editor of this Mac's.
 @Observable
 final class Workspace {
   let folder: URL
+  /// The runner the folder is on (`Project.runner`); nil for this Mac's.
+  let runner: String?
   private(set) var tree: FileTree
   private(set) var documents: [EditorDocument] = []
   private(set) var activeID: EditorDocument.ID?
@@ -39,8 +47,15 @@ final class Workspace {
   @ObservationIgnored private let resolvedRoot: String
   @ObservationIgnored private var selectionTask: Task<Void, Never>?
 
-  init(folder: URL) {
+  init(folder: URL, runner: String? = nil) {
     self.folder = folder
+    self.runner = runner
+    guard runner == nil else {
+      let tree = FileTree(unlisted: folder)
+      self.tree = tree
+      resolvedRoot = tree.root
+      return
+    }
     let tree = FileTree(root: folder)
     self.tree = tree
     resolvedRoot = FileTree.realPath(tree.root)
@@ -71,6 +86,7 @@ final class Workspace {
   /// offsets) in it if given.
   @discardableResult
   func open(_ url: URL, select range: Range<Int>? = nil) -> EditorDocument? {
+    guard runner == nil else { return nil }
     let path = FileTree.normalized(url.absoluteURL.standardized.path(percentEncoded: false))
     let document: EditorDocument
     if let existing = documents.first(where: { $0.path == path }) {
@@ -100,7 +116,7 @@ final class Workspace {
   /// word about the rest, and `active` brought forward. Its text view takes the keys only
   /// when `focus` says the editor had them.
   func restore(_ paths: [String], active: String?, focus: FocusedPane? = nil) {
-    for path in paths where !documents.contains(where: { $0.path == path }) {
+    for path in paths where runner == nil && !documents.contains(where: { $0.path == path }) {
       guard case .success(let text) = TextFile.read(URL(filePath: path)) else { continue }
       documents.append(EditorDocument(url: URL(filePath: path), text: text))
     }
@@ -147,6 +163,7 @@ final class Workspace {
   /// Shows quick open with the folder read afresh, off the main thread: a large project
   /// takes a moment to walk.
   func showQuickOpen(query: String = "") {
+    guard runner == nil else { return }
     quickOpenQuery = query
     isQuickOpenShown = true
     quickOpenFiles = nil
@@ -175,6 +192,7 @@ final class Workspace {
   }
 
   func showSearch(query: String = "") {
+    guard runner == nil else { return }
     searchQuery = query
     isSearchShown = true
   }

@@ -577,6 +577,9 @@ extension EnvironmentValues {
   @Entry var sessionFolder: URL?
   /// Opens a file in this window's editor; nil where there is none (the review window).
   @Entry var openInEditor: OpenInEditorAction?
+  /// The runner the session's files are on, by name; nil for this Mac's. Its paths show as
+  /// text, not links: none of them is a file here (remote sessions spec §4).
+  @Entry var runnerName: String?
   /// Set by the transcript; one made here would be a new instance on every read.
   @Entry var thinkingDisclosure = ThinkingDisclosure()
 }

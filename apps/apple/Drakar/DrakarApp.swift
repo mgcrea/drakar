@@ -154,11 +154,12 @@ private struct SessionCommands: View {
       project?.newSession(agent: otherAgent)
     }
     .keyboardShortcut("n", modifiers: [.command, .control])
-    .disabled(project == nil)
+    // A runner's sessions are Claude Code's alone.
+    .disabled(project == nil || project?.runner != nil)
     ForkSessionCommand(project: project)
     OpenPlanCommand(project: project)
     Button("Run Skill in Subfolders…") { project?.fanOutRequest = FanOutRequest() }
-      .disabled(project == nil)
+      .disabled(project?.offersFanOut != true)
     Button("Rename Session…") {
       if let selected = project?.selected { RenameSessionPrompt.run(for: selected) }
     }

@@ -74,7 +74,9 @@ struct ContentView: View {
         .onChange(of: workspace.unsavedDocuments.isEmpty, initial: true) { _, clean in
           workspace.window?.isDocumentEdited = !clean
         }
-        .focusedSceneValue(\.workspace, workspace)
+        // A runner's window has no editor: Save, Open Quickly and Find in Project have none
+        // of its to act on.
+        .focusedSceneValue(\.workspace, project.runner == nil ? workspace : nil)
         .focusedSceneValue(\.project, project)
         .focusedSceneValue(\.closeProject, closeProject)
         .sheet(isPresented: quickOpenShown(workspace)) { QuickOpenView(workspace: workspace) }
@@ -106,8 +108,10 @@ struct ContentView: View {
         ToolbarItem(placement: .primaryAction) {
           YesNoToolbarItem(project: project)
         }
-        ToolbarItem(placement: .primaryAction) {
-          ForkToolbarButton(project: project)
+        if project.runner == nil {
+          ToolbarItem(placement: .primaryAction) {
+            ForkToolbarButton(project: project)
+          }
         }
         ToolbarItem(placement: .primaryAction) {
           HandoffToolbarItem(project: project)
@@ -116,11 +120,17 @@ struct ContentView: View {
           let label = FolderToolbarItem.label(for: session, in: project.folder)
         {
           ToolbarItem(placement: .primaryAction) {
-            FolderToolbarItem(folder: session.folder, label: label)
+            FolderToolbarItem(folder: session.folder, label: label, runner: project.runnerName)
           }
         }
         ToolbarItem(placement: .primaryAction) {
-          AccountToolbarItem(folder: project.folder)
+          // A runner session runs under the runner shell's own account, which no picker here
+          // chooses (Ruling 11): the runner and its usage instead, as its sessions report it.
+          if let name = project.runnerName {
+            RunnerToolbarItem(name: name, session: project.selected?.session)
+          } else {
+            AccountToolbarItem(folder: project.folder)
+          }
         }
         ToolbarItem(placement: .primaryAction) {
           InspectorToggle(project: project, isShown: $inspectorShown)

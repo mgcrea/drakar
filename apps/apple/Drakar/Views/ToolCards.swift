@@ -93,6 +93,13 @@ struct AgentCallView: View {
             .textSelection(.enabled)
             .lineLimit(8)
         }
+        if let runner = controls?.runner() {
+          // Its own file is on the runner: the lines streamed under its call are all there is.
+          Text(SubagentFeed.onRunner(runner))
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .accessibilityIdentifier("agent.onRunner")
+        }
         if let own = feed?.transcript, let drawn = feed?.drawn {
           ForEach(drawn.top) { entry in
             EntryView(
@@ -180,7 +187,7 @@ struct AgentCallView: View {
   /// Reads the file once, then every second while the task runs and its window is visible.
   /// A new session's first turn saved no transcript yet: it is looked for until found.
   private func follow() async {
-    guard isExpanded else { return }
+    guard isExpanded, controls?.runner() == nil else { return }
     guard let transcriptFile = controls?.resolvedTranscriptFile() else {
       self.feed = nil
       guard state == .running, isWindowVisible else { return }

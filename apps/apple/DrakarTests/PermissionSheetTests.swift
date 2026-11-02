@@ -54,4 +54,33 @@ struct PermissionSheetTests {
     #expect(changes.first?.isNewFile == false)
     #expect(changes.first?.removedCount == 1)
   }
+
+  /// A runner's Write is shown whole, labelled with where it is written: the file it replaces
+  /// is on the runner, so it is neither diffed against this Mac's file at the same path nor
+  /// said to be new. An Edit's own strings still diff.
+  @MainActor @Test func aRunnerWriteShowsItsContentWithoutADiff() throws {
+    let file = FileManager.default.temporaryDirectory.appending(
+      path: "drakar-sheet-\(UUID().uuidString).txt")
+    try Data("one\ntwo\n".utf8).write(to: file)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let path = file.path(percentEncoded: false)
+    let write = PermissionRequest(
+      toolName: "Write", input: .object([:]), description: nil, toolUseID: nil,
+      kind: .fileChange(
+        path: path, edits: [FileEdit(path: path, change: .write(content: "one\nthree\n"))]))
+    let change = try #require(PermissionSheet.changes(for: write, onRunner: true).first)
+    #expect(change.removedCount == 0)
+    #expect(change.addedCount == 2)
+    #expect(!change.isNewFile)
+    let note = try #require(PermissionSheet.runnerNote(for: write, on: "Studio"))
+    #expect(note.contains("on Studio"))
+
+    let edit = PermissionRequest(
+      toolName: "Edit", input: .object([:]), description: nil, toolUseID: nil,
+      kind: .fileChange(
+        path: path, edits: [FileEdit(path: path, change: .replace(old: "two", new: "three"))]))
+    let diffed = try #require(PermissionSheet.changes(for: edit, onRunner: true).first)
+    #expect(diffed.removedCount == 1 && diffed.addedCount == 1)
+    #expect(PermissionSheet.runnerNote(for: edit, on: "Studio") == nil)
+  }
 }

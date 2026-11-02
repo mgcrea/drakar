@@ -58,7 +58,9 @@ private struct SessionDetails: View {
         if let reply {
           ForEach(reply.categories, id: \.name) { category in
             if category.name == "Memory files", !reply.memoryFiles.isEmpty {
-              MemoryFilesRow(category: category, files: reply.memoryFiles, limit: reply.maxTokens)
+              MemoryFilesRow(
+                category: category, files: reply.memoryFiles, limit: reply.maxTokens,
+                opensFiles: !session.isOnRunner)
             } else {
               TokenRow(name: category.name, tokens: category.tokens, limit: reply.maxTokens)
             }
@@ -116,7 +118,18 @@ private struct SessionDetails: View {
     if let effort = session.shownEffort ?? transcript.historyEffort {
       LabeledContent("Effort", value: EffortLevel.title(of: effort))
     }
-    if let account = session.effectiveAccount {
+    if let runner = session.runnerName {
+      // The runner's, by its directory there: no profile of this Mac's at the same path.
+      LabeledContent("Runs on", value: runner)
+      if let account = session.account {
+        LabeledContent("Account") {
+          Text(account.directory.path(percentEncoded: false))
+            .lineLimit(1)
+            .truncationMode(.head)
+            .textSelection(.enabled)
+        }
+      }
+    } else if let account = session.effectiveAccount {
       LabeledContent("Account") {
         Text(AccountStore.shared.profile(for: account).name)
           .help(ContentView.abbreviated(account.directory))
@@ -159,7 +172,7 @@ private struct SessionDetails: View {
         }
       }
     }
-    if let file = session.resuming?.file {
+    if let file = session.resuming?.file, !session.isOnRunner {
       LabeledContent("Transcript") {
         Button("Show in Finder") {
           NSWorkspace.shared.activateFileViewerSelecting([URL(filePath: file)])
@@ -304,6 +317,8 @@ private struct MemoryFilesRow: View {
   let category: ContextUsageReply.Category
   let files: [ContextUsageReply.MemoryFile]
   let limit: Int
+  /// False for a runner session's, whose files are there: their paths show as text.
+  var opensFiles = true
   @State private var isExpanded = false
 
   var body: some View {
@@ -320,8 +335,10 @@ private struct MemoryFilesRow: View {
         }
         .help([file.type, file.path].compactMap { $0 }.joined(separator: " · "))
         .contextMenu {
-          Button("Open") { NSWorkspace.shared.open(url) }
-          Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
+          if opensFiles {
+            Button("Open") { NSWorkspace.shared.open(url) }
+            Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
+          }
         }
       }
     } label: {

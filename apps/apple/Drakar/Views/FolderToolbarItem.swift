@@ -7,6 +7,9 @@ import SwiftUI
 struct FolderToolbarItem: View {
   let folder: URL
   let label: String
+  /// The runner the folder is on, by name; nil for this Mac's. A runner's folder is shown as
+  /// text: this Mac's Finder has none of it.
+  var runner: String? = nil
 
   /// The label for `session` in a window on `project`; nil when it runs in the project's
   /// own folder.
@@ -16,6 +19,19 @@ struct FolderToolbarItem: View {
   }
 
   var body: some View {
+    if let runner {
+      HStack(spacing: 6) {
+        Image(systemName: "folder")
+        Text(label)
+      }
+      .help(String(localized: "Runs in \(folder.path(percentEncoded: false)) on \(runner)"))
+      .accessibilityIdentifier("window.folder")
+    } else {
+      menu
+    }
+  }
+
+  private var menu: some View {
     Menu {
       Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([folder]) }
       Button("Open as Project") { WindowTabs.open(.project(folder), asTab: false) }

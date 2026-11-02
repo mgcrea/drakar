@@ -17,9 +17,12 @@ struct SessionView: View {
   private var session: AgentSession { item.session }
   private var workspace: Workspace { project.workspace }
 
-  /// The account the session runs, or will start, under.
+  /// The account the session runs, or will start, under. A runner session's is the runner's
+  /// alone, and none of this Mac's stands in before it starts: its pills read the session's
+  /// own lists, never an account's.
   private var account: ClaudeAccount {
-    session.effectiveAccount ?? AccountStore.shared.windowAccount(for: project.folder)
+    if session.isOnRunner { return session.account ?? project.capabilities.account }
+    return session.effectiveAccount ?? AccountStore.shared.windowAccount(for: project.folder)
   }
 
   var body: some View {
@@ -67,7 +70,8 @@ struct SessionView: View {
               text: readOnlyText, host: host,
               takeOver: project.canTakeOver(item)
                 ? { Handoff.takeOver.run(item, in: project) } : nil,
-              fork: session.features.forks ? { project.fork(item) } : nil,
+              fork: session.features.forks && !session.isOnRunner
+                ? { project.fork(item) } : nil,
               // Another Drakar's process is never taken from it.
               moveHere: elsewhereSummary.flatMap { summary in
                 summary.live == nil || session.heldElsewhere != nil
@@ -88,7 +92,8 @@ struct SessionView: View {
               keepPlanning: { feedback in
                 session.answer(plan, PlanApproval.keepPlanning(feedback: feedback))
               },
-              openPlan: session.hasLiveRules ? { Task { await project.openPlan(item) } } : nil
+              openPlan: session.hasLiveRules && !session.isOnRunner
+                ? { Task { await project.openPlan(item) } } : nil
             )
             .id(plan.id)
           }
@@ -124,7 +129,15 @@ struct SessionView: View {
               .padding(.bottom, 6)
               .frame(maxWidth: .infinity)
           }
-          if !EntitlementMonitor.allowsWorkNow {
+          if session.hasEndedOnRunner {
+            // Nothing resumes it from here: a prompt would start another conversation in its
+            // place, so a new session is offered for what it was (remote sessions spec §4).
+            Docked {
+              EndedOnRunnerBanner(runner: session.runnerName ?? "") {
+                project.newSession(folder: session.folder)
+              }
+            }
+          } else if !EntitlementMonitor.allowsWorkNow {
             // The licence gate: the card in the composer's place, the draft kept in `item`.
             // A read-only session never gets here, its banner stands in instead.
             Docked {
@@ -182,7 +195,9 @@ struct SessionView: View {
         }
         let _ = (picks, settingsAccount)
         SessionFooter(
-          item: item, windowAccount: AccountStore.shared.windowAccount(for: project.folder),
+          item: item,
+          windowAccount: session.isOnRunner
+            ? account : AccountStore.shared.windowAccount(for: project.folder),
           elsewhere: session.isReadOnly ? elsewhere : nil)
       }
       // What scrolls under fades out above the card, and is gone by the footer's line.
@@ -199,7 +214,9 @@ struct SessionView: View {
       }
     }
     .sheet(item: pendingPermission) { pending in
-      PermissionSheet(pending: pending) { decision in session.answer(pending, decision) }
+      PermissionSheet(pending: pending, runner: session.runnerName) { decision in
+        session.answer(pending, decision)
+      }
     }
     .sheet(isPresented: rewindSheetShown) {
       RewindSheet(rewinds: session.rewinds) { messageID in
@@ -227,7 +244,11 @@ struct SessionView: View {
     }
     .opensFileLinks()
     .environment(\.sessionFolder, session.folder)
-    .environment(\.openInEditor, OpenInEditorAction(workspace: workspace))
+    // A runner's files are there: its paths show as text, and no editor opens them here.
+    .environment(\.runnerName, session.runnerName)
+    .environment(
+      \.openInEditor, session.isOnRunner ? nil : OpenInEditorAction(workspace: workspace)
+    )
     // Files and images dropped anywhere on the session go with the next prompt: from the
     // Finder, the screenshot thumbnail, Photos.
     .onDrop(of: AttachmentIntake.dropTypes, isTargeted: $isDropTargeted) { providers in
@@ -404,7 +425,7 @@ struct SessionView: View {
       position: (1, session.transcript.pendingElicitations.count),
       answer: { session.answer(pending, $0) }, focusRequest: item.questionFocusRequest,
       isDocked: isDocked, hostLogsAnswers: session.hostLogsAnswersInFull,
-      isReconnecting: session.isReconnecting)
+      isReconnecting: session.isReconnecting, runner: session.runnerName)
   }
 
   private var problem: String? {
@@ -465,6 +486,26 @@ private struct ProblemBanner: View {
     .frame(maxWidth: .infinity, alignment: .leading)
     .padding(12)
     .background(.orange.opacity(0.08))
+  }
+}
+
+/// In place of the composer once a runner session's process has ended: nothing resumes it
+/// from this Mac in v1, so New Session starts another on the same runner folder.
+private struct EndedOnRunnerBanner: View {
+  let runner: String
+  let newSession: () -> Void
+
+  var body: some View {
+    HStack {
+      Label(AgentSession.endedOnRunner(runner), systemImage: "stop.circle")
+        .foregroundStyle(.secondary)
+        .accessibilityIdentifier("session.endedOnRunner")
+      Spacer()
+      Button("New Session", action: newSession)
+        .help("Start a new session in this folder on \(runner).")
+        .accessibilityIdentifier("session.newOnRunner")
+    }
+    .padding(12)
   }
 }
 
@@ -545,6 +586,9 @@ private struct VersionLabel: View {
   let version: String
   let executable: URL?
   let agent: AgentKind
+  /// The runner it runs on, by name: its `claude` is the runner's, which no Settings pick of
+  /// this Mac's chooses.
+  var runner: String? = nil
 
   var body: some View {
     let path = executable.map { ContentView.abbreviated($0) } ?? ""
@@ -559,6 +603,9 @@ private struct VersionLabel: View {
   @ViewBuilder private func claudeBody(path: String) -> some View {
     let tested = ClaudeVersion.tested
     let range = "\(tested.lowerBound.description) to \(tested.upperBound.description)"
+    let other =
+      runner.map { String(localized: "Install another on \($0).") }
+      ?? String(localized: "Pick another in Settings.")
     switch ClaudeVersion(version)?.drift {
     case nil:
       Text("Claude Code \(version)").help(path)
@@ -566,7 +613,7 @@ private struct VersionLabel: View {
       Label("Claude Code \(version)", systemImage: "exclamationmark.triangle.fill")
         .foregroundStyle(.orange)
         .help(
-          "Older than the versions Drakar was tested with (\(range)): it may not understand everything Drakar sends. Pick another in Settings. \(path)"
+          "Older than the versions Drakar was tested with (\(range)): it may not understand everything Drakar sends. \(other) \(path)"
         )
     case .newer?:
       Label("Claude Code \(version)", systemImage: "exclamationmark.triangle.fill")
@@ -651,9 +698,15 @@ private struct SessionFooter: View {
           Text(EffortLevel.title(of: effort)).help("Effort")
         }
       }
-      if session.features.showsAccount { account }
+      if let runner = session.runnerName {
+        runnerAccount(runner)
+      } else if session.features.showsAccount {
+        account
+      }
       if let version = session.transcript.session?.agentVersion {
-        VersionLabel(version: version, executable: session.executable, agent: session.agent)
+        VersionLabel(
+          version: version, executable: session.executable, agent: session.agent,
+          runner: session.runnerName)
       } else if let version = session.transcript.writerVersion {
         // Not Drakar's process: how its version compares to Drakar's is not this session's.
         Text("\(session.agent.name) \(version)").help("The version that last wrote this session")
@@ -702,6 +755,19 @@ private struct SessionFooter: View {
         .background(Capsule().fill(.quaternary))
         .help(help + " " + String(localized: "New sessions in this window start under another."))
     }
+  }
+
+  /// A runner session's account: the runner's, by its directory there, never one of this
+  /// Mac's profiles at the same path (Ruling 11).
+  private func runnerAccount(_ runner: String) -> some View {
+    let directory = session.account?.directory.path(percentEncoded: false)
+    return Label(
+      directory.map { URL(filePath: $0).lastPathComponent } ?? runner,
+      systemImage: "person.crop.circle"
+    )
+    .help(
+      directory.map { String(localized: "Runs under the account in \($0) on \(runner)") }
+        ?? String(localized: "Starts under the account of \(runner)'s shell"))
   }
 
   @ViewBuilder private var status: some View {

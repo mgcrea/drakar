@@ -64,8 +64,11 @@ private struct BlockView: View {
 private struct InlineText: View {
   let text: AttributedString
   var isSecondary = false
+  @Environment(\.runnerName) private var runner
+  @Environment(\.sessionFolder) private var folder
 
   var body: some View {
+    let text = runner == nil ? text : LinkText.withoutFileLinks(text, relativeTo: folder)
     if LinkText.holdsLink(text) {
       LinkText(text: text, isSecondary: isSecondary)
         .alignmentGuide(.firstTextBaseline) { _ in LinkText.firstBaseline }

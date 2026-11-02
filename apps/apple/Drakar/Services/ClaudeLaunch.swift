@@ -44,34 +44,20 @@ struct ClaudeLaunch {
 
   /// A new session on a runner (remote sessions spec §4), from what the runner's relay stated
   /// alone: its GUI session's environment, the `claude` picked for the runner (`executable`)
-  /// or else the first it found, and `account` when it is one of the runner's directories
-  /// (`facts.accounts`), else the one its environment names. An account of this Mac's, as a
-  /// window's account handed to a session made for it, is none of the runner's, and taking
-  /// it would name a Mac path there or drop the runner shell's own. Nothing of this Mac's is
-  /// read: not its environment, Settings' picks (`ClaudeChoice`) nor its disk
-  /// (`ClaudeLocator`). No `claude` found there is none.
-  static func make(
-    onRunner facts: RunnerFacts, folder: URL, account picked: ClaudeAccount?,
-    executable: String?
-  ) -> ClaudeLaunch {
-    let explicit = picked.flatMap { account in
-      facts.accounts.contains { ProjectPath.normalize($0) == account.key } ? account : nil
-    }
-    var environment = facts.environment
-    if let explicit { environment = explicit.environment(environment) }
-    environment = keepingCheckpoints(environment)
+  /// or else the first it found, and the account its environment names, `~/.claude` there
+  /// unless it names another. No account is picked for a runner in v1: one picked here is this
+  /// Mac's, even at the same path, and would name a Mac path there or drop the runner shell's
+  /// own. Nothing of this Mac's is read: not its environment, Settings' picks
+  /// (`ClaudeChoice`) nor its disk (`ClaudeLocator`). No `claude` found there is none.
+  static func make(onRunner facts: RunnerFacts, folder: URL, executable: String?) -> ClaudeLaunch {
+    let environment = keepingCheckpoints(facts.environment)
     let standard = URL(filePath: facts.home, directoryHint: .isDirectory)
       .appending(path: ".claude", directoryHint: .isDirectory)
-    // The runner shell's own, as `make` takes this Mac's: `~/.claude` there unless its
-    // environment names another.
     let shell =
       environment["CLAUDE_CONFIG_DIR"].map { URL(filePath: $0, directoryHint: .isDirectory) }
       ?? standard
-    let account =
-      explicit
-      ?? ClaudeAccount(
-        directory: shell,
-        isDefault: ProjectPath.normalize(shell) == ProjectPath.normalize(standard))
+    let account = ClaudeAccount(
+      directory: shell, isDefault: ProjectPath.normalize(shell) == ProjectPath.normalize(standard))
     let path = executable ?? facts.claude.first?.path
     return ClaudeLaunch(
       executable: path.map { URL(filePath: $0) }, environment: environment, account: account)

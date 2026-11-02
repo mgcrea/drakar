@@ -67,6 +67,47 @@ struct AccountToolbarItem: View {
   }
 }
 
+/// A runner window's place for the account (remote sessions spec §4): the runner, and the
+/// limits of the account the shown session runs under there, as its own process reported
+/// them, from the session and never from this Mac's `AccountStore`. No picker: a runner
+/// session runs under the runner shell's own account (Ruling 11).
+struct RunnerToolbarItem: View {
+  let name: String
+  let session: AgentSession?
+
+  var body: some View {
+    TimelineView(.periodic(from: .now, by: 60)) { context in
+      HStack(spacing: 6) {
+        Image(systemName: "macbook.and.imac")
+        Text(name)
+        UsageMeters(usage: session?.usage, now: context.date, compact: true)
+      }
+    }
+    .help(help)
+    .accessibilityElement(children: .combine)
+    .accessibilityIdentifier("window.runner")
+  }
+
+  private var help: String {
+    var parts = [String(localized: "Sessions here run on \(name), under the account of its shell")]
+    if let account = session?.account {
+      parts.append(account.directory.path(percentEncoded: false))
+    }
+    let now = Date.now
+    if let usage = session?.usage {
+      for (label, window) in [("5h", usage.fiveHour), ("7d", usage.sevenDay)] {
+        guard let window = window?.current(at: now) else { continue }
+        parts.append(UsageMeters.resetText(label, window))
+      }
+      parts.append(
+        String(
+          localized:
+            "as this session reported \(usage.readAt.formatted(.relative(presentation: .named)))"))
+    }
+    return parts.joined(separator: " · ")
+  }
+}
+
 /// Every account with its limits; a click picks it for the folder.
 private struct AccountPicker: View {
   let folder: URL

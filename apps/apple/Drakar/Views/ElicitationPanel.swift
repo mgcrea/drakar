@@ -95,6 +95,9 @@ struct ElicitationPanel: View {
   /// The session reconnects to its host: an answer now would reach nobody, so the buttons
   /// and Esc wait, and a link never opens unanswered.
   var isReconnecting = false
+  /// The runner the session runs on, by name; nil for this Mac's. Its link still opens in
+  /// this Mac's browser, where a `localhost` callback lands.
+  var runner: String? = nil
 
   @State private var inputs: [String: ElicitationInput]
   /// The fields changed so far: only they say what is wrong with them.
@@ -109,7 +112,7 @@ struct ElicitationPanel: View {
   init(
     elicitation: Elicitation, position: (index: Int, count: Int)?,
     answer: @escaping (ElicitationAnswer) -> Void, focusRequest: Int? = nil, isDocked: Bool = false,
-    hostLogsAnswers: Bool = false, isReconnecting: Bool = false
+    hostLogsAnswers: Bool = false, isReconnecting: Bool = false, runner: String? = nil
   ) {
     self.elicitation = elicitation
     self.position = position
@@ -118,6 +121,7 @@ struct ElicitationPanel: View {
     self.isDocked = isDocked
     self.hostLogsAnswers = hostLogsAnswers
     self.isReconnecting = isReconnecting
+    self.runner = runner
     if case .form(let form) = elicitation.content {
       _inputs = State(initialValue: form.initialInputs)
     } else {
@@ -149,6 +153,31 @@ struct ElicitationPanel: View {
       localized:
         "This session's host is from an earlier build and keeps what you send here in its log until it restarts."
     )
+  }
+
+  /// What a link says on a runner when it, or a callback it carries, goes to `localhost`:
+  /// opened in this Mac's browser, the callback lands on this Mac, not on the runner where the
+  /// server listens (remote sessions spec §4). Nil for any other link, and on this Mac.
+  static func localhostNote(_ url: URL, runner: String?) -> String? {
+    guard let runner, callsLocalhost(url) else { return nil }
+    return String(
+      localized:
+        "This link calls back to localhost: in this Mac's browser it lands on this Mac, not on \(runner), where the server waits."
+    )
+  }
+
+  /// The link's own host is this machine, or a link among its query's values is.
+  private static func callsLocalhost(_ url: URL) -> Bool {
+    func isLocal(_ url: URL) -> Bool {
+      let host = url.host(percentEncoded: false)?.lowercased() ?? ""
+      return host == "localhost" || host.hasSuffix(".localhost") || host == "::1"
+        || host == "[::1]" || host.hasPrefix("127.")
+    }
+    if isLocal(url) { return true }
+    let values =
+      URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?
+      .compactMap(\.value) ?? []
+    return values.contains { value in URL(string: value).map(isLocal) ?? false }
   }
 
   /// The problems shown: those of the fields changed so far.
@@ -395,6 +424,13 @@ struct ElicitationPanel: View {
         .fixedSize(horizontal: false, vertical: true)
         .textSelection(.enabled)
         .accessibilityIdentifier("elicitation.url")
+      if let note = Self.localhostNote(url, runner: runner) {
+        Label(note, systemImage: "exclamationmark.triangle")
+          .font(.callout)
+          .foregroundStyle(.orange)
+          .fixedSize(horizontal: false, vertical: true)
+          .accessibilityIdentifier("elicitation.localhost")
+      }
     }
   }
 

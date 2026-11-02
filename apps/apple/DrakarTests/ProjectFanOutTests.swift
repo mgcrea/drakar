@@ -451,4 +451,29 @@ struct ProjectFanOutTests {
     #expect(sent("/check", by: script) == 0)
     #expect(project.stored.fanOuts == [batch])
   }
+
+  /// No skill runs in each subfolder of a runner's folder: this Mac cannot list them, and
+  /// none of this Mac's `claude` lists its skills. A batch the window was stored with is not
+  /// taken up.
+  @Test func noFanOutOnARunnerFolder() throws {
+    let script = try standIn()
+    let runner = UUID().uuidString
+    let project = Project(folder: parent, runner: runner)
+    project.executableOverride = script
+    defer { project.stopAll() }
+    #expect(!project.offersFanOut)
+    project.runInSubfolders(check, folders: folders, arguments: "", mode: nil, limit: nil)
+    #expect(project.sessions.isEmpty && project.fanOuts.isEmpty)
+    project.loadFanOutSkills()
+    #expect(!project.capabilities.isLoading)
+    #expect(Project(folder: parent).offersFanOut)
+
+    let batch = StoredFanOut(
+      batch: UUID(), skillName: "check", prompt: "/check", limit: nil,
+      entries: folders.map { .init(folder: $0.path, name: "n", state: .waiting) })
+    let restored = Project(
+      folder: parent, runner: runner, restoring: StoredProject(fanOuts: [batch]))
+    defer { restored.stopAll() }
+    #expect(restored.stored.fanOuts == nil)
+  }
 }

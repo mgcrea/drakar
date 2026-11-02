@@ -266,4 +266,27 @@ struct SessionMovesRunTests {
     #expect(reports == [SessionMoves.Report(title: "s5", outcome: .moved)])
     #expect(watcher.savedTarget?.accountDirectory == b.key)
   }
+
+  /// A runner session never moves between accounts: its account and its files are the
+  /// runner's. Its row offers no move, and a move that finds it, by the id a transcript of
+  /// this Mac's shares, leaves both where they are.
+  @Test func movingARunnerSessionIsRefused() async throws {
+    defer { try? FileManager.default.removeItem(at: root) }
+    let (session, candidate) = try heldSession("s6")
+    session.runner = UUID().uuidString
+    #expect(SessionMoves.candidate(for: ProjectSession(session: session)) == nil)
+
+    let reports = await SessionMoves.run(
+      [candidate], to: b, locate: { $0 == "s6" ? session : nil }, liveIDs: { [] },
+      host: { _ in "x" })
+    #expect(
+      reports == [
+        SessionMoves.Report(title: "s6", outcome: .failed(SessionMoves.onRunner("the runner")))
+      ])
+    #expect(
+      reports.first.map { SessionMoves.summary([$0], to: "B") }?.contains("the runner") == true)
+    #expect(session.savedTarget?.accountDirectory == a.key)
+    #expect(
+      FileManager.default.fileExists(atPath: candidate.transcript.path(percentEncoded: false)))
+  }
 }

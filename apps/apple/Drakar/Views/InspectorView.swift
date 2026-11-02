@@ -23,7 +23,15 @@ struct InspectorView: View {
     Group {
       switch tab {
       case .session: SessionInspector(project: project)
-      case .capabilities: CapabilitiesInspector(project: project)
+      case .capabilities:
+        if project.runner != nil {
+          // No probe of this Mac's lists a runner's folder, nor a Refresh one (spec §4).
+          ContentUnavailableView(
+            "Not Listed on a Runner", systemImage: "sparkles",
+            description: Text(Capabilities.notListedOnRunner))
+        } else {
+          CapabilitiesInspector(project: project)
+        }
       case .permissions: PermissionsInspector(project: project, isShown: isShown)
       }
     }

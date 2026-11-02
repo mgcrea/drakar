@@ -13,6 +13,19 @@ struct LinkText: NSViewRepresentable {
     text.runs.contains { $0.link != nil }
   }
 
+  /// `text` with its file links made plain text, for a runner session: its paths are the
+  /// runner's, and none of them opens here. Web links stay links.
+  static func withoutFileLinks(_ text: AttributedString, relativeTo folder: URL?)
+    -> AttributedString
+  {
+    var text = text
+    for run in text.runs {
+      guard let url = run.link, FileLink(url, relativeTo: folder) != nil else { continue }
+      text[run.range].link = nil
+    }
+    return text
+  }
+
   /// The first line's baseline from the top: a representable has none of its own, and a
   /// list item's marker, aligned on it, would sit a line above the text.
   static let firstBaseline = NSLayoutManager().defaultBaselineOffset(
@@ -109,12 +122,15 @@ extension View {
 private struct OpensFileLinks: ViewModifier {
   @Environment(\.sessionFolder) private var folder
   @Environment(\.openInEditor) private var openInEditor
+  @Environment(\.runnerName) private var runner
 
   func body(content: Content) -> some View {
     content.environment(
       \.openURL,
       OpenURLAction { url in
         guard let link = FileLink(url, relativeTo: folder) else { return .systemAction }
+        // A runner's file is not this Mac's, whatever is at its path here.
+        guard runner == nil else { return .discarded }
         let file = URL(filePath: link.path)
         var isFolder: ObjCBool = false
         if FileManager.default.fileExists(atPath: link.path, isDirectory: &isFolder),

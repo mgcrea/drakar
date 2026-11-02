@@ -392,4 +392,17 @@ struct SkillsManagerTests {
     #expect(heard.count > 0)
     window.stopObservingSkillFiles(id)
   }
+
+  /// A runner's window at a path of this Mac's is not that folder's project here: the
+  /// Skills window neither offers it nor opens its skills in it (remote sessions spec §4).
+  @Test func aRunnerProjectIsNotTheLocalOne() {
+    let remote = Project(folder: project, runner: UUID().uuidString)
+    #expect(SkillsManager.openProjectFolders(among: [remote]).isEmpty)
+    #expect(SkillsManager.openProject(at: project, among: [remote]) == nil)
+    let local = Project(folder: project)
+    #expect(SkillsManager.openProject(at: project, among: [remote, local]) === local)
+    #expect(
+      SkillsManager.openProjectFolders(among: [remote, local]).map(\.skillPath)
+        == [project.skillPath])
+  }
 }

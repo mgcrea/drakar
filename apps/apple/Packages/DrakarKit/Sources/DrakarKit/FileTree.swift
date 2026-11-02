@@ -41,6 +41,12 @@ public struct FileTree: Sendable, Equatable {
     listings[self.root] = Self.listing(of: self.root)
   }
 
+  /// A tree of `root` that reads nothing: a folder on another machine, whose path here may
+  /// hold other files or none.
+  public init(unlisted root: URL) {
+    self.root = Self.normalized(root.absoluteURL.standardized.path(percentEncoded: false))
+  }
+
   public var rows: [Row] {
     var rows: [Row] = []
     func add(_ directory: String, depth: Int) {

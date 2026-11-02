@@ -56,9 +56,12 @@ final class AgentSession {
   let accountPick: ClaudeAccount?
   /// The account the session runs, or will resume or start, under; nil for a new session
   /// not yet started and given none, which takes the window's.
-  /// Claude Code's only: a Codex target's account fields are placeholders.
+  /// Claude Code's only: a Codex target's account fields are placeholders. A runner session's
+  /// is the one it runs under there alone: it never starts under one picked here (Ruling 11).
   var effectiveAccount: ClaudeAccount? {
-    features.showsAccount ? account ?? resuming?.account ?? accountPick : nil
+    guard features.showsAccount else { return nil }
+    if isOnRunner { return account }
+    return account ?? resuming?.account ?? accountPick
   }
   /// The end of the CLI's stderr, shown when the process fails.
   private(set) var diagnostics = ""
@@ -187,6 +190,18 @@ final class AgentSession {
   /// session of this Mac's (remote sessions spec §4).
   @ObservationIgnored var runner: String?
   var isOnRunner: Bool { runner != nil }
+  /// What to call the runner a runner session runs on, as its host names it now; nil for a
+  /// session of this Mac's.
+  var runnerName: String? {
+    guard let runner else { return nil }
+    guard sessionHost.reaches(runner: runner), let name = sessionHost.runnerName else {
+      return String(localized: "the runner")
+    }
+    return name
+  }
+  /// A runner session whose process has ended: nothing resumes it in v1, so a prompt now would
+  /// start another conversation in its place. Its window offers a new session instead.
+  var hasEndedOnRunner: Bool { isOnRunner && launched != nil && process == nil }
   /// What the last process was launched with, where the history stood then, and where it
   /// runs and whose it is: the parts of `meta()` only a start sets, or the meta a replay
   /// rebuilt it from, so that no meta sent later drops them.
@@ -282,6 +297,7 @@ final class AgentSession {
       return self.locateTarget()?.transcriptFile
     }
     tasks.availability = { [weak self] in self?.controlsTasks ?? false }
+    tasks.runner = { [weak self] in self?.runnerName }
     tasks.send = { [weak self] command in
       // Not `write` nor `sendNoted`: a control the process cannot take changes nothing else,
       // and a note would have a replay send it again.
@@ -513,7 +529,9 @@ final class AgentSession {
     SessionMeta(
       start: start, windowFolder: (windowFolder ?? folder).path(percentEncoded: false),
       name: name, modePick: modePick, modelPick: modelPick, effortPick: effortPick,
-      accountPick: accountPick, sessionID: sessionID, savedTarget: savedTarget,
+      // A runner session never starts under an account picked here (Ruling 11): every path
+      // its meta names is the runner's.
+      accountPick: isOnRunner ? nil : accountPick, sessionID: sessionID, savedTarget: savedTarget,
       fanOut: fanOut, history: history, runner: placement.runner, origin: placement.origin,
       owner: placement.owner)
   }
@@ -533,7 +551,7 @@ final class AgentSession {
   /// so a trial that ends mid-turn refuses only the next prompt.
   var canSend: Bool {
     !isReadOnly && !isMoving && !historyFailed && !isReconnecting && !waitsForHost
-      && !isOutOfReach && !transcript.isRunning && phase != .starting
+      && !isOutOfReach && !hasEndedOnRunner && !transcript.isRunning && phase != .starting
       && EntitlementMonitor.allowsWorkNow
   }
 
@@ -950,7 +968,7 @@ final class AgentSession {
   /// may have opened the session (`isReadOnly`): after each, either ends the spawn.
   private func spawn(unlessStoppedSince stops: Int) async {
     guard stopCount == stops, process == nil, phase != .starting, !isMoving, !waitsForHost,
-      !isOutOfReach
+      !isOutOfReach, !hasEndedOnRunner
     else { return }
     if resuming?.forks == true || resuming == nil {
       // A first turn that never finished (End Session, a crash) left no saved target, but
@@ -981,8 +999,9 @@ final class AgentSession {
       guard let onRunner else { return fail(unreachable(runner)) }
       // Its folder is the runner's, which this Mac's disk says nothing of. It starts new
       // whatever it was made to resume: no resume on a runner in v1.
-      let launch = ClaudeLaunch.make(
-        onRunner: onRunner.facts, folder: folder, account: accountPick, executable: nil)
+      // Under the runner shell's own account: one picked here (`accountPick`, a fan-out's or a
+      // restored one's) is this Mac's, whatever its path (Ruling 11).
+      let launch = ClaudeLaunch.make(onRunner: onRunner.facts, folder: folder, executable: nil)
       start = AgentStart(
         folder: folder, resuming: nil, environment: launch.environment,
         executableOverride: launch.executable, model: modelPick, mode: modePick, effort: effort,
@@ -1086,6 +1105,11 @@ final class AgentSession {
     let message = String(localized: "Drakar can't reach \(name) right now.")
     guard let failure = sessionHost.failure else { return message }
     return "\(message) \(failure.message)"
+  }
+
+  /// What the composer's place says once a runner session's process has ended.
+  static func endedOnRunner(_ runner: String) -> String {
+    String(localized: "This session has ended on \(runner). It can't be resumed from this Mac.")
   }
 
   /// What a runner's session of another agent fails with.
@@ -1201,9 +1225,10 @@ final class AgentSession {
 
   /// Names the session as `/rename` does. A running process records it; a session with a
   /// transcript and no process gets it written there; one with neither takes it when it
-  /// starts. False when it cannot be named: read-only, moving, or its file not writable.
+  /// starts. False when it cannot be named: read-only, moving, or its file not writable; or
+  /// on a runner with no process, whose transcript is there and asked only of the process.
   @discardableResult func rename(to newName: String) -> Bool {
-    guard let title = SessionTitle.clean(newName), !isReadOnly, !isMoving else { return false }
+    guard let title = SessionTitle.clean(newName), canRename else { return false }
     if process != nil {
       unsentName = title
       sendUnsentName()
@@ -1247,6 +1272,9 @@ final class AgentSession {
     if transcript.session?.sessionID != nil { savedTarget = locateTarget() }
     return savedTarget
   }
+
+  /// Whether `rename(to:)` may name it now.
+  var canRename: Bool { !isReadOnly && !isMoving && (!isOnRunner || process != nil) }
 
   /// The running process is told the name once it has said which session it is.
   private func sendUnsentName() {

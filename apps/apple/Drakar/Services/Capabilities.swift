@@ -126,6 +126,26 @@ final class Capabilities {
   }
 }
 
+extension Capabilities {
+  /// What a runner window's inspector says of its skills and servers in v1: its sessions list
+  /// theirs to their `/` menus as they start, and nothing lists the folder before.
+  static let notListedOnRunner = String(
+    localized:
+      "The skills and MCP servers of a folder on a runner are not listed in v1. A session's / menu shows what it loaded once it starts there."
+  )
+
+  /// A runner window's lists (remote sessions spec §4): none of `CapabilityStore`'s, which
+  /// are this Mac's folders under this Mac's accounts, and never read by a probe of this
+  /// Mac's `claude`, which would run in a path that is not the runner's folder here. Its
+  /// account is named after the folder, one nothing runs under.
+  static func onRunner(folder: URL) -> Capabilities {
+    let entry = Capabilities(
+      folder: folder, account: ClaudeAccount(directory: folder, isDefault: false))
+    entry.probe = { _, _ in .failed(notListedOnRunner) }
+    return entry
+  }
+}
+
 /// Every project's `Capabilities`, by folder (as `ProjectPath.normalize` writes it) and
 /// account: another account has other user skills and servers.
 final class CapabilityStore {

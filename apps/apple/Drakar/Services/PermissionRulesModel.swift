@@ -31,6 +31,18 @@ final class PermissionRulesModel {
   }
 
   static let noAnswer = String(localized: "Claude Code didn't answer.")
+
+  /// A runner session's rules while it has no process here to ask.
+  static func onRunner(_ runner: String) -> String {
+    String(localized: "This session's rules are on \(runner). They show while its process runs.")
+  }
+
+  /// A rule added or removed for a runner session: its settings files are there.
+  static func editsOnRunner(_ runner: String) -> String {
+    String(
+      localized:
+        "Rules of a session on \(runner) are kept there and can't be changed from this Mac.")
+  }
   static let notListedYet = String(localized: "Saved; not in the list yet.")
 
   private(set) var listing: Listing = .idle
@@ -52,9 +64,20 @@ final class PermissionRulesModel {
 
   /// The listing for `item`: its process when Drakar drives one (`hasLiveRules`, read now),
   /// else a probe in its folder under its account. Edits go through the command either way.
+  /// A runner session's only from its live process: a probe or the edit command would run
+  /// this Mac's `claude` on this Mac's files at the runner's path (remote sessions spec §4).
   static func source(for item: ProjectSession) -> Source {
     let session = item.session
     let isLive = session.hasLiveRules
+    if let runner = session.runnerName {
+      return Source(
+        key: item.id, isCodex: false, isLive: isLive,
+        list: {
+          guard isLive else { return .refused(onRunner(runner)) }
+          return await session.listPermissionRules()
+        },
+        edit: { _ in .refused(editsOnRunner(runner)) })
+    }
     return Source(
       key: item.id, isCodex: session.agent == .codex, isLive: isLive,
       list: {

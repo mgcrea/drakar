@@ -366,13 +366,20 @@ final class SkillsManager {
     return ClaudeChoice.newSessionAccount ?? AccountStore.shared.shellAccount
   }
 
-  static func openProjectFolders() -> [URL] {
-    Set(OpenSessions.shared.projects.values.map(\.folder.skillPath)).sorted().map {
+  /// The open windows' folders, this Mac's alone: a runner's folder is not offered (remote
+  /// sessions spec §4), and one at a path of this Mac's is not the local one.
+  static func openProjectFolders(
+    among projects: [Project] = Array(OpenSessions.shared.projects.values)
+  ) -> [URL] {
+    Set(projects.filter { $0.runner == nil }.map(\.folder.skillPath)).sorted().map {
       URL(filePath: $0, directoryHint: .isDirectory)
     }
   }
 
-  static func openProject(at folder: URL) -> Project? {
-    OpenSessions.shared.projects.values.first { $0.folder.skillPath == folder.skillPath }
+  /// The window on `folder` of this Mac's, never a runner's at the same path.
+  static func openProject(
+    at folder: URL, among projects: [Project] = Array(OpenSessions.shared.projects.values)
+  ) -> Project? {
+    projects.first { $0.runner == nil && $0.folder.skillPath == folder.skillPath }
   }
 }

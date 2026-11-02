@@ -148,7 +148,7 @@ struct ClaudeLaunchTests {
 
     let facts = runnerFacts(environment: ["PATH": "/runner/bin", "HOME": "/Users/r"])
     let launch = ClaudeChoice.$testSuite.withValue(suite) {
-      ClaudeLaunch.make(onRunner: facts, folder: folder, account: nil, executable: nil)
+      ClaudeLaunch.make(onRunner: facts, folder: folder, executable: nil)
     }
     #expect(launch.executable == URL(filePath: "/runner/bin/claude"))
     #expect(launch.environment["HOME"] == "/Users/r")
@@ -174,52 +174,31 @@ struct ClaudeLaunchTests {
 
     // A `claude` picked for the runner wins over the first one found there.
     let picked = ClaudeLaunch.make(
-      onRunner: facts, folder: folder, account: nil, executable: "/opt/homebrew/bin/claude")
+      onRunner: facts, folder: folder, executable: "/opt/homebrew/bin/claude")
     #expect(picked.executable == URL(filePath: "/opt/homebrew/bin/claude"))
     // None found there is none: not looked for on this Mac.
     let none = ClaudeLaunch.make(
       onRunner: runnerFacts(environment: ["PATH": "/usr/bin"], claude: []), folder: folder,
-      account: nil, executable: nil)
+      executable: nil)
     #expect(none.executable == nil)
   }
 
-  /// An account of the runner's is named to its `claude` by its directory there.
-  @Test func aRunnerAccountNamesItsDirectory() {
-    let work = ClaudeAccount(
-      directory: URL(filePath: "/Users/r/.claude-work", directoryHint: .isDirectory),
-      isDefault: false)
-    let launch = ClaudeLaunch.make(
-      onRunner: runnerFacts(environment: ["PATH": "/runner/bin", "HOME": "/Users/r"]),
-      folder: folder, account: work, executable: nil)
-    #expect(launch.environment["CLAUDE_CONFIG_DIR"] == "/Users/r/.claude-work")
-    #expect(launch.account == work)
-    // The runner shell's own directory is its account when none is picked.
+  /// A runner session runs under the account its shell names, `~/.claude` there unless it
+  /// names another: no account is picked for a runner in v1 (Ruling 11).
+  @Test func aRunnerSessionRunsUnderItsShellsAccount() {
     let shell = ClaudeLaunch.make(
       onRunner: runnerFacts(
         environment: ["PATH": "/runner/bin", "CLAUDE_CONFIG_DIR": "/Users/r/.claude-work"]),
-      folder: folder, account: nil, executable: nil)
+      folder: folder, executable: nil)
     #expect(shell.environment["CLAUDE_CONFIG_DIR"] == "/Users/r/.claude-work")
     #expect(shell.account?.key == "/Users/r/.claude-work")
     #expect(shell.account?.isDefault == false)
-
-    // An account of this Mac's, as a window hands its own to a session made for it, is none
-    // of the runner's: neither named there nor dropping the runner shell's own.
-    let macAccounts = [
-      ClaudeAccount(
-        directory: URL(filePath: "/Users/mac/.claude-mine", directoryHint: .isDirectory),
-        isDefault: false),
-      ClaudeAccount(
-        directory: URL(filePath: "/Users/mac/.claude", directoryHint: .isDirectory),
-        isDefault: true),
-    ]
-    for mac in macAccounts {
-      let launch = ClaudeLaunch.make(
-        onRunner: runnerFacts(
-          environment: ["PATH": "/runner/bin", "CLAUDE_CONFIG_DIR": "/Users/r/.claude-work"]),
-        folder: folder, account: mac, executable: nil)
-      #expect(launch.environment["CLAUDE_CONFIG_DIR"] == "/Users/r/.claude-work")
-      #expect(launch.account?.key == "/Users/r/.claude-work")
-    }
+    let standard = ClaudeLaunch.make(
+      onRunner: runnerFacts(environment: ["PATH": "/runner/bin"]), folder: folder,
+      executable: nil)
+    #expect(standard.environment["CLAUDE_CONFIG_DIR"] == nil)
+    #expect(standard.account?.key == "/Users/r/.claude")
+    #expect(standard.account?.isDefault == true)
   }
 
   /// The capability probe is never prompted: it keeps no checkpoints, which would leave an

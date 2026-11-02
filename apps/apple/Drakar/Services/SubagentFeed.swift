@@ -50,6 +50,12 @@ import Observation
     self.transcriptFile = transcriptFile
   }
 
+  /// What a subagent's card says in place of its feed when it runs on `runner`: its file is
+  /// there, and none of this Mac's at the same path is its own (remote sessions spec §4).
+  static func onRunner(_ runner: String) -> String {
+    String(localized: "Its steps run on \(runner). Only what the session streams shows here.")
+  }
+
   /// Catches up; a read error leaves transcript as it was.
   func refresh() async {
     if agentID == nil, let toolUseID {

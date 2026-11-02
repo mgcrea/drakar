@@ -459,9 +459,14 @@ final class Project {
   init(folder: URL, runner: String? = nil, restoring stored: StoredProject? = nil) {
     self.folder = folder
     self.runner = runner
-    workspace = Workspace(folder: folder)
-    capabilities = CapabilityStore.shared.capabilities(
-      for: folder, account: AccountStore.shared.windowAccount(for: folder))
+    // A runner's folder is none of this Mac's: no tree, watcher or editor read it here, and no
+    // account of this Mac's lists it (remote sessions spec §4).
+    workspace = Workspace(folder: folder, runner: runner)
+    capabilities =
+      runner == nil
+      ? CapabilityStore.shared.capabilities(
+        for: folder, account: AccountStore.shared.windowAccount(for: folder))
+      : Capabilities.onRunner(folder: folder)
     for target in stored?.sessions ?? [] {
       guard !sessions.contains(where: { $0.sessionID == target.sessionID }) else { continue }
       let folder = URL(filePath: target.cwd, directoryHint: .isDirectory)
@@ -478,7 +483,8 @@ final class Project {
       item.draft = fork.draft
       sessions.append(item)
     }
-    storedFanOuts = stored?.fanOuts ?? []
+    // No fan-out runs on a runner's folder (remote sessions spec §4).
+    storedFanOuts = runner == nil ? stored?.fanOuts ?? [] : []
     sessionOrder = stored?.sessionOrder ?? .opened
     movesOnAfterReply = stored?.movesOnAfterReply ?? false
     let own = Set(sessions.compactMap(\.sessionID))
@@ -665,11 +671,13 @@ final class Project {
     agent: AgentKind? = nil, folder: URL? = nil, account: ClaudeAccount? = nil,
     select shows: Bool = true
   ) -> ProjectSession {
-    // A runner's sessions are Claude Code's (remote sessions spec, Goals).
+    // A runner's sessions are Claude Code's (remote sessions spec, Goals), under the runner
+    // shell's own account: none picked here reaches it (Ruling 11).
     let item = make(
       AgentSession(
         folder: folder ?? self.folder,
-        agent: runner == nil ? agent ?? ClaudeChoice.defaultAgent : .claude, account: account))
+        agent: runner == nil ? agent ?? ClaudeChoice.defaultAgent : .claude,
+        account: runner == nil ? account : nil))
     sessions.insert(item, at: 0)
     if shows { select(item) }
     return item
@@ -707,8 +715,14 @@ final class Project {
     return all.filter { !$0.isBuiltin }
   }
 
-  /// Reads the list `fanOutSkills` gives.
+  /// Whether Run in Each Subfolder is offered: not on a runner's folder, whose subfolders
+  /// this Mac cannot list (remote sessions spec §4).
+  var offersFanOut: Bool { runner == nil }
+
+  /// Reads the list `fanOutSkills` gives; none for a runner's folder, which no probe of this
+  /// Mac's lists.
   func loadFanOutSkills() {
+    guard offersFanOut else { return }
     switch skillsAgent {
     case .claude: capabilities.loadIfNeeded()
     case .codex: codexSkills(for: selected?.session).loadIfNeeded()
@@ -788,7 +802,7 @@ final class Project {
   ) {
     // Before any row is made: each `send` below would be refused anyway, and a batch whose
     // sessions never start would wait for ever.
-    guard !folders.isEmpty, EntitlementMonitor.allowsWorkNow else { return }
+    guard offersFanOut, !folders.isEmpty, EntitlementMonitor.allowsWorkNow else { return }
     let agent = skillsAgent
     if agent == .claude { capabilityMarks.skills.remove(skill.name) }
     let id = UUID()
@@ -1229,7 +1243,9 @@ final class Project {
   /// A copy of a session open elsewhere, continued under a new id beside it. Its own
   /// transcript first: a fork still running its first process resumes its original.
   @discardableResult func fork(_ item: ProjectSession) -> ProjectSession {
-    guard var target = item.session.savedTarget ?? item.session.resuming else { return item }
+    guard hasForkableTranscript(item),
+      var target = item.session.savedTarget ?? item.session.resuming
+    else { return item }
     target.forks = true
     return attach(target)
   }
@@ -1240,8 +1256,11 @@ final class Project {
     hasForkableTranscript(item) && !item.session.transcript.isRunning
   }
 
+  /// Never a runner session's: its transcript is on the runner, and nothing forks there in v1
+  /// (remote sessions spec §4).
   private func hasForkableTranscript(_ item: ProjectSession) -> Bool {
-    item.session.features.forks && (item.session.resuming ?? item.session.savedTarget) != nil
+    item.session.features.forks && !item.session.isOnRunner
+      && (item.session.resuming ?? item.session.savedTarget) != nil
   }
 
   var canForkSelected: Bool { selected.map(canFork) ?? false }
@@ -1311,10 +1330,9 @@ final class Project {
     hasForkableTranscript(item) && item.session.agent == .claude
   }
 
-  /// Whether `item` can take a name: not while another process has it, or its files move.
-  func canRename(_ item: ProjectSession) -> Bool {
-    !item.session.isReadOnly && !item.session.isMoving
-  }
+  /// Whether `item` can take a name: not while another process has it, or its files move,
+  /// nor on a runner with no process to ask (`AgentSession.canRename`).
+  func canRename(_ item: ProjectSession) -> Bool { item.session.canRename }
 
   var canRenameSelected: Bool { selected.map(canRename) ?? false }
 
@@ -1323,8 +1341,12 @@ final class Project {
   }
 
   /// Whether Open Plan can ask the shown session for its plan: a Claude Code process Drakar
-  /// drives, as its permission rules are read.
-  var canOpenPlanSelected: Bool { selected?.session.hasLiveRules ?? false }
+  /// drives, as its permission rules are read. Not a runner's, whose plan file is there and
+  /// whose window has no editor.
+  var canOpenPlanSelected: Bool {
+    guard let session = selected?.session else { return false }
+    return session.hasLiveRules && !session.isOnRunner
+  }
 
   func openPlanSelected() async {
     if let selected { await openPlan(selected) }
@@ -1335,7 +1357,7 @@ final class Project {
   /// will not read is the editor's problem, as for any file link.
   func openPlan(_ item: ProjectSession) async {
     let session = item.session
-    guard session.hasLiveRules else { return }
+    guard session.hasLiveRules, !session.isOnRunner else { return }
     guard let reply = await session.readPlan() else {
       session.notePlanUnread()
       return

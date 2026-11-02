@@ -900,4 +900,93 @@ struct ProjectTests {
       #expect(!before.isLoading)
     }
   }
+
+  // MARK: What a runner session does not offer (remote sessions spec §4)
+
+  /// A runner's window builds nothing of this Mac's for its path: no file tree, watcher or
+  /// editor read the folder here, though a folder of this Mac's is there, and no other window
+  /// or the editor bridge takes its workspace for an editor; its lists are none of this Mac's
+  /// store's, never probed; and the blank row it opens with takes no account picked here.
+  @Test func aRunnerProjectBuildsNoWorkspace() throws {
+    try Data("local\n".utf8).write(to: folder.appending(path: "here.txt"))
+    let suite = "drakar-tests-\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    ClaudeChoice.$testSuite.withValue(suite) {
+      let picked = ClaudeChoice.account(
+        at: folder.appending(path: ".claude-picked").path(percentEncoded: false))
+      ClaudeChoice.pick(picked, for: folder)
+      let remote = Project(
+        folder: folder, runner: UUID().uuidString,
+        restoring: StoredProject(
+          sessions: [], selected: nil,
+          documents: [folder.appending(path: "here.txt").path(percentEncoded: false)]))
+      let workspace = remote.workspace
+      #expect(workspace.tree.rows.isEmpty)
+      #expect(workspace.documents.isEmpty)
+      #expect(workspace.open(folder.appending(path: "here.txt")) == nil)
+      #expect(!Workspace.all.contains { $0 === workspace })
+      workspace.showQuickOpen()
+      workspace.showSearch()
+      #expect(!workspace.isQuickOpenShown && !workspace.isSearchShown)
+      // This Mac's window on the same path has its files.
+      let local = Project(folder: folder)
+      #expect(local.workspace.tree.rows.contains { $0.node.name == "here.txt" })
+
+      // Its lists: not the store's entry for the path, and a refresh runs no probe here.
+      let entry = CapabilityStore.shared.capabilities(for: folder, account: picked)
+      #expect(remote.capabilities !== entry)
+      #expect(remote.capabilities.account.key != picked.key)
+      remote.loadFanOutSkills()
+      #expect(!remote.capabilities.isLoading)
+
+      // Its blank row, and one made for a picked account, start under the runner's own.
+      let blank = remote.newSession()
+      #expect(blank.session.accountPick == nil)
+      #expect(blank.session.effectiveAccount == nil)
+      let handed = remote.newSession(account: picked)
+      #expect(handed.session.accountPick == nil)
+    }
+  }
+
+  /// A runner window's lists say why they are empty, and nothing of this Mac's ran.
+  @Test func aRunnerWindowsListsSayWhy() async {
+    let remote = Project(folder: folder, runner: UUID().uuidString)
+    remote.capabilities.refresh()
+    while remote.capabilities.isLoading { await Task.yield() }
+    #expect(remote.capabilities.skillsProblem == Capabilities.notListedOnRunner)
+    #expect(remote.capabilities.lists.skills == nil)
+  }
+
+  /// A runner session is never forked, whatever it was made to resume: its transcript is
+  /// on the runner.
+  @Test func noForkOnARunnerSession() {
+    let remote = Project(folder: folder, runner: UUID().uuidString)
+    let item = remote.attach(target("a"))
+    #expect(item.session.isOnRunner)
+    #expect(!remote.canFork(item))
+    #expect(!remote.canForkFrom(item))
+    #expect(!remote.offersForkFrom(item))
+    #expect(!remote.canForkSelected)
+    let count = remote.sessions.count
+    #expect(remote.fork(item) === item)
+    remote.forkSelected()
+    #expect(remote.sessions.count == count)
+    // This Mac's session of the same transcript forks.
+    let local = Project(folder: folder)
+    #expect(local.canFork(local.attach(target("a"))))
+  }
+
+  /// A runner session takes a name only from its live process, which records it there: with
+  /// none, nothing here could write its transcript.
+  @Test func renameWithoutAProcessIsUnavailableOnARunner() {
+    let remote = Project(folder: folder, runner: UUID().uuidString)
+    let item = remote.newSession()
+    #expect(!remote.canRename(item))
+    #expect(!remote.canRenameSelected)
+    #expect(!item.session.rename(to: "Pineapple"))
+    #expect(item.session.name == nil)
+    let local = Project(folder: folder).newSession()
+    #expect(local.session.rename(to: "Pineapple"))
+  }
 }
