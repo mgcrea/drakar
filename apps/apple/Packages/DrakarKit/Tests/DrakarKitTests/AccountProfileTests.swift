@@ -95,6 +95,22 @@ struct ClaudeAccountKeyTests {
     #expect(a.key == "/Users/me/.claude-work")
   }
 
+  /// The key is kept, not worked out on each read (every sidebar row asks), so it has to
+  /// follow the directory and survive a round trip through what is stored, which it is not
+  /// part of.
+  @Test func theKeyFollowsTheDirectoryAndIsNotStored() throws {
+    var account = ClaudeAccount(
+      directory: URL(filePath: "/Users/me/.claude-work/"), isDefault: false)
+    account.directory = URL(filePath: "/Users/me/.claude-home/")
+    #expect(account.key == "/Users/me/.claude-home")
+    let stored = try JSONEncoder().encode(account)
+    let fields = try #require(try JSONSerialization.jsonObject(with: stored) as? [String: Any])
+    #expect(Set(fields.keys) == ["directory", "isDefault"])
+    let read = try JSONDecoder().decode(ClaudeAccount.self, from: stored)
+    #expect(read == account)
+    #expect(read.key == "/Users/me/.claude-home")
+  }
+
   /// `claude auth status` under `CLAUDE_CONFIG_DIR=~/.claude-x/` reports signed out, and
   /// under `~/.claude-x` signed in (Claude Code 2.1.288): the slash is not cosmetic.
   @Test func namesTheDirectoryToTheCLIWithoutItsTrailingSlash() {

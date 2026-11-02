@@ -4,12 +4,31 @@ import Foundation
 /// `CLAUDE_CONFIG_DIR` (`~/.claude-work`). Each holds its own login, settings and
 /// sessions, so a session has to be resumed under the directory that wrote it.
 public struct ClaudeAccount: Codable, Sendable, Hashable {
-  public var directory: URL
+  public var directory: URL {
+    didSet { key = Self.key(of: directory) }
+  }
   public var isDefault: Bool
+  /// The directory as one path: a resumed session's account and a discovered one name the
+  /// same folder with and without a trailing slash. Kept, since every sidebar row asks.
+  public private(set) var key: String
 
   public init(directory: URL, isDefault: Bool) {
     self.directory = directory
     self.isDefault = isDefault
+    key = Self.key(of: directory)
+  }
+
+  private enum CodingKeys: String, CodingKey { case directory, isDefault }
+
+  public init(from decoder: any Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.init(
+      directory: try container.decode(URL.self, forKey: .directory),
+      isDefault: try container.decode(Bool.self, forKey: .isDefault))
+  }
+
+  private static func key(of directory: URL) -> String {
+    ProjectPath.normalize(directory.standardizedFileURL)
   }
 
   /// `default`, or what follows `.claude-` in the directory's name.
@@ -35,12 +54,6 @@ public struct ClaudeAccount: Codable, Sendable, Hashable {
     isDefault
       ? directory.deletingLastPathComponent().appending(path: ".claude.json")
       : directory.appending(path: ".claude.json")
-  }
-
-  /// The directory as one path: a resumed session's account and a discovered one name the
-  /// same folder with and without a trailing slash.
-  public var key: String {
-    ProjectPath.normalize(directory.standardizedFileURL)
   }
 
   /// `~/.claude`, every `~/.claude-*` holding a `projects` folder, and any `extra`

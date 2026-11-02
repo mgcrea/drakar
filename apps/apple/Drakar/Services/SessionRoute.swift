@@ -176,14 +176,17 @@ final class OpenSessions {
     newSessions.remove(route) != nil
   }
 
-  /// A transcript changed on disk: a read-only session following it catches up, and its
-  /// rows, in every window holding or watching it, take the new summary (its last activity;
-  /// its title and gauge until its history is read).
-  func transcriptWritten(_ summary: SessionSummary) {
-    for project in projects.values {
-      guard let item = project.session(withID: summary.sessionID) else { continue }
-      item.session.catchUp()
-      item.preview = summary
+  /// Transcripts changed on disk, one FSEvents batch at a time: a read-only session following
+  /// one catches up, and its rows, in every window holding or watching it, take the new summary
+  /// (its last activity; its title and gauge until its history is read). Attention is counted
+  /// once for the batch.
+  func transcriptsWritten(_ summaries: [SessionSummary]) {
+    for summary in summaries {
+      for project in projects.values {
+        guard let item = project.session(withID: summary.sessionID) else { continue }
+        item.session.catchUp()
+        item.preview = summary
+      }
     }
     Attention.shared.refresh()
   }

@@ -51,9 +51,9 @@ final class AccountStore {
       let found = await discover()
       accounts = found.accounts
       shellAccount = found.shell
-      reloadChanged()
+      await reloadChanged()
       poll = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
-        MainActor.assumeIsolated { self?.reloadChanged() }
+        MainActor.assumeIsolated { Task { await self?.reloadChanged() } }
       }
     }
     started = task
@@ -66,15 +66,23 @@ final class AccountStore {
     poll = nil
   }
 
-  /// Rereads each account whose `.claude.json` changed since it was last read.
-  func reloadChanged() {
+  /// Rereads each account whose `.claude.json` changed since it was last read. The CLI rewrites
+  /// those files (hundreds of KB) through every turn, so they are parsed off the main actor,
+  /// and a profile that reads the same is not assigned again: every toolbar shows it.
+  func reloadChanged() async {
+    var changed: [ClaudeAccount] = []
     for account in Set(accounts + [shellAccount]) {
       let path = account.configFile.path(percentEncoded: false)
       let date =
         (try? FileManager.default.attributesOfItem(atPath: path))?[.modificationDate] as? Date
       guard profiles[account.key] == nil || modified[account.key] != date else { continue }
       modified[account.key] = date
-      profiles[account.key] = AccountProfile(reading: account)
+      changed.append(account)
+    }
+    guard !changed.isEmpty else { return }
+    let read = await Task.detached { changed.map { AccountProfile(reading: $0) } }.value
+    for (account, profile) in zip(changed, read) where profiles[account.key] != profile {
+      profiles[account.key] = profile
     }
   }
 

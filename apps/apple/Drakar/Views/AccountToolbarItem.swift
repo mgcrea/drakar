@@ -30,7 +30,7 @@ struct AccountToolbarItem: View {
     let _ = (picks, settingsAccount)
     let account = store.windowAccount(for: folder)
     Button {
-      store.reloadChanged()
+      Task { await store.reloadChanged() }
       isShown.toggle()
     } label: {
       TimelineView(.periodic(from: .now, by: 60)) { context in

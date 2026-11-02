@@ -60,7 +60,7 @@ struct AccountStoreTests {
     try writeConfig(percent: 12, fetchedAt: 1000, modified: Date(timeIntervalSince1970: 10))
     let store = await store()
     try writeConfig(percent: 40, fetchedAt: 2000, modified: Date(timeIntervalSince1970: 20))
-    store.reloadChanged()
+    await store.reloadChanged()
     #expect(store.usage(for: account)?.fiveHour?.percent == 40)
   }
 

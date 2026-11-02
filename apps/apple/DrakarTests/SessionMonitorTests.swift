@@ -249,3 +249,36 @@ struct SessionMonitorTests {
     #expect(monitor.summaries(under: "/w/drakar").map(\.sessionID) == ["old"])
   }
 }
+
+/// What FSEvents reports as one batch is read, merged and announced once: each announcement
+/// refreshes attention across every window, and agents writing together used to cost one
+/// refresh per file.
+@MainActor
+@Suite("Transcripts written together")
+struct SessionMonitorBatchTests {
+  @Test func aBatchOfWritesIsAnnouncedOnce() async throws {
+    let home = FileManager.default.temporaryDirectory.appending(path: "monitor-\(UUID())")
+    let account = ClaudeAccount(directory: home.appending(path: ".claude"), isDefault: true)
+    let projects = account.directory.appending(path: "projects/-w-drakar")
+    try FileManager.default.createDirectory(at: projects, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: home) }
+    var paths: [String] = []
+    for id in ["s1", "s2", "s3"] {
+      let file = projects.appending(path: "\(id).jsonl")
+      try Data(#"{"type":"user","cwd":"/w/drakar","message":{"role":"user","content":"go"}}"#.utf8)
+        .write(to: file)
+      paths.append(file.path(percentEncoded: false))
+    }
+
+    let monitor = SessionMonitor(accounts: [account])
+    var announced: [[String]] = []
+    monitor.written = { announced.append($0.map(\.sessionID).sorted()) }
+    monitor.changed(paths, in: account)
+    for _ in 0..<40 where announced.isEmpty {
+      try await Task.sleep(for: .milliseconds(50))
+    }
+    try await Task.sleep(for: .milliseconds(200))
+    #expect(announced == [["s1", "s2", "s3"]])
+    #expect(monitor.summaries(under: "/w/drakar").map(\.sessionID).sorted() == ["s1", "s2", "s3"])
+  }
+}

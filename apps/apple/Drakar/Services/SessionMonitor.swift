@@ -47,6 +47,11 @@ final class SessionMonitor {
   /// transcript each time, as tests do.
   @ObservationIgnored private let cacheFile: URL?
   @ObservationIgnored private var generations: [String: Int] = [:]
+  /// Transcripts just written, a batch at a time: the open windows catch up and attention is
+  /// counted again. Tests watch it instead.
+  @ObservationIgnored var written: @MainActor ([SessionSummary]) -> Void = {
+    OpenSessions.shared.transcriptsWritten($0)
+  }
   /// `realpath` of each transcript folder seen, so a key costs one lookup.
   @ObservationIgnored private var resolvedFolders: [String: String] = [:]
   /// A linked worktree's `cwd` → the same folder in its main checkout, from `folders`.
@@ -346,7 +351,9 @@ final class SessionMonitor {
     return resolved + "/" + file.lastPathComponent
   }
 
-  private func changed(_ paths: [String], in account: ClaudeAccount) {
+  /// One FSEvents batch: the registries read again if they changed, and the transcripts written
+  /// read off the main actor together, then merged and announced once.
+  func changed(_ paths: [String], in account: ClaudeAccount) {
     var registry = false
     var files: Set<String> = []
     for path in paths {
@@ -363,20 +370,26 @@ final class SessionMonitor {
       }
     }
     if registry { readRegistries() }
-    if !files.isEmpty { scanFolders(after: .seconds(2)) }
-    for path in files {
-      let file = URL(filePath: path)
+    guard !files.isEmpty else { return }
+    scanFolders(after: .seconds(2))
+    let batch = files.map { path in
       let generation = generations[path, default: 0] + 1
       generations[path] = generation
-      Task {
-        let read = Task.detached { SessionIndex.summary(of: file, account: account) }
-        let summary = await read.value
+      return (path: path, generation: generation)
+    }
+    Task {
+      let read = await Task.detached {
+        batch.map { SessionIndex.summary(of: URL(filePath: $0.path), account: account) }
+      }.value
+      var written: [SessionSummary] = []
+      for (item, summary) in zip(batch, read) {
         // A newer read of this file started meanwhile: its answer wins.
-        guard generations[path] == generation else { return }
-        guard let summary else { return forget(path) }
-        merge([summary])
-        OpenSessions.shared.transcriptWritten(summary)
+        guard generations[item.path] == item.generation else { continue }
+        if let summary { written.append(summary) } else { forget(item.path) }
       }
+      guard !written.isEmpty else { return }
+      merge(written)
+      self.written(written)
     }
   }
 
