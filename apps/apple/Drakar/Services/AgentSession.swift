@@ -917,10 +917,13 @@ final class AgentSession {
     // and on that connection, or not at all: never on this Mac (remote sessions spec §4).
     var onRunner: (client: HostClient, facts: RunnerFacts)? = nil
     if let runner {
+      // Claude Code's alone in v1, and never a Codex row a runner window was handed.
+      guard agent == .claude else { return fail(Self.claudeOnlyOnRunner) }
       onRunner = await reach(runner: runner)
       guard stillWanted(since: stops) else { return }
       guard let onRunner else { return fail(unreachable(runner)) }
-      // Its folder is the runner's, which this Mac's disk says nothing of.
+      // Its folder is the runner's, which this Mac's disk says nothing of. It starts new
+      // whatever it was made to resume: no resume on a runner in v1.
       let launch = ClaudeLaunch.make(
         onRunner: onRunner.facts, folder: folder, account: accountPick, executable: nil)
       start = AgentStart(
@@ -957,7 +960,8 @@ final class AgentSession {
     // The last word before the process starts, with no await after it: a session live in
     // another process now is followed, not written to. The monitor may not have read the
     // registries yet at launch, so the account's own registry is read here too.
-    if let resuming, resuming.forks != true, isLiveElsewhere(resuming) {
+    // A runner's session resumes nothing, so this Mac's registries say nothing of it.
+    if !isOnRunner, let resuming, resuming.forks != true, isLiveElsewhere(resuming) {
       isReadOnly = true
       _ = stillWanted(since: stops)
       return
@@ -1027,6 +1031,10 @@ final class AgentSession {
     return "\(message) \(failure.message)"
   }
 
+  /// What a runner's session of another agent fails with.
+  static let claudeOnlyOnRunner = String(
+    localized: "Only Claude Code sessions run on a runner. Start a new session to use it there.")
+
   /// The runner has no `claude` its relay found.
   private var notFoundOnRunner: String {
     let name = sessionHost.runnerName ?? String(localized: "the runner")
@@ -1038,6 +1046,8 @@ final class AgentSession {
   /// thread in turns, Claude Code's transcript file in bytes. A new Claude Code session has
   /// none, and keeps none for that process's life: its file holds only what the log does.
   private func historyMark() -> HistoryMark {
+    // A runner's session starts new: everything is in the log.
+    if isOnRunner { return .none }
     if agent == .codex { return .codexTurns(codexTurns) }
     guard let resuming, resuming.agentKind == .claude else { return .none }
     let file = resuming.transcriptFile
@@ -1726,11 +1736,10 @@ final class AgentSession {
 }
 
 extension AgentSession {
-  /// The `/` menu's list from an `initialize` reply or a `commands_changed` list, as the
-  /// project's lists take it: the commands, else the skills.
+  /// The `/` menu's list from an `initialize` reply or a `commands_changed` list: the skills
+  /// and the CLI's own commands, as the project's lists take them.
   fileprivate static func commands(fromInitialize reply: JSONValue?) -> [SkillEntry]? {
     ProjectCapabilities.commands(fromInitialize: reply)
-      ?? ProjectCapabilities.skills(fromInitialize: reply)
   }
 
   /// Where a process runs and whose it is, as its meta says them: nil throughout for a

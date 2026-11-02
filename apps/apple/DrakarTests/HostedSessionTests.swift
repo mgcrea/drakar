@@ -244,9 +244,12 @@ struct HostedSessionTests {
         if case .failed = session.phase { return true }
         return false
       })
-    if case .failed(let message) = session.phase { #expect(message.contains("runner")) }
+    #expect(
+      session.phase
+        == .failed(
+          "Drakar can't reach this session's runner: it is no longer set up in Settings › Runner."
+        ))
     #expect(!session.isProcessRunning)
-    try await Task.sleep(for: .milliseconds(300))
     #expect(
       !FileManager.default.fileExists(
         atPath: fake.appendingPathExtension("stdin").path(percentEncoded: false)))

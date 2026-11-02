@@ -873,4 +873,31 @@ struct ProjectTests {
     #expect(remote.slashCommands(for: session).isEmpty)
     #expect(!remote.speaksForProject(session))
   }
+
+  /// The window's account changing, as the inspector's toggle says it at every launch, moves
+  /// a runner window to no lists of this Mac's and starts no probe.
+  @Test func aRunnerWindowFollowsNoAccountOfThisMacs() throws {
+    let other = folder.appending(path: ".claude-other", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: other, withIntermediateDirectories: true)
+    let suite = "drakar-tests-\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    ClaudeChoice.$testSuite.withValue(suite) {
+      let remote = Project(folder: folder, runner: UUID().uuidString)
+      let before = remote.capabilities
+      let account = ClaudeChoice.account(at: other.path(percentEncoded: false))
+      let entry = CapabilityStore.shared.capabilities(for: folder, account: account)
+      // Slow, so that a probe started would still be running when looked at.
+      entry.probe = { _, _ in
+        try? await Task.sleep(for: .seconds(5))
+        return ProbeOutcome()
+      }
+      defer { entry.cancel() }
+      ClaudeChoice.pick(account, for: folder)
+      remote.accountMayHaveChanged()
+      #expect(remote.capabilities === before)
+      #expect(!entry.isLoading)
+      #expect(!before.isLoading)
+    }
+  }
 }

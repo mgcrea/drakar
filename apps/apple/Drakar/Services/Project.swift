@@ -1074,8 +1074,10 @@ final class Project {
     capabilityMarks.servers.remove(name)
   }
 
-  /// The window's account may be another now: the lists follow it.
+  /// The window's account may be another now: the lists follow it. Not a runner's window,
+  /// whose folder this Mac's accounts list nothing of and no probe of this Mac's reads.
   func accountMayHaveChanged() {
+    guard runner == nil else { return }
     let entry = CapabilityStore.shared.capabilities(
       for: folder, account: AccountStore.shared.windowAccount(for: folder))
     guard entry !== capabilities else { return }

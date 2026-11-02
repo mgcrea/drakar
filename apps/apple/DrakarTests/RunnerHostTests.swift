@@ -558,7 +558,9 @@ struct RunnerHostTests {
   /// with that environment and nothing of this Mac's. It reads no history and follows no
   /// transcript here, though an account of this Mac's holds one of the same id, and what its
   /// process says of the account stays with it.
-  @Test func aRunnerSessionRunsThroughTheRelay() async throws {
+  /// `runnerClaude` where the relay finds it first: in the first directory of the PATH the
+  /// runner's environment file gives, ahead of any `claude` the person has.
+  private func installRunnerClaude() throws -> URL {
     let bin = root.appending(path: "bin", directoryHint: .isDirectory)
     try FileManager.default.createDirectory(at: bin, withIntermediateDirectories: true)
     let claude = bin.appending(path: "claude")
@@ -567,6 +569,11 @@ struct RunnerHostTests {
     try RunnerEnvironment.write(
       ["PATH": "\(bin.path(percentEncoded: false)):/usr/bin:/bin", "DRAKAR_RUNNER_MARK": "1"],
       to: RunnerEnvironment.file(in: root))
+    return claude
+  }
+
+  @Test func aRunnerSessionRunsThroughTheRelay() async throws {
+    let claude = try installRunnerClaude()
     let macAccount = root.appending(path: "mac-account", directoryHint: .isDirectory)
     let projects = macAccount.appending(path: "projects/p", directoryHint: .isDirectory)
     try FileManager.default.createDirectory(at: projects, withIntermediateDirectories: true)
@@ -579,7 +586,8 @@ struct RunnerHostTests {
     let host = SessionHost(endpoint: .runner(settings))
     let store = AccountStore(discover: { (accounts: [mine], shell: mine) })
     let catalog = ModelCatalog()
-    let session = AgentSession(folder: folder)
+    // Picked from this Mac's accounts, as a window hands its own to a session made for it.
+    let session = AgentSession(folder: folder, account: mine)
     session.accounts = { [mine] }
     session.accountStore = store
     session.catalog = catalog
@@ -603,6 +611,8 @@ struct RunnerHostTests {
     #expect(environment.contains("DRAKAR_RUNNER_MARK=1"))
     let macTMPDIR = try #require(ProcessInfo.processInfo.environment["TMPDIR"])
     #expect(!environment.contains { $0.hasSuffix("=\(macTMPDIR)") })
+    // Not this Mac's account: the runner shell's own, which names none.
+    #expect(!environment.contains { $0.hasPrefix("CLAUDE_CONFIG_DIR=") })
 
     // Its meta says where it runs and whose it is, here and as the runner's host keeps it.
     let meta = try #require(session.meta())
@@ -610,6 +620,8 @@ struct RunnerHostTests {
     #expect(meta.origin == ThisMac.name && meta.owner == ThisMac.name)
     #expect(meta.history == HistoryMark.none)
     #expect(meta.start.runner == settings.id.uuidString)
+    #expect(meta.start.account?.isDefault == true)
+    #expect(meta.start.account != mine)
     let id = try #require(session.hostID)
     let watcher = try await watcher()
     defer { watcher.close() }
@@ -664,18 +676,62 @@ struct RunnerHostTests {
       return message
     }
 
-    let unreachable = try await failure(on: SessionHost(endpoint: .runner(settings)))
-    #expect(unreachable.contains("Studio"))
+    let studio = SessionHost(endpoint: .runner(settings))
+    let unreachable = try await failure(on: studio)
+    let why = try #require(studio.failure).message
+    #expect(unreachable == "Drakar can't reach Studio right now. \(why)")
     #expect(sshRuns() == 1)
+    let notSetUp =
+      "Drakar can't reach this session's runner: it is no longer set up in Settings › Runner."
     // Another runner's host, as a session made before its runner was set up again would hold:
     // not asked at all.
     let other = SessionHost(
       endpoint: .runner(RunnerSettings(name: "Other", destination: "other.local")))
-    #expect(try await failure(on: other).contains("runner"))
+    #expect(try await failure(on: other) == notSetUp)
     // This Mac's own host, as a runner project's session it could not reach is left with.
-    #expect(try await failure(on: SessionHost()).contains("runner"))
+    #expect(try await failure(on: SessionHost()) == notSetUp)
     #expect(sshRuns() == 1)
     #expect(sent("quick") == 0)
+  }
+
+  /// A runner session runs only what v1 runs there: one of another agent fails before the
+  /// runner is asked anything, and one made to resume a transcript of this Mac's starts new
+  /// on the runner, its history none.
+  @Test func aRunnerSessionNeverResumesNorRunsCodex() async throws {
+    _ = try installRunnerClaude()
+    try relayingSSH()
+    let helper = try #require(SessionHost.startHelper(in: directory))
+    defer { finish([helper]) }
+    let host = SessionHost(endpoint: .runner(settings))
+
+    let codex = AgentSession(folder: folder, agent: .codex)
+    codex.sessionHost = host
+    codex.runner = settings.id.uuidString
+    codex.send("quick")
+    #expect(await eventually { codex.phase == .failed(AgentSession.claudeOnlyOnRunner) })
+    #expect(!codex.isProcessRunning)
+    #expect(sshRuns() == 0)
+
+    let transcript = root.appending(path: "mac-account/projects/p/s-mac.jsonl")
+    try FileManager.default.createDirectory(
+      at: transcript.deletingLastPathComponent(), withIntermediateDirectories: true)
+    try Data("{}\n".utf8).write(to: transcript)
+    let target = ResumeTarget(
+      sessionID: "s-mac", cwd: folder.path(percentEncoded: false),
+      file: transcript.path(percentEncoded: false),
+      accountDirectory: root.appending(path: "mac-account").path(percentEncoded: false),
+      accountIsDefault: false)
+    let resumed = AgentSession(folder: folder, resuming: target)
+    resumed.accounts = { [] }
+    resumed.sessionHost = host
+    resumed.runner = settings.id.uuidString
+    resumed.send("quick")
+    #expect(await eventually { resumed.phase == .ready && !resumed.transcript.isRunning })
+    defer { resumed.stop() }
+    #expect(resumed.isHosted)
+    let meta = try #require(resumed.meta())
+    #expect(meta.history == HistoryMark.none)
+    #expect(meta.start.resuming == nil)
   }
 
   /// A session on `host`, its first turn over.

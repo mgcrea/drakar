@@ -201,6 +201,25 @@ struct ClaudeLaunchTests {
     #expect(shell.environment["CLAUDE_CONFIG_DIR"] == "/Users/r/.claude-work")
     #expect(shell.account?.key == "/Users/r/.claude-work")
     #expect(shell.account?.isDefault == false)
+
+    // An account of this Mac's, as a window hands its own to a session made for it, is none
+    // of the runner's: neither named there nor dropping the runner shell's own.
+    let macAccounts = [
+      ClaudeAccount(
+        directory: URL(filePath: "/Users/mac/.claude-mine", directoryHint: .isDirectory),
+        isDefault: false),
+      ClaudeAccount(
+        directory: URL(filePath: "/Users/mac/.claude", directoryHint: .isDirectory),
+        isDefault: true),
+    ]
+    for mac in macAccounts {
+      let launch = ClaudeLaunch.make(
+        onRunner: runnerFacts(
+          environment: ["PATH": "/runner/bin", "CLAUDE_CONFIG_DIR": "/Users/r/.claude-work"]),
+        folder: folder, account: mac, executable: nil)
+      #expect(launch.environment["CLAUDE_CONFIG_DIR"] == "/Users/r/.claude-work")
+      #expect(launch.account?.key == "/Users/r/.claude-work")
+    }
   }
 
   /// The capability probe is never prompted: it keeps no checkpoints, which would leave an

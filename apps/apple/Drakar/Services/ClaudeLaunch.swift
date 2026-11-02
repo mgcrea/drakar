@@ -44,13 +44,19 @@ struct ClaudeLaunch {
 
   /// A new session on a runner (remote sessions spec §4), from what the runner's relay stated
   /// alone: its GUI session's environment, the `claude` picked for the runner (`executable`)
-  /// or else the first it found, and `account`, one of the runner's directories, or else the
-  /// one its environment names. Nothing of this Mac's is read: not its environment, Settings'
-  /// picks (`ClaudeChoice`) nor its disk (`ClaudeLocator`). No `claude` found there is none.
+  /// or else the first it found, and `account` when it is one of the runner's directories
+  /// (`facts.accounts`), else the one its environment names. An account of this Mac's, as a
+  /// window's account handed to a session made for it, is none of the runner's, and taking
+  /// it would name a Mac path there or drop the runner shell's own. Nothing of this Mac's is
+  /// read: not its environment, Settings' picks (`ClaudeChoice`) nor its disk
+  /// (`ClaudeLocator`). No `claude` found there is none.
   static func make(
-    onRunner facts: RunnerFacts, folder: URL, account explicit: ClaudeAccount?,
+    onRunner facts: RunnerFacts, folder: URL, account picked: ClaudeAccount?,
     executable: String?
   ) -> ClaudeLaunch {
+    let explicit = picked.flatMap { account in
+      facts.accounts.contains { ProjectPath.normalize($0) == account.key } ? account : nil
+    }
     var environment = facts.environment
     if let explicit { environment = explicit.environment(environment) }
     environment = keepingCheckpoints(environment)
