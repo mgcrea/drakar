@@ -22,34 +22,41 @@ struct RunnerRow: Identifiable, Equatable {
     /// The runner's own Drakar's, or another Mac's: this Mac has no transcript of it, and
     /// opens no window for it.
     case onTheRunner
+    /// This Mac's, its End Session waiting for the host to let it go: nothing takes it back.
+    case ending
   }
 }
 
 /// What Home shows of a runner, from what its host lists.
 enum RunnerSection {
   /// Every process `held` lists, sorted three ways by whether `mac` (this Mac's name) may take
-  /// it (`SessionMeta.mayBeTaken`) and whether an app holds it. A meta this app cannot read
-  /// is no row.
-  static func rows(held: [HeldProcess], mac: String) -> [RunnerRow] {
+  /// it (`SessionMeta.mayBeTaken`) and whether an app holds it, or as `ending` when its end is
+  /// under way (`SessionHost.endsUnderWay`). A meta this app cannot read is no row.
+  static func rows(held: [HeldProcess], mac: String, ending: Set<String> = []) -> [RunnerRow] {
     held.compactMap { process in
       guard let meta = try? JSONDecoder().decode(SessionMeta.self, from: process.meta) else {
         return nil
       }
       let state: RunnerRow.State =
         !meta.mayBeTaken(by: mac, onRunner: true)
-        ? .onTheRunner : process.attachedApp == nil ? .idle : .here
+        ? .onTheRunner
+        : ending.contains(process.id) ? .ending : process.attachedApp == nil ? .idle : .here
       return RunnerRow(
         id: process.id, folder: ProjectPath.normalize(meta.windowFolder), name: meta.name,
         running: process.running, state: state)
     }
   }
 
-  /// `held` less what this app is ending (`SessionHost.ended`) while the end is under way: an
-  /// app holds it still (the end on its way, or a stale relay it waits out), or it has ended.
-  /// One that runs on with nobody holding it is no end under way, whatever `ended` says (an
-  /// end that missed it), and is shown, so that the person can end it again.
-  static func shown(_ held: [HeldProcess], ended: Set<String>) -> [HeldProcess] {
-    held.filter { !ended.contains($0.id) || ($0.running && $0.attachedApp == nil) }
+  /// `held` less what this app is ending (`SessionHost.ended`): held by this app as the end
+  /// goes, or ended. An end still waiting (`underWay`) is shown, as `ending`; one that runs on
+  /// with nobody holding it and no end waiting is an end that missed it, and is shown, so that
+  /// the person can take it back or end it again.
+  static func shown(
+    _ held: [HeldProcess], ended: Set<String>, underWay: Set<String> = []
+  ) -> [HeldProcess] {
+    held.filter {
+      !ended.contains($0.id) || underWay.contains($0.id) || ($0.running && $0.attachedApp == nil)
+    }
   }
 
   /// The folders the processes in `held` were started for, each once, in the order listed:
@@ -143,8 +150,9 @@ enum RunnerSection {
     ending = ending.filter { id, since in
       now - since < Self.endingLimit && listed.contains { $0.id == id }
     }
-    let shown = RunnerSection.shown(listed, ended: host.ended).filter { ending[$0.id] == nil }
-    rows = RunnerSection.rows(held: shown, mac: ThisMac.name)
+    let shown = RunnerSection.shown(listed, ended: host.ended, underWay: host.endsUnderWay)
+      .filter { ending[$0.id] == nil }
+    rows = RunnerSection.rows(held: shown, mac: ThisMac.name, ending: host.endsUnderWay)
   }
 
   /// A row clicked. This Mac's opens in its runner window (`enter`): one open already takes it
@@ -152,13 +160,22 @@ enum RunnerSection {
   /// Another's opens nowhere here: what to say instead.
   func open(_ row: RunnerRow, enter: (WindowRoute) -> Void) async -> String? {
     guard let host = host(), let runner = host.runnerID else { return nil }
-    guard row.state != .onTheRunner else {
+    switch row.state {
+    case .onTheRunner:
       let name = host.runnerName ?? String(localized: "the runner")
       return String(localized: "Open it in Drakar on \(name)")
+    case .ending: return nil
+    case .idle, .here: break
     }
-    // Shown though this app ended it (`RunnerSection.shown`): that end missed it, and the
-    // window may take it back now.
-    if host.ended.contains(row.id) { host.notEnding(row.id) }
+    if host.ended.contains(row.id) {
+      // An end that missed it, as the host lists it now, not as the row was listed: running,
+      // free, and no end under way, which only that end may clear.
+      let now = await host.listed()?.first { $0.id == row.id }
+      guard let now, now.running, now.attachedApp == nil, host.ended.contains(row.id),
+        !host.endsUnderWay.contains(row.id)
+      else { return nil }
+      host.notEnding(row.id)
+    }
     let route = WindowRoute.runnerProject(runner: runner, folder: row.folder)
     let window = project(route)
     enter(route)
@@ -188,8 +205,9 @@ enum RunnerSection {
   private func end(_ ids: [String]) async {
     guard let host = host(), let listed = await host.listed(), let client = await host.client()
     else { return }
+    let shown = RunnerSection.shown(listed, ended: host.ended, underWay: host.endsUnderWay)
     let idle = Set(
-      RunnerSection.rows(held: RunnerSection.shown(listed, ended: host.ended), mac: ThisMac.name)
+      RunnerSection.rows(held: shown, mac: ThisMac.name, ending: host.endsUnderWay)
         .filter { $0.state == .idle }.map(\.id))
     for id in ids where idle.contains(id) {
       guard (try? client.send(.terminate(id: id, forget: true))) != nil else { continue }
@@ -356,6 +374,7 @@ struct RunnerSectionView: View {
       .contentShape(Rectangle())
     }
     .buttonStyle(.plain)
+    .disabled(row.state == .ending)
     .contextMenu {
       if row.state == .idle {
         Button("End Session…") { confirmEnd(row) }
@@ -369,6 +388,7 @@ struct RunnerSectionView: View {
     case .here: "macwindow"
     case .idle: "tray.fill"
     case .onTheRunner: "desktopcomputer"
+    case .ending: "xmark.circle"
     }
   }
 
@@ -378,6 +398,7 @@ struct RunnerSectionView: View {
       case .here: String(localized: "Open in Drakar")
       case .idle: String(localized: "No window")
       case .onTheRunner: String(localized: "On \(runner)")
+      case .ending: String(localized: "Ending…")
       }
     return row.running ? state : String(localized: "Ended · \(state)")
   }

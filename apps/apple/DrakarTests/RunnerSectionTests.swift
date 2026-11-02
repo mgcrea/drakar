@@ -67,6 +67,20 @@ struct RunnerSectionTests {
     #expect(shown.map(\.id) == ["free", "other"])
   }
 
+  /// An end still waiting for the host to let go (`SessionHost.endsUnderWay`) is shown as
+  /// ending, held by its stale relay or free, never as one to take back.
+  @Test func anEndUnderWayShowsAsEnding() throws {
+    let held = [
+      try held("stale", owner: Self.mac, attachedApp: 7),
+      try held("freed", owner: Self.mac),
+    ]
+    let underWay: Set<String> = ["stale", "freed"]
+    let shown = RunnerSection.shown(held, ended: underWay, underWay: underWay)
+    let rows = RunnerSection.rows(held: shown, mac: Self.mac, ending: underWay)
+    #expect(rows.map(\.id) == ["stale", "freed"])
+    #expect(rows.allSatisfy { $0.state == .ending })
+  }
+
   /// New Session on Runner…'s recent folders: each folder a process of the runner's host was
   /// started for, once, as it was first listed.
   @Test func recentFoldersAreEachFolderOnce() throws {

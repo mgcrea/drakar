@@ -130,6 +130,10 @@ import Synchronization
   /// The processes this app ended for good (a window closed, End Session). The host lists
   /// one until it has exited, attached to this app still, and no `released` comes of it here.
   private(set) var ended: Set<String> = []
+  /// Of `ended`, those an end is still waiting to send (a stale relay of this Mac's holding the
+  /// process): an end under way, which nothing but that end or its giving up clears. Another
+  /// id in `ended` that runs on, free, is an end that missed it.
+  private(set) var endsUnderWay: Set<String> = []
 
   private struct ReleaseWatcher {
     weak var owner: AnyObject?
@@ -469,9 +473,21 @@ import Synchronization
     ended.insert(id)
   }
 
+  /// An end that waits before it can be sent (`endsUnderWay`), ended meanwhile.
+  func endingOnceFree(_ id: String) {
+    ended.insert(id)
+    endsUnderWay.insert(id)
+  }
+
+  /// The waiting end was sent, or found it was not wanted any more: still ended, if it was.
+  func endSent(_ id: String) {
+    endsUnderWay.remove(id)
+  }
+
   /// An end given up on: the process runs on, and is shown again like any other.
   func notEnding(_ id: String) {
     ended.remove(id)
+    endsUnderWay.remove(id)
   }
 
   private func released(_ id: String) {

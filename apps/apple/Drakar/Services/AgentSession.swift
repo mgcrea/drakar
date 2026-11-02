@@ -1361,12 +1361,13 @@ final class AgentSession {
   /// working for nobody. `waitingOutStaleRelay` for a runner's session, whose process this
   /// Mac's own stale relay may still hold (spec §3), the host refusing anything of it until
   /// then: the end waits for it to go, as the session would have, and is sent after. It is
-  /// marked ended at once then (`SessionHost.ending`), so no window takes it back meanwhile.
+  /// marked ended at once then, and under way (`SessionHost.endingOnceFree`), so no window
+  /// takes it back meanwhile and Home does not take it for an end that missed.
   private func end(
     _ hosted: HostedProcess, onceReconnected host: SessionHost, waitingOutStaleRelay: Bool
   ) {
     let id = hosted.id
-    if waitingOutStaleRelay, let id { host.ending(id) }
+    if waitingOutStaleRelay, let id { host.endingOnceFree(id) }
     Task {
       if waitingOutStaleRelay, let id {
         let deadline = ContinuousClock.now + Self.releasingLimit
@@ -1383,6 +1384,10 @@ final class AgentSession {
         guard !refused, let client = await host.reconnect() else {
           return host.notEnding(id)
         }
+        defer { host.endSent(id) }
+        // No longer ended: whoever cleared it may hold the process now, and it is not ended
+        // under them.
+        guard host.ended.contains(id) else { return }
         return Self.end(hosted, on: client)
       }
       guard let client = await host.reconnect() else { return }

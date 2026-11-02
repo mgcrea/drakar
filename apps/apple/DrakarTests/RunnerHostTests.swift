@@ -1414,6 +1414,60 @@ struct RunnerHostTests {
     #expect(project.selected?.session.hostID == ids[2])
   }
 
+  /// End Session waiting out a stale relay is an end under way: Home shows its row as ending,
+  /// and a click on it, or on a row listed before the end, takes nothing back however the host
+  /// lists it meanwhile; the end goes once the relay does.
+  @Test func aClickDuringAWaitingEndTakesNothingBack() async throws {
+    _ = try installRunnerClaude()
+    try relayingSSH()
+    let helper = try #require(SessionHost.startHelper(in: directory))
+    defer { finish([helper]) }
+    let host = SessionHost(endpoint: .runner(settings))
+    host.ownsProcess = { _ in true }
+    let project = runnerProject(on: host)
+    defer { project.stopAll() }
+    // The window hears `released` from here on.
+    await project.takeBackHeld().value
+    let item = try await startedRow(in: project)
+    let id = try #require(item.session.hostID)
+    let watcher = try await watcher()
+    defer { watcher.close() }
+    let model = RunnerSectionModel(host: { host }, project: { _ in project })
+    await model.refresh()
+    // As Home listed it before the end, its window open.
+    let before = try #require(model.rows.first { $0.id == id })
+    #expect(before.state == .here)
+    let relay = try #require(await attached(id, on: watcher))
+    kill(relay, SIGSTOP)
+    var hungUp = false
+    defer { if !hungUp { kill(relay, SIGKILL) } }
+    await host.client()?.close()
+    #expect(await eventually { item.session.isReconnecting })
+
+    project.end(item)
+    #expect(host.endsUnderWay.contains(id))
+    await model.refresh()
+    let ending = try #require(model.rows.first { $0.id == id })
+    #expect(ending.state == .ending)
+    var entered: [WindowRoute] = []
+    #expect(await model.open(ending) { entered.append($0) } == nil)
+    #expect(await model.open(before) { entered.append($0) } == nil)
+    #expect(entered.isEmpty)
+    #expect(host.ended.contains(id))
+
+    kill(relay, SIGKILL)
+    hungUp = true
+    // Clicked on all the while the relay goes and the end is sent.
+    #expect(
+      await eventually {
+        _ = await model.open(before) { entered.append($0) }
+        return await held(id, on: watcher) == nil
+      })
+    #expect(entered.isEmpty)
+    #expect(host.ended.contains(id) && !host.endsUnderWay.contains(id))
+    #expect(!project.sessions.contains { $0.session.hostID == id })
+  }
+
   /// A tab closed while connected leaves nothing that keeps the window from a Bring Back:
   /// taken over on the runner and brought back, the session comes back into the open window.
   @Test func aRowClosedWhileConnectedComesBackOnBringBack() async throws {
