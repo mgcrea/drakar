@@ -220,6 +220,19 @@ tree and the editor.
   **Take Over Here**. That works once that Mac lets it go or loses its connection, so that
   someone at the runner can carry on with a session whose Mac is away.
 
+Once a session is the runner's own Drakar's, opened on the runner or taken over there, that
+Drakar treats it as one of its own local sessions: closing its tab there ends it, and so does
+closing its window or quitting while it is idle. Its conversation can be resumed on the
+runner like any other, but no longer from the Mac. Bring it back first if the Mac should keep
+it.
+
+**Renaming the Mac.** A runner session records the Mac that started it and the Mac that holds
+it by that Mac's name (System Settings › General › Sharing). Renamed while it holds sessions
+on the runner, the Mac no longer finds them its own: each of their tabs closes as taken over,
+and Bring Back in the runner's Drakar sends them to the old name, which no Mac answers to.
+Rename it with no runner sessions held, or carry on with them in the runner's Drakar after
+(Take Over Here).
+
 ## What v1 leaves out
 
 The editor and file links in a runner session's window (use Open on the Runner); resuming,
