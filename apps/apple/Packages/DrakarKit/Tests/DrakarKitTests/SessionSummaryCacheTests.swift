@@ -41,6 +41,30 @@ struct SessionSummaryCacheTests {
     #expect(listed.map(\.title) == ["Cached title"])
   }
 
+  /// What a project window reads for its linked worktrees, one file at a time, by the path
+  /// a listing spells (`/private/var/…`, not the temporary folder's `/var/…`).
+  @Test func reusesTheSummaryOfOneUnchangedFile() throws {
+    let (home, account, file) = try makeHome()
+    defer { try? FileManager.default.removeItem(at: home) }
+    let cache = try staleTitleCache(for: file, account: account)
+    let listed = try #require(SessionIndex.list(accounts: [account]).first).file
+    let summary = SessionIndex.summary(of: listed, account: account, cache: cache)
+    #expect(summary?.title == "Cached title")
+  }
+
+  @Test func readsOneFileAgainWhenItChanged() throws {
+    let (home, account, file) = try makeHome()
+    defer { try? FileManager.default.removeItem(at: home) }
+    let cache = try staleTitleCache(for: file, account: account)
+    try write(
+      [
+        #"{"type":"user","cwd":"/p/one","message":{"role":"user","content":"hi"}}"#,
+        #"{"type":"ai-title","aiTitle":"Real title"}"#,
+      ], to: file, date: Date(timeIntervalSince1970: 2e9))
+    let listed = try #require(SessionIndex.list(accounts: [account]).first).file
+    #expect(SessionIndex.summary(of: listed, account: account, cache: cache)?.title == "Real title")
+  }
+
   @Test func readsAFileAgainWhenItsSizeChanged() throws {
     let (home, account, file) = try makeHome()
     defer { try? FileManager.default.removeItem(at: home) }

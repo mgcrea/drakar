@@ -385,6 +385,7 @@ struct GeneralPane: View {
         )
       }
       ClaudeSection()
+      CommandLineSection()
       Section {
         Picker("Be the editor for Claude Code in a terminal", selection: $editorScope) {
           Text("In folders open in Drakar").tag(EditorScope.openFolders)
@@ -527,6 +528,73 @@ private struct FeedbackToggle: View {
       .gridColumnAlignment(.center)
       .onChange(of: isOn) { Attention.shared.refresh() }
       .accessibilityIdentifier("settings.\(level.rawValue).\(feedback.rawValue)")
+  }
+}
+
+/// The `drakar` command, linked with one click, as VS Code's "Install 'code' command".
+private struct CommandLineSection: View {
+  /// Where the link goes, once the login shell's PATH is known.
+  @State private var directory: URL?
+  @State private var installed = false
+  @State private var failure: String?
+
+  var body: some View {
+    Section {
+      LabeledContent("Command line") {
+        HStack {
+          if let directory, installed {
+            Text("drakar, in \(ContentView.abbreviated(directory))")
+          } else {
+            Text("Not installed")
+          }
+          Button(installed ? "Reinstall" : "Install") { Task { await install() } }
+            .disabled(directory == nil || CommandLineTool.bundledScript == nil)
+            .accessibilityIdentifier("settings.installCommand")
+        }
+      }
+      if let failure {
+        Label(failure, systemImage: "exclamationmark.triangle.fill")
+          .foregroundStyle(.orange)
+      }
+    } footer: {
+      Text(
+        "Type `drakar` in a terminal to open the folder you are in, or `drakar <folder>` for another, as `code .` does for VS Code."
+      )
+    }
+    .task {
+      let environment = await AgentSession.environment.value
+      let directory = CommandLineTool.directory(
+        path: environment["PATH"], home: FileManager.default.homeDirectoryForCurrentUser)
+      self.directory = directory
+      installed =
+        CommandLineTool.bundledScript.map { CommandLineTool.isInstalled(script: $0, in: directory) }
+        ?? false
+    }
+  }
+
+  private func install() async {
+    guard let directory, let script = CommandLineTool.bundledScript else { return }
+    failure = nil
+    let place = ContentView.abbreviated(directory)
+    do {
+      try CommandLineTool.install(script: script, in: directory)
+    } catch CocoaError.fileWriteNoPermission {
+      // `/usr/local/bin` is root's on a Mac without Intel Homebrew: macOS asks for a password.
+      if let problem = await CommandLineTool.installAsAdministrator(script: script, in: directory) {
+        failure = String(localized: "Could not link drakar in \(place): \(problem)")
+      }
+    } catch {
+      let link = directory.appending(path: CommandLineTool.name).path(percentEncoded: false)
+      let isFile =
+        FileManager.default.fileExists(atPath: link)
+        && (try? FileManager.default.destinationOfSymbolicLink(atPath: link)) == nil
+      failure =
+        isFile
+        ? String(
+          localized: "\(place) already has a file named drakar. Remove it, then install again.")
+        : String(localized: "Could not link drakar in \(place): \(error.localizedDescription)")
+    }
+    installed = CommandLineTool.isInstalled(script: script, in: directory)
   }
 }
 

@@ -270,6 +270,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
   }
 
+  /// Folders from the `drakar` command, `open -a Drakar <folder>`, or the Dock icon: each
+  /// opens as a project, as a tab of the frontmost window; held for the first window when
+  /// none is up yet.
+  func application(_ application: NSApplication, open urls: [URL]) {
+    let open: ((URL) -> Void)? =
+      FolderIntake.shared.isReady ? { WindowTabs.open(.project($0), asTab: true) } : nil
+    FolderIntake.shared.receive(urls, open: open)
+  }
+
   /// Every window's sessions are stopped, not left to the windows closing: a `claude` must
   /// not outlive the app that was working with it, unless the session host keeps it at work
   /// for the next launch.
