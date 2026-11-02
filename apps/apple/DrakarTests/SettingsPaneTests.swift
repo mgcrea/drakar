@@ -1,3 +1,4 @@
+import AppKit
 import DrakarKit
 import Foundation
 import SupportKit
@@ -37,6 +38,16 @@ struct SettingsPaneTests {
     ]
     #expect(SettingsPane.allCases.map(\.group) == groups.map(\.1))
     #expect(SettingsPane.allCases.map(\.self) == groups.map(\.0))
+  }
+
+  /// A symbol name SF Symbols does not have draws nothing and fails nowhere else: Runner's
+  /// sidebar row went out blank under `macbook.and.imac`.
+  @Test func everyPaneHasAnIcon() {
+    for pane in SettingsPane.allCases {
+      #expect(
+        NSImage(systemSymbolName: pane.systemImage, accessibilityDescription: nil) != nil,
+        "\(pane.rawValue): \(pane.systemImage)")
+    }
   }
 
   /// The slug is the prefix of every defaults key and the tail of every support URL,

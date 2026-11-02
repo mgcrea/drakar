@@ -49,7 +49,7 @@ enum SettingsPane: String, SupportKitSettings.SettingsPane {
     case .transcript: "text.bubble"
     case .theme: "paintpalette"
     case .attention: "bell.badge"
-    case .runner: "macbook.and.imac"
+    case .runner: "desktopcomputer.and.macbook"
     case .updates: "arrow.triangle.2.circlepath"
     case .licence: "key"
     case .whatsNew: "sparkles"

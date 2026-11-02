@@ -78,7 +78,7 @@ struct RunnerToolbarItem: View {
   var body: some View {
     TimelineView(.periodic(from: .now, by: 60)) { context in
       HStack(spacing: 6) {
-        Image(systemName: "macbook.and.imac")
+        Image(systemName: "desktopcomputer.and.macbook")
         Text(name)
         UsageMeters(usage: session?.usage, now: context.date, compact: true)
       }
