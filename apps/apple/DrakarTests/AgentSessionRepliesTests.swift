@@ -173,6 +173,63 @@ struct AgentSessionRepliesTests {
     #expect(await session.listPermissionRules() == .listed(rules))
   }
 
+  /// A stand-in `claude` whose one MCP server is failed until a reconnect, then connected.
+  private func serversSession() throws -> (AgentSession, URL) {
+    let fake = folder.appending(path: "claude")
+    let answer = { (response: String) in
+      #"id=${line#*\"request_id\":\"}; id=${id%%\"*}; printf '%s\n' "{\"type\":\"control_response\",\"response\":{\"subtype\":\"success\",\"request_id\":\"$id\",\"response\":\#(response)}}""#
+    }
+    let server = { (status: String) in
+      #"{\"mcpServers\":[{\"name\":\"cadence\",\"status\":\"\#(status)\"}]}"#
+    }
+    let script = """
+      #!/bin/sh
+      status=failed
+      while read -r line; do
+        printf '%s\\n' "$line" >> "$0.stdin"
+        case "$line" in
+          *'"mcp_reconnect"'*)
+            status=connected
+            \(answer("{}"))
+            ;;
+          *'"mcp_status"'*)
+            if [ "$status" = connected ]; then \(answer(server("connected"))); else \(answer(server("failed"))); fi
+            ;;
+        esac
+      done
+
+      """
+    try Data(script.utf8).write(to: fake)
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: fake.path)
+    let session = AgentSession(folder: folder)
+    session.executableOverride = fake
+    session.accounts = { [] }
+    session.makeTransport = { AgentProcess($0) }
+    return (session, fake)
+  }
+
+  /// Its process's servers, a failed one connected again in place, and nothing asked once
+  /// the process is gone.
+  @Test func reconnectsAServerInItsProcess() async throws {
+    let (session, fake) = try serversSession()
+    defer { session.stop() }
+    await session.servers.read()
+    #expect(session.servers.list == nil)
+    #expect(sentLines(to: fake).isEmpty)
+    await session.spawn()
+    await session.servers.read()
+    #expect(session.servers.list?.map(\.status) == [.failed])
+    await session.servers.reconnect("cadence")
+    #expect(session.servers.list?.map(\.status) == [.connected])
+    #expect(session.servers.failures.isEmpty)
+    #expect(
+      sentLines(to: fake).contains {
+        $0.contains(#""subtype":"mcp_reconnect""#) && $0.contains(#""serverName":"cadence""#)
+      })
+    session.stop()
+    #expect(session.servers.list == nil)
+  }
+
   /// The wait ends with the process, not with the timeout.
   @Test func aProcessEndEndsTheWait() async throws {
     let (session, fake) = try askedSession(answers: false, exits: true)

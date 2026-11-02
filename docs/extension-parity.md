@@ -153,11 +153,11 @@ Protocol changes are the other half and have their own procedure (raising
 
 | request | status | what | evidence | decision |
 | --- | --- | --- | --- | --- |
-| `get_mcp_servers` | has | List MCP servers and their status (Drakar: from a per-project probe, not the live session) | `apps/apple/Drakar/Views/InspectorView.swift:260` | |
+| `get_mcp_servers` | has | List MCP servers and their status (Drakar: from the selected session's process while it runs, else a per-project probe) | `apps/apple/Drakar/Views/InspectorView.swift:260` | |
 | `add_mcp_server` | no | Add an MCP server to the config | | skip: editors for files you own; Drakar opens the files |
 | `remove_mcp_server` | no | Remove an MCP server | | skip: editors for files you own; Drakar opens the files |
 | `set_mcp_server_enabled` | no | Enable or disable an MCP server | | adopt: a failed server is unfixable without it |
-| `reconnect_mcp_server` | no | Reconnect a failed MCP server | | adopt: a failed server is unfixable without it |
+| `reconnect_mcp_server` | has | Reconnect a failed MCP server (Drakar: the inspector's MCP pane, on the selected session's own servers) | `apps/apple/Drakar/Services/SessionServers.swift:45` | adopt: a failed server is unfixable without it |
 | `authenticate_mcp_server` | no | Run OAuth sign-in for an MCP server | | adopt: MCP sign-in |
 | `clear_mcp_server_auth` | no | Forget an MCP server's stored auth | | adopt: MCP sign-in |
 | `submit_mcp_oauth_callback_url` | no | Paste an MCP OAuth callback URL by hand | | adopt: MCP sign-in |
@@ -285,7 +285,7 @@ the SDK sends outside this path.
 | `mcp_clear_auth` | no | `clear_mcp_server_auth` | | |
 | `mcp_oauth_callback_url` | no | `submit_mcp_oauth_callback_url` | | |
 | `mcp_read_resource` | no | unused | | |
-| `mcp_reconnect` | no | `reconnect_mcp_server` | | |
+| `mcp_reconnect` | sends | `reconnect_mcp_server` | | |
 | `mcp_set_servers` | no | host `setChannelMcpServers` | Replaces the session's SDK MCP servers; which requests reach it was not traced | |
 | `mcp_status` | sends | `get_mcp_servers`, `authenticate_mcp_server`, `clear_mcp_server_auth` | | |
 | `mcp_toggle` | no | `set_mcp_server_enabled` | | |

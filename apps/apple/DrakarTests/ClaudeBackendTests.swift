@@ -256,6 +256,51 @@ struct ClaudeBackendTests {
     #expect(silent.signals == [.rewindAnswered(userMessageID: "u-c", dryRun: false, nil)])
   }
 
+  /// The servers read and a reconnect go under `servers-` and `reconnect-` ids; a failed
+  /// reconnect carries the server's own error, as 2.1.316 answers it.
+  @Test func serverRepliesBecomeSignals() throws {
+    let backend = ClaudeBackend()
+    let process = try process()
+    defer { process.terminate() }
+    let read = try #require(try backend.send(.readServers, to: process))
+    #expect(read.hasPrefix("servers-"))
+    let listed = backend.receive(
+      try line(
+        #"{"type":"control_response","response":{"subtype":"success","request_id":"\#(read)","response":{"mcpServers":[{"name":"local-cadence","status":"failed","error":"Connection closed"}]}}}"#
+      ),
+      from: process, at: .now)
+    #expect(
+      listed.signals == [
+        .serversAnswered(
+          requestID: read,
+          [MCPServerEntry(name: "local-cadence", status: .failed, error: "Connection closed")])
+      ])
+
+    let failed = try #require(
+      try backend.send(.reconnectServer(name: "local-cadence"), to: process))
+    #expect(failed.hasPrefix("reconnect-"))
+    let refused = backend.receive(
+      try line(
+        #"{"type":"control_response","response":{"subtype":"error","request_id":"\#(failed)","error":"Connection closed"}}"#
+      ),
+      from: process, at: .now)
+    #expect(refused.signals == [.reconnectAnswered(requestID: failed, error: "Connection closed")])
+
+    let took = try #require(try backend.send(.reconnectServer(name: "local-cadence"), to: process))
+    let success = backend.receive(
+      try line(
+        #"{"type":"control_response","response":{"subtype":"success","request_id":"\#(took)"}}"#),
+      from: process, at: .now)
+    #expect(success.signals == [.reconnectAnswered(requestID: took, error: nil)])
+
+    // Answered once: the same id again says nothing.
+    let again = backend.receive(
+      try line(
+        #"{"type":"control_response","response":{"subtype":"success","request_id":"\#(took)"}}"#),
+      from: process, at: .now)
+    #expect(again.signals.isEmpty)
+  }
+
   /// The rules and the plan go under their own `rules-` and `plan-` ids, and their replies
   /// come back as signals for those ids; a reply to an id never sent says nothing.
   @Test func rulesAndPlanRepliesBecomeSignals() throws {

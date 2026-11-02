@@ -81,6 +81,10 @@ enum AgentCommand: Codable, Equatable {
   /// as `rewindFiles` is: they change nothing a replay would need.
   case listPermissionRules
   case getPlan
+  /// The running process's MCP servers (`mcp_status`), and a failed one connected again,
+  /// for the Skills & MCP tab: sent without a note, as the reads above.
+  case readServers
+  case reconnectServer(name: String)
 }
 
 /// How a running process answered for its permission rules.
@@ -140,4 +144,8 @@ enum SessionSignal: Equatable {
   case permissionRulesAnswered(requestID: String, PermissionRulesAnswer)
   /// A `getPlan` was answered; nil for a refusal or a reply with nothing to read.
   case planAnswered(requestID: String, PlanReply?)
+  /// A `readServers` was answered; nil for a refusal or a reply with no list.
+  case serversAnswered(requestID: String, [MCPServerEntry]?)
+  /// A `reconnectServer` was answered: `error` nil when the server connected.
+  case reconnectAnswered(requestID: String, error: String?)
 }

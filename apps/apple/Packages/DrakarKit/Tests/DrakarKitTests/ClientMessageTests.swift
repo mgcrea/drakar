@@ -88,6 +88,14 @@ struct ClientMessageTests {
         + "\n")
   }
 
+  /// As the extension sends it (2.1.314): the server by `serverName`, camel-cased.
+  @Test func reconnectServer() throws {
+    #expect(
+      try text(.reconnectServer(requestID: "reconnect-1", name: "local-cadence"))
+        == #"{"request":{"serverName":"local-cadence","subtype":"mcp_reconnect"},"request_id":"reconnect-1","type":"control_request"}"#
+        + "\n")
+  }
+
   @Test func encodesAPrompt() throws {
     #expect(
       try text(.prompt("Run it"))

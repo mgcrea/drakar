@@ -18,8 +18,8 @@ final class ClaudeBackend: AgentBackend {
   /// Rewinds sent and not yet answered, under ids of the same kind: the message and kind
   /// each was sent for, since a refusal names neither.
   private var rewindRequests: [String: (userMessageID: String, dryRun: Bool)] = [:]
-  /// Rules and plan reads sent and not yet answered, under `rules-` and `plan-` UUID ids, so
-  /// that a reply to one never sent says nothing.
+  /// Reads and server reconnects sent and not yet answered, under `rules-`, `plan-`,
+  /// `servers-` and `reconnect-` UUID ids, so that a reply to one never sent says nothing.
   private var readRequests: Set<String> = []
 
   var notFoundMessage: String { ClaudeLaunch.notFound }
@@ -123,6 +123,14 @@ final class ClaudeBackend: AgentBackend {
       let id = "plan-\(UUID().uuidString)"
       readRequests.insert(id)
       return (.getPlan(requestID: id), id)
+    case .readServers:
+      let id = "servers-\(UUID().uuidString)"
+      readRequests.insert(id)
+      return (.mcpStatus(requestID: id), id)
+    case .reconnectServer(let name):
+      let id = "reconnect-\(UUID().uuidString)"
+      readRequests.insert(id)
+      return (.reconnectServer(requestID: id, name: name), id)
     }
   }
 
@@ -209,10 +217,25 @@ final class ClaudeBackend: AgentBackend {
         .rewindAnswered(userMessageID: sent.userMessageID, dryRun: sent.dryRun, result))
       return output
     case .controlResponse(let response)
-    where ["rules-", "plan-"].contains(where: response.requestID.hasPrefix):
+    where ["rules-", "plan-", "servers-", "reconnect-"].contains(
+      where: response.requestID.hasPrefix):
       // One never sent by this backend, or answered already, says nothing.
       guard readRequests.remove(response.requestID) != nil else { return output }
-      if response.requestID.hasPrefix("plan-") {
+      if response.requestID.hasPrefix("servers-") {
+        output.signals.append(
+          .serversAnswered(
+            requestID: response.requestID,
+            response.isSuccess
+              ? ProjectCapabilities.servers(fromMCPStatus: response.response) : nil))
+      } else if response.requestID.hasPrefix("reconnect-") {
+        output.signals.append(
+          .reconnectAnswered(
+            requestID: response.requestID,
+            error: response.isSuccess
+              ? nil
+              : response.error.flatMap { $0.isEmpty ? nil : $0 }
+                ?? String(localized: "Claude Code couldn't connect it.")))
+      } else if response.requestID.hasPrefix("plan-") {
         output.signals.append(
           .planAnswered(
             requestID: response.requestID,

@@ -32,6 +32,9 @@ final class AgentSession {
   /// A code rewind's dry run, confirmation and outcome for the sheet: sent straight to the
   /// process, never noted, as `tasks` is.
   @ObservationIgnored let rewinds = Rewinds()
+  /// The process's MCP servers for the Skills & MCP tab, and their reconnects: asked of the
+  /// process, never noted, as `tasks` is.
+  @ObservationIgnored let servers = SessionServers()
   /// This process answered "File rewinding is not enabled.": it offers no code rewind again.
   /// Reset with `process`.
   private(set) var rewindNotEnabled = false
@@ -40,6 +43,9 @@ final class AgentSession {
   private(set) var rulesRevision = 0
   /// How long `listPermissionRules()` and `readPlan()` wait for the process; tests shorten it.
   @ObservationIgnored var controlReplyTimeout: Duration = .seconds(10)
+  /// How long a server's reconnect may take: the CLI answers once its attempt is over, which
+  /// for a server that never answers is its own connect timeout.
+  @ObservationIgnored var reconnectTimeout: Duration = .seconds(60)
   /// Those reads waiting on the process, by request id: resumed by the answer, by their
   /// timeout, or with nil when the process goes.
   @ObservationIgnored private var controlReplies:
@@ -173,6 +179,7 @@ final class AgentSession {
       if oldValue != nil {
         tasks.processEnded()
         rewinds.processEnded()
+        servers.processEnded()
         for id in Array(controlReplies.keys) { resumeControlReply(id, with: nil) }
       }
     }
@@ -318,6 +325,13 @@ final class AgentSession {
       // and a note would have a replay send it again.
       guard let self, let process = self.process else { return }
       _ = try? self.backend.send(command, to: process)
+    }
+    servers.ask = { [weak self] command in
+      guard let self else { return nil }
+      if case .reconnectServer = command {
+        return await self.ask(command, timeout: self.reconnectTimeout)
+      }
+      return await self.ask(command)
     }
     rewinds.folder = folder
     rewinds.send = { [weak self] command in
@@ -600,10 +614,10 @@ final class AgentSession {
 
   private var rewindsCode: Bool { offersCodeRewind && !transcript.isRunning }
 
-  /// `listPermissionRules()` and `readPlan()` ask a process: a Claude Code one Drakar drives,
-  /// as the task controls read it. `phase` is read too, and first: the process is not
-  /// observed, and the phase changes with it as one starts or ends, so what reads this
-  /// redraws then.
+  /// `listPermissionRules()`, `readPlan()` and `servers` ask a process: a Claude Code one
+  /// Drakar drives, as the task controls read it. `phase` is read too, and first: the
+  /// process is not observed, and the phase changes with it as one starts or ends, so what
+  /// reads this redraws then.
   var hasLiveRules: Bool { phase == .ready && agent == .claude && controlsTasks }
 
   /// The running process's permission rules, session approvals and `--allowedTools` ones
@@ -625,13 +639,13 @@ final class AgentSession {
   /// Sends `command` and waits for the signal answering it. Not `write` nor `sendNoted`, as
   /// `tasks.send`: a read the process cannot take changes nothing else, and a note would
   /// have a replay send it again.
-  private func ask(_ command: AgentCommand) async -> SessionSignal? {
+  private func ask(_ command: AgentCommand, timeout: Duration? = nil) async -> SessionSignal? {
     guard hasLiveRules, let process, let id = try? backend.send(command, to: process) else {
       return nil
     }
     // Registered before any line is read: the reply is handled on this actor, after this.
     return await withCheckedContinuation { continuation in
-      let limit = controlReplyTimeout
+      let limit = timeout ?? controlReplyTimeout
       let timeout = Task { [weak self] in
         try? await Task.sleep(for: limit)
         guard !Task.isCancelled else { return }
@@ -1967,7 +1981,8 @@ final class AgentSession {
       // A dry run's refusal or a rewind's: either says it of the whole process.
       if result?.isNotEnabled == true { rewindNotEnabled = true }
       if rewinds.answered(signal) { noteRewound() }
-    case .permissionRulesAnswered(let id, _), .planAnswered(let id, _):
+    case .permissionRulesAnswered(let id, _), .planAnswered(let id, _),
+      .serversAnswered(let id, _), .reconnectAnswered(let id, _):
       resumeControlReply(id, with: signal)
     case .unusable(let message):
       stop()

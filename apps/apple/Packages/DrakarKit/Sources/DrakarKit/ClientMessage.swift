@@ -60,6 +60,11 @@ public enum ClientMessage: Sendable, Equatable {
   /// The session's plan: `{exists: false}`, or its text and file (`PlanReply`). It never
   /// creates one.
   case getPlan(requestID: String)
+  /// Connect an MCP server again, one that failed at start or since. Answered once the
+  /// attempt is over: an empty success, or an error with the server's failure ("Connection
+  /// closed", "Server not found: x") (docs/claude-stream-json.md, "Reconnecting an MCP
+  /// server").
+  case reconnectServer(requestID: String, name: String)
   /// The answer to a request Drakar cannot serve, so that the CLI stops waiting on it.
   case refuse(requestID: String, error: String)
 
@@ -152,6 +157,9 @@ public enum ClientMessage: Sendable, Equatable {
       Self.controlRequest(id, ["subtype": .string("list_permission_rules")])
     case .getPlan(let id):
       Self.controlRequest(id, ["subtype": .string("get_plan")])
+    case .reconnectServer(let id, let name):
+      Self.controlRequest(
+        id, ["subtype": .string("mcp_reconnect"), "serverName": .string(name)])
     case .refuse(let id, let error):
       .object([
         "type": .string("control_response"),

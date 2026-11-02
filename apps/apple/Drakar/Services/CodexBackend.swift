@@ -114,6 +114,8 @@ final class CodexBackend: AgentBackend {
     case .rewindFiles: nil
     // Claude Code's only: a Codex session lists no permission rules and keeps no plan file.
     case .listPermissionRules, .getPlan: nil
+    // Claude Code's only: the Skills & MCP tab lists Claude Code's servers.
+    case .readServers, .reconnectServer: nil
     }
   }
 }

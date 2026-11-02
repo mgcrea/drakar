@@ -279,12 +279,24 @@ private struct ServersPane: View {
   @Binding var isCollapsed: Bool
 
   private var capabilities: Capabilities { project.capabilities }
+  /// The selected session's servers while its process answers for them, else nil: a server
+  /// that failed as it started stays failed there, whatever the probe lists now.
+  private var live: SessionServers? {
+    guard let session = project.selected?.session, session.hasLiveRules else { return nil }
+    return session.servers
+  }
 
   var body: some View {
-    let all = capabilities.lists.mcpServers
+    let live = live
+    let liveList = live?.list
+    let all = liveList ?? capabilities.lists.mcpServers
     let reading = PaneReading(
       isLoading: capabilities.isLoading, problem: capabilities.serversProblem,
-      diagnostics: capabilities.diagnostics, agent: .claude, refresh: { capabilities.refresh() })
+      diagnostics: capabilities.diagnostics, agent: .claude,
+      refresh: {
+        capabilities.refresh()
+        if let live { Task { await live.read() } }
+      })
     let shown = (all ?? []).filter { $0.matches(filter) }
     VStack(spacing: 0) {
       PaneHeader(
@@ -303,10 +315,28 @@ private struct ServersPane: View {
         if all == nil {
           PaneStatus(reading: reading)
         } else {
+          Text(
+            liveList != nil
+              ? "This session's servers" : "What a new session would connect"
+          )
+          .font(.caption)
+          .foregroundStyle(.secondary)
+          .frame(maxWidth: .infinity, alignment: .leading)
+          .padding(.horizontal, 10)
+          .padding(.top, 4)
+          .accessibilityIdentifier("inspector.servers.source")
           List {
             ForEach(shown) { server in
               ServerRow(
-                server: server, isMarked: project.capabilityMarks.servers.contains(server.name)
+                server: server, isMarked: project.capabilityMarks.servers.contains(server.name),
+                reconnect: liveList == nil
+                  ? nil
+                  : live.map { live in
+                    ServerReconnect(
+                      isRunning: live.reconnecting.contains(server.name),
+                      failure: live.failures[server.name],
+                      start: { Task { await live.reconnect(server.name) } })
+                  }
               ) { project.unmarkServer(server.name) }
               .accessibilityIdentifier("inspector.server.\(server.name)")
             }
@@ -322,20 +352,58 @@ private struct ServersPane: View {
         }
       }
     }
+    // Read when the session or its process changes, and after each turn, which may have
+    // lost a server; never while folded.
+    .task(
+      id: LiveRead(
+        session: live.map(ObjectIdentifier.init), isRunning: isRunning, isCollapsed: isCollapsed)
+    ) {
+      guard let live, !isCollapsed else { return }
+      await live.read()
+    }
   }
+
+  private var isRunning: Bool { project.selected?.session.transcript.isRunning ?? false }
+}
+
+/// What reading the selected session's servers again hangs on.
+private struct LiveRead: Equatable {
+  var session: ObjectIdentifier?
+  var isRunning: Bool
+  var isCollapsed: Bool
+}
+
+/// Reconnect on a row of a running process's list: whether one is under way, and why the
+/// last one failed.
+private struct ServerReconnect {
+  var isRunning: Bool
+  var failure: String?
+  var start: () -> Void
 }
 
 /// A server: its status, its name, where it is configured and what it offers, or why it
-/// failed. Its tools fold out.
+/// failed. Its tools fold out. A running process's server can be connected again: from the
+/// row while it is failed, from its menu always.
 private struct ServerRow: View {
   let server: MCPServerEntry
   let isMarked: Bool
+  /// Nil on the probe's list, which no process holds.
+  let reconnect: ServerReconnect?
   let opened: () -> Void
   @State private var isExpanded = false
 
   var body: some View {
+    content
+      .contextMenu {
+        if let reconnect {
+          Button("Reconnect", action: reconnect.start).disabled(reconnect.isRunning)
+        }
+      }
+  }
+
+  @ViewBuilder private var content: some View {
     if server.tools.isEmpty {
-      label
+      row
     } else {
       DisclosureGroup(isExpanded: $isExpanded) {
         ForEach(server.tools, id: \.name) { tool in
@@ -354,9 +422,30 @@ private struct ServerRow: View {
           }
         }
       } label: {
-        label
+        row
       }
       .onChange(of: isExpanded) { _, expanded in if expanded { opened() } }
+    }
+  }
+
+  /// The label, then Reconnect while the server is failed, or its spinner while one runs.
+  private var row: some View {
+    HStack(spacing: 4) {
+      label
+      Spacer(minLength: 0)
+      if let reconnect {
+        if reconnect.isRunning {
+          ProgressView().controlSize(.mini)
+            .help("Reconnecting…")
+        } else if server.status == .failed {
+          Button("Reconnect", systemImage: "arrow.clockwise", action: reconnect.start)
+            .labelStyle(.iconOnly)
+            .buttonStyle(.borderless)
+            .foregroundStyle(.secondary)
+            .help("Reconnect \(server.name) in this session")
+            .accessibilityIdentifier("inspector.server.\(server.name).reconnect")
+        }
+      }
     }
   }
 
@@ -380,7 +469,7 @@ private struct ServerRow: View {
           .lineLimit(1)
       }
     }
-    .help(server.error ?? server.status.label)
+    .help(failure ?? server.status.label)
     .accessibilityElement(children: .combine)
     .accessibilityValue(server.status.label)
   }
@@ -394,9 +483,15 @@ private struct ServerRow: View {
     }
   }
 
+  /// Why it failed: the last reconnect's error while it is still failed, else the list's.
+  private var failure: String? {
+    guard server.status == .failed else { return server.error }
+    return reconnect?.failure ?? server.error
+  }
+
   /// "User · 11 tools", "Plugin · Needs authentication", or the failure.
   private var detail: String {
-    if server.status == .failed, let error = server.error { return error }
+    if server.status == .failed, let failure { return failure }
     var parts = [MCPSourceLabel.text(server.source)].compactMap { $0 }
     if server.status == .connected {
       parts.append(

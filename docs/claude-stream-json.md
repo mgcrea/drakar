@@ -193,6 +193,21 @@ skip its children (`LiveSession.read`); Armada shows it as an idle session for a
 
 Captured as the `capabilities` fixture, trimmed, every secret replaced.
 
+## Reconnecting an MCP server (verified 2026-11-02, 2.1.316)
+
+A server that fails as the process starts stays failed for that process: nothing retries
+it. `{"subtype":"mcp_reconnect","serverName":"…"}`, as the extension's `/mcp` Reconnect
+sends it, tries again in place, and answers once the attempt is over:
+
+- still failing → error, the server's failure as `error` (`Connection closed`), and
+  `mcp_status` lists it `failed` with the same `error`;
+- connected → empty success, and `mcp_status` lists it `connected` with its tools;
+- a name the process does not know → error `Server not found: <name>`.
+
+The server's tools are the model's from the next prompt on: the turn's `system`/`init`
+lists the server `connected` and its `mcp__<server>__*` tools, and the model called one.
+Checked against a stdio server that exits until a flag file exists; no fixture.
+
 ## Mode and model (verified 2026-10-06, 2.1.288)
 
 Before any prompt, no API call:
