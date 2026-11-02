@@ -217,7 +217,7 @@ struct SessionListView: View {
     }
     Divider()
     if item.session.isProcessRunning {
-      Button("End Session") { confirmIfRunning(item) { project.end(item) } }
+      Button("End Session") { confirmEnding([item]) { project.end(item) } }
     }
     Button("Remove from Window") { confirmIfRunning(item) { project.remove(item) } }
     if let candidate = SessionMoves.candidate(for: item) {
@@ -311,7 +311,7 @@ struct SessionListView: View {
   @ViewBuilder private var markedMenu: some View {
     let marked = project.markedSessions
     if marked.contains(where: \.session.isProcessRunning) {
-      Button("End \(marked.count) Sessions") { confirmIfRunning(marked) { project.stopMarked() } }
+      Button("End \(marked.count) Sessions") { confirmEnding(marked) { project.stopMarked() } }
     }
     Button("Remove \(marked.count) Sessions from Window") {
       confirmIfRunning(marked) { project.removeMarked() }
@@ -320,9 +320,23 @@ struct SessionListView: View {
     Button("Unmark All") { project.clearMarks() }
   }
 
-  /// As for one row, once for the marked rows still working.
+  /// End Session: a runner's sessions are asked about every time, nothing resuming them
+  /// once ended; this Mac's only mid-turn, as any stop is.
+  private func confirmEnding(_ items: [ProjectSession], then action: @escaping () -> Void) {
+    let onRunner = items.filter { $0.session.isOnRunner && $0.session.isProcessRunning }
+    guard !onRunner.isEmpty else {
+      if items.count == 1 { return confirmIfRunning(items[0], then: action) }
+      return confirmIfRunning(items, then: action)
+    }
+    let alert = EndingOnRunner.alert(titles: onRunner.map(\.displayTitle))
+    if alert.runModal() == .alertFirstButtonReturn { action() }
+  }
+
+  /// As for one row, once for the marked rows still working. A runner's is let go, not
+  /// stopped, by any stop but End Session's, so it does not count.
   private func confirmIfRunning(_ items: [ProjectSession], then action: @escaping () -> Void) {
-    let working = items.filter(\.session.transcript.isRunning).count
+    let working = items.filter { $0.session.transcript.isRunning && !$0.session.isOnRunner }
+      .count
     guard working > 0 else { return action() }
     let alert = NSAlert()
     alert.messageText =
@@ -335,9 +349,9 @@ struct SessionListView: View {
     if alert.runModal() == .alertFirstButtonReturn { action() }
   }
 
-  /// Mid-turn, stopping loses the turn: ask first.
+  /// Mid-turn, stopping loses the turn: ask first. A runner's is let go instead, as above.
   private func confirmIfRunning(_ item: ProjectSession, then action: @escaping () -> Void) {
-    guard item.session.transcript.isRunning else { return action() }
+    guard item.session.transcript.isRunning, !item.session.isOnRunner else { return action() }
     let alert = NSAlert()
     alert.messageText = String(localized: "“\(item.displayTitle)” is still working.")
     alert.informativeText = String(localized: "Stopping it now ends the turn part-way.")

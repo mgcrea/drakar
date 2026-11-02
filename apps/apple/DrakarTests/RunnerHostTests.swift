@@ -12,7 +12,8 @@ import Testing
 ///
 /// Serialized: `RunnerSettings.sshExecutable` and `SessionHost.runner` are one for the whole
 /// app, and this is the only suite that changes either; keep it so, or put every suite that
-/// does under one serialized parent.
+/// does under one serialized parent. `AppLifecycle.isTerminating`, `HostedSessionTests`'
+/// own, is set here only around a stop and put back before anything is awaited.
 @MainActor
 @Suite("A runner's host, through ssh", .serialized, .timeLimit(.minutes(2)))
 struct RunnerHostTests {
@@ -732,6 +733,185 @@ struct RunnerHostTests {
     let meta = try #require(resumed.meta())
     #expect(meta.history == HistoryMark.none)
     #expect(meta.start.resuming == nil)
+  }
+
+  /// A runner project's window on `host`, as `Project` makes one for a runner's folder.
+  private func runnerProject(on host: SessionHost) -> Project {
+    let project = Project(folder: folder, runner: settings.id.uuidString)
+    project.sessionHost = host
+    return project
+  }
+
+  /// A new session of `project` on its runner, sent `prompt`: "quick" leaves it idle, any
+  /// other prompt at work.
+  private func startedRow(in project: Project, prompt: String = "quick") async throws
+    -> ProjectSession
+  {
+    let item = project.newSession()
+    item.session.accounts = { [] }
+    item.session.send(prompt)
+    #expect(
+      await eventually {
+        item.session.phase == .ready && item.session.hostID != nil
+          && item.session.transcript.isRunning == (prompt != "quick")
+      })
+    try #require(item.session.isOnRunner && item.session.isHosted)
+    return item
+  }
+
+  private func held(_ id: String, on watcher: HostClient) async -> HeldProcess? {
+    await answer(within: .seconds(2)) { try await watcher.list() }?.first { $0.id == id }
+  }
+
+  /// Kept by the runner's host, running, and no app's.
+  private func isLetGo(_ id: String, on watcher: HostClient) async -> Bool {
+    guard let held = await held(id, on: watcher) else { return false }
+    return held.running && held.attachedApp == nil
+  }
+
+  /// A runner's session cannot be resumed from this Mac (remote sessions spec §4): closing
+  /// its row, or its window, lets an idle one go as one at work is, and the runner's host
+  /// keeps it.
+  @Test func closingAnIdleRunnerSessionDetachesIt() async throws {
+    _ = try installRunnerClaude()
+    try relayingSSH()
+    let helper = try #require(SessionHost.startHelper(in: directory))
+    defer { finish([helper]) }
+    let host = SessionHost(endpoint: .runner(settings))
+    let project = runnerProject(on: host)
+    defer { project.stopAll() }
+    let removed = try await startedRow(in: project)
+    let closed = try await startedRow(in: project)
+    let ids = try [removed, closed].map { try #require($0.session.hostID) }
+    let watcher = try await watcher()
+    defer { watcher.close() }
+
+    project.remove(removed)
+    project.stopAll(handingOver: true)
+    #expect(!removed.session.isProcessRunning && !closed.session.isProcessRunning)
+    for id in ids { #expect(await eventually { await isLetGo(id, on: watcher) }) }
+    // Let go, not ended: still there a moment later.
+    try await Task.sleep(for: .milliseconds(500))
+    for id in ids { #expect(await isLetGo(id, on: watcher)) }
+    #expect(host.ended.isEmpty)
+  }
+
+  /// Quitting lets a runner's sessions go, idle or at work: the runner's host keeps both.
+  @Test func quittingDetachesRunnerSessions() async throws {
+    _ = try installRunnerClaude()
+    try relayingSSH()
+    let helper = try #require(SessionHost.startHelper(in: directory))
+    defer { finish([helper]) }
+    let host = SessionHost(endpoint: .runner(settings))
+    let project = runnerProject(on: host)
+    let idle = try await startedRow(in: project)
+    let working = try await startedRow(in: project, prompt: "hi")
+    #expect(!idle.session.isAtWork && working.session.isAtWork)
+    let ids = try [idle, working].map { try #require($0.session.hostID) }
+    let watcher = try await watcher()
+    defer { watcher.close() }
+
+    // Set and put back with nothing awaited between: no other suite's stop sees it.
+    AppLifecycle.isTerminating = true
+    project.stopAll()
+    AppLifecycle.isTerminating = false
+    for id in ids { #expect(await eventually { await isLetGo(id, on: watcher) }) }
+    try await Task.sleep(for: .milliseconds(500))
+    for id in ids { #expect(await isLetGo(id, on: watcher)) }
+  }
+
+  /// End Session ends a runner's session: its process, and the host's record of it.
+  @Test func endSessionEndsARunnerSession() async throws {
+    _ = try installRunnerClaude()
+    try relayingSSH()
+    let helper = try #require(SessionHost.startHelper(in: directory))
+    defer { finish([helper]) }
+    let host = SessionHost(endpoint: .runner(settings))
+    let project = runnerProject(on: host)
+    defer { project.stopAll() }
+    let item = try await startedRow(in: project)
+    let id = try #require(item.session.hostID)
+    let watcher = try await watcher()
+    defer { watcher.close() }
+
+    project.end(item)
+    #expect(!item.session.isProcessRunning)
+    #expect(host.ended.contains(id))
+    #expect(
+      await eventually {
+        await answer(within: .seconds(2)) { try await watcher.list() }?
+          .contains { $0.id == id } == false
+      })
+  }
+
+  /// End Session while the session waits out its own stale relay on the runner: the host
+  /// refuses anything of the process until that relay has gone, so the end waits for it, then
+  /// ends the process.
+  @Test func endSessionDuringAStaleRelayEndsItOnceFree() async throws {
+    _ = try installRunnerClaude()
+    try relayingSSH()
+    let helper = try #require(SessionHost.startHelper(in: directory))
+    defer { finish([helper]) }
+    let host = SessionHost(endpoint: .runner(settings))
+    host.ownsProcess = { _ in true }
+    let project = runnerProject(on: host)
+    defer { project.stopAll() }
+    let item = try await startedRow(in: project)
+    let id = try #require(item.session.hostID)
+    let watcher = try await watcher()
+    defer { watcher.close() }
+    let relay = try #require(await attached(id, on: watcher))
+    kill(relay, SIGSTOP)
+    var hungUp = false
+    defer { if !hungUp { kill(relay, SIGKILL) } }
+    await host.client()?.close()
+    #expect(await eventually { item.session.isReconnecting })
+
+    project.end(item)
+    #expect(!item.session.isProcessRunning)
+    #expect(host.ended.contains(id))
+    try await Task.sleep(for: .seconds(1))
+    // Still the stale relay's: nothing could end it yet.
+    #expect(await held(id, on: watcher)?.running == true)
+
+    kill(relay, SIGKILL)
+    hungUp = true
+    #expect(
+      await eventually {
+        await answer(within: .seconds(2)) { try await watcher.list() }?
+          .contains { $0.id == id } == false
+      })
+  }
+
+  /// Closed while it waits out a stale relay, a runner's session is let go: nothing ends it,
+  /// and once the relay has gone the host keeps it, no app's.
+  @Test func closingDuringAStaleRelayLeavesTheSessionToItsHost() async throws {
+    _ = try installRunnerClaude()
+    try relayingSSH()
+    let helper = try #require(SessionHost.startHelper(in: directory))
+    defer { finish([helper]) }
+    let host = SessionHost(endpoint: .runner(settings))
+    host.ownsProcess = { _ in true }
+    let project = runnerProject(on: host)
+    let item = try await startedRow(in: project)
+    let id = try #require(item.session.hostID)
+    let watcher = try await watcher()
+    defer { watcher.close() }
+    let relay = try #require(await attached(id, on: watcher))
+    kill(relay, SIGSTOP)
+    var hungUp = false
+    defer { if !hungUp { kill(relay, SIGKILL) } }
+    await host.client()?.close()
+    #expect(await eventually { item.session.isReconnecting })
+
+    project.stopAll(handingOver: true)
+    // Long enough for anything the close sent to have reached the host before the relay goes.
+    try await Task.sleep(for: .seconds(1))
+    kill(relay, SIGKILL)
+    hungUp = true
+    #expect(await eventually { await isLetGo(id, on: watcher) })
+    try await Task.sleep(for: .seconds(2.5))
+    #expect(await isLetGo(id, on: watcher))
   }
 
   /// A session on `host`, its first turn over.

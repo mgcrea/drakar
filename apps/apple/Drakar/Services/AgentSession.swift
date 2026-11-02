@@ -1223,7 +1223,11 @@ final class AgentSession {
   /// session host is let go instead: it carries on there, sent nothing, for the project's
   /// next window to pick up. An idle one ends then too, and the host forgets it by itself
   /// once it has: the app may be gone by then.
-  func stop(handingOver: Bool = false) {
+  ///
+  /// A runner's session is never ended that way, for nothing resumes it from this Mac
+  /// (remote sessions spec §4): any stop but End Session's (`ending`) lets it go, at work or
+  /// idle, and the runner's host keeps it.
+  func stop(handingOver: Bool = false, ending: Bool = false) {
     let waiting = transcript.waitingCount
     defer { permissionsMayHaveChanged(from: waiting) }
     stopCount += 1
@@ -1231,10 +1235,13 @@ final class AgentSession {
     pendingEffect = .none
     let wasRunning = process != nil
     if let hosted = process as? HostedProcess {
-      if handingOver || AppLifecycle.isTerminating, isAtWork {
+      if isOnRunner, !ending {
+        // Reconnecting too: the host lets it go by itself once a stale relay holding it has.
+        hosted.detach()
+      } else if !isOnRunner, handingOver || AppLifecycle.isTerminating, isAtWork {
         hosted.detach()
       } else if isReconnecting {
-        end(hosted, onceReconnected: sessionHost)
+        end(hosted, onceReconnected: sessionHost, waitingOutStaleRelay: isOnRunner)
       } else {
         if let id = hosted.id { sessionHost.ending(id) }
         hosted.closeInput()
@@ -1260,12 +1267,25 @@ final class AgentSession {
   }
 
   /// A stop asked while the host was out of reach goes once it is back: no process is left
-  /// working for nobody.
-  private func end(_ hosted: HostedProcess, onceReconnected host: SessionHost) {
+  /// working for nobody. `waitingOutStaleRelay` for a runner's session, whose process this
+  /// Mac's own stale relay may still hold (spec §3), the host refusing anything of it until
+  /// then: the end waits for it to go, as the session would have, and is sent after. It is
+  /// marked ended at once (`SessionHost.ending`), so no window takes it back meanwhile.
+  private func end(
+    _ hosted: HostedProcess, onceReconnected host: SessionHost, waitingOutStaleRelay: Bool
+  ) {
+    if let id = hosted.id { host.ending(id) }
     Task {
+      if waitingOutStaleRelay, let id = hosted.id {
+        let deadline = ContinuousClock.now + Self.releasingLimit
+        var wait = SessionHost.firstWait
+        while ContinuousClock.now < deadline, await host.reattachRefused(id) {
+          try? await Task.sleep(for: min(wait, deadline - .now))
+          wait = min(wait * 2, SessionHost.longestWait)
+        }
+      }
       guard let client = await host.reconnect() else { return }
       _ = hosted.reattach(on: client)
-      if let id = hosted.id { host.ending(id) }
       hosted.forgetWhenEnded()
       hosted.closeInput()
       hosted.terminate()

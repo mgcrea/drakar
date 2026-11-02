@@ -1655,10 +1655,11 @@ final class Project {
       && item.attachments.isEmpty
   }
 
-  /// Stops the process; the row stays, and its next prompt resumes it. A stop asked for
-  /// reports no exit, so its slot in a batch is freed here.
+  /// End Session: stops the process; the row stays, and its next prompt resumes it, or starts
+  /// anew on a runner. A stop asked for reports no exit, so its slot in a batch is freed here.
+  /// The one way a runner's session ends; every other stop lets it go (spec §4).
   func end(_ item: ProjectSession) {
-    item.session.stop()
+    item.session.stop(ending: true)
     fanOutFinished(item)
   }
 
@@ -1680,6 +1681,7 @@ final class Project {
   }
 
   /// `handingOver` when the window goes: the sessions at work carry on in the session host.
+  /// A runner's carry on there whatever the stop, at work or idle.
   func stopAll(handingOver: Bool = false) {
     isStopped = true
     for item in sessions { item.session.stop(handingOver: handingOver) }

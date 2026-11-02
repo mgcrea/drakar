@@ -28,4 +28,16 @@ struct ClosingTests {
       RunningSessions.note(count: 1, action: .quit)
         == "A session is still working. Quitting stops it.")
   }
+
+  /// End Session on a runner's session says what ending it costs: nothing resumes it here.
+  @Test func endingARunnerSessionSaysItCannotBeResumed() {
+    let one = EndingOnRunner.alert(titles: ["Refactor"])
+    #expect(one.messageText == "End “Refactor”?")
+    #expect(one.informativeText == "This conversation can't be resumed from this Mac.")
+    #expect(one.buttons.map(\.title) == ["End Session", "Cancel"])
+    let two = EndingOnRunner.alert(titles: ["Refactor", "Tests"])
+    #expect(two.messageText == "End 2 sessions?")
+    #expect(two.informativeText == "These conversations can't be resumed from this Mac.")
+    #expect(two.buttons.map(\.title) == ["End Sessions", "Cancel"])
+  }
 }

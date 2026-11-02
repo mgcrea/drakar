@@ -472,6 +472,28 @@ enum RunningSessions {
   }
 }
 
+/// The question before End Session ends a runner's sessions, asked whether or not they are
+/// mid-turn: nothing resumes one from this Mac once ended (remote sessions spec §4).
+enum EndingOnRunner {
+  /// `titles`: the sessions' names, one per session ended.
+  static func alert(titles: [String]) -> NSAlert {
+    let alert = NSAlert()
+    if titles.count == 1 {
+      alert.messageText = String(localized: "End “\(titles[0])”?")
+      alert.informativeText = String(localized: "This conversation can't be resumed from this Mac.")
+    } else {
+      alert.messageText = String(localized: "End \(titles.count) sessions?")
+      alert.informativeText = String(
+        localized: "These conversations can't be resumed from this Mac.")
+    }
+    alert.addButton(
+      withTitle: titles.count == 1
+        ? String(localized: "End Session") : String(localized: "End Sessions"))
+    alert.addButton(withTitle: String(localized: "Cancel"))
+    return alert
+  }
+}
+
 /// "Save changes?" for one window’s unsaved tabs, or every window’s at quit.
 enum UnsavedChanges {
   enum Choice { case save, discard, cancel }
