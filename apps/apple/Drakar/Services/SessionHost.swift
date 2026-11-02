@@ -97,9 +97,12 @@ import Synchronization
   private(set) var failure: RunnerFailure?
   /// Let go for good (`close()`): nothing more is asked of it.
   private(set) var isClosed = false
-  /// Whether a process the runner holds is this Mac's (its `owner`), for `reattachRefused`:
+  /// Whether a process the runner holds is this Mac's (its `owner`), for `ownership(of:)`:
   /// what its meta says of a runner's, nothing of a local host's. Tests give their own.
   var ownsProcess: (HeldProcess) -> Bool = { _ in false }
+  /// Tests only: how many of the next listings that reach the host come back with nothing, as
+  /// one the host takes longer than `helloLimit` to answer does.
+  var unansweredListings = 0
 
   private let helper: URL
   private let cooldown: Duration
@@ -417,7 +420,32 @@ import Synchronization
   /// nothing of what it holds.
   func listed() async -> [HeldProcess]? {
     guard let client = await connected() else { return nil }
+    if unansweredListings > 0 {
+      unansweredListings -= 1
+      return nil
+    }
     return await Self.within(Self.helloLimit) { try await client.list() }
+  }
+
+  /// Whose a runner's process is, as its host lists it now (`ownership(of:)`).
+  enum Ownership: Equatable {
+    /// Listed, and this Mac's (`ownsProcess`).
+    case owned(HeldProcess)
+    /// Listed, and not this Mac's: handed over, taken over on the runner, or another Mac's.
+    case notOwned(HeldProcess)
+    /// Not listed: ended, and forgotten.
+    case gone
+    /// No listing came, the host out of reach or slow to answer. It says nothing of whose the
+    /// process is, nor whether it is free: never taken for either.
+    case unknown
+  }
+
+  /// Whose `id` is, as the host lists it now. The one place a listing that never came is
+  /// told apart from what it would have said (`Ownership.unknown`).
+  func ownership(of id: String) async -> Ownership {
+    guard let held = await listed() else { return .unknown }
+    guard let process = held.first(where: { $0.id == id }) else { return .gone }
+    return ownsProcess(process) ? .owned(process) : .notOwned(process)
   }
 
   /// What the host holds, without starting one: with no socket there is no host, and nothing
@@ -549,11 +577,15 @@ import Synchronization
   /// own old connection, whose relay on the runner holds the process until the runner's sshd
   /// hangs it up (spec §3, "A stale relay"). Only for a runner's process still running there,
   /// attached to an app, and that `ownsProcess` says is this Mac's; never on a local host.
+  /// True too while no listing comes, which says nothing either way: waited on, not taken for
+  /// a free process.
   func reattachRefused(_ id: String) async -> Bool {
-    guard isRunner, let held = await listed()?.first(where: { $0.id == id }) else {
-      return false
+    guard isRunner else { return false }
+    switch await ownership(of: id) {
+    case .owned(let held): return held.running && held.attachedApp != nil
+    case .unknown: return true
+    case .notOwned, .gone: return false
     }
-    return held.running && held.attachedApp != nil && ownsProcess(held)
   }
 
   /// The host's refusal of an attach to a process another app holds.

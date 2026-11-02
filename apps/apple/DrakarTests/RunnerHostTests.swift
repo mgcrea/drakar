@@ -1033,6 +1033,63 @@ struct RunnerHostTests {
     host.close()
     #expect(await eventually { !host.ended.contains(id) })
     #expect(await held(id, on: watcher)?.running == true)
+    // Said as it is: not ended, and maybe running there still.
+    let runner = try #require(item.session.runnerName)
+    #expect(
+      await eventually { item.session.goneOnRunnerText == AgentSession.notEndedOnRunner(runner) })
+  }
+
+  /// End Session while the runner is out of reach, with this Mac's stale relay still holding
+  /// the process once it is back: the end waits for the runner, then for that relay to go, and
+  /// nothing says the session ended until the host has taken the end.
+  @Test func endSessionWhileUnreachableWaitsForTheRunnerThenItsStaleRelay() async throws {
+    _ = try installRunnerClaude()
+    try relayingSSH()
+    let helper = try #require(SessionHost.startHelper(in: directory))
+    defer { finish([helper]) }
+    let host = SessionHost(endpoint: .runner(settings), cooldown: .milliseconds(100))
+    host.ownsProcess = { _ in true }
+    let project = runnerProject(on: host)
+    defer { project.stopAll() }
+    let item = try await startedRow(in: project)
+    let id = try #require(item.session.hostID)
+    let watcher = try await watcher()
+    defer { watcher.close() }
+    let relay = try #require(await attached(id, on: watcher))
+    // The network drops: the runner's relay hangs on, and ssh fails until it is back.
+    kill(relay, SIGSTOP)
+    var hungUp = false
+    defer { if !hungUp { kill(relay, SIGKILL) } }
+    try fakeSSH("exit 255")
+    await host.client()?.close()
+    #expect(await eventually { item.session.isReconnecting })
+    let outOfReach = AgentSession.outOfReachOnRunner("Studio")
+
+    project.end(item)
+    #expect(!item.session.isProcessRunning)
+    #expect(host.endsUnderWay.contains(id))
+    try await Task.sleep(for: .seconds(1.5))
+    #expect(item.session.goneOnRunnerText == outOfReach)
+    #expect(host.endsUnderWay.contains(id))
+
+    // Back, the stale relay holding the process still: refused anything of it, so not ended.
+    try relayingSSH()
+    #expect(await eventually { host.isAvailable })
+    try await Task.sleep(for: .seconds(1.5))
+    #expect(item.session.goneOnRunnerText == outOfReach)
+    #expect(host.endsUnderWay.contains(id))
+    #expect(await held(id, on: watcher)?.running == true)
+
+    kill(relay, SIGKILL)
+    hungUp = true
+    #expect(
+      await eventually {
+        await answer(within: .seconds(2)) { try await watcher.list() }?
+          .contains { $0.id == id } == false
+      })
+    #expect(
+      await eventually { item.session.goneOnRunnerText == AgentSession.endedOnRunner("Studio") })
+    #expect(host.ended.contains(id) && !host.endsUnderWay.contains(id))
   }
 
   /// A runner's process taken back after a relaunch, through the runner, is the runner's from
@@ -1392,6 +1449,76 @@ struct RunnerHostTests {
     let watcher = try await watcher()
     defer { watcher.close() }
     #expect(await held(id, on: watcher)?.attachedApp == getpid())
+  }
+
+  /// End Session on the Mac, sent while away, for a session taken over on the runner and let go
+  /// there since: free, so the host would take an end from any app, but no longer the Mac's to
+  /// end. Nothing is sent; its tab closes as a reconnect's would, with the notice.
+  @Test func endSessionOnASessionTakenOverWhileAwayEndsNothing() async throws {
+    _ = try installRunnerClaude()
+    try relayingSSH()
+    let helper = try #require(SessionHost.startHelper(in: directory))
+    let name = namingThisMac()
+    defer {
+      ThisMac.name = name
+      finish([helper])
+    }
+    let (mac, item, runner, shown, id, notices) = try await awayFromTheRunner()
+    defer {
+      mac.stopAll()
+      runner.stopAll()
+    }
+    #expect(await runner.takeOver(shown) == nil)
+    let taken = try #require(runner.sessions.first { $0.session.hostID == id }?.session)
+    (taken.process as? HostedProcess)?.detach()
+    let watcher = try await watcher()
+    defer { watcher.close() }
+    #expect(await eventually { await isLetGo(id, on: watcher) })
+
+    mac.end(item)
+    try relayingSSH()
+    #expect(await eventually { !mac.sessions.contains { $0.id == item.id } })
+    #expect(notices.said.map(\.row) == [item.id])
+    #expect(mac.sessionHost?.ended.contains(id) == false)
+    // Let alone: running still, free, and still no Mac's.
+    try await Task.sleep(for: .milliseconds(500))
+    #expect(await isLetGo(id, on: watcher))
+    #expect(await meta(id, on: watcher)?.owner == nil)
+  }
+
+  /// A listing that does not come once the Mac has reconnected says nothing of whose the
+  /// process is: the session asks again, reconnecting still, rather than attach to one taken
+  /// over and let go on the runner, then closes its tab once it is told.
+  @Test func aListingThatFailsOnReconnectTakesNothingBack() async throws {
+    _ = try installRunnerClaude()
+    try relayingSSH()
+    let helper = try #require(SessionHost.startHelper(in: directory))
+    let name = namingThisMac()
+    defer {
+      ThisMac.name = name
+      finish([helper])
+    }
+    let (mac, item, runner, shown, id, notices) = try await awayFromTheRunner()
+    defer {
+      mac.stopAll()
+      runner.stopAll()
+    }
+    #expect(await runner.takeOver(shown) == nil)
+    let taken = try #require(runner.sessions.first { $0.session.hostID == id }?.session)
+    (taken.process as? HostedProcess)?.detach()
+    let watcher = try await watcher()
+    defer { watcher.close() }
+    #expect(await eventually { await isLetGo(id, on: watcher) })
+
+    let host = try #require(mac.sessionHost)
+    host.unansweredListings = 3
+    try relayingSSH()
+    #expect(await eventually { !mac.sessions.contains { $0.id == item.id } })
+    #expect(host.unansweredListings == 0)
+    #expect(notices.said.map(\.row) == [item.id])
+    try await Task.sleep(for: .milliseconds(500))
+    #expect(await isLetGo(id, on: watcher))
+    #expect(await meta(id, on: watcher)?.owner == nil)
   }
 
   /// A relay of the Mac's own that hangs on to a session it still owns keeps its tab, waiting

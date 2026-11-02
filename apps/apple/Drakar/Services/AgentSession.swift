@@ -161,7 +161,10 @@ final class AgentSession {
   @ObservationIgnored private(set) var process: (any ProcessTransport)? {
     didSet {
       guard process !== oldValue else { return }
-      if process != nil { sawEndOnRunner = false }
+      if process != nil {
+        sawEndOnRunner = false
+        couldNotEndOnRunner = false
+      }
       // A refusal of the next one's attach is no stale relay of this one's.
       releasingUntil = nil
       // A new process has said nothing about rewinding yet.
@@ -202,12 +205,17 @@ final class AgentSession {
   /// window offers a new session instead, and says which (`goneOnRunnerText`).
   var isGoneOnRunner: Bool { isOnRunner && launched != nil && process == nil }
   /// Its process was seen to end, or to be let go for good (End Session, taken over), rather
-  /// than lost from reach. Cleared by the next process.
+  /// than lost from reach. An End Session sent while reconnecting sets it only once the host
+  /// has taken the end. Cleared by the next process.
   private(set) var sawEndOnRunner = false
+  /// An End Session sent while reconnecting that could not be: given up on, or the runner no
+  /// longer set up. Its process may run on there. Cleared by the next process.
+  private(set) var couldNotEndOnRunner = false
   /// What the composer's place says of a runner session it can no longer send to.
   var goneOnRunnerText: String? {
     guard isGoneOnRunner, let name = runnerName else { return nil }
-    return sawEndOnRunner ? Self.endedOnRunner(name) : Self.outOfReachOnRunner(name)
+    if sawEndOnRunner { return Self.endedOnRunner(name) }
+    return couldNotEndOnRunner ? Self.notEndedOnRunner(name) : Self.outOfReachOnRunner(name)
   }
   /// What the last process was launched with, where the history stood then, and where it
   /// runs and whose it is: the parts of `meta()` only a start sets, or the meta a replay
@@ -1121,6 +1129,14 @@ final class AgentSession {
     String(localized: "This session has ended on \(runner). It can't be resumed from this Mac.")
   }
 
+  /// What it says once End Session could not end it, which may run on there.
+  static func notEndedOnRunner(_ runner: String) -> String {
+    String(
+      localized:
+        "Drakar couldn't end this session on \(runner). Its process may still be running there; Home lists it, to end from its row."
+    )
+  }
+
   /// What it says once its process went out of this window's reach, which may run on there.
   static func outOfReachOnRunner(_ runner: String) -> String {
     String(
@@ -1337,6 +1353,8 @@ final class AgentSession {
     pendingPrompt = nil
     pendingEffect = .none
     let wasRunning = process != nil
+    // Ended now, on a live connection; one sent once reconnected says so itself, once taken.
+    var endedNow = false
     if let hosted = process as? HostedProcess {
       if lettingGo || (isOnRunner && !ending) {
         // Reconnecting too: the host lets it go by itself once a stale relay holding it has.
@@ -1351,17 +1369,19 @@ final class AgentSession {
         // Done with it: the host forgets it once it ends, so no later launch shows it again.
         hosted.forgetWhenEnded()
         hosted.terminate()
+        endedNow = true
       }
     } else {
       process?.closeInput()
       process?.terminate()
+      endedNow = true
     }
     events?.cancel()
     isReconnecting = false
     // The cancelled event task will not report the exit, so it is recorded here.
     process = nil
     // End Session's, unlike a detach, which leaves the process to run on there.
-    if isOnRunner, ending, wasRunning { sawEndOnRunner = true }
+    if isOnRunner, ending, wasRunning, endedNow { sawEndOnRunner = true }
     if wasRunning { followFromHere() }
     permissionMode = nil
     appliedEffort = nil
@@ -1405,41 +1425,97 @@ final class AgentSession {
   }
 
   /// A stop asked while the host was out of reach goes once it is back: no process is left
-  /// working for nobody. `waitingOutStaleRelay` for a runner's session, whose process this
-  /// Mac's own stale relay may still hold (spec §3), the host refusing anything of it until
-  /// then: the end waits for it to go, as the session would have, and is sent after. It is
-  /// marked ended at once then, and under way (`SessionHost.endingOnceFree`), so no window
-  /// takes it back meanwhile and Home does not take it for an end that missed.
+  /// working for nobody. `waitingOutStaleRelay` for a runner's session (`endOnceFree`), which
+  /// is marked ended at once, and under way (`SessionHost.endingOnceFree`), so that no window
+  /// takes it back meanwhile and Home does not take it for an end that missed; what came of
+  /// it is the window's to say once known.
   private func end(
     _ hosted: HostedProcess, onceReconnected host: SessionHost, waitingOutStaleRelay: Bool
   ) {
-    let id = hosted.id
-    if waitingOutStaleRelay, let id { host.endingOnceFree(id) }
-    Task {
-      if waitingOutStaleRelay, let id {
-        let deadline = ContinuousClock.now + Self.releasingLimit
-        var wait = SessionHost.firstWait
-        var refused = await host.reattachRefused(id)
-        while refused, ContinuousClock.now < deadline {
-          try? await Task.sleep(for: min(wait, deadline - .now))
-          wait = min(wait * 2, SessionHost.longestWait)
-          refused = await host.reattachRefused(id)
-        }
-        // Given up: the stale relay outlived the limit, or the runner is no longer set up.
-        // The process runs on there, silently, so it is not kept as ended: Home and a
-        // window's take-back still see it, and End Idle Sessions… is the way to end it then.
-        guard !refused, let client = await host.reconnect() else {
-          return host.notEnding(id)
-        }
-        defer { host.endSent(id) }
+    guard waitingOutStaleRelay, let id = hosted.id else {
+      Task {
+        guard let client = await host.reconnect() else { return }
+        if let id = hosted.id { host.ending(id) }
+        Self.end(hosted, on: client)
+      }
+      return
+    }
+    host.endingOnceFree(id)
+    let stops = stopCount
+    Task { [weak self] in
+      let outcome = await Self.endOnceFree(hosted, id: id, on: host)
+      // Closed since, or a new process: nothing more to say here.
+      guard let self, self.stopCount == stops, self.process == nil else { return }
+      switch outcome {
+      case .ended: self.sawEndOnRunner = true
+      case .takenOver: self.takenOver()
+      case .notEnded: self.couldNotEndOnRunner = true
+      }
+    }
+  }
+
+  /// What came of an End Session sent while a runner's session was reconnecting.
+  private enum EndOnRunner {
+    /// The host took the end, or lists the process no more.
+    case ended
+    /// No longer this Mac's: taken over on the runner meanwhile, which it is left to.
+    case takenOver
+    /// Given up on, or the runner no longer set up: the process may run on there.
+    case notEnded
+  }
+
+  /// Ends a runner's process once this Mac can: its host reached again, however long that
+  /// takes, then, from a listing that came, the process this Mac's and free. A stale relay of
+  /// this Mac's may hold it still (spec §3), the host refusing anything of it until it goes,
+  /// so a held one is waited on, up to `releasingLimit`. Never on a process another Drakar
+  /// took over meanwhile and may have let go since, which the host would let any app end, nor
+  /// on what no listing said. The id stays ended only once the end is taken.
+  private static func endOnceFree(_ hosted: HostedProcess, id: String, on host: SessionHost)
+    async -> EndOnRunner
+  {
+    // The runner no longer set up: nothing reaches it.
+    guard await host.reconnect() != nil else {
+      host.notEnding(id)
+      return .notEnded
+    }
+    let deadline = ContinuousClock.now + releasingLimit
+    var wait = SessionHost.firstWait
+    while true {
+      switch await host.ownership(of: id) {
+      case .gone:
+        host.endSent(id)
+        return .ended
+      case .notOwned:
+        host.notEnding(id)
+        return .takenOver
+      case .owned(let held) where held.attachedApp == nil:
         // No longer ended: whoever cleared it may hold the process now, and it is not ended
         // under them.
-        guard host.ended.contains(id) else { return }
-        return Self.end(hosted, on: client)
+        guard host.ended.contains(id) else {
+          host.endSent(id)
+          return .notEnded
+        }
+        guard let client = await host.reconnect(), await endTaken(hosted, on: client) else {
+          // Taken by another app between the listing and the attach: it runs on.
+          host.notEnding(id)
+          return .notEnded
+        }
+        host.endSent(id)
+        return .ended
+      case .owned, .unknown:
+        // Held by the stale relay still, or no listing came: asked again.
+        break
       }
-      guard let client = await host.reconnect() else { return }
-      if let id { host.ending(id) }
-      Self.end(hosted, on: client)
+      // Given up: the stale relay outlived the limit, the host never answered, or the runner
+      // is no longer set up. The process runs on there, so it is not kept as ended: Home and a
+      // window's take-back still see it, and End Session on its row in Home is the way to end
+      // it then.
+      guard ContinuousClock.now < deadline, !host.isClosed else {
+        host.notEnding(id)
+        return .notEnded
+      }
+      try? await Task.sleep(for: min(wait, deadline - .now))
+      wait = min(wait * 2, SessionHost.longestWait)
     }
   }
 
@@ -1449,6 +1525,24 @@ final class AgentSession {
     hosted.forgetWhenEnded()
     hosted.closeInput()
     hosted.terminate()
+  }
+
+  /// `end(_:on:)`, true once the host has taken the attach, and with it the end that follows
+  /// it on the same connection; false when it refused the attach, another app holding the
+  /// process, or the connection went first.
+  private static func endTaken(_ hosted: HostedProcess, on client: HostClient) async -> Bool {
+    let (answers, answer) = AsyncStream.makeStream(of: Bool.self)
+    let events = hosted.reattach(on: client, attached: { answer.yield(true) })
+    hosted.forgetWhenEnded()
+    hosted.closeInput()
+    hosted.terminate()
+    Task {
+      for await _ in events {}
+      answer.yield(false)
+      answer.finish()
+    }
+    for await taken in answers { return taken }
+    return false
   }
 
   /// `stop()`, then the process's own exit, which can take a moment: a `claude` that is
@@ -1550,9 +1644,9 @@ final class AgentSession {
       guard let self, self.stopCount == stops, self.process === hosted else { return }
       // Taken over on the runner meanwhile, held there or let go since: not this Mac's to
       // attach, whatever the host would allow.
-      if client != nil, await self.isTakenOver(hosted) {
-        guard self.stopCount == stops, self.process === hosted else { return }
-        return self.takenOver()
+      if client != nil {
+        guard let taken = await self.isTakenOver(hosted, stops: stops) else { return }
+        if taken { return self.takenOver() }
       }
       self.isReconnecting = false
       guard let client else {
@@ -1597,10 +1691,8 @@ final class AgentSession {
       guard self.stopCount == stops, self.process === hosted else { return }
       // Refused because the runner's own Drakar took it over, or let go and no longer this
       // Mac's: its tab closes rather than failing in place.
-      if await self.isTakenOver(hosted) {
-        guard self.stopCount == stops, self.process === hosted else { return }
-        return self.takenOver()
-      }
+      guard let taken = await self.isTakenOver(hosted, stops: stops) else { return }
+      if taken { return self.takenOver() }
       self.isReconnecting = false
       guard let client else {
         self.process = nil
@@ -1613,13 +1705,29 @@ final class AgentSession {
   }
 
   /// Whether the runner's host lists `hosted`'s process as no longer this Mac's
-  /// (`SessionHost.ownsProcess`). False for a session of this Mac's, for a process the host
-  /// no longer has, and when it does not answer: those go on as before.
-  private func isTakenOver(_ hosted: HostedProcess) async -> Bool {
-    guard isOnRunner, sessionHost.isRunner, let id = hosted.id,
-      let held = await sessionHost.listed()?.first(where: { $0.id == id })
-    else { return false }
-    return !sessionHost.ownsProcess(held)
+  /// (`SessionHost.ownership(of:)`). False for a session of this Mac's, and for a process the
+  /// host no longer has: those go on as before. A listing that does not come says nothing of
+  /// whose it is, so it is asked again with `reconnect()`'s backoff, the session reconnecting
+  /// meanwhile, rather than attached unchecked: a session taken over and let go there is free,
+  /// and the host would let this Mac have it. Nil once stopped (`stops`) or on another process,
+  /// with nothing more to do.
+  private func isTakenOver(_ hosted: HostedProcess, stops: Int) async -> Bool? {
+    guard isOnRunner, sessionHost.isRunner, let id = hosted.id else { return false }
+    var wait = SessionHost.firstWait
+    while true {
+      let ownership = await sessionHost.ownership(of: id)
+      guard stopCount == stops, process === hosted else { return nil }
+      switch ownership {
+      case .notOwned: return true
+      case .owned, .gone: return false
+      case .unknown:
+        // Let go of for good: no listing ever comes, and the attach fails as it would.
+        if sessionHost.isClosed { return false }
+        try? await Task.sleep(for: wait)
+        wait = min(wait * 2, SessionHost.longestWait)
+        guard stopCount == stops, process === hosted else { return nil }
+      }
+    }
   }
 
   /// Lets go of a process taken over on the runner, attached to nothing here, and says so to
