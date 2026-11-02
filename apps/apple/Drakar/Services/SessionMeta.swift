@@ -37,6 +37,15 @@ struct SessionMeta: Codable, Equatable {
     if case .codexTurns = history { return .codex }
     return start.resuming?.agentKind ?? .claude
   }
+
+  /// Whether an app may attach to the process on its own, at a launch or on `released`
+  /// (remote sessions spec §5): the runner's own Drakar (`onRunner` false, its host local)
+  /// takes only what no Mac owns, and a Mac reaching it as a runner (`onRunner` true) only
+  /// what `mac`, its own name, owns. Otherwise the runner's Drakar would take a Mac's sessions
+  /// each time that Mac's connection drops, and a Mac would take what was handed over.
+  func mayBeTaken(by mac: String, onRunner: Bool) -> Bool {
+    onRunner ? owner == mac : owner == nil
+  }
 }
 
 /// Which place in a skill run in each subfolder a session was started for: kept in its meta

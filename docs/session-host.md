@@ -262,6 +262,14 @@ connection, rows shown read-only are settled the same way, since a `released` se
 disconnected is lost. While a window takes back its held sessions (`takeBackHeld`), rows it
 kept for the same sessions send nothing, so none starts a second process.
 
+**A runner's sessions.** A process a Mac started on a runner carries an `owner` in its meta
+(`SessionMeta.mayBeTaken`, remote sessions spec §5). The runner's own Drakar attaches on its
+own, at a launch or on `released`, only to a process with no owner; one a Mac owns it shows
+read-only, free or not, with Take Over Here. A Mac reaching the runner attaches only to what
+it owns, and shows nothing of the rest, of which it has no transcript. The handoff is a
+`setMeta` then a `detach` on the same lane, so the other app reads the new owner when its
+`released` comes.
+
 **Fan-out.** The batch's state is in the `meta` of its running sessions and in the window's
 stored project; after a relaunch the batch carries on where it stopped.
 

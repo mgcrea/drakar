@@ -911,9 +911,9 @@ struct RunnerHostTests {
     #expect(await held(id, on: watcher)?.running == true)
   }
 
-  /// A runner's process taken back after a relaunch is the runner's from its replay: what it
-  /// reported stays on the session, and a stop before any window adopts it (the window closed
-  /// during the replay) lets it go rather than ending it.
+  /// A runner's process taken back after a relaunch, through the runner, is the runner's from
+  /// its replay: what it reported stays on the session, and a stop before any window adopts it
+  /// (the window closed during the replay) lets it go rather than ending it.
   @Test func aRunnerSessionTakenBackIsLetGoOnAStop() async throws {
     _ = try installRunnerClaude()
     try relayingSSH()
@@ -935,7 +935,8 @@ struct RunnerHostTests {
 
     let client = try #require(await host.client())
     let process = try #require(await held(id, on: watcher))
-    let session = try #require(await AgentSession(reattaching: process, client: client))
+    let session = try #require(
+      await AgentSession(reattaching: process, client: client, throughRunner: true))
     #expect(session.isOnRunner)
     #expect(session.runner == settings.id.uuidString)
     // The replayed rate limit and models are the session's, not this Mac's records.
@@ -1001,5 +1002,175 @@ struct RunnerHostTests {
     let log =
       (try? String(contentsOf: fake.appendingPathExtension("stdin"), encoding: .utf8)) ?? ""
     return log.split(separator: "\n").count { $0.contains(text) }
+  }
+
+  // MARK: - Owner, and the handoff (spec §5)
+
+  /// The runner's own Drakar beside this Mac's: an app on the test's host socket itself, as
+  /// that Drakar reaches its host, where this Mac's goes through ssh and the relay. One test
+  /// process plays both, so their attached apps are told apart by pid: this one's, or the
+  /// relay's. `SessionHost.testDirectory` is put back as it was at once: other suites set it.
+  private func runnersOwnDrakar() -> Project {
+    let previous = SessionHost.testDirectory
+    SessionHost.testDirectory = directory
+    let host = SessionHost(cooldown: .milliseconds(100), helper: URL(filePath: "/usr/bin/true"))
+    SessionHost.testDirectory = previous
+    let project = Project(folder: folder)
+    project.sessionHost = host
+    return project
+  }
+
+  /// This Mac named as the test has it, whatever the test machine is called.
+  private func namingThisMac() -> String {
+    let name = ThisMac.name
+    ThisMac.name = "Test MacBook"
+    return name
+  }
+
+  /// What the runner's host keeps of `id`, as a meta.
+  private func meta(_ id: String, on watcher: HostClient) async -> SessionMeta? {
+    guard let held = await held(id, on: watcher) else { return nil }
+    return try? JSONDecoder().decode(SessionMeta.self, from: held.meta)
+  }
+
+  /// A runner's window takes back, at a launch or a new connection, only what this Mac owns,
+  /// and shows nothing of the rest, of which it has no transcript to follow: not a read-only
+  /// row, as a local window would.
+  @Test func aRunnerWindowTakesOnlyWhatThisMacOwns() async throws {
+    try relayingSSH()
+    let helper = try #require(SessionHost.startHelper(in: directory))
+    let name = namingThisMac()
+    defer {
+      ThisMac.name = name
+      finish([helper])
+    }
+    let host = SessionHost(endpoint: .runner(settings))
+    let client = try #require(await host.client())
+    let cat = AgentProcess.Configuration(
+      executable: URL(filePath: "/bin/cat"), arguments: [], environment: [:],
+      currentDirectory: folder)
+    var ids: [String?: String] = [:]
+    for owner in ["Test MacBook", "Other Mac", nil] as [String?] {
+      let meta = SessionMeta(
+        start: AgentStart(
+          folder: folder, environment: [:], allowsBypass: false,
+          runner: settings.id.uuidString),
+        windowFolder: folder.path(percentEncoded: false), history: .none,
+        runner: settings.id.uuidString, origin: owner ?? "Test MacBook", owner: owner)
+      ids[owner] = try await client.spawn(cat, meta: try JSONEncoder().encode(meta))
+    }
+    let watcher = try await watcher()
+    defer {
+      for id in ids.values { try? watcher.send(.terminate(id: id, forget: true)) }
+      watcher.close()
+    }
+
+    let project = runnerProject(on: host)
+    defer { project.stopAll() }
+    await project.takeBackHeld().value
+    #expect(project.sessions.count == 1)
+    let row = try #require(project.sessions.first)
+    #expect(row.session.hostID == ids["Test MacBook"])
+    #expect(row.session.isOnRunner)
+    #expect(project.sessions.allSatisfy { $0.session.heldElsewhere == nil })
+    for owner in ["Other Mac", nil] as [String?] {
+      #expect(await held(try #require(ids[owner]), on: watcher)?.attachedApp == nil)
+    }
+  }
+
+  /// Open on the Runner: the Mac's window lets the session go to the runner's own Drakar and
+  /// closes its row; that Drakar, showing it read-only as a Mac's, attaches on `released`,
+  /// and the Mac takes it back no more.
+  @Test func openOnTheRunnerHandsItOver() async throws {
+    _ = try installRunnerClaude()
+    try relayingSSH()
+    let helper = try #require(SessionHost.startHelper(in: directory))
+    let name = namingThisMac()
+    defer {
+      ThisMac.name = name
+      finish([helper])
+    }
+    let host = SessionHost(endpoint: .runner(settings))
+    let mac = runnerProject(on: host)
+    defer { mac.stopAll() }
+    let item = try await startedRow(in: mac)
+    let id = try #require(item.session.hostID)
+    let runner = runnersOwnDrakar()
+    defer { runner.stopAll() }
+    await runner.takeBackHeld().value
+    let shown = try #require(runner.sessions.first { $0.session.heldElsewhere == id })
+    #expect(shown.session.belongsTo == "Test MacBook")
+    #expect(runner.canTakeOver(shown))
+    #expect(mac.canOpenOnRunner(item))
+    #expect(Handoff(item, in: mac) == .openOnRunner)
+    #expect(Handoff(shown, in: runner) == .takeOver)
+
+    mac.openOnRunner(item)
+    #expect(!mac.sessions.contains { $0.id == item.id })
+    #expect(
+      await eventually {
+        runner.sessions.contains { $0.session.hostID == id && $0.session.heldElsewhere == nil }
+      })
+    let taken = try #require(runner.sessions.first { $0.session.hostID == id }?.session)
+    #expect(!taken.isOnRunner)
+    let watcher = try await watcher()
+    defer { watcher.close() }
+    #expect(await held(id, on: watcher)?.attachedApp == getpid())
+    let meta = try #require(await meta(id, on: watcher))
+    #expect(meta.owner == nil)
+    #expect(meta.origin == "Test MacBook")
+    #expect(meta.runner == settings.id.uuidString)
+
+    // The Mac's window, coming back to the runner, takes nothing and shows nothing of it.
+    await mac.adoptHeld(await host.held())
+    #expect(!mac.sessions.contains { $0.session.hostID == id || $0.session.heldElsewhere == id })
+  }
+
+  /// Bring Back: the runner's own Drakar gives the session back to the Mac that started it,
+  /// whose window attaches on `released`; the runner's shows it read-only again.
+  @Test func bringBackReturnsIt() async throws {
+    _ = try installRunnerClaude()
+    try relayingSSH()
+    let helper = try #require(SessionHost.startHelper(in: directory))
+    let name = namingThisMac()
+    defer {
+      ThisMac.name = name
+      finish([helper])
+    }
+    let host = SessionHost(endpoint: .runner(settings))
+    let mac = runnerProject(on: host)
+    defer { mac.stopAll() }
+    // The window as a launch opens it: listening to the runner from then on.
+    await mac.takeBackHeld().value
+    let item = try await startedRow(in: mac)
+    let id = try #require(item.session.hostID)
+    mac.openOnRunner(item)
+    let runner = runnersOwnDrakar()
+    defer { runner.stopAll() }
+    // Handed over and free: the runner's own Drakar takes it at its launch.
+    await runner.takeBackHeld().value
+    let local = try #require(runner.sessions.first { $0.session.hostID == id })
+    #expect(await eventually { local.session.phase == .ready })
+    #expect(runner.bringBackDestination(local) == "Test MacBook")
+    #expect(Handoff(local, in: runner) == .bringBack(to: "Test MacBook"))
+
+    runner.bringBack(local)
+    #expect(
+      await eventually {
+        mac.sessions.contains { $0.session.hostID == id && $0.session.phase == .ready }
+      })
+    let back = try #require(mac.sessions.first { $0.session.hostID == id })
+    #expect(back.session.isOnRunner)
+    #expect(mac.canOpenOnRunner(back))
+    #expect(
+      await eventually {
+        runner.sessions.contains { $0.session.heldElsewhere == id }
+      })
+    #expect(!runner.sessions.contains { $0.session.hostID == id })
+    let watcher = try await watcher()
+    defer { watcher.close() }
+    let held = try #require(await held(id, on: watcher))
+    #expect(held.attachedApp != nil && held.attachedApp != getpid())
+    #expect(await meta(id, on: watcher)?.owner == "Test MacBook")
   }
 }

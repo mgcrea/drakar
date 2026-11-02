@@ -65,6 +65,8 @@ struct SessionView: View {
           Docked {
             ReadOnlyBanner(
               text: readOnlyText, host: host,
+              takeOver: project.canTakeOver(item)
+                ? { Handoff.takeOver.run(item, in: project) } : nil,
               fork: session.features.forks ? { project.fork(item) } : nil,
               // Another Drakar's process is never taken from it.
               moveHere: elsewhereSummary.flatMap { summary in
@@ -284,7 +286,11 @@ struct SessionView: View {
 
   /// What the banner says: a Codex session another Drakar runs has no file to follow here.
   private var readOnlyText: String {
-    session.heldElsewhere != nil && session.agent == .codex
+    // On the runner's own Drakar, a session a Mac owns (remote sessions spec §5).
+    if session.heldElsewhere != nil, let owner = session.belongsTo {
+      return String(localized: "Belongs to \(owner). Its transcript follows here.")
+    }
+    return session.heldElsewhere != nil && session.agent == .codex
       ? AgentSession.runsInAnotherWindow
       : String(localized: "Live in \(host). Its transcript follows here.")
   }
@@ -468,6 +474,7 @@ private struct ProblemBanner: View {
 private struct ReadOnlyBanner: View {
   let text: String
   let host: String
+  let takeOver: (() -> Void)?
   let fork: (() -> Void)?
   let moveHere: (enabled: Bool, move: () -> Void)?
 
@@ -477,6 +484,11 @@ private struct ReadOnlyBanner: View {
         .foregroundStyle(.secondary)
         .accessibilityIdentifier("session.readOnly")
       Spacer()
+      if let takeOver {
+        Button("Take Over Here", action: takeOver)
+          .help("Go on with this session in this window.")
+          .accessibilityIdentifier("session.takeOver")
+      }
       if let fork {
         Button("Fork a Copy", action: fork)
           .help("Continue a copy under a new id, leaving the original where it is.")

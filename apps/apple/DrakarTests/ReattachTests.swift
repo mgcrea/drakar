@@ -786,6 +786,88 @@ struct ReattachTests {
     windows.windowAppeared()
     #expect(opened.count == 2)
   }
+
+  /// A runner session's process as the Mac that owns it left it on the runner's host (this
+  /// test's, standing for it), and a connection of that Mac's attached to it, which lets it
+  /// go by closing. Attached once the host has said so.
+  private func heldByAMac(owner: String?) async throws -> (mac: HostClient, id: String) {
+    let mac = try HostClient.connect(socket: try HostWire.socket(in: host.directory))
+    let meta = SessionMeta(
+      start: AgentStart(
+        folder: folder, environment: [:], allowsBypass: false, runner: "runner-id"),
+      windowFolder: folder.path(percentEncoded: false), history: .none, runner: "runner-id",
+      origin: owner, owner: owner)
+    let id = try await mac.spawn(
+      AgentProcess.Configuration(
+        executable: URL(filePath: "/bin/cat"), arguments: [], environment: [:],
+        currentDirectory: bin),
+      meta: try JSONEncoder().encode(meta))
+    for await event in mac.attach(id, from: 0) {
+      if case .caughtUp = event { break }
+    }
+    return (mac, id)
+  }
+
+  /// On the runner's own Drakar, a session a Mac owns stays read-only when that Mac lets it
+  /// go, as it does when the Mac sleeps: the Mac takes it back when it reconnects (remote
+  /// sessions spec §5).
+  @Test func aReleasedProcessAnotherMacOwnsIsNotTaken() async throws {
+    defer { cleanUp() }
+    let app = app()
+    let (mac, id) = try await heldByAMac(owner: "Other Mac")
+    let window = window(on: app)
+    defer { window.stopAll() }
+    await window.adoptHeld(await app.held())
+    let row = try #require(window.sessions.first)
+    #expect(row.session.heldElsewhere == id)
+    #expect(row.session.belongsTo == "Other Mac")
+    #expect(window.canTakeOver(row))
+
+    mac.close()
+    #expect(await eventually { await app.held().first?.attachedApp == nil })
+    // Long enough for the `released` and the listing it asks for.
+    try await Task.sleep(for: .milliseconds(500))
+    #expect(window.sessions.first?.session.heldElsewhere == id)
+    #expect(await app.held().first?.attachedApp == nil)
+
+    // Nor at a launch: free, it is still shown read-only, and not attached.
+    let launched = self.window(on: app)
+    defer { launched.stopAll() }
+    await launched.adoptHeld(await app.held())
+    #expect(launched.sessions.first?.session.heldElsewhere == id)
+    #expect(await app.held().first?.attachedApp == nil)
+  }
+
+  /// Take Over Here: refused while the Mac that owns the session holds it, then taken once it
+  /// lets go, and no Mac's from then on.
+  @Test func takeOverHereTakesItOnceTheMacLetsGo() async throws {
+    defer { cleanUp() }
+    let app = app()
+    let (mac, id) = try await heldByAMac(owner: "Other Mac")
+    let window = window(on: app)
+    defer { window.stopAll() }
+    await window.adoptHeld(await app.held())
+    let row = try #require(window.sessions.first)
+
+    #expect(await window.takeOver(row) == "In use on Other Mac")
+    #expect(window.sessions.first?.session.heldElsewhere == id)
+
+    mac.close()
+    #expect(await eventually { await app.held().first?.attachedApp == nil })
+    #expect(await window.takeOver(row) == nil)
+    let taken = try #require(window.sessions.first?.session)
+    #expect(taken.heldElsewhere == nil)
+    #expect(taken.hostID == id)
+    #expect(!taken.isOnRunner)
+    #expect(await app.held().first?.attachedApp == getpid())
+    #expect(
+      await eventually {
+        guard let meta = await app.held().first?.meta,
+          let kept = try? JSONDecoder().decode(SessionMeta.self, from: meta)
+        else { return false }
+        return kept.owner == nil && kept.origin == "Other Mac" && kept.runner == "runner-id"
+      })
+  }
 }
 
 /// A task on the main actor every 10 ms, timing the longest gap between two of its turns:

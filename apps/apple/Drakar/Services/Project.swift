@@ -1517,6 +1517,13 @@ final class Project {
   /// for the same session gives way to one, as does the blank row a window opens with when
   /// it has nothing else. A window that closes meanwhile takes back nothing more, and leaves
   /// the rest to the next launch.
+  ///
+  /// Only what the window may take is taken (`SessionMeta.mayBeTaken`, remote sessions spec
+  /// §5): on the runner's own Drakar, a process a Mac owns is shown read-only, free or not;
+  /// a runner's window takes what this Mac owns, and shows nothing of the rest, which it has
+  /// no transcript of (Home lists it). A runner's window hears every `released`, for a
+  /// process brought back to this Mac is one it shows nothing of; not a new connection, for
+  /// what it finds free then may be a row closed here, which only Home opens again.
   func adoptHeld(_ held: [HeldProcess], olderHosts: [HeldProcess] = []) async {
     let own = ProjectPath.normalize(folder.path(percentEncoded: false))
     let ours = { (process: HeldProcess) -> Bool in
@@ -1533,11 +1540,14 @@ final class Project {
         project.sessions.contains { $0.session.hostID == process.id }
       }
     }
-    let free = held.filter { $0.attachedApp == nil && ours($0) }
+    let onRunner = sessionHost?.isRunner == true
+    let free = held.filter { $0.attachedApp == nil && ours($0) && mayTake($0) }
+    // Another app's, or free but a Mac's.
+    let notOurs = held.filter { process in
+      process.attachedApp == nil ? !mayTake(process) : !isHeldHere(process)
+    }
     let elsewhere =
-      (held.filter { $0.attachedApp != nil && !isHeldHere($0) } + olderHosts).filter {
-        ours($0) && !isShownReadOnly($0.id)
-      }
+      onRunner ? [] : (notOurs + olderHosts).filter { ours($0) && !isShownReadOnly($0.id) }
     let ids = (free + elsewhere).map(\.id)
     adopting.formUnion(ids)
     for process in free {
@@ -1553,19 +1563,37 @@ final class Project {
       adopt(session)
     }
     let watched = Set(held.map(\.id)).intersection(elsewhere.map(\.id))
-    guard !watched.isEmpty else { return }
+    guard !watched.isEmpty || onRunner, !isStopped else { return }
     shownHeldElsewhere.formUnion(watched)
     sessionHost?.watchReleases(
       for: self, takes: { [weak self] id in self?.released(id) ?? false },
       connected: { [weak self] in Task { await self?.settleShown() } })
     // Let go of while its row was being made: no `released` says so again.
-    await settleShown()
+    if !watched.isEmpty { await settleShown() }
+  }
+
+  /// Whether the window may attach to `process` on its own, at a launch or on `released`.
+  private func mayTake(_ process: HeldProcess) -> Bool {
+    guard let meta = try? JSONDecoder().decode(SessionMeta.self, from: process.meta) else {
+      return false
+    }
+    return meta.mayBeTaken(by: ThisMac.name, onRunner: sessionHost?.isRunner == true)
   }
 
   /// Another app let go of a process one of the window's rows shows read-only (`released`):
   /// the row takes it back, or the session if the process is gone. False when none shows
   /// it, or it is being taken back already, so that of the windows told, one attaches, once.
   private func released(_ id: String) -> Bool {
+    // A runner's window shows no process it does not hold, so cannot tell at once whether
+    // the one let go is its own, brought back to this Mac: it asks, and lets the other
+    // windows ask too.
+    if sessionHost?.isRunner == true {
+      Task {
+        guard !isStopped, let held = await sessionHost?.listed() else { return }
+        await adoptHeld(held.filter { $0.id == id })
+      }
+      return false
+    }
     guard isShownReadOnly(id), !adopting.contains(id) else { return false }
     Task {
       guard let held = await sessionHost?.listed() else { return }
@@ -1588,7 +1616,8 @@ final class Project {
   private func settle(_ id: String, among held: [HeldProcess]) async {
     guard !isStopped, isShownReadOnly(id), !adopting.contains(id) else { return }
     if let process = held.first(where: { $0.id == id }) {
-      guard process.attachedApp == nil else { return }
+      // Held by another app still, or free but a Mac's: left to it, and shown on.
+      guard process.attachedApp == nil, mayTake(process) else { return }
       adopting.insert(id)
       defer { adopting.remove(id) }
       await takeBack(process)
@@ -1608,15 +1637,83 @@ final class Project {
   /// `process` attached and replayed, live, in place of its row. A row showing it read-only
   /// stays as it was should the host refuse: another app took it first. A window that closed
   /// during the replay stops it as it stopped its rows: no process stays attached to this app
-  /// with no row to show it.
-  private func takeBack(_ process: HeldProcess) async {
+  /// with no row to show it. The session, once it has a row.
+  @discardableResult private func takeBack(_ process: HeldProcess) async -> AgentSession? {
     // Asked each time: a replay before this one may have cost the connection.
-    guard let client = await sessionHost?.client(), !isStopped,
-      let session = await AgentSession(reattaching: process, client: client)
-    else { return }
-    if isStopped { return session.stop() }
-    if session.isOutOfReach, isShownReadOnly(process.id) { return }
+    guard let host = sessionHost, let client = await host.client(), !isStopped,
+      let session = await AgentSession(
+        reattaching: process, client: client, throughRunner: host.isRunner)
+    else { return nil }
+    if isStopped {
+      session.stop()
+      return nil
+    }
+    if session.isOutOfReach, isShownReadOnly(process.id) { return nil }
     adopt(session, replacing: process.id)
+    return session
+  }
+
+  // MARK: - The handoff (remote sessions spec §5)
+
+  /// Open on the Runner, for a runner's session this Mac holds: it is the runner's own
+  /// Drakar's from now on, which attaches on `released` if it shows it, or at its next
+  /// launch. Its row closes here, and the window with its last row.
+  func openOnRunner(_ item: ProjectSession) {
+    guard canOpenOnRunner(item) else { return }
+    item.session.handOver(to: nil)
+    remove(item)
+    if sessions.isEmpty { workspace.window?.close() }
+  }
+
+  func canOpenOnRunner(_ item: ProjectSession) -> Bool {
+    runner != nil && item.session.isOnRunner && item.session.canHandOver
+  }
+
+  /// Bring Back, on the runner's own Drakar: the session goes back to the Mac that started
+  /// it, whose Drakar attaches on `released`. Shown read-only here from then on, as every
+  /// session a Mac owns is.
+  func bringBack(_ item: ProjectSession) {
+    guard let origin = bringBackDestination(item), let id = item.session.hostID else { return }
+    item.session.handOver(to: origin)
+    remove(item)
+    Task {
+      guard let held = await sessionHost?.listed() else { return }
+      await adoptHeld(held.filter { $0.id == id })
+    }
+  }
+
+  /// The Mac Bring Back sends `item` to: the one that started it on this runner. Nil when it
+  /// was started here, or this window reaches its host as a runner.
+  func bringBackDestination(_ item: ProjectSession) -> String? {
+    guard runner == nil, sessionHost?.isRunner == false, item.session.canHandOver else {
+      return nil
+    }
+    return item.session.origin
+  }
+
+  /// Take Over Here, on the runner's own Drakar, for a row showing read-only a session a Mac
+  /// owns: taken while that Mac does not hold it, and this Mac's from then on, so that Mac
+  /// leaves it alone when it comes back. Nil once taken, or the process gone (the row
+  /// settles as for any `released`); else why not, the Mac holding it now.
+  func takeOver(_ item: ProjectSession) async -> String? {
+    guard canTakeOver(item), let id = item.session.heldElsewhere,
+      let owner = item.session.belongsTo, !adopting.contains(id)
+    else { return nil }
+    let inUse = String(localized: "In use on \(owner)")
+    guard let held = await sessionHost?.listed(),
+      let process = held.first(where: { $0.id == id })
+    else { return nil }
+    guard process.attachedApp == nil else { return inUse }
+    adopting.insert(id)
+    defer { adopting.remove(id) }
+    // Refused if that Mac attached meanwhile: the row stays as it was.
+    guard let session = await takeBack(process) else { return inUse }
+    session.claim()
+    return nil
+  }
+
+  func canTakeOver(_ item: ProjectSession) -> Bool {
+    runner == nil && item.session.heldElsewhere != nil && item.session.belongsTo != nil
   }
 
   /// `replacing`: the host's id for the process a read-only row shows, which the session

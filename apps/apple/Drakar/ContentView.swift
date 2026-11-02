@@ -109,6 +109,9 @@ struct ContentView: View {
         ToolbarItem(placement: .primaryAction) {
           ForkToolbarButton(project: project)
         }
+        ToolbarItem(placement: .primaryAction) {
+          HandoffToolbarItem(project: project)
+        }
         if let session = project.selected?.session,
           let label = FolderToolbarItem.label(for: session, in: project.folder)
         {

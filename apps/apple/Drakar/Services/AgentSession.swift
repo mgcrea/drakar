@@ -221,6 +221,9 @@ final class AgentSession {
   /// older protocol: the session is shown read-only, and its row takes the process back once
   /// that app lets it go (`released`).
   private(set) var heldElsewhere: String?
+  /// The Mac that owns the process `heldElsewhere` names, as its meta says (remote sessions
+  /// spec §5): a row on the runner's own Drakar that may take it over, never on its own.
+  private(set) var belongsTo: String?
   /// The longest a replay held the main actor between two of its waits; for tests.
   @ObservationIgnored private(set) var longestReplayHold = Duration.zero
   /// The turns Codex's thread holds, as `throughTurns` counts them.
@@ -291,12 +294,21 @@ final class AgentSession {
   /// The session a process's log rebuilds: the history from before the process, then
   /// `records` replayed. Its process stands in for the one the log came from, so nothing
   /// reaches the CLI, and what the replay owes it waits in its `ReplayTransport`.
+  /// `throughRunner`: this app reaches the process's host as a runner. Otherwise a process
+  /// whose meta names a runner is on this Mac, the runner's own Drakar (remote sessions spec
+  /// §5): a session of this Mac's here, its transcript on this disk, taking the account it
+  /// was picked only if that is one of `accounts`.
   convenience init(
-    replaying records: [HostRecord], meta: SessionMeta, backend: AgentBackend? = nil
+    replaying records: [HostRecord], meta: SessionMeta, backend: AgentBackend? = nil,
+    throughRunner: Bool = false,
+    accounts: @escaping () -> [ClaudeAccount] = { ClaudeAccount.discover() }
   ) async {
     self.init(
       folder: meta.start.folder, resuming: meta.savedTarget ?? meta.start.resuming,
-      agent: meta.agent, account: meta.accountPick, backend: backend)
+      agent: meta.agent,
+      account: Self.accountPick(of: meta, throughRunner: throughRunner, among: accounts),
+      backend: backend)
+    self.accounts = accounts
     modePick = meta.modePick
     modelPick = meta.modelPick
     effortPick = meta.effortPick
@@ -304,9 +316,10 @@ final class AgentSession {
     fanOut = meta.fanOut
     executableOverride = meta.start.executableOverride
     windowFolder = URL(filePath: meta.windowFolder, directoryHint: .isDirectory)
-    // A runner's from the first: its replay keeps what the process reported to itself, and a
-    // stop before a window adopts it lets it go rather than ending it.
-    runner = meta.runner
+    // A runner's from the first, when reached as one: its replay keeps what the process
+    // reported to itself, and a stop before a window adopts it lets it go rather than ending
+    // it. On the runner itself it is a session of this Mac's.
+    runner = throughRunner ? meta.runner : nil
     launched = (meta.start, meta.history, Placement(of: meta))
     let started = records.first?.time ?? .now
     historyLoad = Task {
@@ -325,8 +338,11 @@ final class AgentSession {
   /// A process the session host holds, after a relaunch (spec §3): rebuilt from its meta and
   /// its log as `init(replaying:meta:)` rebuilds one, then live on it, what the replay owes
   /// it sent first. One that ended meanwhile shows its end as it would live, and lets the
-  /// host forget it. Nil for a meta this app cannot read.
-  convenience init?(reattaching held: HeldProcess, client: HostClient) async {
+  /// host forget it. Nil for a meta this app cannot read. `throughRunner`: `client` reaches
+  /// a runner's host.
+  convenience init?(
+    reattaching held: HeldProcess, client: HostClient, throughRunner: Bool = false
+  ) async {
     guard let meta = try? JSONDecoder().decode(SessionMeta.self, from: held.meta) else {
       return nil
     }
@@ -337,7 +353,8 @@ final class AgentSession {
     } catch {
       replayed = .failure(error)
     }
-    await self.init(replaying: (try? replayed.get()) ?? [], meta: meta)
+    await self.init(
+      replaying: (try? replayed.get()) ?? [], meta: meta, throughRunner: throughRunner)
     sentMeta = meta
     switch replayed {
     case .success:
@@ -355,14 +372,23 @@ final class AgentSession {
   /// elsewhere is: read-only, Claude Code's transcript file followed. Codex has no file to
   /// follow, so its thread is read up to the process, and a line says where the rest runs.
   /// Nil for a meta this app cannot read.
-  convenience init?(heldElsewhere held: HeldProcess) async {
+  ///
+  /// Only ever of this Mac's own host: on a runner's own Drakar, one a Mac owns says so
+  /// (`belongsTo`), and its transcript, on this disk, is found in `accounts` by the id its
+  /// meta gives once it is known.
+  convenience init?(
+    heldElsewhere held: HeldProcess,
+    accounts: @escaping () -> [ClaudeAccount] = { ClaudeAccount.discover() }
+  ) async {
     guard let meta = try? JSONDecoder().decode(SessionMeta.self, from: held.meta) else {
       return nil
     }
     let resumed = meta.start.resuming?.forks == true ? nil : meta.start.resuming
     self.init(
       folder: meta.start.folder, resuming: meta.savedTarget ?? resumed, agent: meta.agent,
-      account: meta.accountPick)
+      account: Self.accountPick(of: meta, throughRunner: false, among: accounts))
+    self.accounts = accounts
+    belongsTo = meta.owner
     name = meta.name
     modePick = meta.modePick
     modelPick = meta.modelPick
@@ -388,6 +414,18 @@ final class AgentSession {
       }
       await loadHistory()
     }
+  }
+
+  /// The account a meta's process was picked, as a session rebuilt from it takes it: a
+  /// runner session's, on the runner's own Drakar, only when it is one of `accounts`, for it
+  /// may be an account of the Mac that started it (remote sessions spec §5).
+  private static func accountPick(
+    of meta: SessionMeta, throughRunner: Bool, among accounts: () -> [ClaudeAccount]
+  ) -> ClaudeAccount? {
+    guard let pick = meta.accountPick, meta.runner != nil, !throughRunner else {
+      return meta.accountPick
+    }
+    return accounts().contains { $0.key == pick.key } ? pick : nil
   }
 
   /// What a Codex row whose process another Drakar holds ends on: nothing of it is live here.
@@ -1229,8 +1267,9 @@ final class AgentSession {
   ///
   /// A runner's session is never ended that way, for nothing resumes it from this Mac
   /// (remote sessions spec §4): any stop but End Session's (`ending`) lets it go, at work or
-  /// idle, and the runner's host keeps it.
-  func stop(handingOver: Bool = false, ending: Bool = false) {
+  /// idle, and the runner's host keeps it. `lettingGo` lets any hosted one go so, for
+  /// `handOver(to:)`.
+  func stop(handingOver: Bool = false, ending: Bool = false, lettingGo: Bool = false) {
     let waiting = transcript.waitingCount
     defer { permissionsMayHaveChanged(from: waiting) }
     stopCount += 1
@@ -1238,7 +1277,7 @@ final class AgentSession {
     pendingEffect = .none
     let wasRunning = process != nil
     if let hosted = process as? HostedProcess {
-      if isOnRunner, !ending {
+      if lettingGo || (isOnRunner && !ending) {
         // Reconnecting too: the host lets it go by itself once a stale relay holding it has.
         hosted.detach()
       } else if !isOnRunner, handingOver || AppLifecycle.isTerminating, isAtWork {
@@ -1267,6 +1306,39 @@ final class AgentSession {
     transcript.processExited()
     if case .failed = phase { return }
     if phase == .ready || phase == .starting { phase = .exited(status: 0) }
+  }
+
+  /// Where its process is now, for the handoff (remote sessions spec §5): the Mac that started
+  /// it on a runner (`origin`), and the Mac whose Drakar it belongs to (`owner`), nil once
+  /// the runner's own Drakar has it. Both nil for a process a Mac never started.
+  var origin: String? { launched?.placement.origin }
+  var owner: String? { launched?.placement.owner }
+
+  /// The process can change hands: hosted and up, and its host reached now, which a meta and
+  /// a `detach` sent while reconnecting would not reach.
+  var canHandOver: Bool { phase == .ready && isHosted && !isReconnecting && launched != nil }
+
+  /// Hands the process to the Drakar of the Mac `owner` names, or to the runner's own with
+  /// nil (spec §5): its meta says so first, then this app lets it go, sent nothing, and the
+  /// host tells the other apps `released`, the meta already changed by then.
+  func handOver(to owner: String?) {
+    guard canHandOver else { return }
+    place(owner: owner)
+    stop(lettingGo: true)
+  }
+
+  /// The process is this app's own now: the runner's own Drakar took over one a Mac owned,
+  /// which that Mac then leaves alone.
+  func claim() {
+    guard isHosted, owner != nil else { return }
+    place(owner: nil)
+  }
+
+  private func place(owner: String?) {
+    guard var launched else { return }
+    launched.placement.owner = owner
+    self.launched = launched
+    sendMeta()
   }
 
   /// A stop asked while the host was out of reach goes once it is back: no process is left

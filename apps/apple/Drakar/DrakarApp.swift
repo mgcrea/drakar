@@ -184,6 +184,7 @@ private struct SessionCommands: View {
       .keyboardShortcut("d", modifiers: [.command, .option, .shift])
       .disabled(project?.canDismissSelected != true)
     AnswerCommands(project: project)
+    HandoffCommand(project: project)
   }
 }
 
@@ -445,12 +446,14 @@ struct MentionTitle {
     }
   }
 
-  /// The windows the processes no app is attached to belong to, each once.
+  /// The windows the processes no app is attached to belong to, each once; none for a
+  /// process a Mac owns, which this Mac's host holds only as a runner (spec §5).
   static func folders(of held: [HeldProcess]) -> [String] {
     var seen: Set<String> = []
     return held.compactMap { process in
       guard process.attachedApp == nil,
-        let meta = try? JSONDecoder().decode(SessionMeta.self, from: process.meta)
+        let meta = try? JSONDecoder().decode(SessionMeta.self, from: process.meta),
+        meta.mayBeTaken(by: ThisMac.name, onRunner: false)
       else { return nil }
       let folder = ProjectPath.normalize(meta.windowFolder)
       return seen.insert(folder).inserted ? folder : nil

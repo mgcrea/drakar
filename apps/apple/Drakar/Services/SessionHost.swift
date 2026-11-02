@@ -89,7 +89,8 @@ import Synchronization
   private(set) var failure: RunnerFailure?
   /// Let go for good (`close()`): nothing more is asked of it.
   private(set) var isClosed = false
-  /// Whether a process the runner holds is this Mac's (its `owner`), for `reattachRefused`.
+  /// Whether a process the runner holds is this Mac's (its `owner`), for `reattachRefused`:
+  /// what its meta says of a runner's, nothing of a local host's. Tests give their own.
   var ownsProcess: (HeldProcess) -> Bool = { _ in false }
 
   private let helper: URL
@@ -165,6 +166,16 @@ import Synchronization
     self.cooldown = cooldown
     self.helper = helper
     self.underTests = underTests
+    if isRunner { ownsProcess = Self.isThisMacs }
+  }
+
+  /// A runner's process this Mac may take (remote sessions spec §5): its meta names this Mac
+  /// its owner, as it does while this Mac holds it, and after a Bring Back.
+  static func isThisMacs(_ held: HeldProcess) -> Bool {
+    guard let meta = try? JSONDecoder().decode(SessionMeta.self, from: held.meta) else {
+      return false
+    }
+    return meta.mayBeTaken(by: ThisMac.name, onRunner: true)
   }
 
   /// Whether this is the host of the runner `id` names (`RunnerSettings.id`), and not let go
