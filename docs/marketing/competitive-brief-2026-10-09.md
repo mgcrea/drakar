@@ -204,7 +204,7 @@ No SEO tool was available, so "demand" below is inferred from GitHub issue react
 3. **The terminal still wins for many; Drakar can be its review window.** The IDE bridge (a terminal `claude --ide` sending every edit to Drakar's Review Changes window) is unique among the products surveyed: Claude Desktop explicitly does not see terminal sessions, and Zed and VS Code are full editors. It lets Drakar sell to people who will never leave the terminal.
 4. **Skills across Claude Code and Codex, verified against what each agent loads.** Claude Code does not read `.agents/skills` (P, #31005), Zed's manager serves only Zed's agent (P), and the free managers infer from paths. Drakar's "Not loaded by Claude Code", "Shadowed" and one-row-per-real-folder view is a genuine differentiator **inside** a two-agent client. It is a reason to choose Drakar, not a product on its own.
 5. **Two agents, both full fidelity.** Codex sessions over `app-server` landed on 2026-10-08. Most Mac rivals support both through ACP or a wrapper; Drakar speaks each agent's native protocol. Worth saying once there is a public build.
-6. **Native weight as proof, not as adjective.** Electron complaints exist but are thin (P, #69046 had 5 reactions). Lead with measurable facts (launch time, memory at a 1,000-turn transcript, the network audit) rather than "native" alone.
+6. **Native weight as proof, not as adjective.** Electron complaints exist but are thin (P, #69046 had 5 reactions). Lead with measurable facts (launch time, memory at a 1,000-turn transcript, the network audit) rather than "native" alone. Measured 2026-11-01 in [weight-2026-11-01.md](weight-2026-11-01.md): launch time is a tie with VS Code; memory is the gap.
 
 ## 8. Threats
 

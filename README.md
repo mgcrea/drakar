@@ -55,15 +55,15 @@ Network.framework link for the listener; no entitlements; the hardened runtime).
 
 ## Layout
 
-| Path                 | What it is                                                                          |
-| -------------------- | ----------------------------------------------------------------------------------- |
-| `apps/apple`         | The app: one Xcode project, one macOS target, local SPM packages, driven by `make`. |
-| `apps/api`           | The licence Worker (Cloudflare Workers and D1): a Stripe payment in, a key out.     |
-| `apps/website`       | `drakar.mgcrea.io`: the landing page, privacy, and the update and download links.   |
-| `scripts/`           | The release path's helpers, the network audit, and their tests.                     |
-| `docs/`              | Protocol spike, product documentation, the release runbook; briefs in `marketing/`. |
-| `design/`            | The brand marks: `drakar-icon.svg`, which `make icon` in `apps/apple` builds.       |
-| `.github/workflows/` | CI: tests on every push, the release on an `app-v*` tag, deploys from `main`.       |
+| Path                 | What it is                                                                                           |
+| -------------------- | ---------------------------------------------------------------------------------------------------- |
+| `apps/apple`         | The app: one Xcode project, one macOS target, local SPM packages, driven by `make`.                  |
+| `apps/api`           | The licence Worker (Cloudflare Workers and D1): a Stripe payment in, a key out.                      |
+| `apps/website`       | `drakar.mgcrea.io`: the landing page, privacy, and the update and download links.                    |
+| `scripts/`           | The release path's helpers, the network audit, and their tests.                                      |
+| `docs/`              | Protocol spike, product documentation, the release runbook; briefs and measurements in `marketing/`. |
+| `design/`            | The brand marks: `drakar-icon.svg`, which `make icon` in `apps/apple` builds.                        |
+| `.github/workflows/` | CI: tests on every push, the release on an `app-v*` tag, deploys from `main`.                        |
 
 ## Building
 
