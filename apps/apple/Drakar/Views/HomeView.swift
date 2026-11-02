@@ -112,7 +112,15 @@ struct HomeView: View {
   }
 
   private var content: some View {
-    List {
+    // Once a pass, not once a row: each walks every transcript folder, and the rows' closures
+    // run again whenever the list updates.
+    let (stats, own, background, openFolders) = (
+      self.stats, self.own, self.background, self.openFolders
+    )
+    let filteredSuggestions = self.filteredSuggestions
+    let shownSuggestions =
+      showsAllSuggestions ? filteredSuggestions : Array(filteredSuggestions.prefix(8))
+    return List {
       if !projects.isEmpty {
         Section("Projects") {
           ForEach(projects) { entry in
@@ -243,10 +251,6 @@ struct HomeView: View {
 
   private var filteredSuggestions: [FolderSuggestion] {
     suggestions.filter { query.isEmpty || $0.path.localizedCaseInsensitiveContains(query) }
-  }
-
-  private var shownSuggestions: [FolderSuggestion] {
-    showsAllSuggestions ? filteredSuggestions : Array(filteredSuggestions.prefix(8))
   }
 
   // MARK: Sessions

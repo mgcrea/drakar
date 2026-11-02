@@ -16,7 +16,7 @@ public enum ProjectPath {
       path = URL(filePath: path, directoryHint: .inferFromPath).standardized
         .path(percentEncoded: false)
     }
-    while path.count > 1, path.hasSuffix("/") { path.removeLast() }
+    while path.utf8.count > 1, path.hasSuffix("/") { path.removeLast() }
     return path
   }
 
@@ -79,21 +79,28 @@ public enum ProjectPath {
 
   /// `owner(of:among:)` with the folders resolved once, for a loop over many sessions:
   /// `realpath` per session per folder is file-system work on every redraw.
+  /// Home asks it for every transcript folder on every redraw, so the keys are normalised
+  /// once here and `cwd` once per call, not both again for each key.
   public struct Owners: Sendable {
-    private let keys: [(folder: String, key: String)]
+    private let keys: [(folder: String, key: String, below: String, length: Int)]
 
     public init(_ folders: [String]) {
       keys = folders.flatMap { folder in
         let normalized = normalize(folder)
-        return Set([normalized, resolved(normalized)]).map { (normalized, $0) }
+        return Set([normalized, resolved(normalized)]).filter { !$0.isEmpty }.map {
+          (normalized, $0, $0 == "/" ? "/" : $0 + "/", $0.utf8.count)
+        }
       }
     }
 
+    /// `contains(key, cwd)` for each key, with both sides already normalised.
     public func owner(of cwd: String) -> String? {
+      let path = normalize(cwd)
+      guard !path.isEmpty else { return nil }
       var best: (folder: String, length: Int)?
-      for (folder, key) in keys where contains(key, cwd) {
-        if let current = best, key.count <= current.length { continue }
-        best = (folder, key.count)
+      for (folder, key, below, length) in keys where path == key || path.hasPrefix(below) {
+        if let current = best, length <= current.length { continue }
+        best = (folder, length)
       }
       return best?.folder
     }
