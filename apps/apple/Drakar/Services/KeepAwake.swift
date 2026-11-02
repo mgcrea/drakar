@@ -30,18 +30,26 @@ final class KeepAwake {
   private var working: [ObjectIdentifier: Int] = [:]
   /// Per session, the hosted process marked, and after how many pauses.
   private var marked: [ObjectIdentifier: Mark] = [:]
-  private var following: Task<Void, Never>?
+  private var following = false
 
   /// Follows every window's sessions from now on.
   func start() {
-    guard following == nil else { return }
-    following = Task {
-      for await working in Observations({ @MainActor in Self.working() })
-      where working != self.working {
-        self.working = working
-        apply()
-      }
+    guard !following else { return }
+    following = true
+    follow()
+  }
+
+  /// Reads the sessions at work, and again after each change to what it read. Not
+  /// `Observations`: Xcode 26.6's Swift 6.3.3 crashes emitting its closure's thunk here.
+  private func follow() {
+    let working = withObservationTracking {
+      Self.working()
+    } onChange: {
+      Task { @MainActor in KeepAwake.shared.follow() }
     }
+    guard working != self.working else { return }
+    self.working = working
+    apply()
   }
 
   /// Holds or lets go as the sessions and the setting now say: called again when it changes.
