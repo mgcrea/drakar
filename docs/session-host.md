@@ -221,7 +221,8 @@ Home counts what no window shows. A window going away has the registry read agai
 session it handed over is listed like another app's: busy or waiting, it counts as running
 or waiting for you. Home also `list`s the host whenever the registry changes, and counts a
 running process no app is attached to, and which the registry does not report at work, as
-"in the background" under the project its `meta.windowFolder` belongs to.
+"in the background" under the project its `meta.windowFolder` belongs to. Codex writes no
+registry, so a Codex session handed over mid-turn counts as in the background, not running.
 
 **Relaunch.** The app connects, `list`s, and for each process no app is attached to whose
 `meta` names a window, opens the window and rebuilds the session from `meta` (history from
