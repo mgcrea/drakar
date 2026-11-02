@@ -4,28 +4,30 @@ import SwiftUI
 
 // MARK: - Settings
 
-/// The panes, and the order they sit in: General, Transcript, Theme, Attention, Runner,
-/// Updates, Licence, What's New, About.
+/// The panes, in three sections, as Cupertino and Armada draw them.
 ///
-/// Runner follows the panes about how sessions behave: it says where they may run.
+/// The first is how sessions behave: General, Transcript, Theme, Attention, then Runner, which
+/// says where they may run.
 ///
-/// Licence follows Updates: a key, the trial, and the Buy button while
-/// `LicenceLinks.isSelling`.
+/// The second is the fleet's information section: What's New and Updates are the version pair
+/// (what this build changed, and is there a newer one), and About answers which build this is.
+/// About stays last of the three, because it answers a question you only ask with a bug report
+/// open. No Help pane, unlike Cupertino's: Drakar keeps its menu bar, so the Help menu is
+/// always there to carry those links.
 ///
-/// What's New sits beside About: both answer what this build is rather than how it behaves.
-/// DIVERGES from armada, which puts the two in an `.information` section of their own:
-/// Drakar's panes are one ungrouped list until something is sold. About stays last, because
-/// it answers a question you only ask with a bug report open.
+/// Licence is last and alone: a key, the trial, and the Buy button while
+/// `LicenceLinks.isSelling`. Somebody opens it because of a refusal or a receipt, never to
+/// tune something.
 enum SettingsPane: String, SupportKitSettings.SettingsPane {
   case general
   case transcript
   case theme
   case attention
   case runner
-  case updates
-  case licence
   case whatsNew
+  case updates
   case about
+  case licence
 
   var title: LocalizedStringKey {
     switch self {
@@ -55,6 +57,14 @@ enum SettingsPane: String, SupportKitSettings.SettingsPane {
     }
   }
 
+  var group: SettingsPaneGroup {
+    switch self {
+    case .general, .transcript, .theme, .attention, .runner: .configuration
+    case .whatsNew, .updates, .about: .information
+    case .licence: .entitlement
+    }
+  }
+
   /// The unread-release count on What's New, and nothing anywhere else. Read on
   /// every sidebar draw, so it clears the moment the pane marks the notes seen.
   var badge: Int {
@@ -62,6 +72,12 @@ enum SettingsPane: String, SupportKitSettings.SettingsPane {
   }
 
   static var defaultPane: SettingsPane { .general }
+}
+
+/// Drakar's section between the package's pair. Sections draw in ascending `order`, and
+/// `.entitlement` sits at 1_000 to leave room for exactly this.
+extension SettingsPaneGroup {
+  nonisolated static let information = SettingsPaneGroup(order: 500)
 }
 
 // MARK: - Preferences

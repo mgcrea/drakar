@@ -21,15 +21,22 @@ struct SettingsPaneTests {
   @Test func keepsPaneIdentifiersStable() {
     #expect(
       SettingsPane.allCases.map(\.rawValue) == [
-        "general", "transcript", "theme", "attention", "runner", "updates", "licence",
-        "whatsNew", "about",
+        "general", "transcript", "theme", "attention", "runner", "whatsNew", "updates",
+        "about", "licence",
       ])
   }
 
-  /// Nothing is sold yet, so every pane sits in the one ungrouped configuration
-  /// list. This fails the day a Pro pane lands without a group, which is the point.
-  @Test func drawsOneUngroupedList() {
-    #expect(SettingsPane.allCases.allSatisfy { $0.group == .configuration })
+  /// Three sections, as Cupertino draws them: configuration, then information, then Licence
+  /// alone. This fails the day a pane lands without a section of its own picked.
+  @Test func drawsThreeSections() {
+    let groups: [(Drakar.SettingsPane, SettingsPaneGroup)] = [
+      (.general, .configuration), (.transcript, .configuration), (.theme, .configuration),
+      (.attention, .configuration), (.runner, .configuration),
+      (.whatsNew, .information), (.updates, .information), (.about, .information),
+      (.licence, .entitlement),
+    ]
+    #expect(SettingsPane.allCases.map(\.group) == groups.map(\.1))
+    #expect(SettingsPane.allCases.map(\.self) == groups.map(\.0))
   }
 
   /// The slug is the prefix of every defaults key and the tail of every support URL,
