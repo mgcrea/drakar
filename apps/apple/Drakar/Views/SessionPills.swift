@@ -57,7 +57,7 @@ struct SessionPills {
   /// The session's prompt cache, once a reply has said anything of it; nil for an agent that
   /// keeps none Drakar can reckon.
   static func promptCache(of session: AgentSession) -> PromptCache? {
-    let cache = session.transcript.promptCache
+    let cache = session.status.promptCache
     guard session.features.showsPromptCache, cache.state(at: .now) != .unknown else { return nil }
     return cache
   }
@@ -188,7 +188,7 @@ struct SessionPills {
   static func option(for session: AgentSession, in models: [ModelOption]?) -> ModelOption? {
     guard let models else { return nil }
     if let pick = session.pickedModel { return models.first { $0.value == pick } }
-    if let running = session.transcript.session?.model {
+    if let running = session.status.session?.model {
       let base = running.replacingOccurrences(of: "[1m]", with: "")
       if let match = models.first(where: { $0.resolvedModel == base && $0.value != "default" }) {
         return match
@@ -201,7 +201,7 @@ struct SessionPills {
   static func modelLabel(for session: AgentSession, in models: [ModelOption]?) -> String {
     if session.agent == .codex {
       return option(for: session, in: models)?.displayName ?? session.pickedModel
-        ?? session.transcript.session?.model ?? String(localized: "Codex's default")
+        ?? session.status.session?.model ?? String(localized: "Codex's default")
     }
     // What the process says it runs, once it said so after its start or a switch; and
     // Claude Code's default is whatever `settings.json` makes it: name what runs.
@@ -215,7 +215,7 @@ struct SessionPills {
       return ModelName.display(option.resolvedModel ?? option.value)
     }
     if let pick = session.pickedModel, pick != "default" { return ModelName.display(pick) }
-    if let running = session.transcript.session?.model { return ModelName.display(running) }
+    if let running = session.status.session?.model { return ModelName.display(running) }
     return String(localized: "Default")
   }
 

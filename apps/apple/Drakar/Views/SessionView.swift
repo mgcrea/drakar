@@ -26,11 +26,11 @@ struct SessionView: View {
   }
 
   var body: some View {
-    TranscriptView(
-      transcript: session.transcript, anchor: $item.scrollAnchor,
+    LiveTranscript(
+      session: session, anchor: $item.scrollAnchor,
       cancelQueued: session.features.cancelsQueued ? { session.cancelQueued($0) } : nil,
       // As Esc: not while a server's question waits, whose panel lets the turn go on.
-      sendQueuedNow: session.transcript.isRunning && !session.isReadOnly
+      sendQueuedNow: session.status.isRunning && !session.isReadOnly
         && item.pendingElicitation == nil
         ? {
           session.sendQueuedNow()
@@ -149,14 +149,14 @@ struct SessionView: View {
             // A read-only session never gets here, its banner stands in instead.
             Docked {
               LockedComposerCard(
-                isRunning: session.transcript.isRunning, stop: { session.interrupt() })
+                isRunning: session.status.isRunning, stop: { session.interrupt() })
             }
           } else {
             let toMarked = project.sendsToMarked
             ComposerView(
               text: $item.draft,
               canSend: toMarked ? project.canSendToMarked : session.canSend || session.canQueue,
-              isRunning: session.transcript.isRunning, agentName: session.agent.shortName,
+              isRunning: session.status.isRunning, agentName: session.agent.shortName,
               context: workspace.selection, pinned: workspace.pinned,
               unpin: { selection in workspace.pinned.removeAll { $0 == selection } },
               send: { text, context in
@@ -243,7 +243,7 @@ struct SessionView: View {
     // takes it first. While a server's question waits, Esc is left to its panel, whose
     // Decline lets the turn go on.
     .onKeyPress(.escape) {
-      guard session.transcript.isRunning, !session.isReadOnly, item.pendingElicitation == nil
+      guard session.status.isRunning, !session.isReadOnly, item.pendingElicitation == nil
       else { return .ignored }
       session.interrupt(keepingQueued: true)
       item.focusRequest += 1
@@ -288,7 +288,7 @@ struct SessionView: View {
   private var rewindOffer: RewindOffer {
     RewindOffer.of(
       canFork: project.offersForkFrom(item), canRewindCode: session.offersCodeRewind,
-      duringTurn: session.transcript.isRunning)
+      duringTurn: session.status.isRunning)
   }
 
   private var rewindAction: RewindMenuAction { RewindMenuAction(item: item, project: project) }
@@ -339,14 +339,14 @@ struct SessionView: View {
   private var pendingPermission: Binding<Transcript.PendingPermission?> {
     Binding(
       get: {
-        session.transcript.pendingPermissions.first { !$0.request.isChoice && !$0.request.isPlan }
+        session.status.pendingPermissions.first { !$0.request.isChoice && !$0.request.isPlan }
       },
       set: { _ in })
   }
 
   /// The newest todo list while a turn runs and some of it is left.
   private var runningTodos: [Todo]? {
-    guard session.transcript.isRunning, let todos = session.transcript.todos,
+    guard session.status.isRunning, let todos = session.status.todos,
       todos.contains(where: { $0.status != .completed })
     else { return nil }
     return todos
@@ -360,13 +360,13 @@ struct SessionView: View {
 
   /// The first plan waiting, answered in place of the composer.
   private var pendingPlan: Transcript.PendingPermission? {
-    session.transcript.pendingPermissions.first { $0.request.isPlan }
+    session.status.pendingPermissions.first { $0.request.isPlan }
   }
 
   /// The first `AskUserQuestion` waiting: answered in its card when the transcript has it,
   /// else in place of the composer.
   private var pendingChoice: Transcript.PendingPermission? {
-    session.transcript.pendingPermissions.first { $0.request.isChoice }
+    session.status.pendingPermissions.first { $0.request.isChoice }
   }
 
   /// The question answered in its card in the transcript: the one waiting, or the one the
@@ -374,8 +374,7 @@ struct SessionView: View {
   /// the transcript lacks, which the composer's place answers instead.
   private var askedQuestion: AskedQuestion? {
     if let choice = pendingChoice {
-      guard let id = choice.request.toolUseID, session.transcript.contains(entryID: id)
-      else { return nil }
+      guard session.status.choiceHasCard, let id = choice.request.toolUseID else { return nil }
       return AskedQuestion(
         callID: id, requestID: choice.requestID, focusRequest: item.questionFocusRequest,
         answer: { answers in
@@ -400,12 +399,12 @@ struct SessionView: View {
   /// place answers it.
   private var askedElicitation: AskedElicitation? {
     guard let pending = item.pendingElicitation,
-      let callID = AskedElicitation.anchor(for: pending.elicitation, in: session.transcript)
+      let callID = session.status.elicitationAnchor
     else { return nil }
     let panel = elicitationPanel(pending)
     return AskedElicitation(
       callID: callID, requestID: pending.requestID, focusRequest: item.questionFocusRequest,
-      count: session.transcript.pendingElicitations.count,
+      count: session.status.pendingElicitations.count,
       hostLogsAnswers: panel.hostLogsAnswers, isReconnecting: panel.isReconnecting,
       panel: { panel })
   }
@@ -429,7 +428,7 @@ struct SessionView: View {
     let session = session
     return ElicitationPanel(
       elicitation: pending.elicitation,
-      position: (1, session.transcript.pendingElicitations.count),
+      position: (1, session.status.pendingElicitations.count),
       answer: { session.answer(pending, $0) }, focusRequest: item.questionFocusRequest,
       isDocked: isDocked, hostLogsAnswers: session.hostLogsAnswersInFull,
       isReconnecting: session.isReconnecting, runner: session.runnerName)
@@ -647,8 +646,8 @@ private struct SessionFooter: View {
   /// read from the file.
   private var modelID: String? {
     ModelName.current(
-      initModel: session.transcript.session?.model,
-      messageModel: session.transcript.contextModelID ?? item.preview?.context?.modelID,
+      initModel: session.status.session?.model,
+      messageModel: session.status.contextModelID ?? item.preview?.context?.modelID,
       attachmentModel: item.preview?.modelID)
   }
 
@@ -670,13 +669,13 @@ private struct SessionFooter: View {
         if let cache = SessionPills.promptCache(of: session) {
           PromptCacheLabel(cache: cache)
         }
-        if let mode = session.transcript.historyPermissionMode {
+        if let mode = session.status.historyPermissionMode {
           Text(PermissionMode.title(of: mode))
         }
         if let modelID {
           Text(ModelName.display(modelID)).help(modelID)
         }
-        if let effort = session.transcript.historyEffort {
+        if let effort = session.status.historyEffort {
           Text(EffortLevel.title(of: effort)).help("Effort")
         }
       }
@@ -685,16 +684,16 @@ private struct SessionFooter: View {
       } else if session.features.showsAccount {
         account
       }
-      if let version = session.transcript.session?.agentVersion {
+      if let version = session.status.session?.agentVersion {
         VersionLabel(
           version: version, executable: session.executable, agent: session.agent,
           runner: session.runnerName)
-      } else if let version = session.transcript.writerVersion {
+      } else if let version = session.status.writerVersion {
         // Not Drakar's process: how its version compares to Drakar's is not this session's.
         Text("\(session.agent.name) \(version)").help("The version that last wrote this session")
       }
-      if let cost = session.transcript.lastTurn?.costUSD {
-        let billing = Billing(apiKeySource: session.transcript.session?.apiKeySource)
+      if let cost = session.status.lastTurn?.costUSD {
+        let billing = Billing(apiKeySource: session.status.session?.apiKeySource)
         let amount = cost.formatted(.currency(code: "USD").precision(.fractionLength(4)))
         Text(billing == .subscription ? "≈ \(amount)" : amount)
           .monospacedDigit()
@@ -774,12 +773,28 @@ private struct SessionFooter: View {
       Label("Not started", systemImage: "circle.dotted")
     case .starting:
       Label("Starting…", systemImage: "circle.dotted")
-    case .ready where session.transcript.isRunning:
+    case .ready where session.status.isRunning:
       Label("Working", systemImage: "circle.fill").foregroundStyle(.blue)
     case .ready:
       Label("Ready", systemImage: "circle.fill").foregroundStyle(.green)
     case .failed, .exited:
       Label("Stopped", systemImage: "circle")
     }
+  }
+}
+
+/// The only part of the pane that reads the transcript, which changes with every token: the
+/// composer, the panels and the footer around it read the session's `status` and are not
+/// rebuilt as text streams in.
+private struct LiveTranscript: View {
+  let session: AgentSession
+  @Binding var anchor: String?
+  var cancelQueued: ((QueuedPrompt) -> Void)?
+  var sendQueuedNow: (() -> Void)?
+
+  var body: some View {
+    TranscriptView(
+      transcript: session.transcript, anchor: $anchor, cancelQueued: cancelQueued,
+      sendQueuedNow: sendQueuedNow)
   }
 }

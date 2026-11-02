@@ -107,6 +107,14 @@ SECONDS_PROFILED ?= 30
 profile: ## Time-profile the running Drakar's main thread (SECONDS_PROFILED=30)
 	python3 -I scripts/profile.py --seconds $(SECONDS_PROFILED)
 
+# The streaming benchmark, optimised as the app ships but testable, in a build folder of its
+# own so it never rewrites the Release app that may be running. It prints BENCH lines.
+bench: sparkle ## Main-thread cost of a session streaming on screen (prints BENCH figures)
+	TEST_RUNNER_DRAKAR_BENCH=1 xcodebuild test -project $(PROJECT) -scheme $(SCHEME) \
+		-configuration Release ENABLE_TESTABILITY=YES -destination '$(DESTINATION)' \
+		-derivedDataPath $(DERIVED_DATA)/bench -only-testing:DrakarTests/SessionStreamingBench \
+		| grep -E 'BENCH|error:|failed|TEST (SUCCEEDED|FAILED)'
+
 # ── Build and relaunch ────────────────────────────────────────────────────────
 #
 # Copy-paste block, identical in every Mac app here. The canonical copy lives in
@@ -246,5 +254,5 @@ icon: ## Rebuild Drakar.icon from design/drakar-icon.svg
 clean: ## Remove build products
 	rm -rf $(DERIVED_DATA) $(KIT)/.build
 
-.PHONY: help sparkle build build-release test test-app test-all profile quit run \
+.PHONY: help sparkle build build-release test test-app test-all profile bench quit run \
 	swift-format-version format-swift format-swift-check blame-setup icon clean

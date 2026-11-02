@@ -162,6 +162,8 @@ public struct Transcript: Sendable, Equatable {
   }
   /// Whether an entry with this id is in the transcript, a tool call's being its call's id.
   public func contains(entryID id: String) -> Bool { indexByID[id] != nil }
+  /// The entry with this id, a tool call's being its call's id.
+  public func entry(withID id: String) -> Entry? { indexByID[id].map { entries[$0] } }
   /// The text the newest turn ended on, once it ended normally with nothing waiting: the
   /// main thread's last entry is text, and it and the text blocks of the same message
   /// before it make the closing text. Nil when it ended on a tool call or a note.
@@ -346,6 +348,15 @@ public struct Transcript: Sendable, Equatable {
   /// interrupted, and asks nothing. Claude Code names a server's tools
   /// `mcp__<server>__<tool>`, every character of the server's name outside `[A-Za-z0-9_-]`
   /// made `_`.
+  /// The call whose card answers `elicitation`: its server's call still running, drawn on
+  /// the main thread (a subagent's calls are inside its card).
+  public func elicitationCard(for elicitation: Elicitation) -> String? {
+    guard let id = elicitationAnchor(for: elicitation.serverName),
+      entry(withID: id)?.parentToolUseID == nil
+    else { return nil }
+    return id
+  }
+
   public func elicitationAnchor(for serverName: String) -> String? {
     let prefix = "mcp__\(Self.toolNamePart(serverName))__"
     for entry in entries.reversed() {

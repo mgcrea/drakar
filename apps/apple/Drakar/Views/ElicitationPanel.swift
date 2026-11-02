@@ -33,10 +33,7 @@ struct AskedElicitation: Equatable {
   /// the transcript draws it among its own entries. Nil for a call inside a subagent's card,
   /// which may be folded away, and for no call at all: the composer's place answers it then.
   static func anchor(for elicitation: Elicitation, in transcript: Transcript) -> String? {
-    guard let id = transcript.elicitationAnchor(for: elicitation.serverName),
-      transcript.entries.last(where: { $0.id == id })?.parentToolUseID == nil
-    else { return nil }
-    return id
+    transcript.elicitationCard(for: elicitation)
   }
 }
 

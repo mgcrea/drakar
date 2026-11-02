@@ -1259,7 +1259,7 @@ final class AgentSession {
   /// extension offers it, while nothing runs or waits and until it is dismissed.
   var earlierQuestion: Transcript.ToolCall? {
     guard canSend, !status.isWaitingOnPerson,
-      let call = transcript.unansweredQuestion, call.id != dismissedQuestionID
+      let call = status.unansweredQuestion, call.id != dismissedQuestionID
     else { return nil }
     return call
   }
