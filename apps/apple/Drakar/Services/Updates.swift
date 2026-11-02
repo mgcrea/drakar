@@ -6,7 +6,8 @@ import SwiftUI
 
 /// The update check: the one connection Drakar makes of its own, and the single named
 /// exception to the claim `scripts/audit-network.sh` checks. Everything else that reaches
-/// the network is the `claude` or `codex` the person installed.
+/// the network is the `claude`, `codex` or, once they name a runner, `ssh` the person
+/// installed.
 ///
 /// Everything here is built around one property: **a Drakar nobody has said yes to has
 /// never resolved a name.** That is stronger than "the checkbox is off", and it is why

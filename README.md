@@ -19,7 +19,7 @@ Drakar listens on one network socket, on 127.0.0.1, which answers only a client 
 this launch's token, and its session host on one Unix socket, which only your own Drakar
 can reach. The only connections Drakar opens of its own are Sparkle's, to check for and
 fetch updates, and only once you said yes to update checks. Everything else that reaches
-the network is the `claude` or `codex` you installed.
+the network is the `claude`, `codex` or, once you name a runner, `ssh` you installed.
 [SECURITY.md](SECURITY.md) says how to check that yourself, and how to report a hole.
 
 Settings › General picks which `claude` runs when more than one is installed, and the
@@ -52,6 +52,22 @@ only your own Drakar can reach; nothing outgoing), `make audit-running` against 
 running app, and `make audit-release` against the built bundle (every Mach-O swept for URL
 loading, DNS and TLS, with two exact allowances, Sparkle's URL loading and Drakar's
 Network.framework link for the listener; no entitlements; the hardened runtime).
+
+## Sessions on another Mac
+
+A second Mac kept on, the runner, can take the work that takes over a screen: a screenshot
+run, a `make` target that drives the UI, a session that clicks through apps. File › New
+Session on Runner… starts a Claude Code session in a folder there. Its `claude` runs on the
+runner, under the runner's own login and Claude Code account, with the runner's MCP servers;
+you follow the conversation, answer its prompts and send yours from your Mac, and nothing
+moves on your screen. Its window shows the conversation only. Closing it or quitting Drakar
+leaves the session running there, and only End Session ends it. Home lists the runner's
+sessions, and Open on the Runner hands one to Drakar on the runner, for its editor, over
+Screen Sharing.
+
+Drakar reaches the runner with your own `ssh` login, and the runner takes nothing until
+"Let my other Macs start sessions here" is on in its Settings › Runner. Setting one up, and
+what v1 leaves out: [docs/runner.md](docs/runner.md).
 
 ## Layout
 

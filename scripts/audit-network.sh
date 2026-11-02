@@ -5,7 +5,8 @@
 #   holding this launch's token, and its session host on one Unix socket, which only your
 #   own Drakar can reach. The only connections Drakar opens of its own are Sparkle's, to
 #   check for and fetch updates, and only once you said yes to update checks. Everything
-#   else that reaches the network is the `claude` or `codex` you installed.
+#   else that reaches the network is the `claude`, `codex` or, once you name a runner, `ssh`
+#   you installed.
 #
 # A marketing claim CI can check is the property worth keeping (bastion's
 # audit-listener.sh); this asserts the rules in Drakar/Services/IDEServer.swift's header,

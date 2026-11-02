@@ -19,7 +19,7 @@ Drakar listens on one network socket, on 127.0.0.1, which answers only a client 
 this launch's token, and its session host on one Unix socket, which only your own Drakar
 can reach. The only connections Drakar opens of its own are Sparkle's, to check for and
 fetch updates, and only once you said yes to update checks. Everything else that reaches
-the network is the `claude` or `codex` you installed.
+the network is the `claude`, `codex` or, once you name a runner, `ssh` you installed.
 
 In detail:
 
@@ -38,6 +38,23 @@ In detail:
   Drakar's own EdDSA signature. It always asks before installing: the shipped Info.plist
   turns automatic installs off and takes away Sparkle's option to turn them on
   (`SUAllowsAutomaticUpdates` is false), and profile reporting is off.
+- **A runner is reached through your own `ssh`.** Once you name a runner in Settings ›
+  Runner, Drakar spawns `/usr/bin/ssh` as it spawns `claude`, to run
+  `<path>/Contents/MacOS/Drakar --relay` on the runner: the connection is ssh's, on your
+  keys and your `~/.ssh/config`, and Drakar writes nothing in `~/.ssh`. The relay is
+  reached only through that login of yours, and it is Drakar's own signed binary: it
+  connects to the runner's session host as the app does, so the host lets it in by the same
+  check (running as you, signed with Drakar's identifier by Drakar's team). It first tells
+  the Mac what a session there needs, in one line: Drakar's version on the runner, its
+  home, user and hostname, the environment of its logged-in desktop, the `claude` it finds
+  and its Claude Code account folders; then it copies bytes between ssh and that socket
+  without reading them. It does that only once "Let my
+  other Macs start sessions here" is on in the runner's Settings › Runner, which is off until
+  someone at the runner turns it on; otherwise it says so and exits. It never starts the host
+  itself: if none answers, it asks macOS to open Drakar in the runner's logged-in desktop
+  (`/usr/bin/open -g -j -a`), which does. With no runner named and that setting off, none of
+  this runs. Setting one up, and a key that can start only the relay:
+  [docs/runner.md](docs/runner.md).
 - **No licence call.** A licence key is checked on this Mac, against a public key built
   into the app, and the trial is counted on this Mac too.
 - **No entitlements, no sandbox.** Drakar spawns `claude` and `codex`, which work on your
@@ -90,6 +107,9 @@ A failure in any of them is the claim being false, and worth a report.
 - **What `codex` does.** The same, for OpenAI: Drakar starts your own `codex app-server`
   for a Codex session, unmodified, and reads its answers. It talks to OpenAI, and to
   whatever your MCP servers and tools reach, on your own sign-in.
+- **What `ssh` does.** It is macOS's own `/usr/bin/ssh`, run with your keys and your
+  `~/.ssh/config` to the destination you named, and answered by the runner's `sshd`; their
+  security is OpenSSH's and your configuration's.
 - **Other programs running as you.** They can already read every transcript and rewrite
   every config directly, so nothing in Drakar changes their reach.
 

@@ -62,7 +62,8 @@ enum RunnerConnection {
     for fd in errors { _ = fcntl(fd, F_SETFD, FD_CLOEXEC) }
     let (ours, theirs) = (ends[0], ends[1])
 
-    // The person's ssh, which opens the connection to their runner; not Drakar (spec §6).
+    // The person's ssh opens the connection to their runner, not Drakar: a program spawned as
+    // `claude` is, so `scripts/audit-network.sh` has nothing to allow for it (spec §6).
     let ssh = Process()
     ssh.executableURL = RunnerSettings.sshExecutable
     ssh.arguments = arguments(settings)
