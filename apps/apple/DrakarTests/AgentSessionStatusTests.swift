@@ -101,11 +101,50 @@ struct AgentSessionStatusTests {
     #expect(streamed(session) == "Hello there")
     #expect(transcriptChanged.value)
     #expect(!statusChanged.value)
+    // Drawn within `displayInterval` with nothing else changing.
+    try await waitFor { shown(session) == "Hello there" }
+    #expect(shown(session) == "Hello there")
 
     try FileManager.default.removeItem(at: go)
     try await waitFor { !session.status.isRunning }
     #expect(!session.status.isRunning)
     #expect(statusChanged.value)
+  }
+
+  private func shown(_ session: AgentSession) -> String {
+    session.displayedTranscript.entries.compactMap {
+      if case .text(let text) = $0.kind { text } else { nil }
+    }.joined()
+  }
+
+  /// Text growing in an entry is drawn at most every `displayInterval`, not per token; what
+  /// changes the session's state (here the end of the turn) is drawn at once, with the text
+  /// that was waiting.
+  @Test func streamedTextIsDrawnAtACappedRateAndATurnsEndAtOnce() async throws {
+    let session = AgentSession(folder: folder)
+    session.executableOverride = fake
+    session.accounts = { [] }
+    session.makeTransport = { AgentProcess($0) }
+    session.displayInterval = .seconds(10)
+    defer {
+      session.stop()
+      try? FileManager.default.removeItem(at: folder)
+    }
+    session.send("hi")
+    try await waitFor { streamed(session) == "Hello" }
+    // The reply's block starts an entry, drawn at once; its text grows in it, and waits.
+    #expect(session.displayedTranscript.entries.count == session.transcript.entries.count)
+    #expect(shown(session) == "")
+
+    try Data().write(to: go)
+    try await waitFor { streamed(session) == "Hello there" }
+    #expect(streamed(session) == "Hello there")
+    #expect(shown(session) == "")
+
+    try FileManager.default.removeItem(at: go)
+    try await waitFor { !session.status.isRunning }
+    #expect(shown(session) == "Hello there")
+    #expect(session.displayedTranscript == session.transcript)
   }
 }
 

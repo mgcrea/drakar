@@ -52,12 +52,52 @@ final class AgentSession {
     [String: (reply: CheckedContinuation<SessionSignal?, Never>, timeout: Task<Void, Never>)] =
       [:]
   private(set) var transcript = Transcript() {
-    didSet { status = transcript.status }
+    // Never `oldValue`: reading it would copy the whole transcript on every token.
+    didSet { transcriptChanged() }
   }
   /// What the rest of the app reads about this session: its row, its window's counts, Home,
   /// attention, keep-awake. Assigned after every change but only observed to change when it
   /// does, so readers are not redrawn per token as readers of `transcript` are.
   private(set) var status = Transcript.Status()
+  /// What the transcript view draws: `transcript`, with text growing in an entry taken at most
+  /// every `displayInterval` (20 times a second) rather than per token, since each redraw lays
+  /// the transcript out again. A new entry or a change of `status` (a turn starting or
+  /// ending, a question, a permission) is drawn at once.
+  var displayedTranscript: Transcript {
+    access(keyPath: \.displayedTranscript)
+    return displayed
+  }
+  @ObservationIgnored var displayInterval = Duration.milliseconds(50)
+  @ObservationIgnored private var displayed = Transcript()
+  @ObservationIgnored private var pendingDisplay: Task<Void, Never>?
+
+  private func transcriptChanged() {
+    let status = transcript.status
+    let changed = status != self.status
+    if changed { self.status = status }
+    // Displaying keeps a second reference to the entries, so the next change copies them all:
+    // at most every `displayInterval` while a log replays, a new entry on every line.
+    // A prompt queued mid-turn leaves the composer, and is drawn in its place at once.
+    if !isReplaying,
+      changed || transcript.entries.count != displayed.entries.count
+        || transcript.queuedPrompts.count != displayed.queuedPrompts.count
+    {
+      display()
+    } else if pendingDisplay == nil {
+      pendingDisplay = Task { [weak self, displayInterval] in
+        try? await Task.sleep(for: displayInterval)
+        guard !Task.isCancelled else { return }
+        self?.display()
+      }
+    }
+  }
+
+  /// Notified without comparing the old and new transcripts, which would walk every entry.
+  private func display() {
+    pendingDisplay?.cancel()
+    pendingDisplay = nil
+    withMutation(keyPath: \.displayedTranscript) { displayed = transcript }
+  }
   private(set) var phase: Phase = .idle
   /// The binary this session runs, for the footer and for bug reports.
   private(set) var executable: URL?
@@ -953,9 +993,12 @@ final class AgentSession {
   /// What another process appended, for a read-only session.
   func catchUp() {
     guard isReadOnly, var follower else { return }
-    try? follower.catchUp(&transcript)
-    // A read that reset the transcript, then threw, skipped its `didSet`.
-    status = transcript.status
+    do {
+      try follower.catchUp(&transcript)
+    } catch {
+      // A read that reset the transcript, then threw, skipped its `didSet`.
+      transcriptChanged()
+    }
     self.follower = follower
   }
 
@@ -1846,6 +1889,7 @@ final class AgentSession {
     defer {
       isReplaying = false
       transport.mode = .muted
+      display()
     }
     let batch = 1_000
     var parsing: [Task<[AgentProcess.Line?], Never>] = []

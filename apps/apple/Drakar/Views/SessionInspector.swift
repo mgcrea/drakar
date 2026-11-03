@@ -27,7 +27,8 @@ private struct SessionDetails: View {
   let item: ProjectSession
 
   private var session: AgentSession { item.session }
-  private var transcript: Transcript { session.transcript }
+  /// Only what `status` carries: the tab is not redrawn as text streams in.
+  private var transcript: Transcript.Status { session.status }
 
   private var gauge: ContextGauge? {
     item.gauge(
