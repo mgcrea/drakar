@@ -188,4 +188,46 @@ struct TabOrderTests {
     #expect(project.tabs.map(\.id) == [a.id, b.id, c.id])
     #expect(project.selectedID == c.id)
   }
+
+  /// The shown tab among those removed: the nearest left standing right of it is shown,
+  /// else the nearest left of it.
+  @Test func removingTheMarkedShowsTheNearestTabLeftStanding() throws {
+    let project = try project()
+    let a = project.newSession()
+    let b = project.newSession()
+    let c = project.newSession()
+    let d = project.newSession()
+    let e = project.newSession()
+    let f = project.newSession()
+    project.click(c, .plain)
+    project.click(d, .toggle)
+    project.removeMarked()
+    #expect(project.tabs.map(\.id) == [a.id, b.id, e.id, f.id])
+    #expect(project.selectedID == e.id)
+    project.click(f, .plain)
+    project.click(e, .toggle)
+    project.removeMarked()
+    #expect(project.tabs.map(\.id) == [a.id, b.id])
+    #expect(project.selectedID == b.id)
+  }
+
+  /// Next Session Needing You goes through the tabs in their order from the one shown, the
+  /// preview among them.
+  @Test func theNextTabNeedingYouIsRightOfTheShownPreview() async throws {
+    let project = try project()
+    let summaries = try await ended(["e1"], in: project)
+    let a = project.newSession()
+    let b = project.newSession()
+    project.select(a)
+    project.openEnded(summaries[0])
+    let p = try #require(project.selected)
+    #expect(project.tabs.map(\.id) == [a.id, p.id, b.id])
+    a.isUnread = true
+    b.isUnread = true
+    #expect(project.nextNeedingAttention()?.item?.id == b.id)
+    project.moveTab(a.id, to: 2)
+    #expect(project.nextNeedingAttention()?.item?.id == b.id)
+    project.moveTab(b.id, to: 0)
+    #expect(project.nextNeedingAttention()?.item?.id == a.id)
+  }
 }

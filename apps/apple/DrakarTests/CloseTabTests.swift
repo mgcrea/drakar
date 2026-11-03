@@ -311,6 +311,25 @@ struct CloseTabTests {
     #expect(session.isHosted)
   }
 
+  /// Opened again, a tab closed at work comes back right of the tab shown, as a new one does.
+  @Test func aReopenedTabOpensRightOfTheShownOne() async throws {
+    defer { cleanUp() }
+    let app = app()
+    let closed = try await closedAtWork("go-stream", on: app)
+    closed.stopAll(handingOver: true)
+    let id = try #require(await app.held().first?.id)
+
+    let back = window(on: app)
+    defer { back.stopAll() }
+    let a = back.newSession()
+    let b = back.newSession()
+    back.select(a)
+    await back.reopen(id, among: await app.held())
+    let reopened = try #require(back.sessions.first { $0.session.hostID == id })
+    #expect(back.tabs.map(\.id) == [a.id, reopened.id, b.id])
+    #expect(back.selectedID == reopened.id)
+  }
+
   /// An idle tab ends its process, as a removed row did: the host forgets it.
   @Test func anIdleTabClosesAndEnds() async throws {
     defer { cleanUp() }

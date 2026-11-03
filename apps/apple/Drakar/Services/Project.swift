@@ -968,18 +968,26 @@ final class Project {
     for item in markedSessions { end(item) }
   }
 
-  /// Takes every marked session out of the window, each as `remove` does, then shows and
-  /// loads the first row left once: a row about to go never reads its transcript.
+  /// Takes every marked session out of the window, each as `remove` does. The shown one
+  /// among them gives way to the nearest tab left standing, right of it first as a closed
+  /// tab's neighbour is, else left; that one is loaded once, so a row about to go never
+  /// reads its transcript.
   func removeMarked() {
-    for item in markedSessions {
+    let going = markedSessions
+    let gone = Set(going.map(\.id))
+    if let selectedID, gone.contains(selectedID),
+      let index = sessions.firstIndex(where: { $0.id == selectedID })
+    {
+      let right = sessions[(index + 1)...].first { !gone.contains($0.id) }
+      let left = sessions[..<index].last { !gone.contains($0.id) }
+      self.selectedID = (right ?? left)?.id
+    }
+    for item in going {
       item.session.stop()
       sessions.removeAll { $0.id == item.id }
       fanOutFinished(item)
     }
     marked = []
-    if let selectedID, !sessions.contains(where: { $0.id == selectedID }) {
-      self.selectedID = sessions.first?.id
-    }
     if let selected { load(selected) }
     Attention.shared.refresh()
   }
@@ -1319,6 +1327,10 @@ final class Project {
   var tabs: [ProjectSession] { sessions }
 
   /// `id`'s tab dragged to `index` in the tabs, clamped to them. The tab shown stays shown.
+  /// `index` is where the tab ends up, counted once it is out of its old place: moving the
+  /// first of three tabs to the end is `2`, not `3`. A drop handler that is handed a
+  /// destination counted before the removal, as SwiftUI's `onMove` is, takes one off it when
+  /// the tab moves right.
   func moveTab(_ id: ProjectSession.ID, to index: Int) {
     guard let from = sessions.firstIndex(where: { $0.id == id }) else { return }
     let item = sessions.remove(at: from)
@@ -1545,18 +1557,21 @@ final class Project {
     }
   }
 
-  /// The next row after the selected one that wants the person, in the list's order as
-  /// sorted (the window's own, then those elsewhere unless `ownRowsOnly`): the most urgent
-  /// level that counts first, then unread, wrapping. Never the selected row.
+  /// The next tab after the selected one that wants the person, in the tabs' order, the
+  /// preview among them, then those listed elsewhere as the sidebar sorts them unless
+  /// `ownRowsOnly`: the most urgent level that counts first, then unread, wrapping. Never the
+  /// selected tab. A preview watching a session elsewhere wants what that session does.
   func nextNeedingAttention(ownRowsOnly: Bool = false) -> Stop? {
-    let watched = selected.flatMap { $0.isWatching ? $0.sessionID : nil }
-    var rows: [(stop: Stop, level: Urgency?, isUnread: Bool, isSelected: Bool)] = listedHeld.map {
-      (.row($0), $0.urgency, $0.isUnread, $0.id == selectedID)
+    let elsewhere = ownRowsOnly ? [] : listedGroups.elsewhere.filter { $0.live != nil }
+    let tabbed = Set(tabs.compactMap(\.sessionID))
+    var rows: [(stop: Stop, level: Urgency?, isUnread: Bool, isSelected: Bool)] = tabs.map { item in
+      let watched =
+        item.isWatching ? elsewhere.first { $0.sessionID == item.sessionID } : nil
+      let level = item.urgency ?? watched.flatMap { urgency(of: $0) }
+      return (.row(item), level, item.isUnread, item.id == selectedID)
     }
-    let elsewhere = ownRowsOnly ? [] : listedGroups.elsewhere
-    for summary in elsewhere where summary.live != nil {
-      rows.append(
-        (.elsewhere(summary), urgency(of: summary), false, summary.sessionID == watched))
+    for summary in elsewhere where !tabbed.contains(summary.sessionID) {
+      rows.append((.elsewhere(summary), urgency(of: summary), false, false))
     }
     let start = rows.firstIndex { $0.isSelected } ?? -1
     let ordered = rows[(start + 1)...] + rows[..<max(start, 0)]
@@ -1956,7 +1971,8 @@ final class Project {
       marked.remove(row.id)
       if selectedID == row.id { selectedID = item.id }
     } else {
-      sessions.insert(item, at: 0)
+      // Where a new session opens: a tab taken back or opened again lands by the one shown.
+      sessions.insert(item, at: opensAt)
     }
     if selectedID == nil { selectedID = item.id }
     session.reportReplayedCommands()
