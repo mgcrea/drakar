@@ -353,6 +353,36 @@ struct CloseTabTests {
     #expect(later.sessions.first?.session.isHosted == true)
   }
 
+  /// A preview of a session another process runs holds no process of this app's: closing it
+  /// stops nothing, so it asks nothing, and Close Other Tabs closes it. Its transcript reads
+  /// as at work, a tool call unanswered, yet a followed transcript is never running here.
+  @Test func closingAPreviewOfASessionAtWorkElsewhereAsksNothing() async throws {
+    defer { cleanUp() }
+    let project = Project(folder: folder)
+    project.sessionHost = SessionHost()
+    defer { project.stopAll() }
+    let path = ProjectPath.normalize(folder)
+    let file = bin.appending(path: "w.jsonl")
+    let lines = [
+      #"{"type":"user","cwd":"\#(path)","sessionId":"w","message":{"role":"user","content":"go"}}"#,
+      #"{"type":"assistant","cwd":"\#(path)","sessionId":"w","message":{"id":"m-ls","type":"message","role":"assistant","model":"m","content":[{"type":"tool_use","id":"toolu_1","name":"Bash","input":{"command":"ls"}}],"stop_reason":null}}"#,
+    ]
+    try Data((lines.joined(separator: "\n") + "\n").utf8).write(to: file)
+    let kept = project.newSession(agent: .claude)
+    let preview = project.attach(
+      ResumeTarget(
+        sessionID: "w", cwd: path, file: file.path(percentEncoded: false),
+        accountDirectory: bin.path(percentEncoded: false), accountIsDefault: false),
+      watching: true, readOnly: true)
+    #expect(await eventually { preview.session.status.hasEntries })
+    #expect(preview.session.transcript.entries.count > 1)
+    #expect(preview.session.isReadOnly && !preview.session.isProcessRunning)
+    #expect(!preview.session.isAtWork)
+    #expect(project.closeAsk(for: preview) == nil)
+    project.closeOthers(than: kept)
+    #expect(project.tabs.map(\.id) == [kept.id])
+  }
+
   /// Opened again from Home: a live tab, the mark cleared, and no longer ended by its turn.
   @Test func reopeningClearsTheMark() async throws {
     defer { cleanUp() }
