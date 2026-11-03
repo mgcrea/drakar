@@ -23,11 +23,11 @@ struct ProjectTests {
       accountDirectory: folder.path(percentEncoded: false), accountIsDefault: false)
   }
 
-  @Test func attachingPutsTheSessionOnTopAndSelectsIt() {
+  @Test func attachingOpensTheSessionRightOfTheShownOneAndSelectsIt() {
     let project = Project(folder: folder)
     let first = project.attach(target("a"))
     let second = project.attach(target("b"))
-    #expect(project.sessions.map(\.id) == [second.id, first.id])
+    #expect(project.sessions.map(\.id) == [first.id, second.id])
     #expect(project.selectedID == second.id)
   }
 
@@ -51,7 +51,7 @@ struct ProjectTests {
     let stored = try JSONDecoder().decode(
       StoredProject.self, from: JSONEncoder().encode(project.stored))
     let restored = Project(folder: folder, restoring: stored)
-    #expect(restored.sessions.map(\.sessionID) == ["b", "a"])
+    #expect(restored.sessions.map(\.sessionID) == ["a", "b"])
     #expect(restored.selected?.sessionID == "b")
     #expect(restored.sessions.allSatisfy { !$0.session.isProcessRunning })
   }
@@ -112,8 +112,8 @@ struct ProjectTests {
     project.select(own)
     project.attach(target("b"))
     #expect(!watched.isWatching)
-    #expect(project.held.map(\.id) == [watched.id, own.id])
-    #expect(project.stored.sessions.map(\.sessionID) == ["b", "a"])
+    #expect(project.held.map(\.id) == [own.id, watched.id])
+    #expect(project.stored.sessions.map(\.sessionID) == ["a", "b"])
   }
 
   /// Nothing to copy before the first finished turn, and nothing whole during one.

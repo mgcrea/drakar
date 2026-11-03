@@ -18,9 +18,10 @@ struct AttentionTests {
   /// Unread rows after the selected one, wrapping, the selected one never.
   @Test func nextGoesToUnreadRowsInOrder() throws {
     let project = try project()
-    let c = project.newSession()
+    let a = project.newSession()
     let b = project.newSession()
-    let a = project.newSession()  // rows: a, b, c; a selected
+    let c = project.newSession()
+    project.select(a)  // rows: a, b, c; a selected
     c.isUnread = true
     #expect(project.nextNeedingAttention()?.item?.id == c.id)
     b.isUnread = true

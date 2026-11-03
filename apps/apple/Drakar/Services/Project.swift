@@ -700,12 +700,12 @@ final class Project {
     selected.focusRequest += 1
   }
 
-  /// A new session in `folder` (the project's when nil), on top, running `agent` (Settings'
-  /// default when nil) under `account` (the folder's when nil), and shown unless `shows` is
-  /// false. No process until it is prompted.
+  /// A new session in `folder` (the project's when nil), opened right of the shown tab or at
+  /// `index` in the tabs, running `agent` (Settings' default when nil) under `account` (the
+  /// folder's when nil), and shown unless `shows` is false. No process until it is prompted.
   @discardableResult func newSession(
     agent: AgentKind? = nil, folder: URL? = nil, account: ClaudeAccount? = nil,
-    select shows: Bool = true
+    select shows: Bool = true, at index: Int? = nil
   ) -> ProjectSession {
     // A runner's sessions are Claude Code's (remote sessions spec, Goals), under the runner
     // shell's own account: none picked here reaches it (Ruling 11).
@@ -714,7 +714,7 @@ final class Project {
         folder: folder ?? self.folder,
         agent: runner == nil ? agent ?? ClaudeChoice.defaultAgent : .claude,
         account: runner == nil ? account : nil))
-    sessions.insert(item, at: 0)
+    sessions.insert(item, at: index.map { min(max($0, 0), sessions.count) } ?? opensAt)
     if shows { select(item) }
     return item
   }
@@ -829,9 +829,9 @@ final class Project {
     }
   }
 
-  /// `skill` in a new session in each of `folders`, on top in their order, the first shown:
-  /// named after the skill and the folder, in `mode` and under `account` when given, and
-  /// sent the skill all at once or `limit` at a time.
+  /// `skill` in a new session in each of `folders`, opened right of the shown tab in their
+  /// order, the first shown: named after the skill and the folder, in `mode` and under
+  /// `account` when given, and sent the skill all at once or `limit` at a time.
   func runInSubfolders(
     _ skill: SkillEntry, folders: [URL], arguments: String, mode: PermissionMode?, limit: Int?,
     account: ClaudeAccount? = nil
@@ -842,15 +842,16 @@ final class Project {
     let agent = skillsAgent
     if agent == .claude { capabilityMarks.skills.remove(skill.name) }
     let id = UUID()
-    // Each goes on top, so the last folder first leaves them in order.
-    let items = Array(
-      folders.enumerated().reversed().map { index, folder in
-        let item = newSession(agent: agent, folder: folder, account: account, select: false)
-        item.session.rename(to: "/\(skill.name) · \(folder.lastPathComponent)")
-        if let mode { item.session.setMode(mode) }
-        item.session.fanOut = FanOutMark(batch: id, index: index)
-        return item
-      }.reversed())
+    // Each right of the one before, where a new session would open.
+    let start = opensAt
+    let items = folders.enumerated().map { index, folder in
+      let item = newSession(
+        agent: agent, folder: folder, account: account, select: false, at: start + index)
+      item.session.rename(to: "/\(skill.name) · \(folder.lastPathComponent)")
+      if let mode { item.session.setMode(mode) }
+      item.session.fanOut = FanOutMark(batch: id, index: index)
+      return item
+    }
     if let first = items.first { select(first) }
     let arguments = arguments.trimmingCharacters(in: .whitespacesAndNewlines)
     let batch = FanOutBatch(
@@ -877,7 +878,7 @@ final class Project {
 
   /// A click on a held row. Plain shows it and clears the marks; ⌘ marks or unmarks it
   /// (the shown row is marked with the first); ⇧ marks the rows from the last clicked to it,
-  /// in the list's order. Neither ⌘ nor ⇧ changes the row shown.
+  /// in the tabs' order, passing over the preview. Neither ⌘ nor ⇧ changes the row shown.
   func click(_ item: ProjectSession, _ kind: RowClick) {
     lastBroadcast = nil
     switch kind {
@@ -893,7 +894,8 @@ final class Project {
       if marked.remove(item.id) == nil { marked.insert(item.id) }
       markAnchor = item.id
     case .extend:
-      let rows = listedHeld.map(\.id)
+      // The window's own tabs: the preview is not one to mark.
+      let rows = held.map(\.id)
       guard let end = rows.firstIndex(of: item.id) else { return }
       // The last clicked row, else the one shown when that one was removed since.
       let start =
@@ -913,11 +915,10 @@ final class Project {
     marked = []
   }
 
-  /// The marked rows still held, in the list's order.
-  var markedSessions: [ProjectSession] { listedHeld.filter { marked.contains($0.id) } }
+  /// The marked rows still held, in the tabs' order.
+  var markedSessions: [ProjectSession] { held.filter { marked.contains($0.id) } }
 
-  /// How many marked rows are still held. Counted without `markedSessions`, whose sort
-  /// reads every row's state and so redraws the composer on any row's delta.
+  /// How many marked rows are still held, counted without making the list.
   private var markedCount: Int { held.count { marked.contains($0.id) } }
 
   /// The composer sends to the marked rows rather than the shown one.
@@ -1073,8 +1074,9 @@ final class Project {
           states[id] = state
         }
       }
-      // Each goes on top, so the last first leaves them in order.
-      for (index, entry) in created.reversed() {
+      // Each right of the one before, where a new session would open.
+      let start = opensAt
+      for (offset, (index, entry)) in created.enumerated() {
         let account = entry.accountDirectory.map {
           ClaudeAccount(
             directory: URL(filePath: $0, directoryHint: .isDirectory),
@@ -1083,7 +1085,7 @@ final class Project {
         let item = newSession(
           agent: stored.agent ?? .claude,
           folder: URL(filePath: entry.folder, directoryHint: .isDirectory),
-          account: account, select: false)
+          account: account, select: false, at: start + offset)
         item.session.rename(to: entry.name)
         if let mode = entry.mode { item.session.setMode(mode) }
         item.session.fanOut = FanOutMark(batch: stored.batch, index: index)
@@ -1230,8 +1232,12 @@ final class Project {
     if !shared { entry.cancel() }
   }
 
-  /// `target` on top and shown, or the row already holding it, taken over unless
-  /// `watching`. `readOnly` while another process has it open.
+  /// `target` opened right of the shown tab and shown, or the row already holding it, taken
+  /// over unless `watching`. `readOnly` while another process has it open. Watched, it is the
+  /// window's one preview tab: the preview it replaces goes as a removed row does, or stays
+  /// as a tab of the window's own when something is typed or attached in it, which closing it
+  /// would lose. The new preview takes the place of the one it replaces when that one was
+  /// shown, so that going through the sidebar's rows leaves the tabs where they were.
   @discardableResult func attach(
     _ target: ResumeTarget, watching: Bool = false, readOnly: Bool = false,
     focusingComposer: Bool = true
@@ -1248,9 +1254,37 @@ final class Project {
     let item = make(session)
     item.isWatching = watching
     item.dismissedAsk = dismissedElsewhere[target.sessionID]
-    sessions.insert(item, at: 0)
+    let index = watching ? replacePreview() ?? opensAt : opensAt
+    sessions.insert(item, at: index)
     select(item, focusingComposer: focusingComposer)
     return item
+  }
+
+  /// Where a session opens: right of the shown tab, else after the last.
+  private var opensAt: Int {
+    selectedID.flatMap { id in sessions.firstIndex { $0.id == id } }.map { $0 + 1 }
+      ?? sessions.count
+  }
+
+  /// The preview tab out of the way of a new one: taken over when closing it would lose a
+  /// draft or attachments, else removed. Where it was when it was the tab shown, for the new
+  /// one to take its place, rather than its neighbour shown and loaded for nothing.
+  private func replacePreview() -> Int? {
+    guard let preview = sessions.first(where: \.isWatching) else { return nil }
+    if hasUnsent(preview) {
+      takeOver(preview)
+      return nil
+    }
+    let place = preview.id == selectedID ? sessions.firstIndex { $0.id == preview.id } : nil
+    if place != nil { selectedID = nil }
+    drop(preview) { $0.stop() }
+    return place
+  }
+
+  /// Something typed or attached in `item` and not sent.
+  private func hasUnsent(_ item: ProjectSession) -> Bool {
+    !item.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+      || !item.attachments.isEmpty
   }
 
   /// "Pineapple (fork #2)" for a copy of `target`: its title, numbered after every fork of
@@ -1267,12 +1301,35 @@ final class Project {
       of: original, among: sessions.compactMap(\.knownTitle) + listed.compactMap(\.title))
   }
 
-  /// A watched row becomes one of the window's own, on top: it was prompted, or attached.
+  /// A watched row, the preview tab, becomes one of the window's own where it is: it was
+  /// prompted, or attached.
   func takeOver(_ item: ProjectSession) {
     guard item.isWatching else { return }
     item.isWatching = false
-    sessions.removeAll { $0.id == item.id }
-    sessions.insert(item, at: 0)
+  }
+
+  /// The preview tab, or its row in the sidebar, double-clicked: kept as one of the window's
+  /// own tabs, as a prompt sent there keeps it.
+  func promote(_ item: ProjectSession) {
+    takeOver(item)
+  }
+
+  /// The window's tabs in order: its own rows and the preview. The strip lists these, and
+  /// the window keeps its own rows in this order between launches.
+  var tabs: [ProjectSession] { sessions }
+
+  /// `id`'s tab dragged to `index` in the tabs, clamped to them. The tab shown stays shown.
+  func moveTab(_ id: ProjectSession.ID, to index: Int) {
+    guard let from = sessions.firstIndex(where: { $0.id == id }) else { return }
+    let item = sessions.remove(at: from)
+    sessions.insert(item, at: min(max(index, 0), sessions.count))
+  }
+
+  /// The tab shown once `item`'s closes: the one right of it, else the one left, else none.
+  func neighbour(of item: ProjectSession) -> ProjectSession? {
+    guard let index = sessions.firstIndex(where: { $0.id == item.id }) else { return nil }
+    if index + 1 < sessions.count { return sessions[index + 1] }
+    return index > 0 ? sessions[index - 1] : nil
   }
 
   /// A copy of a session open elsewhere, continued under a new id beside it. Its own
@@ -1431,7 +1488,7 @@ final class Project {
   }
 
   /// Whether the sidebar's Ended group is expanded, and lists all its rows rather than the
-  /// newest 20: what the arrow keys and Previous and Next Session pass through.
+  /// newest 20.
   var showsEnded = false
   var showsAllEnded = false
 
@@ -1453,50 +1510,27 @@ final class Project {
     }
   }
 
-  /// Shows the row `offset` rows from the selected one, in the sidebar's order, as a click
-  /// shows it: the window's own rows, those elsewhere, then Ended's while it is expanded. A
-  /// session open in another Drakar window is passed over: showing it would leave this one.
+  /// Shows the tab `offset` tabs from the selected one, in the tabs' order, as a click shows
+  /// it. Only the tabs: the sessions listed elsewhere and Ended's are the sidebar's to open,
+  /// and Next Session Needing You still reaches one elsewhere that wants the person.
   /// `wrapping` goes round the ends (Previous and Next Session), else stops at them (the
-  /// list's arrow keys, which keep the keys). False when there is no row.
+  /// arrow keys, which keep the keys). False when there is no tab.
   @discardableResult func step(
     _ offset: Int, wrapping: Bool, focusingComposer: Bool = true
   ) -> Bool {
-    let groups = listedGroups
-    var rows: [(isSelected: Bool, show: () -> Void)] = listedHeld.map { item in
-      (
-        item.id == selectedID,
-        { [unowned self] in
-          select(item, focusingComposer: focusingComposer)
-          // The row shown already keeps its composer, which only focuses itself on appearing.
-          if focusingComposer { item.focusRequest += 1 }
-        }
-      )
-    }
-    for summary in groups.elsewhere where OpenSessions.shared.locate(summary.sessionID) == nil {
-      rows.append(
-        (
-          isWatched(summary),
-          { [unowned self] in openElsewhere(summary, focusingComposer: focusingComposer) }
-        ))
-    }
-    if showsEnded {
-      for summary in listedEnded(groups) {
-        rows.append(
-          (
-            isWatched(summary),
-            { [unowned self] in openEnded(summary, focusingComposer: focusingComposer) }
-          ))
-      }
-    }
-    guard !rows.isEmpty else { return false }
-    let current = rows.firstIndex(where: \.isSelected)
+    let tabs = tabs
+    guard !tabs.isEmpty else { return false }
+    let current = tabs.firstIndex { $0.id == selectedID }
     let index =
       switch (current, wrapping) {
-      case (nil, _): offset < 0 && wrapping ? rows.count - 1 : 0
-      case (let current?, true): ((current + offset) % rows.count + rows.count) % rows.count
-      case (let current?, false): min(max(current + offset, 0), rows.count - 1)
+      case (nil, _): offset < 0 && wrapping ? tabs.count - 1 : 0
+      case (let current?, true): ((current + offset) % tabs.count + tabs.count) % tabs.count
+      case (let current?, false): min(max(current + offset, 0), tabs.count - 1)
       }
-    rows[index].show()
+    let item = tabs[index]
+    select(item, focusingComposer: focusingComposer)
+    // The tab shown already keeps its composer, which only focuses itself on appearing.
+    if focusingComposer { item.focusRequest += 1 }
     return true
   }
 
@@ -1976,16 +2010,13 @@ final class Project {
   /// What closing `item`'s tab would lose, for the window to ask about first; nil when
   /// nothing. The draft is said first: the turn is lost only with no host to hand it to.
   func closeAsk(for item: ProjectSession) -> CloseAsk? {
-    if !item.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-      || !item.attachments.isEmpty
-    {
-      return .unsentDraft
-    }
+    if hasUnsent(item) { return .unsentDraft }
     if item.session.isAtWork, !item.session.isHosted { return .stopsTurn }
     return nil
   }
 
-  /// `item`'s row out of the window once `stop` has let its session go.
+  /// `item`'s row out of the window once `stop` has let its session go. Shown, its
+  /// `neighbour` is shown in its place.
   private func drop(_ item: ProjectSession, stopping stop: (AgentSession) -> Void) {
     // Only while waiting out its own stale relay: a `detach` sent on a live connection is never
     // answered `released` to this app, and a Bring Back after it is for this window to take.
@@ -1996,10 +2027,10 @@ final class Project {
       closedHere.insert(id)
     }
     stop(item.session)
+    if selectedID == item.id { selectedID = neighbour(of: item)?.id }
     sessions.removeAll { $0.id == item.id }
     marked.remove(item.id)
     fanOutFinished(item)
-    if selectedID == item.id { selectedID = sessions.first?.id }
     if let selected { load(selected) }
     Attention.shared.refresh()
   }

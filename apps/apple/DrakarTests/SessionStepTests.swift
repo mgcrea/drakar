@@ -17,9 +17,10 @@ struct SessionStepTests {
 
   @Test func nextAndPreviousWalkTheListAndWrap() throws {
     let project = try project()
-    let c = project.newSession()
+    let a = project.newSession()
     let b = project.newSession()
-    let a = project.newSession()  // rows: a, b, c; a selected
+    let c = project.newSession()  // tabs: a, b, c, in the order made
+    project.select(a)
     #expect(project.step(1, wrapping: true))
     #expect(project.selectedID == b.id)
     project.step(1, wrapping: true)
@@ -32,9 +33,10 @@ struct SessionStepTests {
 
   @Test func theArrowKeysStopAtTheEnds() throws {
     let project = try project()
-    let c = project.newSession()
-    _ = project.newSession()
     let a = project.newSession()
+    _ = project.newSession()
+    let c = project.newSession()
+    project.select(a)
     project.step(-1, wrapping: false)
     #expect(project.selectedID == a.id)
     project.select(c)
@@ -44,8 +46,9 @@ struct SessionStepTests {
 
   @Test func theShownSessionsComposerTakesTheKeysOnlyWhenAsked() throws {
     let project = try project()
-    _ = project.newSession()
     let a = project.newSession()
+    _ = project.newSession()
+    project.select(a)
     project.step(1, wrapping: false, focusingComposer: false)
     #expect(!project.focusesComposer)
     let requests = a.focusRequest
@@ -54,8 +57,9 @@ struct SessionStepTests {
     #expect(a.focusRequest == requests + 1)
   }
 
-  /// The arrow keys onto an ended session keep the keys in the list, as onto a held row.
-  @Test func theArrowKeysKeepTheKeysOnAnEndedRow() async throws {
+  /// Previous and Next Session go round the tabs only: an ended session listed below them,
+  /// though Ended is expanded, is the sidebar's to open.
+  @Test func stepStaysInTheTabs() async throws {
     let project = try project()
     let path = ProjectPath.normalize(project.folder)
     let account = ClaudeAccount(
@@ -69,12 +73,18 @@ struct SessionStepTests {
     let monitor = SessionMonitor(accounts: [account])
     await monitor.include(folder: path)
     project.monitor = monitor
-    _ = project.newSession()
+    let a = project.newSession()
+    let b = project.newSession()
     project.showsEnded = true
     try #require(project.groups.ended.map(\.sessionID) == ["e1"])
-    project.step(1, wrapping: false, focusingComposer: false)
-    #expect(project.selected?.sessionID == "e1")
-    #expect(!project.focusesComposer)
+    #expect(project.selectedID == b.id)
+    project.step(1, wrapping: true)
+    #expect(project.selectedID == a.id)
+    project.step(-1, wrapping: true)
+    #expect(project.selectedID == b.id)
+    project.step(1, wrapping: false)
+    #expect(project.selectedID == b.id)
+    #expect(!project.tabs.contains { $0.sessionID == "e1" })
   }
 
   @Test func anEmptyWindowHasNowhereToGo() throws {

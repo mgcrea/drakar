@@ -39,8 +39,8 @@ struct ProjectFanOutTests {
     }
   }
 
-  /// One session per folder, named after the skill and the folder, on top in folder order,
-  /// the first shown; unlimited, each is sent the skill.
+  /// One session per folder, named after the skill and the folder, in folder order, the first
+  /// shown; unlimited, each is sent the skill.
   @Test func oneSessionPerFolder() throws {
     let project = Project(folder: parent)
     project.executableOverride = try standIn()
