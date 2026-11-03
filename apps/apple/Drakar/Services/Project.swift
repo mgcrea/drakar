@@ -1018,7 +1018,8 @@ final class Project {
     {
       let right = sessions[(index + 1)...].first { !gone.contains($0.id) }
       let left = sessions[..<index].last { !gone.contains($0.id) }
-      self.selectedID = (right ?? left)?.id
+      // Loaded as the first of them closes (`drop`).
+      if let next = right ?? left { show(next) } else { self.selectedID = nil }
     }
     for item in closing { closeTab(item) }
   }
@@ -1524,6 +1525,14 @@ final class Project {
 
   func select(_ item: ProjectSession, focusingComposer: Bool = true) {
     if focusesComposer != focusingComposer { focusesComposer = focusingComposer }
+    show(item)
+    load(item)
+    Attention.shared.refresh()
+  }
+
+  /// `item` becomes the tab shown, and is read: `select`'s, and a closed tab's neighbour's,
+  /// whose closing loads it and refreshes attention once the tab is gone.
+  private func show(_ item: ProjectSession) {
     if selectedID != item.id {
       // Ended by the deck once it has the session drawn; a switch it never got to is over.
       if let pending = pendingSwitch { TabSignposts.switchSuperseded(pending.state) }
@@ -1531,8 +1540,6 @@ final class Project {
     }
     selectedID = item.id
     item.isUnread = false
-    load(item)
-    Attention.shared.refresh()
   }
 
   /// Whether the sidebar's Ended group is expanded, and lists all its rows rather than the
@@ -2158,7 +2165,9 @@ final class Project {
       closedHere.insert(id)
     }
     stop(item.session)
-    if selectedID == item.id { selectedID = neighbour(of: item)?.id }
+    if selectedID == item.id {
+      if let next = neighbour(of: item) { show(next) } else { selectedID = nil }
+    }
     sessions.removeAll { $0.id == item.id }
     marked.remove(item.id)
     fanOutFinished(item)

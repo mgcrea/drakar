@@ -85,6 +85,28 @@ struct TabOrderTests {
     #expect(project.selectedID == b.id)
   }
 
+  /// The neighbour shown in a closed tab's place is read, as a click on it would leave it,
+  /// whether one tab closes or the marked ones do.
+  @Test func theNeighbourShownInAClosedTabsPlaceIsRead() throws {
+    let project = try project()
+    let a = project.newSession()
+    let b = project.newSession()
+    let c = project.newSession()
+    let d = project.newSession()
+    project.select(a)
+    b.isUnread = true
+    project.closeTab(a)
+    #expect(project.selectedID == b.id)
+    #expect(!b.isUnread)
+
+    d.isUnread = true
+    project.click(b, .plain)
+    project.click(c, .toggle)
+    project.closeMarked()
+    #expect(project.selectedID == d.id)
+    #expect(!d.isUnread)
+  }
+
   @Test func closingATabNotShownKeepsTheSelection() throws {
     let project = try project()
     let a = project.newSession()
