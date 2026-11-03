@@ -156,4 +156,47 @@ struct SessionDeckTests {
     await wait { hasKeys(host(a)) }
     #expect(hasKeys(host(a)))
   }
+
+  /// A switch asks for the composer once: the deck asks, once the session is in the window,
+  /// and neither the step nor the click that chose it asks again.
+  @Test func aSwitchAsksForTheComposerOnce() async throws {
+    defer { window.close() }
+    let a = project.newSession()
+    await wait { hasKeys(host(a)) }
+    let b = project.newSession()
+    await wait { hasKeys(host(b)) }
+    let requests = a.focusRequest
+    project.step(-1, wrapping: true)
+    await wait { hasKeys(host(a)) }
+    await settle()
+    #expect(a.focusRequest == requests + 1)
+    let clicked = b.focusRequest
+    project.click(b, .plain)
+    await wait { hasKeys(host(b)) }
+    await settle()
+    #expect(b.focusRequest == clicked + 1)
+  }
+
+  /// Made before SwiftUI sizes the pane, the deck lays nothing out at no size, and the
+  /// switch is drawn at the first layout at the pane's size.
+  @Test func aDeckWithNoSizeYetWaitsForOne() async throws {
+    defer { window.close() }
+    // A project of its own: the window's deck would take the switch.
+    let project = Project(folder: project.folder)
+    let item = project.newSession()
+    let container = SessionDeck.DeckView(frame: .zero)
+    let coordinator = SessionDeck.Coordinator()
+    container.coordinator = coordinator
+    let pending = try #require(project.pendingSwitch)
+    coordinator.update(
+      project: project, selectedID: item.id, tabIDs: [item.id], in: container)
+    let host = try #require(coordinator.built[item.id])
+    #expect(host.superview === container)
+    #expect(container.undrawnSwitch === pending.state)
+    container.setFrameSize(NSSize(width: 600, height: 400))
+    container.layoutSubtreeIfNeeded()
+    #expect(container.undrawnSwitch == nil)
+    #expect(host.frame.size == NSSize(width: 600, height: 400))
+    coordinator.releaseAll()
+  }
 }

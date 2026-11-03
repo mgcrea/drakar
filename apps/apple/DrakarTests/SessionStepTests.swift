@@ -44,6 +44,9 @@ struct SessionStepTests {
     #expect(project.selectedID == c.id)
   }
 
+  /// A step onto another tab leaves the composer to the deck, which gives it the keys once
+  /// the session is in the window (`SessionDeckTests`); onto the tab shown, which the deck
+  /// does not show again, the composer is asked here. Once either way.
   @Test func theShownSessionsComposerTakesTheKeysOnlyWhenAsked() throws {
     let project = try project()
     let a = project.newSession()
@@ -54,7 +57,29 @@ struct SessionStepTests {
     let requests = a.focusRequest
     project.step(-1, wrapping: false)
     #expect(project.focusesComposer)
+    #expect(a.focusRequest == requests)
+    project.step(-1, wrapping: false)
+    #expect(project.selectedID == a.id)
     #expect(a.focusRequest == requests + 1)
+    project.step(-1, wrapping: false, focusingComposer: false)
+    #expect(a.focusRequest == requests + 1)
+  }
+
+  /// A click on a tab asks for its composer the same way: the shown one's here, another's
+  /// from the deck.
+  @Test func aClickAsksForTheComposerOnce() throws {
+    let project = try project()
+    let a = project.newSession()
+    let b = project.newSession()
+    project.select(a)
+    let (requestsA, requestsB) = (a.focusRequest, b.focusRequest)
+    project.click(b, .plain)
+    #expect(project.selectedID == b.id)
+    #expect(b.focusRequest == requestsB)
+    project.click(b, .plain)
+    #expect(b.focusRequest == requestsB + 1)
+    project.click(a, .toggle)
+    #expect(a.focusRequest == requestsA)
   }
 
   /// Previous and Next Session go round the tabs only: an ended session listed below them,
@@ -136,6 +161,32 @@ struct SessionStepTests {
     #expect(project.stepSidebar(-1))
     #expect(preview(in: project) == [rows[0]])
     #expect(!project.stepSidebar(-1))
+  }
+
+  /// A row another Drakar window holds as a tab is that window's to show: ↓ goes past it,
+  /// rather than bringing that window forward and landing on the same row again.
+  @Test func theSidebarsArrowKeysGoPastASessionAnotherWindowHolds() async throws {
+    let project = try project()
+    _ = project.newSession()
+    try await ended(["e1", "e2", "e3"], in: project)
+    let rows = project.listedEnded(project.groups)
+    let other = Project(folder: project.folder)
+    defer { other.stopAll() }
+    other.attach(try #require(ResumeTarget(rows[0])))
+    let window = UUID()
+    OpenSessions.shared.register(other, window: window)
+    defer { OpenSessions.shared.unregister(window: window) }
+    try #require(project.listedGroups.elsewhere.map(\.sessionID) == [rows[0].sessionID])
+    project.showsEnded = true
+    let ended = project.listedEnded(project.groups).map(\.sessionID)
+    #expect(project.stepSidebar(1))
+    #expect(preview(in: project) == [ended[0]])
+    #expect(project.stepSidebar(1))
+    #expect(preview(in: project) == [ended[1]])
+    #expect(!project.stepSidebar(1))
+    #expect(project.stepSidebar(-1))
+    #expect(!project.stepSidebar(-1))
+    #expect(preview(in: project) == [ended[0]])
   }
 
   /// With no row to go to, the sidebar's keys leave the tabs as they are: a folded Ended

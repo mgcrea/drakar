@@ -178,8 +178,6 @@ private struct SessionTabCell: View {
       return
     }
     project.click(item, click)
-    // The tab shown already keeps its composer, which only focuses itself on appearing.
-    if click == .plain { item.focusRequest += 1 }
   }
 
   /// What the row showed that the tab has no room for: the name in full, what the session

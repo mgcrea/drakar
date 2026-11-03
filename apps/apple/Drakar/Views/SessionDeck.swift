@@ -1,4 +1,5 @@
 import SwiftUI
+import os
 
 /// The ids shown last, the most recent first, at most `capacity` of them: what the deck keeps
 /// built.
@@ -81,6 +82,21 @@ struct SessionDeck: NSViewRepresentable {
   final class DeckView: NSView {
     /// The deck it shows, for tests.
     weak var coordinator: Coordinator?
+    /// The switch to a session put in the pane before SwiftUI gave the pane a size: ended
+    /// at the first layout at one, which is when the session is laid out to be drawn.
+    var undrawnSwitch: OSSignpostIntervalState?
+
+    override func setFrameSize(_ newSize: NSSize) {
+      super.setFrameSize(newSize)
+      if undrawnSwitch != nil, !bounds.isEmpty { needsLayout = true }
+    }
+
+    override func layout() {
+      super.layout()
+      guard !bounds.isEmpty, let state = undrawnSwitch else { return }
+      undrawnSwitch = nil
+      TabSignposts.switchDrawn(state)
+    }
   }
 
   @MainActor final class Coordinator {
@@ -93,7 +109,7 @@ struct SessionDeck: NSViewRepresentable {
 
     func update(
       project: Project, selectedID: ProjectSession.ID, tabIDs: Set<ProjectSession.ID>,
-      in container: NSView
+      in container: DeckView
     ) {
       for id in hosts.keys where !tabIDs.contains(id) { release(id) }
       let pending = project.pendingSwitch?.id == selectedID ? project.pendingSwitch : nil
@@ -110,12 +126,19 @@ struct SessionDeck: NSViewRepresentable {
       host.isHidden = false
       if host.superview !== container { container.addSubview(host) }
       shownID = selectedID
-      container.layoutSubtreeIfNeeded()
+      // Made before SwiftUI sized the pane, it has no size yet: laid out at one, not at none.
+      let isSized = !container.bounds.isEmpty
+      if isSized {
+        container.layoutSubtreeIfNeeded()
+      } else if let pending {
+        if let earlier = container.undrawnSwitch { TabSignposts.switchSuperseded(earlier) }
+        container.undrawnSwitch = pending.state
+      }
       let focuses = project.focusesComposer
       // Once this update is done: the session is drawn in the frame it was laid out for, and
       // the composer asked for the keys as a click on its tab asks.
       DispatchQueue.main.async {
-        if let pending { TabSignposts.switchDrawn(pending.state) }
+        if isSized, let pending { TabSignposts.switchDrawn(pending.state) }
         guard focuses, self.shownID == selectedID else { return }
         Self.giveKeys(to: host)
         item.focusRequest += 1
@@ -135,8 +158,11 @@ struct SessionDeck: NSViewRepresentable {
       host.sizingOptions = []
       host.autoresizingMask = [.width, .height]
       hosts[item.id] = host
+      // Timed only when there is something to read: one read already is in at once.
       let session = item.session
-      Task { await TabSignposts.historyLoad { await session.loadHistory() } }
+      if !session.hasLoadedHistory {
+        Task { await TabSignposts.historyLoad { await session.loadHistory() } }
+      }
       return host
     }
 

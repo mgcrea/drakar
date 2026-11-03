@@ -300,9 +300,14 @@ final class ProjectSession: Identifiable {
   }
 }
 
-/// The pane of a project window the keys go to.
+/// The pane of a project window the keys go to. Stored by name: a value added later still
+/// leaves the ones stored before it readable.
 enum FocusedPane: String, Codable {
-  case composer, editor, sessions
+  case composer, editor
+  /// The tab strip.
+  case sessions
+  /// The sidebar's list of the sessions elsewhere and ended.
+  case sidebar
 }
 
 /// What a project window keeps between launches: the sessions it held and the one shown,
@@ -874,17 +879,18 @@ final class Project {
     case plain, toggle, extend
   }
 
-  /// A click on a tab. Plain shows it and clears the marks; ⌘ marks or unmarks it (the shown
-  /// tab is marked with the first); ⇧ marks the tabs from the last clicked to it, in the
-  /// tabs' order, passing over the preview. Neither ⌘ nor ⇧ changes the tab shown, and on
-  /// the preview, which is not the window's own to mark, neither does anything.
+  /// A click on a tab. Plain shows it, its composer taking the keys, and clears the marks; ⌘
+  /// marks or unmarks it (the shown tab is marked with the first); ⇧ marks the tabs from the
+  /// last clicked to it, in the tabs' order, passing over the preview. Neither ⌘ nor ⇧
+  /// changes the tab shown, and on the preview, which is not the window's own to mark,
+  /// neither does anything.
   func click(_ item: ProjectSession, _ kind: RowClick) {
     lastBroadcast = nil
     switch kind {
     case .plain:
       marked = []
       markAnchor = item.id
-      select(item)
+      showTab(item)
     case .toggle:
       // The preview is not one to mark, nor to start a range from.
       guard !item.isWatching else { return }
@@ -1528,11 +1534,14 @@ final class Project {
   /// the first row), in the sidebar's order, Elsewhere's as sorted then Ended's while it is
   /// expanded, opened as a click opens it. So it lands in the preview, which the next one
   /// replaces, and the keys stay in the list; a tab closed at work is taken back as a tab.
-  /// Stops at the ends: false when there is no row to go to. The tabs are `step`'s.
+  /// Not a row another Drakar window holds as a tab: opened, it brings that window forward
+  /// and leaves the preview where it was, so the next key would land on it again. Stops at
+  /// the ends: false when there is no row to go to. The tabs are `step`'s.
   @discardableResult func stepSidebar(_ offset: Int) -> Bool {
     let groups = listedGroups
+    let elsewhere = groups.elsewhere.filter { OpenSessions.shared.locate($0.sessionID) == nil }
     let rows =
-      groups.elsewhere.map { (summary: $0, ended: false) }
+      elsewhere.map { (summary: $0, ended: false) }
       + (showsEnded ? listedEnded(groups).map { (summary: $0, ended: true) } : [])
     guard !rows.isEmpty else { return false }
     let shown = tabs.first(where: \.isWatching)?.sessionID
@@ -1569,11 +1578,19 @@ final class Project {
       case (let current?, true): ((current + offset) % tabs.count + tabs.count) % tabs.count
       case (let current?, false): min(max(current + offset, 0), tabs.count - 1)
       }
-    let item = tabs[index]
-    select(item, focusingComposer: focusingComposer)
-    // The tab shown already keeps its composer, which only focuses itself on appearing.
-    if focusingComposer { item.focusRequest += 1 }
+    showTab(tabs[index], focusingComposer: focusingComposer)
     return true
+  }
+
+  /// `item` shown as a click on its tab shows it, its composer taking the keys unless
+  /// `focusingComposer` is false. Another tab's composer is the deck's to focus once the
+  /// session is in the window (`SessionDeck`), which every switch goes through; the tab
+  /// shown already keeps its composer, which only focuses itself on appearing, so it is asked
+  /// here. Once either way.
+  func showTab(_ item: ProjectSession, focusingComposer: Bool = true) {
+    let isShown = item.id == selectedID
+    select(item, focusingComposer: focusingComposer)
+    if focusingComposer, isShown { item.focusRequest += 1 }
   }
 
   /// A row Next Session Needing You can go to: one of the window's own, or a session listed
@@ -1622,9 +1639,8 @@ final class Project {
       guard let self, self.selectedID == item.id, item.urgency == nil,
         let next = self.nextNeedingAttention(ownRowsOnly: true)?.item
       else { return }
+      // Never the shown one: the deck gives its composer the keys.
       self.select(next)
-      // The row shown already keeps its composer, which only focuses itself on appearing.
-      next.focusRequest += 1
     }
   }
 

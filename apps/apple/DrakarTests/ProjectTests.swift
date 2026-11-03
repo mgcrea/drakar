@@ -712,6 +712,20 @@ struct ProjectTests {
     #expect(!browsing.focusesComposer)
     #expect(browsing.claimsRestoredFocus(.sessions))
     #expect(!browsing.claimsRestoredFocus(.sessions))  // once
+
+    // The sidebar's list is a pane of its own, not the strip.
+    project.workspace.focusedPane = .sidebar
+    let listing = try relaunched(project)
+    #expect(!listing.focusesComposer)
+    #expect(!listing.claimsRestoredFocus(.sessions))
+    #expect(listing.claimsRestoredFocus(.sidebar))
+  }
+
+  /// A window stored before the sidebar had a pane of its own still decodes, its pane with it.
+  @Test func aPaneStoredBeforeTheSidebarsStillDecodes() throws {
+    let json = #"{"sessions":[],"focusedPane":"sessions"}"#
+    let stored = try JSONDecoder().decode(StoredProject.self, from: Data(json.utf8))
+    #expect(stored.focusedPane == .sessions)
   }
 
   /// The editor had the keys but its file is gone: the composer takes them, not nobody.
