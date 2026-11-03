@@ -16,6 +16,7 @@ struct CloseTabTests {
   private let folder: URL
   private let bin: URL
   private let fake: URL
+  private var received: URL { fake.appendingPathExtension("stdin") }
 
   init() throws {
     host = try LocalHost()
@@ -114,6 +115,29 @@ struct CloseTabTests {
     session.transcript.entries.contains { $0.kind == .text(text) }
   }
 
+  /// The lines the stand-ins were sent that hold `text`.
+  private func sent(_ text: String) -> Int {
+    let log = (try? String(contentsOf: received, encoding: .utf8)) ?? ""
+    return log.split(separator: "\n").count { $0.contains(text) }
+  }
+
+  /// A monitor that lists `sessionID` as a Claude Code session of the window's folder, as its
+  /// transcript on disk would.
+  private func monitor(listing sessionID: String) async throws -> SessionMonitor {
+    let path = ProjectPath.normalize(folder)
+    let account = ClaudeAccount(
+      directory: bin.appending(path: "claude-config", directoryHint: .isDirectory),
+      isDefault: false)
+    let transcripts = account.directory.appending(
+      path: "projects/\(ProjectPath.encodedPrefixes(for: path)[0])", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: transcripts, withIntermediateDirectories: true)
+    try Data(#"{"type":"user","cwd":"\#(path)","message":{"role":"user","content":"go"}}"#.utf8)
+      .write(to: transcripts.appending(path: "\(sessionID).jsonl"))
+    let monitor = SessionMonitor(accounts: [account])
+    await monitor.include(folder: path)
+    return monitor
+  }
+
   /// The meta the host keeps for its one process, decoded.
   private func heldMeta(on app: SessionHost) async -> SessionMeta? {
     guard let meta = await app.held().first?.meta else { return nil }
@@ -202,6 +226,66 @@ struct CloseTabTests {
         == [ProjectPath.normalize(folder.path(percentEncoded: false))])
   }
 
+  /// A prompt queued behind the turn is work still to do: the turn's end does not end it.
+  @Test func aTabClosedWithAPromptQueuedRunsItsQueue() async throws {
+    defer { cleanUp() }
+    let app = app()
+    let project = window(on: app)
+    defer { project.stopAll() }
+    let live = await start("go-stream-end", in: project)
+    #expect(await eventually { says(live, "one") })
+    live.send("later")
+    #expect(live.transcript.queuedPrompts.map(\.text) == ["later"])
+    let row = try #require(project.sessions.first { $0.session === live })
+    project.closeTab(row)
+    #expect(await eventually { await app.held().first?.attachedApp == nil })
+    #expect(await heldMeta(on: app)?.closedAtWork == true)
+    try step("a")
+    try step("b")
+    #expect(await eventually { sent("later") == 1 })
+    // Long enough for the turn's `result` to have been read.
+    try await Task.sleep(for: .milliseconds(300))
+    let held = try #require(await app.held().first)
+    #expect(held.running)
+  }
+
+  /// Until it ends, it is listed under Elsewhere in its own window, and in a window opened on
+  /// the folder later; opened from there, it comes back as a live tab, not watched.
+  @Test func aTabClosedAtWorkIsListedElsewhereAndOpensLive() async throws {
+    defer { cleanUp() }
+    let app = app()
+    let project = window(on: app)
+    defer { project.stopAll() }
+    let live = await start("go-stream", in: project)
+    #expect(await eventually { says(live, "one") })
+    let sessionID = try #require(live.sessionID)
+    project.monitor = try await monitor(listing: sessionID)
+    #expect(project.groups.elsewhere.isEmpty)
+    let row = try #require(project.sessions.first { $0.session === live })
+    project.closeTab(row)
+    #expect(await eventually { await app.held().first?.attachedApp == nil })
+    #expect(project.groups.elsewhere.map(\.sessionID) == [sessionID])
+
+    let later = window(on: app)
+    defer { later.stopAll() }
+    later.monitor = project.monitor
+    await later.adoptHeld(await app.held())
+    #expect(later.sessions.isEmpty)
+    #expect(later.groups.elsewhere.map(\.sessionID) == [sessionID])
+
+    let summary = try #require(project.groups.elsewhere.first)
+    project.openElsewhere(summary)
+    #expect(await eventually { project.sessions.count == 1 })
+    let back = try #require(project.sessions.first)
+    #expect(!back.isWatching)
+    #expect(back.session.isHosted)
+    #expect(back.session.transcript.isRunning)
+    #expect(project.selectedID == back.id)
+    #expect(project.groups.elsewhere.isEmpty)
+    #expect(await eventually { await heldMeta(on: app)?.closedAtWork == nil })
+    #expect(await app.held().first?.attachedApp == getpid())
+  }
+
   /// Opened again from Home: a live tab, the mark cleared, and no longer ended by its turn.
   @Test func reopeningClearsTheMark() async throws {
     defer { cleanUp() }
@@ -242,8 +326,8 @@ struct CloseTabTests {
     #expect(await eventually { await app.held().isEmpty })
   }
 
-  /// Closing asks only when something would be lost: a draft, or a turn the host does not
-  /// hold. The draft is said first.
+  /// Closing asks only when something would be lost: a draft or attachments, or a turn at
+  /// work the host does not hold, running or waiting on the person. The draft is said first.
   @Test func closeAskSaysWhatWouldBeLost() async throws {
     defer { cleanUp() }
     // No host to be had: the session is the app's own child.
@@ -257,12 +341,20 @@ struct CloseTabTests {
     #expect(project.closeAsk(for: row) == .unsentDraft)
     row.draft = "  \n"
     #expect(project.closeAsk(for: row) == nil)
+    let note = bin.appending(path: "note.txt")
+    try Data("a note".utf8).write(to: note)
+    row.attachments = [try Attachment.file(at: note)]
+    #expect(project.closeAsk(for: row) == .unsentDraft)
+    row.attachments = []
 
     _ = await AgentSession.environment.value
     row.session.accounts = { [] }
-    row.session.send("go-stream")
+    row.session.send("go-ask-later")
     #expect(await eventually { says(row.session, "one") })
     #expect(!row.session.isHosted)
+    #expect(project.closeAsk(for: row) == .stopsTurn)
+    try step("a")
+    #expect(await eventually { row.session.status.isWaitingOnPerson })
     #expect(project.closeAsk(for: row) == .stopsTurn)
     row.draft = "hi"
     #expect(project.closeAsk(for: row) == .unsentDraft)

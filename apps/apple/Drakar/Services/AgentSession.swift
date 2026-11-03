@@ -621,13 +621,16 @@ final class AgentSession {
       owner: placement.owner)
   }
 
-  /// Hands the host the meta when it changed; only a hosted process keeps one.
-  private func sendMeta() {
-    guard let hosted = process as? HostedProcess, let meta = meta(), meta != sentMeta,
-      let bytes = try? JSONEncoder().encode(meta)
-    else { return }
+  /// Hands the host the meta when it changed; only a hosted process keeps one. Every meta
+  /// sent but `closeTab()`'s leaves the closed mark off. False when there was none to send.
+  @discardableResult private func sendMeta(closedAtWork: Bool? = nil) -> Bool {
+    guard let hosted = process as? HostedProcess, var meta = meta() else { return false }
+    meta.closedAtWork = closedAtWork
+    guard meta != sentMeta else { return true }
+    guard let bytes = try? JSONEncoder().encode(meta) else { return false }
     sentMeta = meta
     hosted.setMeta(bytes)
+    return true
   }
 
   /// The licence gate is the last term here and in `canQueue`, and nowhere else: every
@@ -1565,30 +1568,28 @@ final class AgentSession {
   /// Its tab closed (session tabs spec, Closing). At work in this Mac's session host, it is
   /// handed over rather than stopped: its meta says first that the tab was closed, so that no
   /// window or launch takes it back on its own, and the host is asked to end it once its turn
-  /// does, then the app lets it go. Anything else stops as a removed row did: idle, it ends;
-  /// the app's own child at work loses its turn, which the window asks about first; a
-  /// runner's session carries on in its host as any stop leaves it.
-  func closeTab() {
-    guard isAtWork, !isOnRunner, let hosted = process as? HostedProcess,
-      var meta = meta()
-    else { return stop() }
-    meta.closedAtWork = true
-    if let bytes = try? JSONEncoder().encode(meta) {
-      sentMeta = meta
-      hosted.setMeta(bytes)
+  /// does, then the app lets it go. With prompts queued, the turn's end is not the end of its
+  /// work, so it is not ended then: it runs on in the background, listed and reopenable. A
+  /// process with no meta to mark is handed over all the same, rather than lose its turn.
+  /// Anything else stops as a removed row did: idle, it ends; the app's own child at work
+  /// loses its turn, which the window asks about first; a runner's session carries on in its
+  /// host as any stop leaves it. True when it was handed over marked closed.
+  @discardableResult func closeTab() -> Bool {
+    guard isAtWork, !isOnRunner, let hosted = process as? HostedProcess else {
+      stop()
+      return false
     }
-    hosted.endWhen(until: agent.turnEnds)
+    let marked = sendMeta(closedAtWork: true)
+    if marked, transcript.queuedPrompts.isEmpty { hosted.endWhen(until: agent.turnEnds) }
     stop(handingOver: true)
+    return marked
   }
 
   /// Taken back after its tab was closed at work: the mark comes off its meta, and the host no
   /// longer ends it with its turn, which it does not forget by itself across an attach.
   func reopenedAfterClose() {
-    guard let hosted = process as? HostedProcess, let meta = meta(),
-      let bytes = try? JSONEncoder().encode(meta)
-    else { return }
-    sentMeta = meta
-    hosted.setMeta(bytes)
+    guard let hosted = process as? HostedProcess else { return }
+    sendMeta()
     hosted.endWhen(until: [])
   }
 

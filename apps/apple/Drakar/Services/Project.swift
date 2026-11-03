@@ -78,7 +78,8 @@ struct BroadcastResult: Equatable {
 enum CloseAsk: Equatable {
   /// Text or attachments in its composer, never sent.
   case unsentDraft
-  /// A turn running as the app's own child, with no session host to hand it to.
+  /// A session at work, its turn running or waiting on the person, as the app's own child:
+  /// there is no session host to hand it to.
   case stopsTurn
 }
 
@@ -434,6 +435,12 @@ final class Project {
   /// that relay goes, as it does of a process brought back. Not taken then, for it was closed
   /// here; Home lists it, and opens it again (`reopen`).
   @ObservationIgnored private var closedHere: Set<String> = []
+  /// The window's sessions whose tabs were closed at work, by session id, with the session
+  /// host's id for each process (session tabs spec, After a tab at work is closed): listed
+  /// under Elsewhere until the process ends, and opened from there by taking it back
+  /// (`reopen`), never watched. Learnt when the tab closes, and from what a reopened window or
+  /// a launch passes over (`adoptHeld`); dropped once the host lets the process go.
+  private var closedAtWork: [String: String] = [:]
   /// A runner window's take-back found its runner out of reach (`takeBackHeld`): no listing
   /// came, which says nothing of what the runner holds for it. Taken back on the first new
   /// connection a listing comes on, as the take-back would have.
@@ -544,9 +551,11 @@ final class Project {
     let folder = ProjectPath.normalize(self.folder)
     let others = OpenSessions.shared.folders.filter { $0 != folder }
     let attached = Set(held.compactMap(\.sessionID))
+    // A tab closed at work is elsewhere too, whether or not the registry was read since.
     let inOtherWindows = Set(
       OpenSessions.shared.projects.values.filter { $0 !== self }
-        .flatMap { $0.held.compactMap(\.sessionID) })
+        .flatMap { $0.held.compactMap(\.sessionID) }
+    ).union(closedAtWork.keys)
     // Asked even when the groups are kept, so that a view reading them redraws on a change.
     // This Mac's transcripts are none of a runner's folder's.
     let summaries = runner == nil ? monitor.summaries(under: folder) : []
@@ -609,13 +618,30 @@ final class Project {
     if let watching, watching.id == selectedID { replied(watching) }
   }
 
-  /// A session listed elsewhere, shown: in the Drakar window that holds it, or watched here.
+  /// A session listed elsewhere, shown: in the Drakar window that holds it, taken back as a
+  /// live tab when its tab here was closed at work, or watched here.
   func openElsewhere(_ summary: SessionSummary, focusingComposer: Bool = true) {
     if let (owner, item) = OpenSessions.shared.locate(summary.sessionID) {
       owner.select(item)
       owner.workspace.window?.makeKeyAndOrderFront(nil)
+    } else if let hostID = closedAtWork[summary.sessionID] {
+      Task { await reopenClosed(hostID, summary, focusingComposer: focusingComposer) }
     } else if let target = ResumeTarget(summary) {
       attach(target, watching: true, readOnly: true, focusingComposer: focusingComposer)
+    }
+  }
+
+  /// A tab closed at work opened again from Elsewhere: taken back while the host still holds
+  /// its process; once that is gone, it is shown as any session elsewhere.
+  private func reopenClosed(
+    _ hostID: String, _ summary: SessionSummary, focusingComposer: Bool
+  ) async {
+    guard let held = await sessionHost?.listed(), !isStopped else { return }
+    if held.contains(where: { $0.id == hostID }) {
+      await reopen(hostID, among: held)
+    } else {
+      closedAtWork = closedAtWork.filter { $0.value != hostID }
+      openElsewhere(summary, focusingComposer: focusingComposer)
     }
   }
 
@@ -1587,9 +1613,16 @@ final class Project {
         self.sessionHost?.ended.contains(process.id) != true,
         !self.sessions.contains(where: { $0.session.hostID == process.id }),
         let meta = try? JSONDecoder().decode(SessionMeta.self, from: process.meta),
-        includingClosed || meta.closedAtWork != true
+        ProjectPath.normalize(meta.windowFolder) == own
       else { return false }
-      return ProjectPath.normalize(meta.windowFolder) == own
+      guard includingClosed || meta.closedAtWork != true else {
+        // Passed over, and listed under Elsewhere instead, while no app holds it.
+        if process.attachedApp == nil, let id = meta.sessionID {
+          self.closedAtWork[id] = process.id
+        }
+        return false
+      }
+      return true
     }
     // Another window of this app's is not another app.
     let isHeldHere = { (process: HeldProcess) in
@@ -1620,18 +1653,32 @@ final class Project {
       adopt(session)
     }
     let watched = Set(held.map(\.id)).intersection(elsewhere.map(\.id))
-    guard !watched.isEmpty || onRunner, !isStopped else { return }
+    guard !watched.isEmpty || onRunner || !closedAtWork.isEmpty, !isStopped else { return }
     shownHeldElsewhere.formUnion(watched)
+    watchReleases()
+    // Let go of while its row was being made: no `released` says so again.
+    if !watched.isEmpty { await settleShown() }
+  }
+
+  /// Hears what the host lets go of and each new connection, for as long as the window is.
+  private func watchReleases() {
     sessionHost?.watchReleases(
       for: self, takes: { [weak self] id in self?.released(id) ?? false },
       connected: { [weak self] in
         Task {
           await self?.settleShown()
           await self?.takeBackOnceReached()
+          await self?.settleClosed()
         }
       })
-    // Let go of while its row was being made: no `released` says so again.
-    if !watched.isEmpty { await settleShown() }
+  }
+
+  /// The tabs closed at work whose processes the host no longer holds, or has ended, leave
+  /// Elsewhere: on a new connection, which no `released` sent while there was none reached.
+  private func settleClosed() async {
+    guard !closedAtWork.isEmpty, let held = await sessionHost?.listed() else { return }
+    let running = Set(held.filter(\.running).map(\.id))
+    closedAtWork = closedAtWork.filter { running.contains($0.value) }
   }
 
   /// Whether the window may attach to `process` on its own, at a launch or on `released`.
@@ -1646,6 +1693,8 @@ final class Project {
   /// the row takes it back, or the session if the process is gone. False when none shows
   /// it, or it is being taken back already, so that of the windows told, one attaches, once.
   private func released(_ id: String) -> Bool {
+    // A tab closed at work whose process ended and was forgotten: no longer elsewhere.
+    if closedAtWork.values.contains(id) { closedAtWork = closedAtWork.filter { $0.value != id } }
     // A runner's window shows no process it does not hold, so cannot tell at once whether
     // the one let go is its own, brought back to this Mac: it asks, and lets the other
     // windows ask too.
@@ -1709,6 +1758,7 @@ final class Project {
   /// mark, and its end with its turn, once taken back.
   func reopen(_ hostID: String, among held: [HeldProcess]) async {
     closedHere.remove(hostID)
+    closedAtWork = closedAtWork.filter { $0.value != hostID }
     let process = held.filter { $0.id == hostID }
     let closed = process.contains {
       (try? JSONDecoder().decode(SessionMeta.self, from: $0.meta))?.closedAtWork == true
@@ -1912,7 +1962,15 @@ final class Project {
   /// stops as a removed row's does. The row goes either way. What closing would lose is
   /// `closeAsk(for:)`'s, asked before.
   func closeTab(_ item: ProjectSession) {
-    drop(item) { $0.closeTab() }
+    let sessionID = item.session.sessionID
+    let hostID = item.session.hostID
+    var marked = false
+    drop(item) { marked = $0.closeTab() }
+    guard marked, let sessionID, let hostID else { return }
+    closedAtWork[sessionID] = hostID
+    watchReleases()
+    // Under the host and no longer this app's row: the registry lists it as elsewhere now.
+    SessionMonitor.shared.hostedChanged()
   }
 
   /// What closing `item`'s tab would lose, for the window to ask about first; nil when
@@ -1923,7 +1981,7 @@ final class Project {
     {
       return .unsentDraft
     }
-    if RunningSessions.stoppedByLeaving([item.session]) > 0 { return .stopsTurn }
+    if item.session.isAtWork, !item.session.isHosted { return .stopsTurn }
     return nil
   }
 
