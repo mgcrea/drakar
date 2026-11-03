@@ -1585,12 +1585,12 @@ final class AgentSession {
     return marked
   }
 
-  /// Taken back after its tab was closed at work: the mark comes off its meta, and the host no
-  /// longer ends it with its turn, which it does not forget by itself across an attach.
+  /// Taken back after its tab was closed at work: the mark comes off its meta. Its end with
+  /// its turn went as the host took the attach, before the replay, so a turn that ended
+  /// meanwhile did not end it.
   func reopenedAfterClose() {
-    guard let hosted = process as? HostedProcess else { return }
+    guard isHosted else { return }
     sendMeta()
-    hosted.endWhen(until: [])
   }
 
   /// Where its process is now, for the handoff (remote sessions spec §5): the Mac that started

@@ -45,7 +45,8 @@ public final class HostCore: @unchecked Sendable {
     /// kept awake until then (`keepAwake`); empty once written, once it ends, or never asked.
     var awakeUntil: [Data] = []
     /// What a line it writes holds when the host is to end it and forget it, for an app that
-    /// let go of it at work (`endWhen`); empty once written, once it ends, or never asked.
+    /// let go of it at work (`endWhen`); empty once written, once it ends, once an app
+    /// attaches, or never asked.
     var endsWhen: [Data] = []
   }
 
@@ -215,6 +216,9 @@ public final class HostCore: @unchecked Sendable {
         return [Self.unreadable(id, from: offset, error)]
       }
       held.attached = client
+      // An app sets it only as it lets go: the one attaching now, older and blind to it or
+      // this one reopening the tab, is never ended under at the next turn end.
+      held.endsWhen = []
       for record in backlog + meanwhile { out.send(client, .record(id: id, record)) }
       out.send(client, .caughtUp(id: id, offset: held.log.length))
       // Running or not: what a CLI wrote to stderr before this attach (between the spawn and

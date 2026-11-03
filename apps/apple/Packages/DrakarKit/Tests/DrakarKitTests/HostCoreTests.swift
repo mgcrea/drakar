@@ -540,6 +540,28 @@ import Testing
     #expect(host.held(id)?.running == true)
   }
 
+  /// The app that sets `endWhen` lets go of the process just after: whichever app attaches
+  /// next, an older one that knows nothing of it or this one reopening the tab, has it back
+  /// whole, and is never ended under at the next turn end. The line after the marked one is
+  /// echoed, so a process ended on the marked line fails here rather than passing by luck.
+  @Test func anAttachTakesBackEndWhen() async throws {
+    let host = try Host()
+    defer { host.close() }
+    let client = host.connect(pid: 42)
+    let id = try host.spawn("/bin/cat", from: client)
+    _ = host.core.handle(.attach(id: id, from: 0), from: client)
+    _ = host.core.handle(.endWhen(id: id, until: [bytes(#""type":"result""#)]), from: client)
+    _ = host.core.handle(.detach(id: id), from: client)
+
+    let other = host.connect(pid: 43)
+    #expect(host.core.handle(.attach(id: id, from: 0), from: other).isEmpty)
+    _ = host.core.handle(.write(id: id, bytes: bytes(#"{"type":"result"}"# + "\n")), from: other)
+    _ = host.core.handle(.write(id: id, bytes: bytes("after\n")), from: other)
+    #expect(await eventually { host.logged(id).count { $0.bytes == bytes("after\n") } == 2 })
+    #expect(host.logged(id).count { $0.kind == .out } == 2)
+    #expect(host.held(id)?.running == true)
+  }
+
   @Test func endWhenFromAnotherAppIsRefused() async throws {
     let host = try Host()
     defer { host.close() }
