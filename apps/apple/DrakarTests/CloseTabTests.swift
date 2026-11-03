@@ -286,6 +286,42 @@ struct CloseTabTests {
     #expect(await app.held().first?.attachedApp == getpid())
   }
 
+  /// A double-click on its row opens it twice: the second open, landing while the first
+  /// takes the process back, finds it still being reopened, so one live tab comes of both
+  /// and no preview is opened beside it.
+  @Test func aClosedTabOpenedTwiceComesBackOnce() async throws {
+    defer { cleanUp() }
+    let app = app()
+    let project = window(on: app)
+    defer { project.stopAll() }
+    let live = await start("go-stream", in: project)
+    #expect(await eventually { says(live, "one") })
+    let sessionID = try #require(live.sessionID)
+    project.monitor = try await monitor(listing: sessionID)
+    let row = try #require(project.sessions.first { $0.session === live })
+    project.closeTab(row)
+    #expect(await eventually { await app.held().first?.attachedApp == nil })
+    let summary = try #require(project.groups.elsewhere.first)
+
+    project.openElsewhere(summary)
+    // The second click: as soon as the row leaves Elsewhere, or the tab is back.
+    let deadline = ContinuousClock.now + .seconds(30)
+    while project.sessions.isEmpty, !project.groups.elsewhere.isEmpty,
+      ContinuousClock.now < deadline
+    {
+      await Task.yield()
+    }
+    project.openElsewhere(summary)
+    #expect(!project.sessions.contains { $0.isWatching })
+    #expect(await eventually { project.sessions.contains { $0.session.isHosted } })
+    try await Task.sleep(for: .milliseconds(300))
+    #expect(project.sessions.count == 1)
+    let back = try #require(project.sessions.first)
+    #expect(!back.isWatching)
+    #expect(back.session.isHosted)
+    #expect(project.selectedID == back.id)
+  }
+
   /// Opened again from Home: a live tab, the mark cleared, and no longer ended by its turn.
   @Test func reopeningClearsTheMark() async throws {
     defer { cleanUp() }

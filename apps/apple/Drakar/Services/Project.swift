@@ -445,6 +445,9 @@ final class Project {
   }
   /// The session host's processes being taken back, so that two calls take each once.
   @ObservationIgnored private var adopting: Set<String> = []
+  /// The session host's processes `reopen(_:among:)` is taking back, so that a second open
+  /// meanwhile leaves it to the first.
+  @ObservationIgnored private var reopening: Set<String> = []
   /// The session host's ids for the processes another app holds that rows here showed
   /// read-only, which `released` or a new connection settles.
   @ObservationIgnored private var shownHeldElsewhere: Set<String> = []
@@ -457,7 +460,8 @@ final class Project {
   /// host's id for each process (session tabs spec, After a tab at work is closed): listed
   /// under Elsewhere until the process ends, and opened from there by taking it back
   /// (`reopen`), never watched. Learnt when the tab closes, and from what a reopened window or
-  /// a launch passes over (`adoptHeld`); dropped once the host lets the process go.
+  /// a launch passes over (`adoptHeld`); dropped once the host lets the process go, or once
+  /// `reopen` has taken it back.
   private var closedAtWork: [String: String] = [:]
   /// A runner window's take-back found its runner out of reach (`takeBackHeld`): no listing
   /// came, which says nothing of what the runner holds for it. Taken back on the first new
@@ -1884,14 +1888,20 @@ final class Project {
   /// A process of the window's that Home opened again: taken back if the window may take it,
   /// though its row was closed here, and shown. One whose tab was closed at work loses the
   /// mark, and its end with its turn, once taken back.
+  ///
+  /// It stays listed as closed at work until it is a tab again, and an open meanwhile (the
+  /// second click of a double-click) is this one's: so it never falls through to a preview
+  /// beside the tab coming back.
   func reopen(_ hostID: String, among held: [HeldProcess]) async {
+    guard reopening.insert(hostID).inserted else { return }
+    defer { reopening.remove(hostID) }
     closedHere.remove(hostID)
-    closedAtWork = closedAtWork.filter { $0.value != hostID }
     let process = held.filter { $0.id == hostID }
     let closed = process.contains {
       (try? JSONDecoder().decode(SessionMeta.self, from: $0.meta))?.closedAtWork == true
     }
     await adoptHeld(process, includingClosed: true)
+    closedAtWork = closedAtWork.filter { $0.value != hostID }
     guard let item = sessions.first(where: { $0.session.hostID == hostID }) else { return }
     if closed { item.session.reopenedAfterClose() }
     select(item)
