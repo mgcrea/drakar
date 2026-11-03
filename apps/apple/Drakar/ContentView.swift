@@ -66,7 +66,10 @@ struct ContentView: View {
       ) {
         EditorView(workspace: workspace)
       } main: {
-        SelectedSessionPane(project: project)
+        VStack(spacing: 0) {
+          SessionTabStrip(project: project)
+          SelectedSessionPane(project: project)
+        }
       }
     }
     .inspector(isPresented: $inspectorShown) {

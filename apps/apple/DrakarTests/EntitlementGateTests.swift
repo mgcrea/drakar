@@ -108,7 +108,7 @@ struct EntitlementGateTests {
     defer { project.stopAll() }
     project.newSession()
     project.newSession()
-    let items = project.listedHeld
+    let items = project.held
     project.select(items[0])
     project.markAll()
     items[0].draft = "hi"

@@ -377,5 +377,7 @@ struct CloseTabTests {
     #expect(project.closeAsk(for: row) == .stopsTurn)
     row.draft = "hi"
     #expect(project.closeAsk(for: row) == .unsentDraft)
+    // The draft given up, the turn is still asked about.
+    #expect(project.closeAsk(for: row, draftConfirmed: true) == .stopsTurn)
   }
 }

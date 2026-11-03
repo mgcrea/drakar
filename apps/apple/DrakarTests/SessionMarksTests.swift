@@ -28,7 +28,7 @@ struct SessionMarksTests {
     let project = Project(folder: folder)
     project.executableOverride = try standIn()
     for _ in 0..<count { project.newSession() }
-    let items = project.listedHeld
+    let items = project.held
     project.select(items[0])
     return (project, items)
   }

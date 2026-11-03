@@ -28,27 +28,22 @@ struct ProjectSidebar: View {
   }
 }
 
-/// The sessions this window holds. Rows keep the order they came in unless the window sorts
-/// them (`SessionOrder`), when a row moves as soon as its state does: what wants the person
-/// rises.
+/// The project's sessions this window does not hold as tabs: those live elsewhere, and those
+/// ended. A row opens in the window's preview tab. Elsewhere keeps the order its summaries
+/// come in unless the window sorts it (`SessionOrder`), when a row moves as soon as its state
+/// does: what wants the person rises. A skill running in each subfolder shows its progress
+/// on top.
 struct SessionListView: View {
   let project: Project
   @Binding var isCollapsed: Bool
-  /// Read only to redraw the account badges when a pick or the Settings default changes.
-  @AppStorage(PreferenceKey.accountForFolder) private var picks = ""
-  @AppStorage(PreferenceKey.newSessionAccount) private var settingsAccount = ""
   /// The default agent, observed so the New Session button's labels follow Settings.
   @AppStorage(PreferenceKey.defaultAgent) private var defaultAgentRaw = AgentKind.claude.rawValue
   private var defaultAgent: AgentKind { AgentKind(rawValue: defaultAgentRaw) ?? .claude }
-  /// The list keeps the arrow keys while they move through it; a click hands them to the
-  /// composer.
-  @FocusState private var isFocused: Bool
   private var monitor: SessionMonitor { .shared }
 
   private var groups: ProjectGroups { project.listedGroups }
 
   var body: some View {
-    let _ = (picks, settingsAccount)
     VStack(spacing: 0) {
       header
       if !isCollapsed { list }
@@ -117,39 +112,13 @@ struct SessionListView: View {
   }
 
   private var list: some View {
-    let held = project.listedHeld
     let groups = groups
     return List {
-      Section("This Window") {
-        ForEach(project.fanOuts) { batch in
-          FanOutBanner(batch: batch) { project.cancelFanOut(batch) }
-        }
-        ForEach(held) { item in
-          SessionRow(
-            item: item, isSelected: item.id == project.selectedID,
-            windowAccount: project.runner == nil
-              ? AccountStore.shared.windowAccount(for: project.folder)
-              : nil,
-            subfolder: ProjectPath.child(
-              of: item.session.folder.path(percentEncoded: false),
-              below: project.folder.path(percentEncoded: false))
-          )
-          .pressableRow(
-            isSelected: item.id == project.selectedID, isMarked: project.marked.contains(item.id)
-          ) {
-            let click = Self.rowClick(NSEvent.modifierFlags)
-            project.click(item, click)
-            // The row shown already keeps its composer, which only focuses itself on appearing.
-            if click == .plain { item.focusRequest += 1 }
+      if !project.fanOuts.isEmpty {
+        Section {
+          ForEach(project.fanOuts) { batch in
+            FanOutBanner(batch: batch) { project.cancelFanOut(batch) }
           }
-          .contextMenu {
-            if project.sendsToMarked, project.marked.contains(item.id) {
-              markedMenu
-            } else {
-              menu(for: item)
-            }
-          }
-          .accessibilityIdentifier("sessions.attached.\(item.sessionID ?? item.id.uuidString)")
         }
       }
       if !groups.elsewhere.isEmpty {
@@ -159,7 +128,9 @@ struct SessionListView: View {
               summary: summary, host: monitor.host(of: summary),
               urgency: project.urgency(of: summary), monitor: monitor
             )
-            .pressableRow(isSelected: project.isWatched(summary)) { project.openElsewhere(summary) }
+            .pressableRow(isSelected: project.isWatched(summary)) {
+              open(summary) { project.openElsewhere(summary) }
+            }
             .contextMenu { menu(for: summary, ended: false) }
             .accessibilityAddTraits(.isButton)
             .accessibilityIdentifier("sessions.elsewhere.\(summary.sessionID)")
@@ -170,7 +141,9 @@ struct SessionListView: View {
         Section(isExpanded: Bindable(project).showsEnded) {
           ForEach(project.listedEnded(groups)) { summary in
             SummaryRow(summary: summary, host: nil, urgency: nil, monitor: monitor)
-              .pressableRow(isSelected: project.isWatched(summary)) { project.openEnded(summary) }
+              .pressableRow(isSelected: project.isWatched(summary)) {
+                open(summary) { project.openEnded(summary) }
+              }
               .contextMenu { menu(for: summary, ended: true) }
               .accessibilityAddTraits(.isButton)
               .accessibilityIdentifier("sessions.ended.\(summary.sessionID)")
@@ -186,72 +159,18 @@ struct SessionListView: View {
     }
     .listStyle(.sidebar)
     // A row that moves slides to its place, where the eye can follow it.
-    .animation(.snappy, value: held.map(\.id))
     .animation(.snappy, value: groups.elsewhere.map(\.sessionID))
-    .focusable()
-    .focused($isFocused)
-    .focusEffectDisabled()
-    // The list had the keys at the last quit: it takes them back.
-    .onAppear { if project.claimsRestoredFocus(.sessions) { isFocused = true } }
-    .onChange(of: isFocused) { _, focused in
-      if focused { project.workspace.focusedPane = .sessions }
-    }
-    .onKeyPress(.escape) {
-      guard !project.marked.isEmpty else { return .ignored }
-      project.clearMarks()
-      return .handled
-    }
-    .onKeyPress(characters: ["a"]) { press in
-      guard press.modifiers == .command else { return .ignored }
-      project.markAll()
-      return .handled
-    }
-    .onKeyPress(.downArrow) { move(1) }
-    .onKeyPress(.upArrow) { move(-1) }
     .accessibilityIdentifier("sessions")
   }
 
-  private func move(_ offset: Int) -> KeyPress.Result {
-    project.step(offset, wrapping: false, focusingComposer: false) ? .handled : .ignored
-  }
-
-  @ViewBuilder private func menu(for item: ProjectSession) -> some View {
-    if item.closingAsk != nil {
-      Button("Dismiss") { project.dismissAsk(item) }
-      Divider()
-    }
-    Button("Rename…") { RenameSessionPrompt.run(for: item) }
-      .disabled(!project.canRename(item))
-    // Hidden for an agent that cannot fork (Codex), disabled while a turn runs.
-    if item.session.features.forks, !item.session.isOnRunner,
-      (item.session.resuming ?? item.session.savedTarget) != nil
-    {
-      Button("Fork a Copy") { project.fork(item) }
-        .disabled(!project.canFork(item))
-    }
-    Divider()
-    if item.session.isProcessRunning {
-      Button("End Session") { confirmEnding([item]) { project.end(item) } }
-    }
-    Button("Remove from Window") { confirmIfRunning(item) { project.remove(item) } }
-    if let candidate = SessionMoves.candidate(for: item) {
-      let others = SessionMoves.destinations(from: candidate.account)
-      if !others.isEmpty {
-        Divider()
-        Menu("Move to") {
-          ForEach(others, id: \.key) { account in
-            Button(AccountStore.shared.profile(for: account).name) {
-              SessionMoves.moveOne(candidate, to: account)
-            }
-          }
-        }
-      }
-    }
-    if item.sessionID != nil || item.session.savedTarget != nil { Divider() }
-    if let id = item.sessionID { copyIDButton(id) }
-    if let file = item.session.savedTarget?.transcriptFile, !item.session.isOnRunner {
-      Button("Show Transcript in Finder") { NSWorkspace.shared.activateFileViewerSelecting([file]) }
-    }
+  /// A row opened in the window's preview tab; the second click of a double click keeps it
+  /// there as a tab of the window's own, as a double click on the preview tab does.
+  private func open(_ summary: SessionSummary, with action: () -> Void) {
+    action()
+    guard (NSApp.currentEvent?.clickCount ?? 1) >= 2,
+      let item = project.session(withID: summary.sessionID), item.isWatching
+    else { return }
+    project.promote(item)
   }
 
   /// An elsewhere row running in another process cannot move; the menu says where it runs.
@@ -312,149 +231,6 @@ struct SessionListView: View {
       NSPasteboard.general.clearContents()
       NSPasteboard.general.setString(sessionID, forType: .string)
     }
-  }
-
-  /// ⌘ marks one row more or less, ⇧ a range; a plain click shows the row.
-  static func rowClick(_ flags: NSEvent.ModifierFlags) -> Project.RowClick {
-    if flags.contains(.command) { return .toggle }
-    if flags.contains(.shift) { return .extend }
-    return .plain
-  }
-
-  /// What a right-click on one of several marked rows does to them all.
-  @ViewBuilder private var markedMenu: some View {
-    let marked = project.markedSessions
-    if marked.contains(where: \.session.isProcessRunning) {
-      Button("End \(marked.count) Sessions") { confirmEnding(marked) { project.stopMarked() } }
-    }
-    Button("Remove \(marked.count) Sessions from Window") {
-      confirmIfRunning(marked) { project.removeMarked() }
-    }
-    Divider()
-    Button("Unmark All") { project.clearMarks() }
-  }
-
-  /// End Session: a runner's sessions are asked about every time, nothing resuming them
-  /// once ended; this Mac's only mid-turn, as any stop is.
-  private func confirmEnding(_ items: [ProjectSession], then action: @escaping () -> Void) {
-    let onRunner = items.filter { $0.session.isOnRunner && $0.session.isProcessRunning }
-    guard !onRunner.isEmpty else {
-      if items.count == 1 { return confirmIfRunning(items[0], then: action) }
-      return confirmIfRunning(items, then: action)
-    }
-    let alert = EndingOnRunner.alert(titles: onRunner.map(\.displayTitle))
-    if alert.runModal() == .alertFirstButtonReturn { action() }
-  }
-
-  /// As for one row, once for the marked rows still working. A runner's is let go, not
-  /// stopped, by any stop but End Session's, so it does not count.
-  private func confirmIfRunning(_ items: [ProjectSession], then action: @escaping () -> Void) {
-    let working = items.filter { $0.session.status.isRunning && !$0.session.isOnRunner }
-      .count
-    guard working > 0 else { return action() }
-    let alert = NSAlert()
-    alert.messageText =
-      working == 1
-      ? String(localized: "1 session is still working.")
-      : String(localized: "\(working) sessions are still working.")
-    alert.informativeText = String(localized: "Stopping them now ends their turns part-way.")
-    alert.addButton(withTitle: String(localized: "Stop"))
-    alert.addButton(withTitle: String(localized: "Cancel"))
-    if alert.runModal() == .alertFirstButtonReturn { action() }
-  }
-
-  /// Mid-turn, stopping loses the turn: ask first. A runner's is let go instead, as above.
-  private func confirmIfRunning(_ item: ProjectSession, then action: @escaping () -> Void) {
-    guard item.session.status.isRunning, !item.session.isOnRunner else { return action() }
-    let alert = NSAlert()
-    alert.messageText = String(localized: "“\(item.displayTitle)” is still working.")
-    alert.informativeText = String(localized: "Stopping it now ends the turn part-way.")
-    alert.addButton(withTitle: String(localized: "Stop"))
-    alert.addButton(withTitle: String(localized: "Cancel"))
-    if alert.runModal() == .alertFirstButtonReturn { action() }
-  }
-}
-
-/// One attached session: what it is doing, and its title.
-struct SessionRow: View {
-  let item: ProjectSession
-  let isSelected: Bool
-  /// The account new sessions in this window start under; none in a runner's window.
-  let windowAccount: ClaudeAccount?
-  /// The project's subfolder it runs in, when not the project's own.
-  var subfolder: String? = nil
-
-  var body: some View {
-    HStack(alignment: .firstTextBaseline, spacing: 7) {
-      StateDot(state: state)
-      VStack(alignment: .leading, spacing: 2) {
-        HStack(spacing: 4) {
-          Text(item.displayTitle)
-            .lineLimit(1)
-            .fontWeight(item.isUnread ? .semibold : .regular)
-          if item.isUnread {
-            Circle().fill(.blue).frame(width: 5, height: 5).accessibilityLabel("Unread")
-          }
-          if item.session.agent == .codex {
-            Text("Codex")
-              .font(.caption2)
-              .padding(.horizontal, 5)
-              .padding(.vertical, 1)
-              .background(Capsule().fill(.quaternary))
-              .accessibilityIdentifier("sessions.agent.codex")
-          }
-          if let other = otherAccount {
-            Text(AccountStore.shared.profile(for: other).name)
-              .font(.caption2)
-              .padding(.horizontal, 5)
-              .padding(.vertical, 1)
-              .background(Capsule().fill(.quaternary))
-              .help("Runs under the account in \(ContentView.abbreviated(other.directory))")
-          }
-        }
-        if let detail {
-          Text(detail).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-        }
-      }
-      Spacer(minLength: 4)
-      if let gauge = item.gauge(
-        accountModel: item.session.resuming.flatMap {
-          SessionMonitor.shared.accountModel(for: $0.account)
-        })
-      {
-        ContextGaugeView(gauge: gauge)
-      }
-    }
-    .accessibilityElement(children: .combine)
-  }
-
-  private var state: RowState { RowState(item) }
-
-  /// The session's account when it is not the window's. None for a runner's: every one there
-  /// runs under the runner shell's own (Ruling 11).
-  private var otherAccount: ClaudeAccount? {
-    guard item.session.features.showsAccount, !item.session.isOnRunner,
-      let account = item.session.effectiveAccount, account.key != windowAccount?.key
-    else { return nil }
-    return account
-  }
-
-  private var detail: String? {
-    var parts: [String] = []
-    if let lead = item.wants ?? item.stopReason { parts.append(lead) }
-    if let when = item.lastActivity {
-      parts.append(when.formatted(.relative(presentation: .named)))
-    }
-    if let subfolder { parts.append(subfolder) }
-    if let worktreeName { parts.append(worktreeName) }
-    return parts.isEmpty ? nil : parts.joined(separator: " · ")
-  }
-
-  /// The worktree's folder name, for a session running below the project root.
-  private var worktreeName: String? {
-    let path = item.session.folder.path(percentEncoded: false)
-    guard let range = path.range(of: "/.claude/worktrees/") else { return nil }
-    return String(path[range.upperBound...].prefix { $0 != "/" })
   }
 }
 

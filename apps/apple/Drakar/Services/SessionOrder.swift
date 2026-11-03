@@ -1,9 +1,9 @@
 import Foundation
 
-/// How the sidebar lists the window's own sessions and those live elsewhere, kept with the
-/// window. Ended stays newest first whatever this says.
+/// How the sidebar lists the sessions live elsewhere, kept with the window. The tabs keep the
+/// order they were opened and dragged in, and Ended stays newest first, whatever this says.
 enum SessionOrder: String, Codable, CaseIterable, Identifiable {
-  /// The window's own in the order they came, Elsewhere newest activity first: no sort.
+  /// Newest activity first, as the summaries come: no sort.
   case opened
   /// What wants the person on top, most urgent first, the longest waiting first in a level.
   case needsMe

@@ -389,7 +389,7 @@ final class Project {
   let workspace: Workspace
   private(set) var sessions: [ProjectSession] = []
   var selectedID: ProjectSession.ID?
-  /// How the sidebar lists the window's own rows and Elsewhere's.
+  /// How the sidebar lists Elsewhere. The tabs keep their own order, which only a drag changes.
   var sessionOrder: SessionOrder = .opened
   /// Next After Replying: a reply to the shown session shows the next one wanting the person.
   var movesOnAfterReply = false
@@ -579,15 +579,6 @@ final class Project {
   }
 
   @ObservationIgnored private var keptGroups: (key: GroupsKey, groups: ProjectGroups)?
-
-  /// The window's own rows as the sidebar lists them.
-  var listedHeld: [ProjectSession] {
-    sessionOrder.sorted(held) { item in
-      SessionOrder.Key(
-        state: RowState(item), activity: item.lastActivity,
-        folder: item.session.folder.path(percentEncoded: false))
-    }
-  }
 
   /// `groups`, Elsewhere as the sidebar lists it.
   var listedGroups: ProjectGroups {
@@ -2025,10 +2016,32 @@ final class Project {
 
   /// What closing `item`'s tab would lose, for the window to ask about first; nil when
   /// nothing. The draft is said first: the turn is lost only with no host to hand it to.
-  func closeAsk(for item: ProjectSession) -> CloseAsk? {
-    if hasUnsent(item) { return .unsentDraft }
+  /// `draftConfirmed` once the person agreed to lose the draft, for what else to ask.
+  func closeAsk(for item: ProjectSession, draftConfirmed: Bool = false) -> CloseAsk? {
+    if !draftConfirmed, hasUnsent(item) { return .unsentDraft }
     if item.session.isAtWork, !item.session.isHosted { return .stopsTurn }
     return nil
+  }
+
+  /// Close Other Tabs: every tab but `item` closes as `closeTab` closes it, except those that
+  /// would ask first (`closeAsk(for:)`), which stay open: one menu item is no place for a
+  /// dialog per tab, and nothing is lost unasked.
+  func closeOthers(than item: ProjectSession) {
+    closeQuietly(sessions.filter { $0.id != item.id }, keeping: item)
+  }
+
+  /// Close Tabs to the Right: the tabs right of `item`, as `closeOthers(than:)` closes them.
+  func closeToTheRight(of item: ProjectSession) {
+    guard let index = sessions.firstIndex(where: { $0.id == item.id }) else { return }
+    closeQuietly(Array(sessions[(index + 1)...]), keeping: item)
+  }
+
+  /// `items` closed but for those that would ask. The shown tab among them gives way to
+  /// `item` first, so that no tab on its way out is shown and read in between.
+  private func closeQuietly(_ items: [ProjectSession], keeping item: ProjectSession) {
+    let closing = items.filter { closeAsk(for: $0) == nil }
+    if closing.contains(where: { $0.id == selectedID }) { select(item) }
+    for other in closing { closeTab(other) }
   }
 
   /// `item`'s row out of the window once `stop` has let its session go. Shown, its
