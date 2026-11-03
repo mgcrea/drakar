@@ -167,7 +167,7 @@ struct SessionMarksTests {
     #expect(project.lastBroadcast == nil)
   }
 
-  /// Stop ends each marked session's process; Remove takes them all out of the window.
+  /// Stop ends each marked session's process; Close takes them all out of the window.
   @Test func stopAndRemoveTheMarked() async throws {
     let (project, items) = try project(3)
     defer { project.stopAll() }
@@ -179,7 +179,7 @@ struct SessionMarksTests {
     #expect(!items[0].session.isProcessRunning)
     #expect(!items[1].session.isProcessRunning)
     #expect(items[2].session.isProcessRunning)
-    project.removeMarked()
+    project.closeMarked()
     #expect(project.sessions.map(\.id) == [items[2].id])
     #expect(project.marked.isEmpty)
   }

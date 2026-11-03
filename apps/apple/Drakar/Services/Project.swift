@@ -397,7 +397,7 @@ final class Project {
   /// own in `StoredProject.dismissedQuestions`.
   private(set) var dismissedElsewhere: [String: String] = [:]
   /// Whether the shown session's composer takes the focus when it appears: not when the
-  /// sidebar's arrow keys chose it, so the keys keep moving in the list.
+  /// strip's or the sidebar's arrow keys chose it, so the keys stay where they are.
   @ObservationIgnored private(set) var focusesComposer = true
   /// While `broadcast` sends: a prompt to the marked rows doesn't move on.
   @ObservationIgnored private var isBroadcasting = false
@@ -867,9 +867,10 @@ final class Project {
     case plain, toggle, extend
   }
 
-  /// A click on a held row. Plain shows it and clears the marks; ⌘ marks or unmarks it
-  /// (the shown row is marked with the first); ⇧ marks the rows from the last clicked to it,
-  /// in the tabs' order, passing over the preview. Neither ⌘ nor ⇧ changes the row shown.
+  /// A click on a tab. Plain shows it and clears the marks; ⌘ marks or unmarks it (the shown
+  /// tab is marked with the first); ⇧ marks the tabs from the last clicked to it, in the
+  /// tabs' order, passing over the preview. Neither ⌘ nor ⇧ changes the tab shown, and on
+  /// the preview, which is not the window's own to mark, neither does anything.
   func click(_ item: ProjectSession, _ kind: RowClick) {
     lastBroadcast = nil
     switch kind {
@@ -878,6 +879,8 @@ final class Project {
       markAnchor = item.id
       select(item)
     case .toggle:
+      // The preview is not one to mark, nor to start a range from.
+      guard !item.isWatching else { return }
       // The shown row, if it is one of the window's own: a watched one can't be marked.
       if marked.isEmpty, let selected, !selected.isWatching, selected.id != item.id {
         marked = [selected.id]
@@ -886,6 +889,7 @@ final class Project {
       markAnchor = item.id
     case .extend:
       // The window's own tabs: the preview is not one to mark.
+      guard !item.isWatching else { return }
       let rows = held.map(\.id)
       guard let end = rows.firstIndex(of: item.id) else { return }
       // The last clicked row, else the one shown when that one was removed since.
@@ -959,13 +963,15 @@ final class Project {
     for item in markedSessions { end(item) }
   }
 
-  /// Takes every marked session out of the window, each as `remove` does. The shown one
-  /// among them gives way to the nearest tab left standing, right of it first as a closed
-  /// tab's neighbour is, else left; that one is loaded once, so a row about to go never
-  /// reads its transcript.
-  func removeMarked() {
-    let going = markedSessions
-    let gone = Set(going.map(\.id))
+  /// Close N Tabs, on the marked tabs: each closes as `closeTab` closes it, at work handed
+  /// to the session host, except those that would ask first (`closeAsk(for:)`), which stay
+  /// open and marked, as Close Other Tabs leaves them. The shown one among those closing
+  /// gives way to the nearest tab left standing, right of it first as a closed tab's
+  /// neighbour is, else left, picked before any closes: a tab on its way out is never shown,
+  /// and never reads its transcript.
+  func closeMarked() {
+    let closing = markedSessions.filter { closeAsk(for: $0) == nil }
+    let gone = Set(closing.map(\.id))
     if let selectedID, gone.contains(selectedID),
       let index = sessions.firstIndex(where: { $0.id == selectedID })
     {
@@ -973,14 +979,7 @@ final class Project {
       let left = sessions[..<index].last { !gone.contains($0.id) }
       self.selectedID = (right ?? left)?.id
     }
-    for item in going {
-      item.session.stop()
-      sessions.removeAll { $0.id == item.id }
-      fanOutFinished(item)
-    }
-    marked = []
-    if let selected { load(selected) }
-    Attention.shared.refresh()
+    for item in closing { closeTab(item) }
   }
 
   /// `item` ended a turn or stopped: its slot goes to the next waiting session.
@@ -1511,6 +1510,34 @@ final class Project {
     if let target = ResumeTarget(summary) {
       attach(target, watching: true, focusingComposer: focusingComposer)
     }
+  }
+
+  /// The sidebar's ↑ and ↓: the row `offset` rows from the one the preview tab shows (else
+  /// the first row), in the sidebar's order, Elsewhere's as sorted then Ended's while it is
+  /// expanded, opened as a click opens it. So it lands in the preview, which the next one
+  /// replaces, and the keys stay in the list; a tab closed at work is taken back as a tab.
+  /// Stops at the ends: false when there is no row to go to. The tabs are `step`'s.
+  @discardableResult func stepSidebar(_ offset: Int) -> Bool {
+    let groups = listedGroups
+    let rows =
+      groups.elsewhere.map { (summary: $0, ended: false) }
+      + (showsEnded ? listedEnded(groups).map { (summary: $0, ended: true) } : [])
+    guard !rows.isEmpty else { return false }
+    let shown = tabs.first(where: \.isWatching)?.sessionID
+    let index: Int
+    if let current = rows.firstIndex(where: { $0.summary.sessionID == shown }) {
+      index = current + offset
+      guard rows.indices.contains(index) else { return false }
+    } else {
+      index = 0
+    }
+    let row = rows[index]
+    if row.ended {
+      openEnded(row.summary, focusingComposer: false)
+    } else {
+      openElsewhere(row.summary, focusingComposer: false)
+    }
+    return true
   }
 
   /// Shows the tab `offset` tabs from the selected one, in the tabs' order, as a click shows

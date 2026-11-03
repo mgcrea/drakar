@@ -191,7 +191,7 @@ struct TabOrderTests {
 
   /// The shown tab among those removed: the nearest left standing right of it is shown,
   /// else the nearest left of it.
-  @Test func removingTheMarkedShowsTheNearestTabLeftStanding() throws {
+  @Test func closingTheMarkedShowsTheNearestTabLeftStanding() throws {
     let project = try project()
     let a = project.newSession()
     let b = project.newSession()
@@ -201,12 +201,12 @@ struct TabOrderTests {
     let f = project.newSession()
     project.click(c, .plain)
     project.click(d, .toggle)
-    project.removeMarked()
+    project.closeMarked()
     #expect(project.tabs.map(\.id) == [a.id, b.id, e.id, f.id])
     #expect(project.selectedID == e.id)
     project.click(f, .plain)
     project.click(e, .toggle)
-    project.removeMarked()
+    project.closeMarked()
     #expect(project.tabs.map(\.id) == [a.id, b.id])
     #expect(project.selectedID == b.id)
   }
@@ -229,5 +229,28 @@ struct TabOrderTests {
     #expect(project.nextNeedingAttention()?.item?.id == b.id)
     project.moveTab(b.id, to: 0)
     #expect(project.nextNeedingAttention()?.item?.id == a.id)
+  }
+
+  /// The preview is not the window's own: ⌘-clicking it marks nothing, and a ⇧ range across
+  /// it passes over it.
+  @Test func thePreviewIsNeverMarked() async throws {
+    let project = try project()
+    let summaries = try await ended(["e1"], in: project)
+    let a = project.newSession()
+    let b = project.newSession()
+    project.select(a)
+    project.openEnded(summaries[0])
+    let p = try #require(project.selected)
+    #expect(project.tabs.map(\.id) == [a.id, p.id, b.id])
+    project.click(p, .toggle)
+    #expect(project.marked.isEmpty)
+    project.click(a, .toggle)
+    #expect(project.marked == [a.id])
+    project.click(p, .toggle)
+    #expect(project.marked == [a.id])
+    project.click(p, .extend)
+    #expect(project.marked == [a.id])
+    project.click(b, .extend)
+    #expect(project.marked == [a.id, b.id])
   }
 }

@@ -39,6 +39,9 @@ struct SessionListView: View {
   /// The default agent, observed so the New Session button's labels follow Settings.
   @AppStorage(PreferenceKey.defaultAgent) private var defaultAgentRaw = AgentKind.claude.rawValue
   private var defaultAgent: AgentKind { AgentKind(rawValue: defaultAgentRaw) ?? .claude }
+  /// The list keeps ↑ and ↓ while they move through its rows, each opened in the preview
+  /// tab; a click hands the keys to the composer.
+  @FocusState private var isFocused: Bool
   private var monitor: SessionMonitor { .shared }
 
   private var groups: ProjectGroups { project.listedGroups }
@@ -160,6 +163,11 @@ struct SessionListView: View {
     .listStyle(.sidebar)
     // A row that moves slides to its place, where the eye can follow it.
     .animation(.snappy, value: groups.elsewhere.map(\.sessionID))
+    .focusable()
+    .focused($isFocused)
+    .focusEffectDisabled()
+    .onKeyPress(.downArrow) { project.stepSidebar(1) ? .handled : .ignored }
+    .onKeyPress(.upArrow) { project.stepSidebar(-1) ? .handled : .ignored }
     .accessibilityIdentifier("sessions")
   }
 

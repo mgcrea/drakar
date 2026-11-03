@@ -72,9 +72,8 @@ struct SessionMenu: View {
         Self.confirmEnding(marked) { project.stopMarked() }
       }
     }
-    Button("Remove \(marked.count) Sessions from Window") {
-      Self.confirmIfRunning(marked) { project.removeMarked() }
-    }
+    // As Close Other Tabs: a tab that would ask stays open, marked.
+    Button("Close \(marked.count) Tabs") { project.closeMarked() }
     Divider()
     Button("Unmark All") { project.clearMarks() }
   }

@@ -102,6 +102,21 @@ struct SessionTabTests {
     #expect(project.selectedID == a.id)
   }
 
+  /// Close N Tabs closes the marked tabs that would not ask; one with a draft stays, marked.
+  @Test func closingTheMarkedKeepsAnyThatWouldAsk() {
+    let project = Project(folder: folder)
+    let a = project.newSession()
+    let b = project.newSession()
+    let c = project.newSession()
+    project.click(b, .plain)
+    project.click(c, .toggle)
+    b.draft = "half"
+    project.closeMarked()
+    #expect(project.tabs.map(\.id) == [a.id, b.id])
+    #expect(project.marked == [b.id])
+    #expect(project.selectedID == b.id)
+  }
+
   @Test func closeToTheRight() {
     let project = Project(folder: folder)
     let a = project.newSession()

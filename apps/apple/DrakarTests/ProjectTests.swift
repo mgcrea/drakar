@@ -627,9 +627,9 @@ struct ProjectTests {
     return Project(folder: folder, restoring: stored)
   }
 
-  /// Removing the marked rows reads no transcript of a row about to go: only the row shown
+  /// Closing the marked tabs reads no transcript of a tab about to go: only the tab shown
   /// once they are gone loads its history.
-  @Test func removingTheMarkedRowsLoadsOnlyTheRowLeft() async throws {
+  @Test func closingTheMarkedTabsLoadsOnlyTheTabLeft() async throws {
     let project = Project(folder: folder)
     for id in ["d", "c", "b", "a"] {
       try Data(#"{"type":"user","message":{"role":"user","content":"go"}}"#.appending("\n").utf8)
@@ -646,7 +646,7 @@ struct ProjectTests {
     restored.click(b, .toggle)
     restored.click(c, .toggle)
     try #require(restored.marked == [a.id, b.id, c.id])
-    restored.removeMarked()
+    restored.closeMarked()
     #expect(restored.selectedID == d.id)
     for _ in 0..<50 where !d.session.hasLoadedHistory {
       try await Task.sleep(for: .milliseconds(20))

@@ -90,4 +90,67 @@ struct SessionStepTests {
   @Test func anEmptyWindowHasNowhereToGo() throws {
     #expect(!(try project()).step(1, wrapping: true))
   }
+
+  /// `project` listing an ended session for each id, read from a transcript each under an
+  /// account of the test's own.
+  private func ended(_ ids: [String], in project: Project) async throws {
+    let path = ProjectPath.normalize(project.folder)
+    let account = ClaudeAccount(
+      directory: project.folder.appending(path: "claude-config", directoryHint: .isDirectory),
+      isDefault: false)
+    let transcripts = account.directory.appending(
+      path: "projects/\(ProjectPath.encodedPrefixes(for: path)[0])", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: transcripts, withIntermediateDirectories: true)
+    for id in ids {
+      try Data(#"{"type":"user","cwd":"\#(path)","message":{"role":"user","content":"go"}}"#.utf8)
+        .write(to: transcripts.appending(path: "\(id).jsonl"))
+    }
+    let monitor = SessionMonitor(accounts: [account])
+    await monitor.include(folder: path)
+    project.monitor = monitor
+    try #require(project.groups.ended.count == ids.count)
+  }
+
+  private func preview(in project: Project) -> [String?] {
+    project.tabs.filter(\.isWatching).map(\.sessionID)
+  }
+
+  /// The sidebar's ↓ opens its first row in the preview tab, then the next in its place,
+  /// the keys staying in the list; it stops at the ends, and ↑ goes back.
+  @Test func theSidebarsArrowKeysGoThroughItsRowsInThePreview() async throws {
+    let project = try project()
+    let a = project.newSession()
+    try await ended(["e1", "e2"], in: project)
+    project.showsEnded = true
+    let rows = project.listedEnded(project.groups).map(\.sessionID)
+    #expect(project.stepSidebar(1))
+    #expect(preview(in: project) == [rows[0]])
+    #expect(project.selected?.sessionID == rows[0])
+    #expect(!project.focusesComposer)
+    #expect(project.stepSidebar(1))
+    #expect(preview(in: project) == [rows[1]])
+    #expect(project.tabs.count == 2)
+    #expect(project.tabs.first?.id == a.id)
+    #expect(!project.stepSidebar(1))
+    #expect(preview(in: project) == [rows[1]])
+    #expect(project.stepSidebar(-1))
+    #expect(preview(in: project) == [rows[0]])
+    #expect(!project.stepSidebar(-1))
+  }
+
+  /// With no row to go to, the sidebar's keys leave the tabs as they are: a folded Ended
+  /// has none.
+  @Test func theSidebarsArrowKeysLeaveTheTabsAlone() async throws {
+    let project = try project()
+    let a = project.newSession()
+    _ = project.newSession()
+    project.select(a)
+    #expect(!project.stepSidebar(1))
+    #expect(!project.stepSidebar(-1))
+    try await ended(["e1"], in: project)
+    project.showsEnded = false
+    #expect(!project.stepSidebar(1))
+    #expect(project.selectedID == a.id)
+    #expect(project.tabs.count == 2)
+  }
 }
