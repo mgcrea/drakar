@@ -25,8 +25,19 @@ final class Workspace {
   /// Why the last file could not be opened or saved.
   var problem: String?
   var isQuickOpenShown = false
-  /// The pane that last took the keys, kept with the window.
-  var focusedPane: FocusedPane?
+  /// The pane that last took the keys, kept with the window. A pane taking them is the
+  /// sidebar's list no longer having them.
+  var focusedPane: FocusedPane? {
+    didSet { sidebarHasKeys = false }
+  }
+  /// The sidebar's list took the keys last, `focusedPane` saying `.sessions`, as an older
+  /// Drakar reads it (`StoredProject.sidebarHasKeys`).
+  private(set) var sidebarHasKeys = false
+
+  func sidebarTookKeys() {
+    focusedPane = .sessions
+    sidebarHasKeys = true
+  }
   /// A restored tab's text view leaves the keys where they were at the last quit, until a tab
   /// is chosen.
   @ObservationIgnored private(set) var holdsEditorFocus = false
@@ -115,7 +126,9 @@ final class Workspace {
   /// The tabs a window kept, reopened at launch: those that still read, in order, without a
   /// word about the rest, and `active` brought forward. Its text view takes the keys only
   /// when `focus` says the editor had them.
-  func restore(_ paths: [String], active: String?, focus: FocusedPane? = nil) {
+  func restore(
+    _ paths: [String], active: String?, focus: FocusedPane? = nil, sidebarHasKeys: Bool = false
+  ) {
     for path in paths where runner == nil && !documents.contains(where: { $0.path == path }) {
       guard case .success(let text) = TextFile.read(URL(filePath: path)) else { continue }
       documents.append(EditorDocument(url: URL(filePath: path), text: text))
@@ -125,6 +138,7 @@ final class Workspace {
       activate(document)
     }
     focusedPane = focus
+    self.sidebarHasKeys = sidebarHasKeys
     holdsEditorFocus = focus != .editor
   }
 

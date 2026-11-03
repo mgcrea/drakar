@@ -51,6 +51,8 @@ struct SessionListView: View {
       header
       if !isCollapsed { list }
     }
+    // Folded, the list can't take back the keys it had at the last quit: the composer does.
+    .onAppear { if isCollapsed { _ = project.claimsRestoredSidebarFocus(shown: false) } }
     // This Mac's transcripts under the path are none of a runner's folder's.
     .task {
       if project.runner == nil {
@@ -167,9 +169,9 @@ struct SessionListView: View {
     .focused($isFocused)
     .focusEffectDisabled()
     // The list had the keys at the last quit: it takes them back.
-    .onAppear { if project.claimsRestoredFocus(.sidebar) { isFocused = true } }
+    .onAppear { if project.claimsRestoredSidebarFocus(shown: true) { isFocused = true } }
     .onChange(of: isFocused) { _, focused in
-      if focused { project.workspace.focusedPane = .sidebar }
+      if focused { project.workspace.sidebarTookKeys() }
     }
     .onKeyPress(.downArrow) { project.stepSidebar(1) ? .handled : .ignored }
     .onKeyPress(.upArrow) { project.stepSidebar(-1) ? .handled : .ignored }

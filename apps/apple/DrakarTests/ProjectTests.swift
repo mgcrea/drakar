@@ -713,19 +713,86 @@ struct ProjectTests {
     #expect(browsing.claimsRestoredFocus(.sessions))
     #expect(!browsing.claimsRestoredFocus(.sessions))  // once
 
-    // The sidebar's list is a pane of its own, not the strip.
-    project.workspace.focusedPane = .sidebar
+    // The sidebar's list is not the strip, though stored as `.sessions` for an older Drakar.
+    project.workspace.sidebarTookKeys()
+    #expect(project.stored.focusedPane == .sessions)
+    #expect(project.stored.sidebarHasKeys == true)
     let listing = try relaunched(project)
     #expect(!listing.focusesComposer)
     #expect(!listing.claimsRestoredFocus(.sessions))
-    #expect(listing.claimsRestoredFocus(.sidebar))
+    #expect(listing.claimsRestoredSidebarFocus(shown: true))
+    #expect(!listing.claimsRestoredSidebarFocus(shown: true))  // once
+    #expect(listing.workspace.sidebarHasKeys)
+
+    // Another pane taking the keys is the list no longer having them.
+    project.workspace.focusedPane = .sessions
+    #expect(project.stored.sidebarHasKeys == nil)
   }
 
-  /// A window stored before the sidebar had a pane of its own still decodes, its pane with it.
+  /// The sidebar had the keys, but it is folded: the shown session's composer takes them.
+  @Test func aFoldedSidebarLeavesTheKeysToTheComposer() throws {
+    let project = Project(folder: folder)
+    project.attach(target("a"))
+    project.workspace.sidebarTookKeys()
+    let restored = try relaunched(project)
+    let item = try #require(restored.selected)
+    let requests = item.focusRequest
+    #expect(!restored.focusesComposer)
+    #expect(!restored.claimsRestoredSidebarFocus(shown: false))
+    #expect(restored.focusesComposer)
+    #expect(item.focusRequest == requests + 1)
+    #expect(!restored.claimsRestoredSidebarFocus(shown: true))
+  }
+
+  /// 1.2.0's `StoredProject`, as it decodes a window: its panes are these three, and one
+  /// value it does not know fails the whole memory (`ProjectMemory.all`).
+  private struct StoredProject120: Decodable {
+    enum Pane: String, Decodable { case composer, editor, sessions }
+    var sessions: [ResumeTarget]
+    var selected: String?
+    var dismissedQuestions: [String: String]?
+    var documents: [String]?
+    var activeDocument: String?
+    var focusedPane: Pane?
+    var sessionOrder: SessionOrder?
+    var movesOnAfterReply: Bool?
+    var fanOuts: [StoredFanOut]?
+    var pendingForks: [StoredFork]?
+  }
+
+  /// A window stored with any pane having the keys, the sidebar's list among them, is one
+  /// 1.2.0 still reads, as a map of them, as `ProjectMemory` stores them.
+  @Test func aPaneStoredNowStillDecodesIn120() throws {
+    let file = folder.appending(path: "a.txt")
+    try "a".write(to: file, atomically: true, encoding: .utf8)
+    let project = Project(folder: folder)
+    project.attach(target("a"))
+    project.workspace.open(file)
+    var memory: [String: StoredProject] = [:]
+    for pane in [FocusedPane.composer, .editor, .sessions] {
+      project.workspace.focusedPane = pane
+      memory[pane.rawValue] = project.stored
+    }
+    project.workspace.sidebarTookKeys()
+    memory["sidebar"] = project.stored
+    let decoded = try JSONDecoder().decode(
+      [String: StoredProject120].self, from: JSONEncoder().encode(memory))
+    #expect(decoded["sidebar"]?.focusedPane == .sessions)
+    #expect(decoded["editor"]?.focusedPane == .editor)
+    #expect(decoded["sidebar"]?.sessions.map(\.sessionID) == ["a"])
+    // The stand-in fails as 1.2.0 does on a pane it does not know.
+    #expect(throws: DecodingError.self) {
+      try JSONDecoder().decode(
+        StoredProject120.self, from: Data(#"{"sessions":[],"focusedPane":"sidebar"}"#.utf8))
+    }
+  }
+
+  /// A window stored before the sidebar's keys were kept still decodes, its pane with it.
   @Test func aPaneStoredBeforeTheSidebarsStillDecodes() throws {
     let json = #"{"sessions":[],"focusedPane":"sessions"}"#
     let stored = try JSONDecoder().decode(StoredProject.self, from: Data(json.utf8))
     #expect(stored.focusedPane == .sessions)
+    #expect(stored.sidebarHasKeys == nil)
   }
 
   /// The editor had the keys but its file is gone: the composer takes them, not nobody.

@@ -300,14 +300,16 @@ final class ProjectSession: Identifiable {
   }
 }
 
-/// The pane of a project window the keys go to. Stored by name: a value added later still
-/// leaves the ones stored before it readable.
+/// The pane of a project window the keys go to, stored by name. No case is to be added: an
+/// older Drakar decodes every project's memory at once (`ProjectMemory`), and one value it
+/// does not know makes it read none, then write back only the windows it has open, losing
+/// the rest. A pane added later is stored beside it, as the sidebar is
+/// (`StoredProject.sidebarHasKeys`).
 enum FocusedPane: String, Codable {
   case composer, editor
-  /// The tab strip.
+  /// The tab strip; before the tabs, the sidebar's list, which is what an older Drakar reads
+  /// it as.
   case sessions
-  /// The sidebar's list of the sessions elsewhere and ended.
-  case sidebar
 }
 
 /// What a project window keeps between launches: the sessions it held and the one shown,
@@ -322,6 +324,10 @@ struct StoredProject: Codable, Equatable {
   var documents: [String]?
   var activeDocument: String?
   var focusedPane: FocusedPane?
+  /// The sidebar's list had the keys, `focusedPane` saying `.sessions`: apart, since a pane
+  /// value an older Drakar does not know loses it every project's memory (`FocusedPane`).
+  /// Nil for false, so that the window stored is otherwise as before.
+  var sidebarHasKeys: Bool?
   /// How the sidebar sorts; nil for `.opened`, and for a window stored before sorting.
   var sessionOrder: SessionOrder?
   /// Next After Replying; nil for off.
@@ -487,6 +493,8 @@ final class Project {
   @ObservationIgnored private var skillFileObservers: [UUID: () -> Void] = [:]
   /// The pane that had the keys at the last quit, until it takes them back.
   @ObservationIgnored private var restoredFocus: FocusedPane?
+  /// The sidebar's list had the keys at the last quit, until it takes them back.
+  @ObservationIgnored private var restoresSidebarFocus = false
 
   init(folder: URL, runner: String? = nil, restoring stored: StoredProject? = nil) {
     self.folder = folder
@@ -525,13 +533,16 @@ final class Project {
       sessions.first { $0.sessionID == stored?.selected }?.id ?? sessions.first?.id
     if let selected { load(selected) }
     for item in sessions { readPreview(item) }
+    let sidebarHasKeys = stored?.sidebarHasKeys == true
     workspace.restore(
-      stored?.documents ?? [], active: stored?.activeDocument, focus: stored?.focusedPane)
+      stored?.documents ?? [], active: stored?.activeDocument, focus: stored?.focusedPane,
+      sidebarHasKeys: sidebarHasKeys)
     // The editor's file may be gone since: the composer takes the keys rather than nobody.
     var focus = stored?.focusedPane ?? .composer
     if focus == .editor, workspace.documents.isEmpty { focus = .composer }
-    focusesComposer = focus == .composer
-    restoredFocus = focus
+    focusesComposer = focus == .composer && !sidebarHasKeys
+    restoredFocus = sidebarHasKeys ? nil : focus
+    restoresSidebarFocus = sidebarHasKeys
     observeCapabilities()
     workspace.onCapabilityFilesChanged = { [weak self] in self?.capabilityFilesChanged() }
     workspace.onCodexSkillFilesChanged = { [weak self] in self?.codexSkillFilesChanged() }
@@ -547,6 +558,19 @@ final class Project {
   func claimsRestoredFocus(_ pane: FocusedPane) -> Bool {
     guard restoredFocus == pane else { return false }
     restoredFocus = nil
+    return true
+  }
+
+  /// Whether the sidebar's list takes the keys back after a relaunch; true once. Folded
+  /// (`shown` false), it can't: the shown session's composer takes them, rather than nobody.
+  func claimsRestoredSidebarFocus(shown: Bool) -> Bool {
+    guard restoresSidebarFocus else { return false }
+    restoresSidebarFocus = false
+    guard shown else {
+      focusesComposer = true
+      selected?.focusRequest += 1
+      return false
+    }
     return true
   }
 
@@ -2183,6 +2207,7 @@ final class Project {
       documents: workspace.documents.isEmpty ? nil : workspace.documents.map(\.path),
       activeDocument: workspace.active?.path,
       focusedPane: workspace.focusedPane,
+      sidebarHasKeys: workspace.sidebarHasKeys ? true : nil,
       sessionOrder: sessionOrder == .opened ? nil : sessionOrder,
       movesOnAfterReply: movesOnAfterReply ? true : nil,
       fanOuts: batches.isEmpty ? nil : batches,
