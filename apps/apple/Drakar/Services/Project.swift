@@ -2,6 +2,7 @@ import AppKit
 import DrakarKit
 import Foundation
 import Observation
+import os
 
 /// A skill put in the composer rather than sent: the text it put there, and what it takes.
 struct SkillPrefill: Equatable {
@@ -397,8 +398,14 @@ final class Project {
   /// own in `StoredProject.dismissedQuestions`.
   private(set) var dismissedElsewhere: [String: String] = [:]
   /// Whether the shown session's composer takes the focus when it appears: not when the
-  /// strip's or the sidebar's arrow keys chose it, so the keys stay where they are.
-  @ObservationIgnored private(set) var focusesComposer = true
+  /// strip's or the sidebar's arrow keys chose it, so the keys stay where they are. Watched:
+  /// a session the deck kept built appears again without being built again, and reads it
+  /// afresh only when told it changed. Set only when it does, so a click after a click
+  /// redraws nothing.
+  private(set) var focusesComposer = true
+  /// The tab switch `select` began, until the deck has drawn its session
+  /// (`TabSignposts.switchDrawn`).
+  @ObservationIgnored var pendingSwitch: (id: ProjectSession.ID, state: OSSignpostIntervalState)?
   /// While `broadcast` sends: a prompt to the marked rows doesn't move on.
   @ObservationIgnored private var isBroadcasting = false
   /// Stands in for the located binary in every session this window makes, in tests.
@@ -1482,7 +1489,12 @@ final class Project {
   }
 
   func select(_ item: ProjectSession, focusingComposer: Bool = true) {
-    focusesComposer = focusingComposer
+    if focusesComposer != focusingComposer { focusesComposer = focusingComposer }
+    if selectedID != item.id {
+      // Ended by the deck once it has the session drawn; a switch it never got to is over.
+      if let pending = pendingSwitch { TabSignposts.switchSuperseded(pending.state) }
+      pendingSwitch = (item.id, TabSignposts.switchBegan(to: item.id))
+    }
     selectedID = item.id
     item.isUnread = false
     load(item)
@@ -2030,6 +2042,10 @@ final class Project {
   /// stops as a removed row's does. The row goes either way. What closing would lose is
   /// `closeAsk(for:)`'s, asked before.
   func closeTab(_ item: ProjectSession) {
+    TabSignposts.closeTab { closingTab(item) }
+  }
+
+  private func closingTab(_ item: ProjectSession) {
     let sessionID = item.session.sessionID
     let hostID = item.session.hostID
     var marked = false

@@ -427,39 +427,22 @@ struct ContentView: View {
   }
 }
 
-/// Floats the window a view is in above other apps' windows, or puts it back among them.
-/// Applied again once the view lands in a window, since a restored window has its level
-/// asked for before it has one.
 /// The selected session, or the way to start one. Its own view, so that a switch redraws
-/// this pane alone and not the window's body.
-///
-/// A session whose history is still being read stays off screen until it is in, the last one
-/// shown standing in: an empty transcript sits at the top, then jumps to the bottom when its
-/// entries land, and the toolbar's scroll-edge blur went off and back on, a blink at every
-/// switch.
-private struct SelectedSessionPane: View {
+/// this pane alone and not the window's body. The session is shown at once, from the deck
+/// when it was shown lately, its history read in behind when it was not.
+struct SelectedSessionPane: View {
   let project: Project
-  @State private var shownID: ProjectSession.ID?
 
   var body: some View {
-    Group {
-      if let item = project.sessions.first(where: { $0.id == shownID }) ?? project.selected {
-        SessionView(item: item, project: project).id(item.id)
-      } else {
-        ContentUnavailableView {
-          Label("No session", systemImage: "bubble.left.and.text.bubble.right")
-        } actions: {
-          Button("New Session") { project.newSession() }
-        }
+    if let item = project.selected {
+      SessionDeck(
+        project: project, selectedID: item.id, tabIDs: Set(project.sessions.map(\.id)))
+    } else {
+      ContentUnavailableView {
+        Label("No session", systemImage: "bubble.left.and.text.bubble.right")
+      } actions: {
+        Button("New Session") { project.newSession() }
       }
-    }
-    .task(id: project.selectedID) {
-      guard let item = project.selected else {
-        shownID = nil
-        return
-      }
-      await item.session.loadHistory()
-      if !Task.isCancelled { shownID = item.id }
     }
   }
 }
@@ -476,6 +459,9 @@ private struct StoredProjectWriter: View {
   }
 }
 
+/// Floats the window a view is in above other apps' windows, or puts it back among them.
+/// Applied again once the view lands in a window, since a restored window has its level
+/// asked for before it has one.
 private struct WindowLevel: NSViewRepresentable {
   let floats: Bool
 

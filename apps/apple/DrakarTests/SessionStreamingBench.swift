@@ -92,20 +92,63 @@ struct SessionStreamingBench {
   @Test func aSessionStreamingOnScreen() async throws {
     defer { try? FileManager.default.removeItem(at: folder) }
     let project = Project(folder: folder)
-    let item = project.newSession(agent: .claude)
+    let item = streaming(in: project)
+    defer { item.session.stop() }
+
+    let window = Self.window(NSHostingView(rootView: SessionView(item: item, project: project)))
+    defer { window.close() }
+    try await measure(item, as: "streaming")
+  }
+
+  /// Where the streaming session is: shown by the deck as a tab, kept built in the deck behind
+  /// an idle tab shown in its place, or never shown, the control for what the stream costs
+  /// with no view at all.
+  enum DeckCase: String, CaseIterable {
+    case shown, hidden, neverShown
+  }
+
+  /// The same stream through the window's session pane (`SelectedSessionPane`). The hidden
+  /// tab's figure, between the shown one's and the never shown one's, is what a session the
+  /// deck keeps built costs while it streams out of the window.
+  @Test(arguments: DeckCase.allCases)
+  func aSessionStreamingInTheDeck(_ place: DeckCase) async throws {
+    defer { try? FileManager.default.removeItem(at: folder) }
+    let project = Project(folder: folder)
+    let item = streaming(in: project, shown: place != .neverShown)
+    defer { item.session.stop() }
+    let window = Self.window(NSHostingView(rootView: SelectedSessionPane(project: project)))
+    // Above the windows of whoever is using the Mac: SwiftUI holds back the updates of a
+    // window nothing of shows, which would make the stream look free.
+    window.level = .floating
+    defer { window.close() }
+    if place != .shown {
+      // Built and drawn first when it is to be hidden, then an idle tab in its place.
+      try await Task.sleep(for: .milliseconds(500))
+      project.newSession(agent: .claude)
+    }
+    try await measure(item, as: "deck \(place.rawValue)")
+  }
+
+  private func streaming(in project: Project, shown: Bool = true) -> ProjectSession {
+    let item = project.newSession(agent: .claude, select: shown)
     item.session.executableOverride = fake
     item.session.accounts = { [] }
     item.session.makeTransport = { AgentProcess($0) }
-    defer { item.session.stop() }
+    return item
+  }
 
+  private static func window(_ content: NSView) -> NSWindow {
     let window = NSWindow(
       contentRect: NSRect(x: 80, y: 80, width: 900, height: 900),
       styleMask: [.titled, .resizable], backing: .buffered, defer: false)
     window.isReleasedWhenClosed = false
-    window.contentView = NSHostingView(rootView: SessionView(item: item, project: project))
+    window.contentView = content
     window.orderFrontRegardless()
-    defer { window.close() }
+    return window
+  }
 
+  /// Sends the prompt, lets the history land, then times the stream against an idle span.
+  private func measure(_ item: ProjectSession, as label: String) async throws {
     item.session.send("go")
     try await wait(for: fake.appendingPathExtension("ready"))
     // Let the history land and draw before anything is measured.
@@ -133,9 +176,10 @@ struct SessionStreamingBench {
     print(
       String(
         format:
-          "BENCH streaming: %d tokens over %.1f s, %d entries; main thread %.0f ms (%.1f%% of a core, %.2f ms a token); idle control %.0f ms over %.1f s",
-        Self.tokens, ms(wall) / 1000, entries, ms(streaming), 100 * ms(streaming) / ms(wall),
-        ms(streaming) / Double(Self.tokens), ms(idle), ms(span) / 1000))
+          "BENCH %@: %d tokens over %.1f s, %d entries; main thread %.0f ms (%.1f%% of a core, %.2f ms a token); idle control %.0f ms over %.1f s",
+        label, Self.tokens, ms(wall) / 1000, entries, ms(streaming),
+        100 * ms(streaming) / ms(wall), ms(streaming) / Double(Self.tokens), ms(idle),
+        ms(span) / 1000))
     #expect(entries > Self.history)
   }
 }
