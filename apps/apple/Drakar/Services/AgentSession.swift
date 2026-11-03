@@ -1570,13 +1570,19 @@ final class AgentSession {
   /// window or launch takes it back on its own, and the host is asked to end it once its turn
   /// does, then the app lets it go. With prompts queued, the turn's end is not the end of its
   /// work, so it is not ended then: it runs on in the background, listed and reopenable. A
-  /// process with no meta to mark is handed over all the same, rather than lose its turn.
+  /// process with no meta to mark, or whose host is out of reach while the app reconnects
+  /// (where a meta sent would be lost), is handed over all the same, unmarked, rather than
+  /// lose its turn: as a closed window leaves it, for the next launch to take back.
   /// Anything else stops as a removed row did: idle, it ends; the app's own child at work
   /// loses its turn, which the window asks about first; a runner's session carries on in its
   /// host as any stop leaves it. True when it was handed over marked closed.
   @discardableResult func closeTab() -> Bool {
     guard isAtWork, !isOnRunner, let hosted = process as? HostedProcess else {
       stop()
+      return false
+    }
+    guard !isReconnecting else {
+      stop(handingOver: true)
       return false
     }
     let marked = sendMeta(closedAtWork: true)

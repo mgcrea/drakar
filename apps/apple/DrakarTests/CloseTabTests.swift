@@ -322,6 +322,37 @@ struct CloseTabTests {
     #expect(project.selectedID == back.id)
   }
 
+  /// Closed while the app reconnects to its host, nothing sent would reach the host: the
+  /// process is handed over unmarked, as a closed window leaves it, listed as closed nowhere,
+  /// and the next window on the folder takes it back.
+  @Test func aTabClosedWhileReconnectingIsHandedOverUnmarked() async throws {
+    defer { cleanUp() }
+    let app = app()
+    let project = window(on: app)
+    defer { project.stopAll() }
+    let live = await start("go-stream", in: project)
+    #expect(await eventually { says(live, "one") })
+    let sessionID = try #require(live.sessionID)
+    project.monitor = try await monitor(listing: sessionID)
+
+    host.stop()
+    #expect(await eventually { live.isReconnecting })
+    let row = try #require(project.sessions.first { $0.session === live })
+    project.closeTab(row)
+    #expect(project.sessions.isEmpty)
+    #expect(project.groups.elsewhere.isEmpty)
+
+    try host.start()
+    #expect(await eventually { await app.held().first?.attachedApp == nil })
+    #expect(await heldMeta(on: app)?.closedAtWork == nil)
+    #expect(await app.held().first?.running == true)
+    let later = window(on: app)
+    defer { later.stopAll() }
+    await later.adoptHeld(await app.held())
+    #expect(later.sessions.count == 1)
+    #expect(later.sessions.first?.session.isHosted == true)
+  }
+
   /// Opened again from Home: a live tab, the mark cleared, and no longer ended by its turn.
   @Test func reopeningClearsTheMark() async throws {
     defer { cleanUp() }
