@@ -164,6 +164,7 @@ private struct SessionCommands: View {
       if let selected = project?.selected { RenameSessionPrompt.run(for: selected) }
     }
     .disabled(project?.canRenameSelected != true)
+    TabCommands(project: project)
     // From anywhere in the window, the composer included, which keeps the arrow keys.
     Button("Previous Session") { project?.step(-1, wrapping: true) }
       .keyboardShortcut(.upArrow, modifiers: [.command, .option])
@@ -194,6 +195,43 @@ private struct SessionCommands: View {
       .disabled(project?.canDismissSelected != true)
     AnswerCommands(project: project)
     HandoffCommand(project: project)
+  }
+}
+
+/// Session > Select Tab 1 to 8 (⌘1 to ⌘8), Select Last Tab (⌘9), and Show Next and Previous
+/// Tab, wrapping as Next and Previous Session do: ⌃Tab and ⌃⇧Tab, as in Safari, and ⇧⌘] and
+/// ⇧⌘[, as in Xcode. A menu item has one shortcut, so each has two items. Apart so that only
+/// they redraw as the tabs come and go.
+private struct TabCommands: View {
+  let project: Project?
+
+  /// ⌃⇧Tab as AppKit hands it over: the back tab character, which a tab with ⇧ never matches.
+  private static let backTab = KeyEquivalent("\u{19}")
+
+  var body: some View {
+    let count = project?.tabs.count ?? 0
+    Divider()
+    ForEach(0..<8, id: \.self) { index in
+      Button("Select Tab \(index + 1)") { project?.selectTab(at: index) }
+        .keyboardShortcut(KeyEquivalent(Character("\(index + 1)")))
+        .disabled(index >= count)
+    }
+    Button("Select Last Tab") { project?.selectTab(at: 8) }
+      .keyboardShortcut("9")
+      .disabled(count == 0)
+    Button("Show Next Tab") { project?.step(1, wrapping: true) }
+      .keyboardShortcut(.tab, modifiers: .control)
+      .disabled(count == 0)
+    Button("Show Previous Tab") { project?.step(-1, wrapping: true) }
+      .keyboardShortcut(Self.backTab, modifiers: [.control, .shift])
+      .disabled(count == 0)
+    Button("Show Next Tab") { project?.step(1, wrapping: true) }
+      .keyboardShortcut("]", modifiers: [.command, .shift])
+      .disabled(count == 0)
+    Button("Show Previous Tab") { project?.step(-1, wrapping: true) }
+      .keyboardShortcut("[", modifiers: [.command, .shift])
+      .disabled(count == 0)
+    Divider()
   }
 }
 
@@ -385,17 +423,30 @@ private struct SkillsCommand: View {
   }
 }
 
-/// ⌘W closes the active tab, then the window once no tab is left, as in Xcode and VS Code;
-/// ⇧⌘W closes the window whatever it holds. Both go through the questions about unsaved
-/// work: the tab's, and the window's guard.
+/// ⌘W closes the editor's file while the editor has the keys, else the session tab shown,
+/// then the window once no tab is left, as in Xcode and VS Code (`CloseTarget`); ⇧⌘W closes
+/// the window whatever it holds. All go through the questions about unsaved work: the
+/// file's, the tab's (`TabClosing`), and the window's guard.
 private struct CloseCommands: View {
   @FocusedValue(\.workspace) private var workspace
+  @FocusedValue(\.project) private var project
+
+  private var target: CloseTarget {
+    CloseTarget.resolve(
+      focusedPane: workspace?.focusedPane, hasActiveDocument: workspace?.active != nil,
+      hasSelectedTab: project?.selected != nil)
+  }
 
   var body: some View {
-    Button(workspace?.active == nil ? "Close" : "Close Tab") {
-      if let workspace, let document = workspace.active {
-        workspace.requestClose(document)
-      } else {
+    Button(target == .window ? "Close" : "Close Tab") {
+      switch target {
+      case .document:
+        if let workspace, let document = workspace.active { workspace.requestClose(document) }
+      case .tab:
+        if let project, let selected = project.selected {
+          TabClosing.request(selected, in: project)
+        }
+      case .window:
         NSApp.keyWindow?.performClose(nil)
       }
     }

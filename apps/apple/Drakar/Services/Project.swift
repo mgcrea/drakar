@@ -1582,6 +1582,15 @@ final class Project {
     return true
   }
 
+  /// ⌘1–⌘8: the tab at `index` in the tabs' order, shown as a click shows it; 8 (⌘9) is the
+  /// last, however many there are. Past the tabs, nothing changes.
+  func selectTab(at index: Int) {
+    let tabs = tabs
+    guard let item = index == 8 ? tabs.last : tabs.indices.contains(index) ? tabs[index] : nil
+    else { return }
+    showTab(item)
+  }
+
   /// `item` shown as a click on its tab shows it, its composer taking the keys unless
   /// `focusingComposer` is false. Another tab's composer is the deck's to focus once the
   /// session is in the window (`SessionDeck`), which every switch goes through; the tab
