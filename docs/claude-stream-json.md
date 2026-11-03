@@ -269,6 +269,22 @@ yet:
 | `system` `compact_boundary` | `compact_metadata: {trigger: auto \| manual, pre_tokens, post_tokens?}` | A note: "Conversation compacted (auto, 617K tokens before)". The transcript file writes the same line camelCased (`compactMetadata.preTokens`), which history does not read: it notes the `isCompactSummary` prompt instead. |
 | `system` `notification` | `key`, `text`, `priority`, `color?`, `timeout_ms?` | A note, red when `color` is `error`. |
 
+**Idle compaction never runs in Drakar's sessions** (read from the 2.1.316 binary,
+2026-11-03). The CLI compacts a long conversation shortly before its prompt cache expires
+(`idleCompaction`, on unless set false): 90 % into an hour's cache, only when the newest
+request cached for an hour, auto-compact is on, the context holds at least 200k tokens
+(`CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS`, floored at 100k) and no request has gone since. It
+arms that timer only for a session it takes to be attended: interactive, or not a child
+session and an entrypoint on a fixed list (`claude-vscode`, `claude-desktop`, `local-agent`,
+the `remote*` ones…). Drakar's run `-p` and so are `sdk-cli`, which is not on it, so the
+timer never arms. Setting `CLAUDE_CODE_ENTRYPOINT` to a listed one would misattribute every
+request and change whatever else the CLI keys on it (and Drakar reads `claude-vscode` itself,
+as "Show in VS Code"), so Drakar does it instead: it sends `/compact` when idle, by the same
+rules (`IdleCompaction`, `AgentSession.compactIfIdle`). In an SDK session the CLI would not
+compact either but write the summary in the background and swap it in at the next prompt
+("Compacted using a summary written while you were away"); a plain `/compact` is what a
+client can send.
+
 ## Plans, todos and subagents (verified 2026-10-06, 2.1.288; extension 2.1.289)
 
 Captured live on `haiku` (fixtures `plan-request` and `subagent-and-todos`).

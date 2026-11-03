@@ -126,6 +126,11 @@ enum PreferenceKey {
   static let commandLinked = "drakar.commandLinked"
   /// Whether the Mac stays awake while an agent works (`KeepAwake`); on unless turned off.
   static let keepsAwake = "drakar.keepsAwake"
+  /// Whether an idle Claude Code session compacts before its prompt cache expires
+  /// (`IdleCompaction`); on unless turned off.
+  static let compactsIdle = "drakar.compactsIdle"
+  /// The command a compaction Drakar starts sends first (`/distill`); empty for none.
+  static let compactionFirst = "drakar.compactionFirst"
 }
 
 /// What Settings picked for the sessions Drakar starts.
@@ -191,6 +196,14 @@ enum ClaudeChoice {
     _ = AttentionDefaults.shared.revision
     return stored(PreferenceKey.defaultModel)
   }
+
+  /// An idle session compacts before its prompt cache expires. On by default.
+  static var compactsIdle: Bool {
+    defaults.object(forKey: PreferenceKey.compactsIdle) as? Bool ?? true
+  }
+
+  /// The command a compaction Drakar starts sends first; nil for none.
+  static var compactionFirst: String? { stored(PreferenceKey.compactionFirst) }
 
   /// The model menus list older pinned models. Off by default.
   static var showsLegacyModels: Bool {
@@ -414,6 +427,7 @@ struct GeneralPane: View {
         )
       }
       ClaudeSection()
+      CompactionSection()
       CommandLineSection()
       Section {
         Picker("Be the editor for Claude Code in a terminal", selection: $editorScope) {
@@ -562,6 +576,34 @@ private struct FeedbackToggle: View {
 }
 
 /// The `drakar` command, linked with one click, as VS Code's "Install 'code' command".
+/// Compactions Drakar starts: before an idle session's prompt cache expires, as Claude Code
+/// does itself only where it takes the session to be attended, and the command sent first.
+private struct CompactionSection: View {
+  @AppStorage(PreferenceKey.compactsIdle) private var compactsIdle = true
+  @AppStorage(PreferenceKey.compactionFirst) private var first = ""
+
+  var body: some View {
+    Section {
+      Toggle("Compact idle conversations before the prompt cache expires", isOn: $compactsIdle)
+        .accessibilityIdentifier("settings.compactsIdle")
+      Text(
+        "Six minutes before an idle session’s hour of cache runs out, once its context holds 200k tokens (CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS sets another floor). Claude Code does this itself in a terminal or VS Code, but not for the sessions Drakar runs."
+      )
+      .font(.caption)
+      .foregroundStyle(.secondary)
+      TextField("Run first", text: $first, prompt: Text(verbatim: "/distill"))
+        .accessibilityIdentifier("settings.compactionFirst")
+      Text(
+        "Sent before Drakar compacts, idle or from the Session inspector. If that turn stops to ask you something, Drakar does not compact."
+      )
+      .font(.caption)
+      .foregroundStyle(.secondary)
+    } header: {
+      Text("Compaction")
+    }
+  }
+}
+
 private struct CommandLineSection: View {
   /// Where the link goes, once the login shell's PATH is known.
   @State private var directory: URL?

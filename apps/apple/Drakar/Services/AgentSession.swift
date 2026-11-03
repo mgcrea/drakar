@@ -346,6 +346,14 @@ final class AgentSession {
   /// Bumped by every `stop()`: a spawn that started before one must not start a process
   /// after it, for a window that closed or a row that was removed meanwhile.
   @ObservationIgnored private var stopCount = 0
+  /// The compaction Drakar started (`compact()`, `compactIfIdle`), until the last turn it
+  /// sent ends; dropped by anything the person sends or stops.
+  @ObservationIgnored private var compaction: CompactionRun?
+  /// The transcript's pauses as that turn started: more than its own end's, and it asked
+  /// the person.
+  @ObservationIgnored private var pausesAtCompaction = 0
+  /// The idle compaction's timer, and the time it is set for.
+  @ObservationIgnored private var idleTimer: (due: Date, task: Task<Void, Never>)?
 
   /// `agent` nil takes the target's, else Claude Code. `backend` stands in for tests.
   init(
@@ -1008,6 +1016,16 @@ final class AgentSession {
   func send(
     _ prompt: String, context: [EditorSelection] = [], attachments: [Attachment] = []
   ) {
+    // The person's message comes before what a compaction Drakar started would send next.
+    compaction = nil
+    submit(prompt, context: context, attachments: attachments, byPerson: true)
+  }
+
+  /// `send`'s, and a compaction's own prompts (not `byPerson`), which are not a reply.
+  private func submit(
+    _ prompt: String, context: [EditorSelection] = [], attachments: [Attachment] = [],
+    byPerson: Bool
+  ) {
     let text = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
     guard canSend || canQueue, !text.isEmpty || !attachments.isEmpty else { return }
     let label = context.isEmpty ? nil : context.map(\.label).joined(separator: ", ")
@@ -1027,7 +1045,7 @@ final class AgentSession {
     transcript.addPrompt(text, context: label, attachments: previews, uuid: uuid)
     rewinds.turnStarted()
     onPromptSent?()
-    if answersTurn { onReplied?() }
+    if answersTurn, byPerson { onReplied?() }
     if isLoadingHistory { promptsDuringLoad.append((text, label, previews, uuid)) }
     let effect = NoteEffect.prompt(text: text, context: label, attachments: previews)
     if process == nil {
@@ -1039,6 +1057,83 @@ final class AgentSession {
     } else {
       write(command, effect: effect)
     }
+  }
+
+  /// The inspector's Compact can go: a Claude Code conversation, between turns.
+  var canCompact: Bool { agent == .claude && canSend && status.hasEntries }
+
+  /// Compacts the conversation, after the command Settings runs first, if any: `/compact`
+  /// once that command's turn ends, unless it stopped to ask the person.
+  func compact() {
+    guard canCompact else { return }
+    start(CompactionRun(first: ClaudeChoice.compactionFirst, idle: false))
+  }
+
+  private func start(_ run: CompactionRun) {
+    compaction = run
+    pausesAtCompaction = transcript.pauses
+    submit(run.prompt, byPerson: false)
+  }
+
+  /// A turn of a compaction Drakar started ended: sends what comes next, and says so.
+  private func compactionTurnEnded() -> Bool {
+    guard var run = compaction else { return false }
+    compaction = nil
+    let wasFirst = run.isRunningFirst
+    // Its own end is one pause; any other was a question.
+    let asked = transcript.pauses - pausesAtCompaction > 1
+    guard let next = run.turnEnded(asked: asked) else {
+      if wasFirst, asked, let first = run.first {
+        transcript.addNotice(
+          String(localized: "Not compacted: \(first) stopped to ask you something."))
+      }
+      return false
+    }
+    compaction = run
+    pausesAtCompaction = transcript.pauses
+    submit(next, byPerson: false)
+    return true
+  }
+
+  /// Sets the idle compaction's timer for when the session's cache says, or takes it back.
+  /// One that went off stays, so the same time is not set again.
+  private func armIdleCompaction() {
+    let due =
+      agent == .claude && process != nil ? IdleCompaction.due(transcript.promptCache) : nil
+    guard due != idleTimer?.due else { return }
+    idleTimer?.task.cancel()
+    idleTimer = due.map { due in
+      let task = Task { @MainActor [weak self] in
+        try? await Task.sleep(for: .seconds(max(0, due.timeIntervalSinceNow)))
+        let environment = await Self.environment.value
+        guard !Task.isCancelled, let self else { return }
+        self.compactIfIdle(at: .now, floor: IdleCompaction.floor(environment: environment))
+      }
+      return (due, task)
+    }
+  }
+
+  /// The idle timer went off: compacts, unless Settings, the session or its cache says not
+  /// to. The CLI's own rules (`IdleCompaction`), and nothing waiting on the person.
+  func compactIfIdle(at now: Date, floor: Int) {
+    let cache = transcript.promptCache
+    guard ClaudeChoice.compactsIdle, agent == .claude, process != nil, phase == .ready,
+      canSend, compaction == nil, !status.isWaitingOnPerson,
+      transcript.queuedPrompts.isEmpty, let due = IdleCompaction.due(cache),
+      let anchor = cache.anchor,
+      IdleCompaction.refusal(
+        at: now, due: due, contextTokens: status.contextUsage?.total,
+        autoCompacts: reportedContext?.autoCompactThreshold != nil, floor: floor) == nil
+    else { return }
+    let idle = PromptCache.idle(now.timeIntervalSince(anchor))
+    let run = CompactionRun(first: ClaudeChoice.compactionFirst, idle: true)
+    transcript.addNotice(
+      run.first.map {
+        String(
+          localized: "Idle \(idle). Running \($0), then compacting before the prompt cache expires."
+        )
+      } ?? String(localized: "Idle \(idle). Compacting before the prompt cache expires."))
+    start(run)
   }
 
   /// Starts `claude`, resuming this session if it has a transcript.
@@ -1387,6 +1482,7 @@ final class AgentSession {
   /// waits on is cancelled first, so that the server is not left waiting on it.
   func interrupt(keepingQueued: Bool = false) {
     guard status.isRunning else { return }
+    compaction = nil
     // Kept waiting while reconnecting, as `answer` keeps them: a cancel now would reach nobody.
     if !isReconnecting {
       for pending in status.pendingElicitations { send(.cancel, to: pending) }
@@ -1424,6 +1520,9 @@ final class AgentSession {
     stopCount += 1
     pendingPrompt = nil
     pendingEffect = .none
+    compaction = nil
+    idleTimer?.task.cancel()
+    idleTimer = nil
     let wasRunning = process != nil
     // Ended now, on a live connection; one sent once reconnected says so itself, once taken.
     var endedNow = false
@@ -1866,14 +1965,19 @@ final class AgentSession {
     if turnEnded {
       if !features.picksApplyAtOnce { pillNote = nil }
       if savedTarget == nil { savedTarget = locateTarget() }
+      // A compaction's turns are not announced while it goes on, nor at all when idle: the
+      // person is likely away, and the transcript says what was done.
+      let idle = compaction?.isIdle == true
+      let goesOn = !isReplaying && compactionTurnEnded()
       // Not while a queued prompt is about to start the next one: said once the queue
       // empties without a turn, should it be cancelled or refused instead.
       if !transcript.queuedPrompts.isEmpty {
         turnEndDeferred = true
       } else if !isReplaying {
-        onTurnEnded?()
+        if goesOn || idle { Attention.shared.refresh() } else { onTurnEnded?() }
       }
     }
+    if !isReplaying { armIdleCompaction() }
   }
 
   /// Takes `records` as the live session took them, writing nothing: a note down the path
@@ -1890,6 +1994,7 @@ final class AgentSession {
       isReplaying = false
       transport.mode = .muted
       display()
+      armIdleCompaction()
     }
     let batch = 1_000
     var parsing: [Task<[AgentProcess.Line?], Never>] = []

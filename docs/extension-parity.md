@@ -136,6 +136,11 @@ Protocol changes are the other half and have their own procedure (raising
 | `create_output_style` | no | Create a custom output style | | skip: editors for files you own; Drakar opens the files |
 | `set_level` | no | Unclear: 2.1.311 only answers "Levels are not available in this build" | | |
 
+Not a request, so no row: the CLI's **idle compaction** (`idleCompaction`, 2.1.316), which it
+runs for the extension's sessions (`claude-vscode`) and never for Drakar's (`sdk-cli`), as
+docs/claude-stream-json.md explains. Drakar does it itself, with a command to run first:
+`AgentSession.compactIfIdle`, Settings › General › Compaction. Decision: adopt (2026-11-03).
+
 ## Memory
 
 | request | status | what | evidence | decision |

@@ -25,8 +25,16 @@ struct SessionInspector: View {
 
 private struct SessionDetails: View {
   let item: ProjectSession
+  @AppStorage(PreferenceKey.compactionFirst) private var compactionFirst = ""
 
   private var session: AgentSession { item.session }
+
+  /// Says the command Settings runs first, which the button sends before compacting.
+  private var compactTitle: String {
+    CompactionRun(first: compactionFirst, idle: false).first.map {
+      String(localized: "Run \($0), then Compact")
+    } ?? String(localized: "Compact")
+  }
   /// Only what `status` carries: the tab is not redrawn as text streams in.
   private var transcript: Transcript.Status { session.status }
 
@@ -54,6 +62,11 @@ private struct SessionDetails: View {
     Form {
       Section("Context") {
         ContextHeadline(gauge: gauge, modelID: modelID, compactsAt: reply?.autoCompactThreshold)
+        if session.agent == .claude, !session.isReadOnly {
+          Button(compactTitle) { session.compact() }
+            .disabled(!session.canCompact)
+            .accessibilityIdentifier("inspector.compact")
+        }
       }
       Section {
         if let reply {
