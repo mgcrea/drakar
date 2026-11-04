@@ -14,7 +14,7 @@ export const APP_NAME = "Drakar";
 export const BUNDLE_ID = "io.mgcrea.Drakar";
 
 // <generated:version> generated from MARKETING_VERSION by `pnpm version:sync` — do not edit by hand
-export const APP_VERSION = "1.2.0";
+export const APP_VERSION = "1.3.0";
 // </generated:version>
 
 /** README's first sentence, word for word. */

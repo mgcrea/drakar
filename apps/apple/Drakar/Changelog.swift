@@ -205,14 +205,90 @@ nonisolated enum Changelog {
 
   // <generated:changelog> generated from CHANGELOG.md by `make changelog` — do not edit by hand
 
-  /// The most recent 3 releases, newest first.
+  /// The most recent 4 releases, newest first.
   ///
   /// Split into one `let` per release rather than a single nested literal.
   /// Swift's expression type-checker is superlinear in the depth of an array
   /// literal, and this one is releases of sections of entries of strings — the
   /// exact shape that turns into a multi-second type-check with no diagnostic.
   // swift-format-ignore
-  static let releases: [Release] = [v1_2_0, v1_1_0, v1_0_0]
+  static let releases: [Release] = [v1_3_0, v1_2_0, v1_1_0, v1_0_0]
+
+  // swift-format-ignore
+  private static let v1_3_0: Release = Release(
+    version: "1.3.0",
+    date: "2026-11-04",
+    sections: [
+      Section(
+        name: "Added",
+        lead: [],
+        entries: [
+          Entry(
+            ordinal: 0,
+            headline: "Session tabs.",
+            body: [
+              "A window's sessions are tabs above the conversation, in the order you put them: a new one opens right of the tab shown, a drag moves one, and ⌘-click or ⇧-click marks tabs for one prompt to all. A session opened from Elsewhere or Ended shows in a single preview tab that the next one replaces; a double click keeps it. ⌘W closes the tab shown (the editor's file first, while the editor has the keys), ⌘1–⌘9 pick a tab, and ⌃Tab or ⇧⌘] moves to the next. A session shown recently comes back at once, its scroll position and draft kept.",
+            ]),
+          Entry(
+            ordinal: 1,
+            headline: "Closing a tab at work lets the turn finish.",
+            body: [
+              "The agent goes on in the background, listed under Elsewhere, and ends with its turn unless you open it again. Closing asks first only when something would be lost: a draft, or a turn Drakar cannot hand over.",
+            ]),
+          Entry(
+            ordinal: 2,
+            headline: "Idle compaction.",
+            body: [
+              "A session with 200k tokens of context, left idle, compacts six minutes before its hour of prompt cache runs out, as Claude Code does in a terminal, so the next prompt starts from a summary rather than reading the whole conversation again uncached. Settings › General › Compaction turns it off, or sends a command of yours first, such as `/distill`. The Session inspector's Compact does the same on demand.",
+            ]),
+          Entry(
+            ordinal: 3,
+            headline: "Send a queued message now.",
+            body: [
+              "An ↑ beside the first queued message stops the turn, as Esc does, and the queue goes at once.",
+            ]),
+        ]),
+      Section(
+        name: "Changed",
+        lead: [],
+        entries: [
+          Entry(
+            ordinal: 4,
+            headline: nil,
+            body: [
+              "A streaming reply is drawn 20 times a second rather than on every token, and no longer redraws the other windows, Home or the sidebar, so several agents at work no longer keep Drakar busy.",
+            ]),
+          Entry(
+            ordinal: 5,
+            headline: nil,
+            body: [
+              "The sidebar keeps Elsewhere and Ended; the sessions it listed under This Window are the tabs.",
+            ]),
+          Entry(
+            ordinal: 6,
+            headline: nil,
+            body: [
+              "A session with a very long log reopens in seconds rather than minutes.",
+            ]),
+        ]),
+      Section(
+        name: "Fixed",
+        lead: [],
+        entries: [
+          Entry(
+            ordinal: 7,
+            headline: nil,
+            body: [
+              "Scrolling up while an agent writes stays where you scrolled.",
+            ]),
+          Entry(
+            ordinal: 8,
+            headline: nil,
+            body: [
+              "Settings › Runner and a runner window's toolbar draw their icon.",
+            ]),
+        ]),
+    ])
 
   // swift-format-ignore
   private static let v1_2_0: Release = Release(

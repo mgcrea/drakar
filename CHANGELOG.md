@@ -4,9 +4,46 @@ Notable changes to this repository. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and every published artifact follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
-Releases are tagged `app-v<version>` the way the sibling repos are, `app-v1.2.0` being the newest.
+Releases are tagged `app-v<version>` the way the sibling repos are, `app-v1.3.0` being the newest.
 The GitHub release notes, the Sparkle update dialog and the app's What's New pane are all rendered
 from this file, which is the curated summary. `### Internal` sections are left out of all three.
+
+## [1.3.0] - 2026-11-04
+
+**Sessions in tabs.** A project window's sessions are tabs that switch at once, and closing one
+while its agent works lets the turn finish first. A long idle session also compacts before its
+prompt cache runs out, and streaming costs your Mac far less.
+
+### Added
+
+- **Session tabs.** A window's sessions are tabs above the conversation, in the order you put
+  them: a new one opens right of the tab shown, a drag moves one, and ⌘-click or ⇧-click marks
+  tabs for one prompt to all. A session opened from Elsewhere or Ended shows in a single preview
+  tab that the next one replaces; a double click keeps it. ⌘W closes the tab shown (the editor's
+  file first, while the editor has the keys), ⌘1–⌘9 pick a tab, and ⌃Tab or ⇧⌘] moves to the next.
+  A session shown recently comes back at once, its scroll position and draft kept.
+- **Closing a tab at work lets the turn finish.** The agent goes on in the background, listed
+  under Elsewhere, and ends with its turn unless you open it again. Closing asks first only when
+  something would be lost: a draft, or a turn Drakar cannot hand over.
+- **Idle compaction.** A session with 200k tokens of context, left idle, compacts six minutes
+  before its hour of prompt cache runs out, as Claude Code does in a terminal, so the next prompt
+  starts from a summary rather than reading the whole conversation again uncached. Settings ›
+  General › Compaction turns it off, or sends a command of yours first, such as `/distill`. The
+  Session inspector's Compact does the same on demand.
+- **Send a queued message now.** An ↑ beside the first queued message stops the turn, as Esc does,
+  and the queue goes at once.
+
+### Changed
+
+- A streaming reply is drawn 20 times a second rather than on every token, and no longer redraws
+  the other windows, Home or the sidebar, so several agents at work no longer keep Drakar busy.
+- The sidebar keeps Elsewhere and Ended; the sessions it listed under This Window are the tabs.
+- A session with a very long log reopens in seconds rather than minutes.
+
+### Fixed
+
+- Scrolling up while an agent writes stays where you scrolled.
+- Settings › Runner and a runner window's toolbar draw their icon.
 
 ## [1.2.0] - 2026-11-02
 
