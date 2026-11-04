@@ -101,7 +101,8 @@ test-app: sparkle ## Run the app target's tests
 test-all: test test-app ## Every suite
 
 # Attaches to the Drakar already running, whichever build it is; for numbers worth comparing,
-# run a Release build made here (`make build-release`), since a notarized one refuses the attach.
+# run a Release build made here (`make build-release`); a notarized one should refuse the attach
+# (hardened runtime, no get-task-allow), not tried.
 # SECONDS_PROFILED is how long to record.
 SECONDS_PROFILED ?= 30
 profile: ## Time-profile the running Drakar's main thread (SECONDS_PROFILED=30)

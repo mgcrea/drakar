@@ -10,7 +10,7 @@ functions (self). Run the same scenario before and after a change and compare.
 The Time Profiler barely slows the app; the SwiftUI template does (it symbolicates a
 backtrace on every observation), so its timings are not to be trusted, only its counts.
 Profile a Release build made here (`make build-release`): Debug's unoptimised code
-inflates the app's own frames, and a notarized build refuses the attach.
+inflates the app's own frames, and a notarized build should refuse the attach (not tried).
 """
 
 import argparse

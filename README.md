@@ -100,6 +100,10 @@ and pnpm (`pnpm install`). Formatting is `xcrun swift-format` with the root
 `.swift-format`, and oxfmt and oxlint for the rest; `make format-swift-check`,
 `pnpm format:check` and `pnpm lint` are the gates CI runs.
 
+Before changing what a view reads or how often the UI updates, read
+[docs/performance.md](docs/performance.md): how to measure the main thread
+(`make -C apps/apple profile`, `bench`) and what keeps a streamed token from redrawing the app.
+
 A release is a commit, a signed `app-v<version>` tag, and CI's `release-app` job, which
 builds, signs, notarizes, verifies and publishes it; [docs/releasing.md](docs/releasing.md)
 is the runbook. The same targets rehearse it locally:
