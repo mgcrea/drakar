@@ -47,13 +47,15 @@ final class AccountStore {
   /// home folder.
   func start() async {
     if let started { return await started.value }
-    let task = Task {
+    let task = Task<Void, Never> {
       let found = await discover()
       accounts = found.accounts
       shellAccount = found.shell
       await reloadChanged()
       poll = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
-        MainActor.assumeIsolated { Task { await self?.reloadChanged() } }
+        // Discarded and typed: Swift 6.3 (CI's Xcode 26.6) cannot tell what this closure
+        // returns, nor the Task's Failure, nor then the enclosing Task's.
+        MainActor.assumeIsolated { _ = Task<Void, Never> { await self?.reloadChanged() } }
       }
     }
     started = task

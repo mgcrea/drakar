@@ -1106,7 +1106,7 @@ final class AgentSession {
     guard due != idleTimer?.due else { return }
     idleTimer?.task.cancel()
     idleTimer = due.map { due in
-      let task = Task { @MainActor [weak self] in
+      let task = Task<Void, Never> { @MainActor [weak self] in
         try? await Task.sleep(for: .seconds(max(0, due.timeIntervalSinceNow)))
         let environment = await Self.environment.value
         guard !Task.isCancelled, let self else { return }
