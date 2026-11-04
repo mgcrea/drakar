@@ -423,6 +423,40 @@ A page, `docs/runner.md`, for the person and for users:
 - The host holds runner sessions: closing a window or quitting detaches them, idle or not,
   and only End Session ends one.
 
+## Departures in the build
+
+How it works for the person is in `docs/runner.md`. Where the build differs from the text
+above, the build stands:
+
+- **An ended runner session stays in Home** as "Ended · …" until it is forgotten, against
+  §4's table ("leaves Home"): the host keeps an exited process until it is acknowledged,
+  and hiding it would misstate what the runner holds.
+- **The runner has a stable id** (`RunnerSettings.id`, a UUID made on first save). Routes,
+  project keys and `meta.runner` use it, not the name or destination. Renaming the runner
+  updates its host object in place; a new destination or path retargets it in place (close
+  the ssh, swap the endpoint, reconnect). Only clearing the runner closes that host, and its
+  sessions end. Replacing the object on a rename would end every runner session, since a
+  closed runner host is final (next item).
+- **A closed runner host is final** for the sessions using it: they end, with no retry.
+- **A runner session always runs under the runner's own account** (its shell's
+  `CLAUDE_CONFIG_DIR`, or `~/.claude`). The spawn ignores the Mac's account pick: a Mac pick
+  with the same path, such as `~/.claude`, would otherwise match and strip the runner's
+  `CLAUDE_CONFIG_DIR`. The cost is no account choice for runner sessions in v1.
+- **On the runner's own Drakar, a runner session is a local session.** Its replay clears
+  `runner` and ignores a `meta.accountPick` that is not one of its accounts. `isOnRunner`
+  means "this app reaches it through a runner endpoint", so the runner's Drakar ends such a
+  session at an idle close or quit as it does any local one.
+- **A version mismatch names the Mac that is behind**: "Update Drakar on <runner>" or
+  "Update Drakar on this Mac". The spec assumed the runner is always the older one.
+- **Turning the opt-in off leaves `runner-environment.json` in place** (0600). The relay
+  refuses before reading it, and the next opt-in rewrites it.
+- **An unknown listing is never "free".** While the runner is out of reach (a nil `list`),
+  End Session, reconnecting and Home's rows treat a session's owner as unknown, so none of
+  them takes a session another Mac may hold.
+- **Tests never write `UserDefaults.standard`.** The opt-in and `RunnerSettings` read an
+  injectable `UserDefaults`, and the relay takes `--defaults-suite <name>`, honoured only
+  with `--directory`, so a test cannot flip the person's own Drakar settings.
+
 ## After v1
 
 - **Transcripts from the runner** (v2): a second relay mode, `Drakar --read <path> --from
