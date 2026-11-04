@@ -238,8 +238,11 @@ separate hand edit:
 | `CHANGELOG.md`                                | the top section titled `## [X.Y.Z] - YYYY-MM-DD`, dated the day the tag is pushed, never `- Unreleased`                    |
 | `CHANGELOG.md` intro                          | a sentence containing `` `app-vX.Y.Z` being the newest ``                                                                  |
 
-Armada counts 2 and also checks a version in its site's `config.ts`. Drakar's session host is a
-target of its own carrying the version, and Drakar's site carries none.
+Armada counts 2. Drakar's session host is a target of its own carrying the version.
+
+A fourth copy is generated, not hand-edited: `APP_VERSION` in `apps/website/src/config.ts`,
+written from the pbxproj by `pnpm version:sync`. CI's Website job (`pnpm version:check`) fails
+the tag when it drifts, and `make changelog-check` does not notice.
 
 CI reads the first `## [` heading of any kind, so an `## [Unreleased]` left above the new section
 fails the tag, and so does the pending form, `## [X.Y.Z] - Unreleased`, which Drakar's parser
@@ -259,12 +262,15 @@ the app, from the section's own entries.
 Then regenerate what is derived from them:
 
 ```bash
-make changelog      # Changelog.swift, the What's New pane's data
+make changelog      # Changelog.swift, the What's New pane's data, and the site's release card
 make revocations    # Revocations.swift from the Worker's D1: refunded keys stop at this build
+pnpm version:sync   # apps/website/src/config.ts
 ```
 
-Drakar's `make changelog` writes Changelog.swift alone; armada's also renders a release card for
-its site, which Drakar's has no page for.
+The release card is `apps/website/public/changelog/X.Y.Z.png` plus its entry in
+`apps/website/src/data/release-cards.json`; both go in the release commit. It lays out the
+summary's title, which must fit two lines (64 characters is the cheap bound in
+`scripts/lib/changelog.mjs`).
 
 **`make revocations` is not optional.** The app is not allowed to ask anything at runtime, so a
 refund or a lost chargeback since the last release is honoured only by a build that re-ran it.
@@ -288,6 +294,7 @@ grep -c "MARKETING_VERSION = $v;" apps/apple/Drakar.xcodeproj/project.pbxproj   
 grep -m 1 '^## \[' CHANGELOG.md                                                  # ## [X.Y.Z] - YYYY-MM-DD
 grep -q "\`app-v$v\` being the newest" CHANGELOG.md && echo intro-ok
 make changelog-check && make -C apps/apple format-swift-check && make test
+pnpm version:check && pnpm -C apps/api typecheck
 node scripts/changelog-notes.mjs "$v" CHANGELOG.md >/dev/null && echo appcast-notes-ok
 node scripts/changelog-notes.mjs --markdown "$v" CHANGELOG.md                     # the release body
 ```
@@ -303,6 +310,14 @@ promises that a check reads one file. Keep it that way.
 
 Use `/usr/bin/make` for any dry run. It is GNU make 3.81, the version CI runs, and it refuses
 things Homebrew's make 4.x forgives.
+
+**A local build does not prove CI's.** CI builds with the runner's Xcode, which can be older than
+the author's: on 2026-11-02 CI had Xcode 26.6 (Swift 6.3.3) and the Mac Xcode 27.2, and 6.3.3
+crashed in IRGen on a closure that 6.4 compiled (the first app-v1.2.0 run). When `main` holds
+commits no CI run has built, push them to a scratch branch and run
+`gh workflow run ci.yml --ref <branch>` before tagging. That run publishes nothing: deploys need a
+push to `main` and `release-app` a tag. Its Revocations job fails at once, because the
+`production` environment admits only `main` and `app-v*`; that failure means nothing.
 
 ### 4. Commit, tag, push: the tag first
 
