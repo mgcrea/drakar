@@ -4,11 +4,15 @@ Notable changes to this repository. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and every published artifact follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
-Releases are tagged `app-v<version>` the way the sibling repos are, `app-v1.3.0` being the newest.
+Releases are tagged `app-v<version>` the way the sibling repos are, `app-v1.4.0` being the newest.
 The GitHub release notes, the Sparkle update dialog and the app's What's New pane are all rendered
 from this file, which is the curated summary. `### Internal` sections are left out of all three.
 
-## [Unreleased]
+## [1.4.0] - 2026-11-07
+
+**An MCP server.** An AI agent on your Mac, such as Claude Code or Codex, can see your Drakar
+sessions, here and on your runner, and, if you allow it, start them, send them work and answer
+them.
 
 ### Added
 
