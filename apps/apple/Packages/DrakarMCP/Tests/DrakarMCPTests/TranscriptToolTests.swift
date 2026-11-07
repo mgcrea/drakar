@@ -114,6 +114,62 @@ struct TranscriptToolTests {
     #expect(entries.map { $0["index"] } == [0, 2])
   }
 
+  // MARK: - Entries that still change
+
+  private static let toolCall = [
+    #"{"type":"user","message":{"role":"user","content":"Build it"}}"#,
+    #"{"type":"assistant","message":{"id":"m1","content":[{"type":"tool_use","id":"t1","name":"Bash","input":{"command":"make"}}],"stop_reason":"tool_use"}}"#,
+  ]
+  private static let toolResult =
+    #"{"type":"user","message":{"role":"user","content":[{"tool_use_id":"t1","type":"tool_result","content":"Built.","is_error":false}]}}"#
+
+  @Test("The cursor holds at a running tool, which comes again once it is done")
+  func cursorHoldsAtRunningTool() async throws {
+    serve(Self.history(Self.toolCall))
+    var answer = try #require(await call(["session": .string(Self.id)]).structuredContent)
+    #expect(answer["entries"]?[1]?["status"] == "running")
+    #expect(answer["cursor"] == 1)
+
+    let finished = Self.history(Self.toolCall + [Self.toolResult])
+    serve(finished)
+    answer = try #require(
+      await call(["session": .string(Self.id), "after": answer["cursor"] ?? .null])
+        .structuredContent)
+    let entries = try #require(answer["entries"]?.arrayValue)
+    try #require(entries.map { $0["index"] } == [1])
+    #expect(entries[0]["status"] == "done")
+    #expect(entries[0]["result"] == "Built.")
+    #expect(answer["cursor"] == .int(finished.entries.count))
+  }
+
+  @Test("While a turn runs the cursor holds at its newest text or notice; after, it does not")
+  func cursorHoldsAtTrailingTextWhileRunning() async throws {
+    var transcript = Transcript()
+    transcript.addPrompt("Build it")
+    transcript.addNotice("Compacting")
+    #expect(TranscriptEncoding.page(transcript, after: nil, last: 20).cursor == 1)
+
+    transcript.processExited()
+    #expect(
+      TranscriptEncoding.page(transcript, after: nil, last: 20).cursor
+        == transcript.entries.count)
+  }
+
+  @Test("A page cut by last never holds the cursor where it began")
+  func cutPageMovesOn() throws {
+    // A call whose process went before its result: it will never finish.
+    let transcript = Self.history(
+      Self.toolCall + [
+        #"{"type":"assistant","message":{"id":"m2","stop_reason":"end_turn","content":[{"type":"text","text":"Gave up."}]}}"#
+      ])
+    try #require(transcript.entries.count == 3)
+    let page = TranscriptEncoding.page(transcript, after: 1, last: 1)
+    #expect(page.entries.map { $0["index"] } == [1])
+    #expect(page.cursor == 2)
+    // Not cut: it holds, and the reader waits on it with whatever follows.
+    #expect(TranscriptEncoding.page(transcript, after: 1, last: 5).cursor == 1)
+  }
+
   @Test("A transcript the source cannot read is refused with its sentence")
   func unreadableTranscript() async {
     serve(Transcript())

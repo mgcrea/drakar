@@ -222,7 +222,9 @@ public enum Tools {
           + "assistant, tool, system) and text; a tool call has name, summary (the one line "
           + "Drakar's tool card shows), status (running, done, error) and result (cut at 2 KB, "
           + "resultTruncated when it was) instead of text. Thinking is left out. Returns "
-          + "cursor: pass it as after to read only what came since.",
+          + "cursor: pass it as after to read only what came since. An entry still changing (a "
+          + "running tool, text still streaming) comes again on the next read with the same "
+          + "index: keep the later copy.",
         properties: [
           "session": sessionArgument,
           "after": [
