@@ -11,7 +11,9 @@ extension SessionMCPSource {
   // MARK: - Windows
 
   /// A window's row. One that only follows a session another process runs (a terminal's,
-  /// VS Code's) reads as that process's registry says, as the session's banner does.
+  /// VS Code's: one of the window's Elsewhere rows) is `elsewhere`, and reads as that
+  /// process's registry says, as the session's banner does. One another Drakar holds stays
+  /// the window's, read-only.
   func windowRow(
     _ item: ProjectSession, in project: Project, summary: SessionSummary?
   ) -> SessionRow {
@@ -29,6 +31,7 @@ extension SessionMCPSource {
     if session.heldElsewhere != nil {
       row.heldBy = session.belongsTo ?? "another Drakar window"
     } else if session.isReadOnly {
+      row.place = .elsewhere
       row.heldBy = summary.map { monitor.host(of: $0, excluding: project) } ?? "another app"
     }
     if let followed = Self.followed(item, summary: summary) {

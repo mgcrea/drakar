@@ -311,6 +311,34 @@ struct SessionMCPSourceTests {
     #expect(rows.first { $0.id == "s-both" }?.place == .window)
   }
 
+  /// A window's Elsewhere row, only following a terminal's session, is where that session
+  /// runs: elsewhere, read-only, held by the terminal, listed once.
+  @Test func aWindowsWatchedElsewhereRowIsElsewhere() async throws {
+    let (project, open, window) = try window()
+    defer {
+      project.stopAll()
+      open.unregister(window: window)
+    }
+    let (home, account) = try account(
+      transcripts: ["s-term"], live: [("s-term", getpid(), "busy")])
+    defer { try? FileManager.default.removeItem(at: home) }
+    let monitor = try await started(account, live: 1)
+    defer { monitor.stop() }
+    let summary = try #require(monitor.all.first { $0.sessionID == "s-term" })
+    let target = try #require(ResumeTarget(summary))
+    let item = project.attach(
+      target, watching: true, readOnly: true, focusingComposer: false, showing: false)
+    #expect(item.sessionID == "s-term")
+
+    let rows = await source(open, monitor: monitor).sessions(includeEnded: false, endedLimit: 0)
+    #expect(rows.map(\.id) == ["s-term"])
+    let row = try #require(rows.first)
+    #expect(row.place == .elsewhere)
+    #expect(row.readOnly)
+    #expect(row.heldBy == "a terminal")
+    #expect(row.state == .working)
+  }
+
   // MARK: - The session host
 
   private func held(
