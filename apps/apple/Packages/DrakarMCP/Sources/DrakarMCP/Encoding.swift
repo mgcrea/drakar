@@ -94,12 +94,48 @@ enum Encoding {
       "suggestions": .array(AlwaysOffer.offered(request).map(suggestion)),
     ]
     if truncated { fields["inputTruncated"] = true }
+    if case .fileChange(let path, let edits) = request.kind {
+      let (changes, cut) = truncating(fileChange(path: path, edits: edits), limit: inputLimit)
+      fields["changes"] = changes
+      if cut { fields["changesTruncated"] = true }
+    }
     if request.isChoice {
       fields["kind"] = "question"
       fields["questions"] = .array(UserQuestion.list(request.input).map(question))
     } else if request.kind == .planApproval {
       fields["kind"] = "plan"
       fields["plan"] = string(PlanApproval.plan(request.input))
+    }
+    return .object(fields)
+  }
+
+  /// What a file change would write: its path and each edit. A Codex patch prompt's input is
+  /// empty, so this is the only place a caller sees the diff an allow would apply.
+  private static func fileChange(path: String, edits: [FileEdit]) -> MCPKit.JSONValue {
+    ["path": .string(path), "edits": .array(edits.map(edit))]
+  }
+
+  /// One edit: its file, its `type`, and the text it carries under that type's own keys.
+  private static func edit(_ edit: FileEdit) -> MCPKit.JSONValue {
+    var fields: [String: MCPKit.JSONValue] = ["path": .string(edit.path)]
+    switch edit.change {
+    case .replace(let old, let new):
+      fields["type"] = "replace"
+      fields["old"] = .string(old)
+      fields["new"] = .string(new)
+    case .write(let content):
+      fields["type"] = "write"
+      fields["content"] = .string(content)
+    case .patch(let patch):
+      fields["type"] = "patch"
+      fields["patch"] = .string(patch)
+    case .delete(let content):
+      fields["type"] = "delete"
+      fields["content"] = .string(content)
+    case .move(let target, let patch):
+      fields["type"] = "move"
+      fields["to"] = .string(target)
+      fields["patch"] = .string(patch)
     }
     return .object(fields)
   }

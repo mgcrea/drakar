@@ -211,6 +211,62 @@ struct ReadToolsTests {
     #expect(encoded["suggestions"] == [])
   }
 
+  @Test("A Codex patch carries its changes, each string cut at 4 KB, and says so")
+  func fileChangeCarriesChanges() throws {
+    let huge = String(repeating: "+x\n", count: 5_000)
+    var request = PermissionRequest(
+      toolName: "Edit", input: .object([:]), description: "Apply the fix", toolUseID: "item_1",
+      kind: .fileChange(
+        path: "/repo/a.swift",
+        edits: [
+          FileEdit(path: "/repo/a.swift", change: .replace(old: "let a = 1", new: "let a = 2")),
+          FileEdit(path: "/repo/new.txt", change: .patch(huge)),
+        ]))
+    request.suggestions = [CodexPolicy.acceptForSession]
+    let encoded = Encoding.pending(.permission(requestID: "0", request: request))
+    #expect(encoded["input"] == [:])
+    let changes = try #require(encoded["changes"])
+    #expect(changes["path"] == "/repo/a.swift")
+    #expect(
+      changes["edits"]?[0]
+        == ["path": "/repo/a.swift", "type": "replace", "old": "let a = 1", "new": "let a = 2"])
+    let patch = try #require(changes["edits"]?[1])
+    #expect(patch["path"] == "/repo/new.txt")
+    #expect(patch["type"] == "patch")
+    #expect(patch["patch"]?.stringValue?.utf8.count == 4096)
+    #expect(encoded["changesTruncated"] == true)
+
+    let small = PermissionRequest(
+      toolName: "Edit", input: .object([:]), toolUseID: "item_2",
+      kind: .fileChange(
+        path: "/repo/b.swift",
+        edits: [
+          FileEdit(path: "/repo/b.swift", change: .delete(content: "gone")),
+          FileEdit(path: "/repo/c.swift", change: .move(to: "/repo/d.swift", patch: "@@ -1 +1 @@")),
+          FileEdit(path: "/repo/e.swift", change: .write(content: "hello")),
+        ]))
+    let whole = Encoding.pending(.permission(requestID: "1", request: small))
+    #expect(
+      whole["changes"]
+        == [
+          "path": "/repo/b.swift",
+          "edits": [
+            ["path": "/repo/b.swift", "type": "delete", "content": "gone"],
+            [
+              "path": "/repo/c.swift", "type": "move", "to": "/repo/d.swift",
+              "patch": "@@ -1 +1 @@",
+            ],
+            ["path": "/repo/e.swift", "type": "write", "content": "hello"],
+          ],
+        ])
+    #expect(whole["changesTruncated"] == nil)
+
+    let bash = Encoding.pending(
+      .permission(
+        requestID: "2", request: Self.request("Bash", .object(["command": .string("ls")]))))
+    #expect(bash["changes"] == nil)
+  }
+
   @Test("A cut never splits a character")
   func truncatingKeepsWholeScalars() {
     let (value, truncated) = Encoding.truncating(.string("aé"), limit: 2)

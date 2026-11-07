@@ -164,7 +164,8 @@ set Home and the dock badge count (pending permissions, questions, plans, elicit
 and turns that ended asking something or offering something), most urgent first, each
 with `kind` (`permission` / `question` / `plan` / `elicitation` / `asked_in_text` /
 `offered_in_text`) and what it wants as data: for a permission, the request id, the
-tool name, its input (truncated to 4 KB per string value, saying so), and the suggestions
+tool name, its input (truncated to 4 KB per string value, saying so), for a file change
+its path and every edit as `changes` (truncated the same way), and the suggestions
 offered that `drakar_answer_permission` may apply (§3 Permissions), by index; for
 AskUserQuestion, the questions and their
 options; for a plan (ExitPlanMode), the plan text; for an elicitation, the server, message
