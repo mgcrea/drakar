@@ -154,7 +154,7 @@ final class MCPServerController {
 
   private func start(port: Int) {
     let listener = LoopbackListener(
-      server: Self.server(source: NotReadySource()),
+      server: Self.server(source: SessionMCPSource()),
       gate: RequestGate(port: port) { [tokens] presented in tokens.verdict(for: presented) },
       allowWrites: { [writesAllowed] in writesAllowed.value },
       // One line per request: method, tool, outcome, duration. Never the arguments, which
@@ -208,31 +208,6 @@ private nonisolated final class WritesFlag: @unchecked Sendable {
     get { lock.withLock { stored } }
     set { lock.withLock { stored = newValue } }
   }
-}
-
-/// Stands in for the app's sessions until `SessionMCPSource` answers from them: nothing to
-/// read, and every write refused.
-private nonisolated struct NotReadySource: SessionSource {
-  func sessions(includeEnded: Bool, endedLimit: Int) async -> [SessionRow] { [] }
-  func detail(of id: String) async -> SessionDetail? { nil }
-  func attention() async -> [AttentionItem] { [] }
-  func transcript(of id: String) async throws -> Transcript { Transcript() }
-  func projects() async -> [DrakarMCP.ProjectRow] { [] }
-  func runner() async -> RunnerStatus? { nil }
-  func workRefusal() async -> String? { Self.notReady.message }
-  func permissionsAllowed() async -> Bool { false }
-  func start(_ request: StartRequest) async throws -> String { throw Self.notReady }
-  func send(to id: String, text: String) async throws -> SendOutcome { throw Self.notReady }
-  func interrupt(_ id: String) async throws { throw Self.notReady }
-  func end(_ id: String) async throws { throw Self.notReady }
-  func answer(_ id: String, requestID: String, with decision: PermissionDecision) async throws {
-    throw Self.notReady
-  }
-  func answer(_ id: String, requestID: String, with answer: ElicitationAnswer) async throws {
-    throw Self.notReady
-  }
-
-  private static let notReady = SessionError("Not ready")
 }
 
 /// The server's name and its Bastion link, which the pane hands over, so the two cannot

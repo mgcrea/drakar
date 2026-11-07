@@ -93,3 +93,20 @@ struct LockedComposerCard: View {
     openSettings()
   }
 }
+
+extension LockedComposerCard {
+  /// The card's heading and sentence as one refusal, for work sent where the card cannot be
+  /// shown: a client of the MCP server. Kept beside the card's own words so the two say the
+  /// same; the trial is the person's to start, so only it and the key are named.
+  static var refusal: String {
+    Trial.hasRun
+      ? String(
+        localized:
+          "The trial has ended. Sessions keep running and their questions can still be answered. Enter a key to send more, or quit and reopen Drakar for another trial."
+      )
+      : String(
+        localized:
+          "Drakar needs a licence. A \(Int(Trial.duration / 60))-minute trial runs everything, with your own `claude` and accounts, and no key."
+      )
+  }
+}
