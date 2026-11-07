@@ -11,7 +11,7 @@ public enum Agent: String, Sendable, CaseIterable {
 }
 
 /// A session's state as a caller reads it, folded from Drakar's own.
-public enum SessionState: String, Sendable {
+public enum SessionState: String, Sendable, CaseIterable {
   case working, waiting, idle, reconnecting, unreachable, ended
 }
 

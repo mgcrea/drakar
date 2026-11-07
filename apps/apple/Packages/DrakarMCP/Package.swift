@@ -34,6 +34,12 @@ let package = Package(
         .product(name: "MCPKit", package: "swift-mcp-kit"),
         .product(name: "DrakarKit", package: "DrakarKit"),
       ]),
-    .testTarget(name: "DrakarMCPTests", dependencies: ["DrakarMCP"]),
+    .testTarget(
+      name: "DrakarMCPTests",
+      dependencies: [
+        "DrakarMCP",
+        .product(name: "MCPKit", package: "swift-mcp-kit"),
+        .product(name: "DrakarKit", package: "DrakarKit"),
+      ]),
   ]
 )
