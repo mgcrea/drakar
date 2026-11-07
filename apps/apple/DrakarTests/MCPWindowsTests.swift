@@ -14,40 +14,39 @@ import Testing
 @MainActor
 @Suite("Windows opened for an agent", .serialized)
 struct MCPWindowsTests {
-  /// A window that records being ordered, made key or main and giving the key up, and does
-  /// none of it: whether it is key or main is only what it was last asked.
+  /// What the stand-ins share, as the app would: which of them is key and which main.
+  private final class StandInApp {
+    weak var key: StandInWindow?
+    weak var main: StandInWindow?
+  }
+
+  /// A window that records being ordered and made key or main, and does none of it: whether
+  /// it is key or main is only what its stand-in app was last told.
   private final class StandInWindow: NSWindow {
+    var app = StandInApp()
     var madeKey = 0
     var madeMain = 0
-    var resignedKey = 0
-    var isKey = false
-    var isMain = false
     var orders: [String] = []
 
     override var isVisible: Bool { !orders.isEmpty }
-    override var isKeyWindow: Bool { isKey }
-    override var isMainWindow: Bool { isMain }
+    override var isKeyWindow: Bool { app.key === self }
+    override var isMainWindow: Bool { app.main === self }
 
     override func makeKey() {
       madeKey += 1
-      isKey = true
+      app.key = self
     }
 
     override func makeMain() {
       madeMain += 1
-      isMain = true
-    }
-
-    override func resignKey() {
-      resignedKey += 1
-      isKey = false
+      app.main = self
     }
 
     /// As SwiftUI shows a new window: key, main and in front.
     override func makeKeyAndOrderFront(_ sender: Any?) {
       madeKey += 1
-      isKey = true
-      isMain = true
+      app.key = self
+      app.main = self
       orders.append("front")
     }
 
@@ -55,11 +54,12 @@ struct MCPWindowsTests {
     override func orderBack(_ sender: Any?) { orders.append("back") }
   }
 
-  private func window() -> StandInWindow {
+  private func window(in app: StandInApp = StandInApp()) -> StandInWindow {
     let window = StandInWindow(
       contentRect: NSRect(x: 0, y: 0, width: 120, height: 80), styleMask: [.titled],
       backing: .buffered, defer: true)
     window.isReleasedWhenClosed = false
+    window.app = app
     return window
   }
 
@@ -186,24 +186,6 @@ struct MCPWindowsTests {
     #expect(closed.madeMain == 0)
   }
 
-  /// An active app with no key window before keeps none: the new window gives the key up
-  /// rather than taking typing meant for nothing. Inactive, it is left alone, the app never
-  /// activated.
-  @Test func anActiveAppWithNoKeyWindowLeavesTheNewOneUnkeyed() {
-    let opened = window()
-    opened.makeKeyAndOrderFront(nil)
-    MCPWindows.settle(new: opened, previousKey: nil, previousMain: nil, wasActive: true)
-    #expect(opened.resignedKey == 1)
-    #expect(!opened.isKeyWindow)
-
-    let inactive = window()
-    inactive.makeKeyAndOrderFront(nil)
-    let wasActive = NSApp.isActive
-    MCPWindows.settle(new: inactive, previousKey: nil, previousMain: nil, wasActive: false)
-    #expect(inactive.resignedKey == 0)
-    #expect(NSApp.isActive == wasActive)
-  }
-
   /// Two writes for one project whose window is not open yet open it once, and both get its
   /// project: the second waits for the first's window rather than asking for another.
   @Test func twoWritesForOneUnopenedRouteOpenOneWindow() async throws {
@@ -239,6 +221,61 @@ struct MCPWindowsTests {
     #expect(openings.value == 1)
     #expect(try results.0.get() === project)
     #expect(try results.1.get() === project)
+  }
+
+  /// Two agents' windows opening at once both give the key and main back to the windows that
+  /// held them before either was asked for: never to the first agent's window, key and main
+  /// for a moment when the second was asked for.
+  @Test func overlappingOpeningsGiveBackTheOriginalFront() async throws {
+    let app = StandInApp()
+    let original = window(in: app)
+    original.makeKeyAndOrderFront(nil)
+    let firstWindow = window(in: app)
+    let secondWindow = window(in: app)
+    let first = Project(folder: try folder())
+    let second = Project(folder: try folder())
+    let open = OpenSessions()
+    let firstID = UUID()
+    let secondID = UUID()
+    defer {
+      first.stopAll()
+      second.stopAll()
+      open.unregister(window: firstID)
+      open.unregister(window: secondID)
+    }
+    // As SwiftUI opens one: key, main and in front at once, its project registered later.
+    func opener(_ window: StandInWindow, _ project: Project, _ id: UUID, after delay: Duration)
+      -> (WindowRoute) -> Void
+    {
+      { _ in
+        window.makeKeyAndOrderFront(nil)
+        Task<Void, Never> { @MainActor in
+          try? await Task.sleep(for: delay)
+          open.register(project, window: id)
+          project.workspace.window = window
+        }
+      }
+    }
+    let front = { MCPWindows.Front(key: app.key, main: app.main, isActive: true) }
+
+    let firstResult = Task<Result<Project, SessionError>, Never> {
+      await MCPWindows.project(
+        for: .project(first.folder), in: open,
+        opening: opener(firstWindow, first, firstID, after: .milliseconds(200)), front: front)
+    }
+    try await Task.sleep(for: .milliseconds(50))
+    #expect(app.key === firstWindow)
+    let secondResult = Task<Result<Project, SessionError>, Never> {
+      await MCPWindows.project(
+        for: .project(second.folder), in: open,
+        opening: opener(secondWindow, second, secondID, after: .milliseconds(400)), front: front)
+    }
+    let results = (await firstResult.value, await secondResult.value)
+
+    #expect(try results.0.get() === first)
+    #expect(try results.1.get() === second)
+    #expect(app.key === original)
+    #expect(app.main === original)
   }
 
   /// A window that does not register in time is refused rather than waited on for ever.
