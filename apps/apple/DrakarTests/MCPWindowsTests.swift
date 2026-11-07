@@ -14,16 +14,40 @@ import Testing
 @MainActor
 @Suite("Windows opened for an agent", .serialized)
 struct MCPWindowsTests {
-  /// A window that records being ordered and made key, and does neither.
+  /// A window that records being ordered, made key or main and giving the key up, and does
+  /// none of it: whether it is key or main is only what it was last asked.
   private final class StandInWindow: NSWindow {
     var madeKey = 0
+    var madeMain = 0
+    var resignedKey = 0
+    var isKey = false
+    var isMain = false
     var orders: [String] = []
 
     override var isVisible: Bool { !orders.isEmpty }
-    override func makeKey() { madeKey += 1 }
+    override var isKeyWindow: Bool { isKey }
+    override var isMainWindow: Bool { isMain }
 
+    override func makeKey() {
+      madeKey += 1
+      isKey = true
+    }
+
+    override func makeMain() {
+      madeMain += 1
+      isMain = true
+    }
+
+    override func resignKey() {
+      resignedKey += 1
+      isKey = false
+    }
+
+    /// As SwiftUI shows a new window: key, main and in front.
     override func makeKeyAndOrderFront(_ sender: Any?) {
       madeKey += 1
+      isKey = true
+      isMain = true
       orders.append("front")
     }
 
@@ -117,14 +141,14 @@ struct MCPWindowsTests {
     previous.orderFront(nil)
     opened.orderFront(nil)
 
-    MCPWindows.settle(new: opened, previousKey: previous, wasActive: true)
+    MCPWindows.settle(new: opened, previousKey: previous, previousMain: nil, wasActive: true)
     #expect(opened.orders == ["front", "back"])
     #expect(previous.orders == ["front"])
     #expect(previous.madeKey == 1)
     #expect(opened.madeKey == 0)
 
     let wasActive = NSApp.isActive
-    MCPWindows.settle(new: opened, previousKey: previous, wasActive: false)
+    MCPWindows.settle(new: opened, previousKey: previous, previousMain: nil, wasActive: false)
     #expect(opened.orders == ["front", "back", "back"])
     #expect(previous.madeKey == 1)
     #expect(opened.madeKey == 0)
@@ -132,8 +156,89 @@ struct MCPWindowsTests {
 
     // A key window closed meanwhile is not brought back.
     let closed = window()
-    MCPWindows.settle(new: opened, previousKey: closed, wasActive: true)
+    MCPWindows.settle(new: opened, previousKey: closed, previousMain: nil, wasActive: true)
     #expect(closed.madeKey == 0)
+  }
+
+  /// The main window goes back too, when the new one took it: main is what menu commands and
+  /// the window's title act on, and it is not the new window's to keep.
+  @Test func settleGivesMainBack() {
+    let previous = window()
+    let opened = window()
+    previous.orderFront(nil)
+    opened.makeKeyAndOrderFront(nil)
+
+    MCPWindows.settle(new: opened, previousKey: previous, previousMain: previous, wasActive: true)
+    #expect(previous.madeMain == 1)
+    #expect(opened.madeMain == 0)
+
+    // A new window that did not take main leaves the main window as it is.
+    let other = window()
+    other.orderFront(nil)
+    MCPWindows.settle(new: other, previousKey: previous, previousMain: previous, wasActive: true)
+    #expect(previous.madeMain == 1)
+
+    // Nor is a main window closed meanwhile brought back.
+    let closed = window()
+    let again = window()
+    again.makeKeyAndOrderFront(nil)
+    MCPWindows.settle(new: again, previousKey: nil, previousMain: closed, wasActive: true)
+    #expect(closed.madeMain == 0)
+  }
+
+  /// An active app with no key window before keeps none: the new window gives the key up
+  /// rather than taking typing meant for nothing. Inactive, it is left alone, the app never
+  /// activated.
+  @Test func anActiveAppWithNoKeyWindowLeavesTheNewOneUnkeyed() {
+    let opened = window()
+    opened.makeKeyAndOrderFront(nil)
+    MCPWindows.settle(new: opened, previousKey: nil, previousMain: nil, wasActive: true)
+    #expect(opened.resignedKey == 1)
+    #expect(!opened.isKeyWindow)
+
+    let inactive = window()
+    inactive.makeKeyAndOrderFront(nil)
+    let wasActive = NSApp.isActive
+    MCPWindows.settle(new: inactive, previousKey: nil, previousMain: nil, wasActive: false)
+    #expect(inactive.resignedKey == 0)
+    #expect(NSApp.isActive == wasActive)
+  }
+
+  /// Two writes for one project whose window is not open yet open it once, and both get its
+  /// project: the second waits for the first's window rather than asking for another.
+  @Test func twoWritesForOneUnopenedRouteOpenOneWindow() async throws {
+    let opened = window()
+    let project = Project(folder: try folder())
+    let open = OpenSessions()
+    let id = UUID()
+    defer {
+      project.stopAll()
+      open.unregister(window: id)
+    }
+    final class Count { var value = 0 }
+    let openings = Count()
+    // As SwiftUI opens one: the window registers its project a moment after it is asked for.
+    let opening: (WindowRoute) -> Void = { _ in
+      openings.value += 1
+      Task<Void, Never> { @MainActor in
+        try? await Task.sleep(for: .milliseconds(100))
+        open.register(project, window: id)
+        project.workspace.window = opened
+      }
+    }
+    let route = WindowRoute.project(project.folder)
+
+    let first = Task<Result<Project, SessionError>, Never> {
+      await MCPWindows.project(for: route, in: open, opening: opening)
+    }
+    let second = Task<Result<Project, SessionError>, Never> {
+      await MCPWindows.project(for: route, in: open, opening: opening)
+    }
+    let results = (await first.value, await second.value)
+
+    #expect(openings.value == 1)
+    #expect(try results.0.get() === project)
+    #expect(try results.1.get() === project)
   }
 
   /// A window that does not register in time is refused rather than waited on for ever.

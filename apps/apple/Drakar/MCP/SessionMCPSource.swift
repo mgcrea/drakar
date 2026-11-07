@@ -26,6 +26,9 @@ nonisolated final class SessionMCPSource: SessionSource, @unchecked Sendable {
   /// How a project's window is opened when none is (`MCPWindows`), nil before any window has
   /// handed the scene's action over; tests give their own.
   @MainActor var openWindow: () -> ((WindowRoute) -> Void)? = { MCPWindows.openWindow }
+  /// Whether work may be sent now (`EntitlementMonitor.allowsWorkNow`); tests give their own,
+  /// to change it while a window opens.
+  @MainActor var allowsWork: () -> Bool = { EntitlementMonitor.allowsWorkNow }
 
   /// Tests give a scratch `defaults`, their own windows and a monitor of their own.
   @MainActor
@@ -69,7 +72,7 @@ nonisolated final class SessionMCPSource: SessionSource, @unchecked Sendable {
   }
 
   func workRefusal() async -> String? {
-    await MainActor.run { EntitlementMonitor.allowsWorkNow ? nil : LockedComposerCard.refusal }
+    await MainActor.run { allowsWork() ? nil : LockedComposerCard.refusal }
   }
 
   func permissionsAllowed() async -> Bool {
@@ -115,12 +118,15 @@ extension SessionMCPSource {
   /// A new session in the folder's project window, sent its first prompt: the window's own
   /// blank row when the window was opened for it, else a new tab it does not switch to.
   @MainActor private func startOnMain(_ request: StartRequest) async throws -> String {
-    if !EntitlementMonitor.allowsWorkNow { throw SessionError(LockedComposerCard.refusal) }
+    if !allowsWork() { throw SessionError(LockedComposerCard.refusal) }
     let route =
       try request.runner.map { try runnerRoute(request.folder, runner: $0) }
       ?? localRoute(request.folder)
     let wasOpen = openSessions.project(for: route) != nil
     let project = try await windowed(route)
+    // Opening a window can take seconds, in which the trial may have ended: checked again
+    // before a row is made for a prompt that would not be sent.
+    if !allowsWork() { throw SessionError(LockedComposerCard.refusal) }
     let agent: AgentKind? = request.agent.map { $0 == .codex ? .codex : .claude }
     let blank = wasOpen ? nil : project.blankRow()
     let item =

@@ -1,3 +1,4 @@
+import AppKit
 import DrakarKit
 import DrakarMCP
 import Foundation
@@ -157,6 +158,41 @@ struct SessionMCPWritesTests {
     await #expect(throws: SessionError("There is no folder at \(missing) on this Mac.")) {
       try await source(OpenSessions()).start(StartRequest(folder: missing, prompt: "Hi"))
     }
+  }
+
+  /// Work stopped being allowed while the project's window was opening: refused with the
+  /// composer's sentence, and no row is made for a prompt that is never sent.
+  @Test func startRefusedWhenWorkStopsWhileTheWindowOpens() async throws {
+    /// Never on screen: `MCPWindows` orders the window it opened behind the others.
+    final class OffscreenWindow: NSWindow {
+      override var isVisible: Bool { false }
+      override func orderBack(_ sender: Any?) {}
+    }
+    let project = Project(folder: try folder())
+    project.executableOverride = try fake([Self.initLine("s-late")])
+    let open = OpenSessions()
+    let window = UUID()
+    defer {
+      project.stopAll()
+      open.unregister(window: window)
+    }
+    let source = source(open)
+    var allowed = true
+    source.allowsWork = { allowed }
+    source.openWindow = {
+      { _ in
+        open.register(project, window: window)
+        project.workspace.window = OffscreenWindow(
+          contentRect: .zero, styleMask: [.titled], backing: .buffered, defer: true)
+        allowed = false
+      }
+    }
+
+    await #expect(throws: SessionError(LockedComposerCard.refusal)) {
+      try await source.start(
+        StartRequest(folder: project.folder.path(percentEncoded: false), prompt: "Hi"))
+    }
+    #expect(project.sessions.isEmpty)
   }
 
   // MARK: - Send
