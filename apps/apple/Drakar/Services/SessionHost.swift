@@ -452,8 +452,14 @@ import Synchronization
   /// held. For a launch or a window opening, which have nothing to ask a host that isn't up.
   /// A runner's is never started from here, so it is asked as it is.
   func heldIfRunning() async -> [HeldProcess] {
+    await listedIfRunning() ?? []
+  }
+
+  /// `heldIfRunning`, telling a listing that never came (nil, which says nothing of what the
+  /// host holds) from a host that is not up (nothing held).
+  func listedIfRunning() async -> [HeldProcess]? {
     guard isRunner || connection != nil || hasSocket else { return [] }
-    return await held()
+    return await listed()
   }
 
   /// What hosts of an older protocol hold (spec §5): each socket of a lower major in the

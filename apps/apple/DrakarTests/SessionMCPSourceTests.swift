@@ -353,6 +353,41 @@ struct SessionMCPSourceTests {
     #expect(rows.first?.title == "Nightly")
   }
 
+  /// A listing that never came says nothing of what the host holds: the last one that came
+  /// stands, so a slow host does not make its rows drop out, nor `drakar_wait` see them move.
+  @Test func aListingThatNeverCameKeepsTheLastOne() async throws {
+    let process = try held("a", session: "s-bg")
+    let mine = try held("b", session: "s-runner", owner: ThisMac.name)
+    var answers: [HostListings] = [
+      HostListings(local: [process], runner: .init(id: "r1", name: "eva", held: [mine])),
+      HostListings(local: nil, runner: .init(id: "r1", name: "eva", held: nil)),
+    ]
+    let source = source(OpenSessions())
+    source.listHosts = { answers.removeFirst() }
+
+    let first = await source.sessions(includeEnded: false, endedLimit: 0)
+    let second = await source.sessions(includeEnded: false, endedLimit: 0)
+    #expect(first.map(\.id) == ["s-bg", "s-runner"])
+    #expect(second == first)
+    #expect(second.map(\.place) == [.background, .background])
+    #expect(second.map(\.runner) == [nil, "eva"])
+  }
+
+  /// A host that has never answered holds nothing yet; another runner set up since is not
+  /// read as the one before.
+  @Test func aHostThatNeverAnsweredListsNothing() async throws {
+    let mine = try held("b", session: "s-runner", owner: ThisMac.name)
+    var answers: [HostListings] = [
+      HostListings(local: nil, runner: .init(id: "r1", name: "eva", held: [mine])),
+      HostListings(local: nil, runner: .init(id: "r2", name: "ada", held: nil)),
+    ]
+    let source = source(OpenSessions())
+    source.listHosts = { answers.removeFirst() }
+
+    #expect(await source.sessions(includeEnded: false, endedLimit: 0).map(\.id) == ["s-runner"])
+    #expect(await source.sessions(includeEnded: false, endedLimit: 0).isEmpty)
+  }
+
   /// On the runner, only what this Mac owns, named by the runner.
   @Test func backgroundRowsOnTheRunner() throws {
     let rows = SessionMCPSource.backgroundRows(

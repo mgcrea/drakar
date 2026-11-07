@@ -14,6 +14,13 @@ nonisolated final class SessionMCPSource: SessionSource, @unchecked Sendable {
   let defaults: UserDefaults
   let openSessions: OpenSessions
   let monitor: SessionMonitor
+  /// What the session hosts list now, nil for a listing that never came; tests give their
+  /// own.
+  @MainActor var listHosts: () async -> HostListings = { await HostListings.now() }
+  /// Each host's last listing that came, by `HostListings.Key`: a listing that never came
+  /// (a host slower than its limit) says nothing of what it holds, so the last one stands
+  /// rather than every background row dropping out for that call.
+  @MainActor private var lastHeld: [HostListings.Key: [HeldProcess]] = [:]
 
   /// Tests give a scratch `defaults`, their own windows and a monitor of their own.
   @MainActor
@@ -138,7 +145,11 @@ extension SessionMCPSource {
   }
 
   /// The one session `id` names, live, else ended however long ago.
+  /// A window's row is found without asking a host, which a window takes precedence over.
   @MainActor private func find(_ id: String) async -> Found? {
+    if let window = windowEntries(summaries: summariesByID()).first(where: { $0.row.id == id }) {
+      return .window(window.project, window.item, window.row)
+    }
     if let found = await found(includeEnded: false, endedLimit: 0).first(where: {
       $0.row.id == id
     }) {
@@ -179,9 +190,20 @@ extension SessionMCPSource {
   @MainActor private func heldProcesses() async -> (
     local: [HeldProcess], runner: [HeldProcess], runnerName: String?
   ) {
-    let local = await SessionHost.shared.heldIfRunning()
-    guard let host = SessionHost.runner, host.isAvailable else { return (local, [], nil) }
-    return (local, await host.listed() ?? [], host.runnerName)
+    let listings = await listHosts()
+    let local = held(listings.local, by: .thisMac)
+    guard let runner = listings.runner else { return (local, [], nil) }
+    return (local, held(runner.held, by: .runner(runner.id)), runner.name)
+  }
+
+  /// `listed` when it came, kept for the next call; else the last that came, nothing for a
+  /// host that has never answered.
+  @MainActor private func held(_ listed: [HeldProcess]?, by key: HostListings.Key)
+    -> [HeldProcess]
+  {
+    guard let listed else { return lastHeld[key] ?? [] }
+    lastHeld[key] = listed
+    return listed
   }
 
   /// The monitor's summaries by session id, the newest of an id's transcripts.
@@ -315,5 +337,37 @@ extension SessionMCPSource {
       drakarVersion: host?.facts?.drakar,
       claudeVersion: host?.facts?.claude.first?.version,
       lastError: host?.failure?.message)
+  }
+}
+
+/// What the session hosts list, as one read of them: nil for a listing that never came, which
+/// says nothing of what a host holds.
+@MainActor struct HostListings {
+  /// The host a listing is kept for: this Mac's, or the runner by its id, so a listing of one
+  /// runner never stands for another set up since.
+  enum Key: Hashable {
+    case thisMac
+    case runner(String)
+  }
+
+  struct Runner {
+    var id: String
+    var name: String?
+    var held: [HeldProcess]?
+  }
+
+  /// This Mac's host; empty when it is not up, which a read never starts.
+  var local: [HeldProcess]?
+  /// The runner set up, if any. Asked only while connected, so a read never waits on ssh: not
+  /// connected is a listing that did not come.
+  var runner: Runner?
+
+  static func now() async -> HostListings {
+    let local = await SessionHost.shared.listedIfRunning()
+    guard let host = SessionHost.runner, let id = host.runnerID else {
+      return HostListings(local: local)
+    }
+    let held = host.isAvailable ? await host.listed() : nil
+    return HostListings(local: local, runner: Runner(id: id, name: host.runnerName, held: held))
   }
 }
