@@ -126,6 +126,7 @@ extension SessionMCPSource {
       ?? localRoute(request.folder)
     let wasOpen = openSessions.project(for: route) != nil
     let project = try await windowed(route)
+    try ensureOpen(project)
     // Opening a window can take seconds, in which the trial may have ended: checked again
     // before a row is made for a prompt that would not be sent.
     if !allowsWork() { throw SessionError(LockedComposerCard.refusal) }
@@ -138,7 +139,8 @@ extension SessionMCPSource {
     if let model = request.model { item.session.setModel(model) }
     project.forAgent { item.session.send(request.prompt) }
     return try await sessionID(
-      of: item, startedIn: route.folder?.path(percentEncoded: false) ?? request.folder)
+      of: item, in: project,
+      startedIn: route.folder?.path(percentEncoded: false) ?? request.folder)
   }
 
   /// This Mac's folder, `~` being this Mac's home; refused when it is not a folder here.
@@ -185,14 +187,15 @@ extension SessionMCPSource {
     try await MCPWindows.project(for: route, in: openSessions, opening: openWindow()).get()
   }
 
-  /// `item`'s session id once it has one; refused when its start failed, or once
-  /// `sessionIDLimit` has gone by.
-  @MainActor private func sessionID(of item: ProjectSession, startedIn folder: String)
-    async throws -> String
-  {
+  /// `item`'s session id once it has one; refused when its start failed, when it or its
+  /// window was closed, or once `sessionIDLimit` has gone by.
+  @MainActor private func sessionID(
+    of item: ProjectSession, in project: Project, startedIn folder: String
+  ) async throws -> String {
     let deadline = ContinuousClock.now + Self.sessionIDLimit
     while true {
       if let id = item.sessionID { return id }
+      try ensureOpen(project, holding: item, title: "The session started in \(folder)")
       switch item.session.phase {
       case .failed(let reason):
         throw SessionError("The session in \(folder) could not start: \(reason)")
@@ -219,7 +222,10 @@ extension SessionMCPSource {
     let (project, item) = try await target(of: id, resumingEnded: true)
     let session = item.session
     // As showing its tab reads it, before the composer could send.
-    if !session.hasLoadedHistory { await session.loadHistory() }
+    if !session.hasLoadedHistory {
+      await session.loadHistory()
+      try ensureOpen(project, holding: item, title: Self.shownTitle(of: item))
+    }
     let outcome: SendOutcome
     if session.canSend {
       outcome = .sent
@@ -349,6 +355,7 @@ extension SessionMCPSource {
     guard !row.folder.isEmpty else { throw refusal }
     let project = try await windowed(
       .project(URL(filePath: row.folder, directoryHint: .isDirectory)))
+    try ensureOpen(project)
     guard let item = project.openEnded(summary, focusingComposer: false, showing: false) else {
       throw refusal
     }
@@ -371,7 +378,9 @@ extension SessionMCPSource {
       .project(
         URL(filePath: background.meta.windowFolder, directoryHint: .isDirectory),
         runner: background.runnerID))
+    try ensureOpen(project)
     let listings = await listHosts()
+    try ensureOpen(project)
     let held =
       background.runnerID == nil
       ? listings.local
@@ -384,6 +393,7 @@ extension SessionMCPSource {
     // leaves the process to it: the row comes once that is done.
     let deadline = ContinuousClock.now + MCPWindows.registrationLimit
     while true {
+      try ensureOpen(project)
       if let item = project.sessions.first(where: {
         $0.session.hostID == background.hostID || (!$0.isWatching && $0.sessionID == row.id)
       }) {
@@ -397,6 +407,20 @@ extension SessionMCPSource {
       }
     }
     throw SessionError("\(title) could not be taken back from the background. Try again.")
+  }
+
+  /// Refused when, while a write waited, `project`'s window was closed, or `item` closed in
+  /// it: what the write would act on is no window's any more. `title` names the row; left
+  /// out, the window is named.
+  @MainActor private func ensureOpen(
+    _ project: Project, holding item: ProjectSession? = nil, title: String? = nil
+  ) throws {
+    let registered = openSessions.projects.values.contains { $0 === project }
+    let kept = item.map { item in project.sessions.contains { $0 === item } } ?? true
+    guard registered, kept else {
+      let title = title ?? "The window for \(ProjectPath.normalize(project.folder))"
+      throw SessionError("\(title) was closed.")
+    }
   }
 
   /// Why `item` takes no message now, in the order the composer's place says it.

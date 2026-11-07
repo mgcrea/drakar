@@ -261,6 +261,38 @@ struct SessionMCPWritesTests {
     }
   }
 
+  /// The window a background session would be taken back into closes while the write asks
+  /// the host for it: refused, rather than reopening the process into a window no one has.
+  @Test func sendRefusedWhenTheWindowClosesDuringTakeBack() async throws {
+    let (project, open, window) = try window()
+    defer {
+      project.stopAll()
+      open.unregister(window: window)
+    }
+    let folder = ProjectPath.normalize(project.folder)
+    var meta = SessionMeta(
+      start: AgentStart(
+        folder: project.folder, environment: [:], executableOverride: nil, allowsBypass: false),
+      windowFolder: folder, history: .none)
+    meta.sessionID = "s-bg"
+    let held = HeldProcess(
+      id: "h1", meta: try JSONEncoder().encode(meta), running: true, logLength: 0)
+    let source = source(open)
+    var asked = 0
+    source.listHosts = {
+      asked += 1
+      // The first listing finds the row; the window closes before the second comes back.
+      if asked == 2 { open.unregister(window: window) }
+      return HostListings(local: [held])
+    }
+
+    await #expect(throws: SessionError("The window for \(folder) was closed.")) {
+      _ = try await source.send(to: "s-bg", text: "Hi")
+    }
+    #expect(asked == 2)
+    #expect(project.sessions.isEmpty)
+  }
+
   // MARK: - Ended and elsewhere
 
   /// An ended session is resumed by a message (here, refused only for want of a window to
