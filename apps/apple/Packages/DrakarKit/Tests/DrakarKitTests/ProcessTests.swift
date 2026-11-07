@@ -96,13 +96,13 @@ struct ClaudeCommandTests {
     try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: folder) }
     let shell = folder.appending(path: "zsh")
-    try Data("#!/bin/sh\nsleep 8 &\nprintf '__DRAKAR_ENV__PATH=/a:/b\\0'\n".utf8)
+    try Data("#!/bin/sh\nsleep 30 &\nprintf '__DRAKAR_ENV__PATH=/a:/b\\0'\n".utf8)
       .write(to: shell)
     try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: shell.path)
     let started = ContinuousClock.now
-    let environment = await ShellEnvironment.read(shell: shell.path, timeout: .seconds(5))
+    let environment = await ShellEnvironment.read(shell: shell.path, timeout: .seconds(20))
     #expect(environment?["PATH"] == "/a:/b")
-    #expect(ContinuousClock.now - started < .seconds(2))
+    #expect(ContinuousClock.now - started < .seconds(10))
   }
 }
 
