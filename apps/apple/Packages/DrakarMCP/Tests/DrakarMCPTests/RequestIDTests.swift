@@ -38,4 +38,44 @@ struct RequestIDTests {
     #expect(RequestID.fingerprint(of: one) != RequestID.fingerprint(of: other))
     #expect(!RequestID(one).names(other))
   }
+
+  /// A Codex file change, built anew each call, as the translator builds one per request.
+  private static func codexPatch(_ raw: String, itemID: String = "item_1") -> PendingItem {
+    var request = PermissionRequest(
+      toolName: "Edit", input: .object([:]), description: "Fix it", toolUseID: itemID,
+      kind: .fileChange(
+        path: "/repo/a.swift",
+        edits: [
+          FileEdit(path: "/repo/a.swift", change: .replace(old: "a", new: "b")),
+          FileEdit(path: "/repo/b.swift", change: .move(to: "/repo/c.swift", patch: "@@")),
+        ]))
+    request.suggestions = [CodexPolicy.acceptForSession]
+    return .permission(requestID: raw, request: request)
+  }
+
+  @Test("The same request built twice has the same fingerprint")
+  func fingerprintIsStable() {
+    let one = Self.codexPatch("0")
+    let again = Self.codexPatch("0")
+    #expect(RequestID.fingerprint(of: one) == RequestID.fingerprint(of: again))
+    #expect(RequestID.fingerprint(of: one) == RequestID.fingerprint(of: one))
+    #expect(RequestID(one).names(again))
+  }
+
+  @Test("The call a request asks about is part of what it asks")
+  func fingerprintFollowsToolUseID() {
+    let one = Self.codexPatch("0", itemID: "item_1")
+    let other = Self.codexPatch("0", itemID: "item_2")
+    #expect(RequestID.fingerprint(of: one) != RequestID.fingerprint(of: other))
+    #expect(!RequestID(one).names(other))
+  }
+
+  @Test("A request that cannot be encoded names nothing, itself included")
+  func unencodableNeverMatches() {
+    let item = Self.permission("0", .object(["n": .number(.nan)]))
+    let other = Self.permission("0", .object(["n": .number(.infinity)]))
+    #expect(!RequestID(item).names(item))
+    #expect(RequestID(parsing: RequestID(item).description) == nil)
+    #expect(!RequestID(raw: "0", fingerprint: RequestID.fingerprint(of: item)).names(other))
+  }
 }
