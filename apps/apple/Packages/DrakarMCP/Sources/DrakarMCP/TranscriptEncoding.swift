@@ -12,17 +12,16 @@ enum TranscriptEncoding {
   static let resultLimit = 2048
 
   /// Entries from index `after` on, at most `last` of them, oldest first (nil: the newest
-  /// `last`), and the cursor to pass as `after` next time.
+  /// `last`); the cursor to pass as `after` next time; and the indices below it that may
+  /// still change.
   ///
-  /// The cursor is one past the last entry given, except that it never passes a given entry
-  /// that may still change in place: a tool call with no result yet, or, while a turn runs,
-  /// the transcript's last entry when it is text or a notice still streaming. Those come again
-  /// on the next read, under the same `index`, the later copy the one to keep. So reading on
-  /// from each cursor skips nothing and leaves nothing half-written. A page cut by `last` that
-  /// would hold the cursor where it started moves it on instead, so a call that never finished
-  /// (its process gone) cannot keep a reader on the same page forever.
+  /// The cursor is one past the last entry given when the page was cut by `last`, and the
+  /// transcript's end otherwise, so reading on from each cursor skips nothing and never stalls.
+  /// An entry already read can still change where it stands: a tool call gets its result, and
+  /// the newest main-thread text grows as it streams. `unsettled` names them, wherever they
+  /// are in the transcript, for the caller to read again by index.
   static func page(_ transcript: Transcript, after: Int?, last: Int) -> (
-    entries: [MCPKit.JSONValue], cursor: Int
+    entries: [MCPKit.JSONValue], cursor: Int, unsettled: [Int]
   ) {
     let all = transcript.entries
     let shown = all.indices.filter { index in
@@ -31,33 +30,35 @@ enum TranscriptEncoding {
     }
     let kept: [Int]
     var cursor = all.count
-    var cut = false
     if let after {
       let since = shown.filter { $0 >= after }
       kept = Array(since.prefix(last))
-      cut = since.count > last
-      if cut, let lastKept = kept.last { cursor = lastKept + 1 }
+      if since.count > last, let lastKept = kept.last { cursor = lastKept + 1 }
     } else {
       kept = Array(shown.suffix(last))
     }
-    if let unsettled = kept.first(where: { mayChange(all[$0], at: $0, in: transcript) }),
-      !cut || unsettled > (after ?? 0)
-    {
-      cursor = min(cursor, unsettled)
-    }
-    return (kept.compactMap { entry(all[$0], index: $0) }, cursor)
+    return (
+      kept.compactMap { entry(all[$0], index: $0) }, cursor,
+      unsettled(transcript).filter { $0 < cursor }
+    )
   }
 
-  /// Whether DrakarKit may still rewrite `entry` where it stands: a tool call's result is
-  /// attached to it, and the newest text or notice of a running turn grows or is revised.
-  static func mayChange(_ entry: Transcript.Entry, at index: Int, in transcript: Transcript)
-    -> Bool
-  {
-    switch entry.kind {
-    case .tool(let call): call.result == nil
-    case .text, .notice: transcript.isRunning && index == transcript.entries.count - 1
-    case .prompt, .thinking, .failure: false
+  /// The entries DrakarKit may still rewrite in place, in order: while a turn runs, each tool
+  /// call with no result yet, and the newest main-thread text. A transcript whose turn ended,
+  /// or that was read from its file, has none: nothing will come to change them.
+  static func unsettled(_ transcript: Transcript) -> [Int] {
+    guard transcript.isRunning else { return [] }
+    let all = transcript.entries
+    var indices = all.indices.filter { index in
+      if case .tool(let call) = all[index].kind { return call.result == nil }
+      return false
     }
+    let newestText = all.indices.last { index in
+      guard all[index].parentToolUseID == nil, case .text = all[index].kind else { return false }
+      return true
+    }
+    if let newestText { indices.append(newestText) }
+    return indices.sorted()
   }
 
   /// One entry; nil for thinking.

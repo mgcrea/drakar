@@ -222,9 +222,10 @@ public enum Tools {
           + "assistant, tool, system) and text; a tool call has name, summary (the one line "
           + "Drakar's tool card shows), status (running, done, error) and result (cut at 2 KB, "
           + "resultTruncated when it was) instead of text. Thinking is left out. Returns "
-          + "cursor: pass it as after to read only what came since. An entry still changing (a "
-          + "running tool, text still streaming) comes again on the next read with the same "
-          + "index: keep the later copy.",
+          + "cursor: pass it as after to read only what came since. Entries can change after "
+          + "they are read: a tool's result arrives later, streaming text grows. unsettled "
+          + "lists the indices read so far that may still change; read one again with after: "
+          + "<index>, last: 1.",
         properties: [
           "session": sessionArgument,
           "after": [
@@ -246,12 +247,18 @@ public enum Tools {
       let last = try Arguments.clampedInt(
         arguments["last"], name: "last", in: 1...transcriptMaximum, default: transcriptDefault)
       let transcript = try await source.transcript(of: id)
-      let (entries, cursor) = TranscriptEncoding.page(transcript, after: after, last: last)
+      let (entries, cursor, unsettled) = TranscriptEncoding.page(
+        transcript, after: after, last: last)
       let lede =
         entries.isEmpty
         ? (after == nil ? "No entries." : "Nothing new.")
         : "\(entries.count) \(entries.count == 1 ? "entry" : "entries")."
-      return .answer(lede, ["entries": .array(entries), "cursor": .int(cursor)])
+      return .answer(
+        lede,
+        [
+          "entries": .array(entries), "cursor": .int(cursor),
+          "unsettled": .array(unsettled.map(MCPKit.JSONValue.int)),
+        ])
     }
   }
 
