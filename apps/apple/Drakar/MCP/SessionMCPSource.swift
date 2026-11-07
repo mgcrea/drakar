@@ -118,13 +118,17 @@ extension SessionMCPSource {
     let windows = windowEntries(summaries: summaries)
     var listed = Set(windows.map(\.row.id))
     var background: [Background] = []
-    let hosts: [(processes: [HeldProcess], runner: String?)] = [
-      (held.local, nil), (held.runner, held.runnerName),
+    let hosts: [(processes: [HeldProcess], runner: String?, unreachable: Bool)] = [
+      (held.local, nil, false), (held.runner, held.runnerName, held.runnerUnreachable),
     ]
-    for (processes, runner) in hosts {
-      let rows = Self.backgroundRows(
+    for (processes, runner, unreachable) in hosts {
+      var rows = Self.backgroundRows(
         processes, runner: runner, live: monitor.liveSessions, excluding: listed,
         summary: { summaries[$0] }, accountModel: { [monitor] in monitor.accountModel(for: $0) })
+      // Kept from before the connection dropped: nothing can be sent to them until it is back.
+      if unreachable {
+        for index in rows.indices { rows[index].row.state = .unreachable }
+      }
       listed.formUnion(rows.map(\.row.id))
       background += rows
     }
@@ -186,14 +190,17 @@ extension SessionMCPSource {
   }
 
   /// What this Mac's host and the runner's hold. Neither is started by a read: this Mac's is
-  /// asked only when it runs, the runner's only while connected.
+  /// asked only when it runs, the runner's only while connected. `runnerUnreachable`: the
+  /// runner is not connected, and what it holds is as last listed.
   @MainActor private func heldProcesses() async -> (
-    local: [HeldProcess], runner: [HeldProcess], runnerName: String?
+    local: [HeldProcess], runner: [HeldProcess], runnerName: String?, runnerUnreachable: Bool
   ) {
     let listings = await listHosts()
     let local = held(listings.local, by: .thisMac)
-    guard let runner = listings.runner else { return (local, [], nil) }
-    return (local, held(runner.held, by: .runner(runner.id)), runner.name)
+    guard let runner = listings.runner else { return (local, [], nil, false) }
+    return (
+      local, held(runner.held, by: .runner(runner.id)), runner.name, !runner.isConnected
+    )
   }
 
   /// `listed` when it came, kept for the next call; else the last that came, nothing for a
@@ -353,7 +360,9 @@ extension SessionMCPSource {
   struct Runner {
     var id: String
     var name: String?
+    /// Nil for a listing that did not come, as while not connected.
     var held: [HeldProcess]?
+    var isConnected = true
   }
 
   /// This Mac's host; empty when it is not up, which a read never starts.
@@ -368,6 +377,8 @@ extension SessionMCPSource {
       return HostListings(local: local)
     }
     let held = host.isAvailable ? await host.listed() : nil
-    return HostListings(local: local, runner: Runner(id: id, name: host.runnerName, held: held))
+    return HostListings(
+      local: local,
+      runner: Runner(id: id, name: host.runnerName, held: held, isConnected: host.isAvailable))
   }
 }

@@ -373,6 +373,27 @@ struct SessionMCPSourceTests {
     #expect(second.map(\.runner) == [nil, "eva"])
   }
 
+  /// The runner's rows kept from before its connection dropped can't be sent to: unreachable,
+  /// until it is back. A connected runner slow to answer keeps them as they were.
+  @Test func aDisconnectedRunnersKeptRowsAreUnreachable() async throws {
+    let mine = try held("b", session: "s-runner", owner: ThisMac.name)
+    var answers: [HostListings] = [
+      HostListings(local: [], runner: .init(id: "r1", name: "eva", held: [mine])),
+      HostListings(local: [], runner: .init(id: "r1", name: "eva", held: nil)),
+      HostListings(
+        local: [], runner: .init(id: "r1", name: "eva", held: nil, isConnected: false)),
+      HostListings(local: [], runner: .init(id: "r1", name: "eva", held: [mine])),
+    ]
+    let source = source(OpenSessions())
+    source.listHosts = { answers.removeFirst() }
+
+    var states: [SessionState?] = []
+    for _ in 0..<4 {
+      states.append(await source.sessions(includeEnded: false, endedLimit: 0).first?.state)
+    }
+    #expect(states == [.idle, .idle, .unreachable, .idle])
+  }
+
   /// A host that has never answered holds nothing yet; another runner set up since is not
   /// read as the one before.
   @Test func aHostThatNeverAnsweredListsNothing() async throws {
