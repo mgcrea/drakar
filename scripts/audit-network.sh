@@ -116,34 +116,43 @@ inet=$(count 'AF_INET|PF_INET|sockaddr_in')
 
 # And the BSD calls themselves only where the session host's Unix socket is made, so a
 # listener cannot grow elsewhere with an address that rule does not spell. A function of
-# Drakar's own that happens to share a name is declared with `func`, which is left out.
+# Drakar's own that happens to share a name is declared with `func socket(` and the like:
+# only that declaration is left out, not every line that holds a `func`.
 raw=$(grep -rHE --include='*.swift' '(Darwin\.|^|[^A-Za-z0-9_.])(socket|bind|listen)\(' $SOURCES \
-  | grep -vE '^[^:]*:[[:space:]]*//' | grep -v 'func ' | cut -d: -f1 | LC_ALL=C sort -u)
+  | grep -vE '^[^:]*:[[:space:]]*//' | grep -vE 'func (socket|bind|listen)\(' | cut -d: -f1 \
+  | LC_ALL=C sort -u)
 [ "$raw" = apps/apple/Packages/DrakarKit/Sources/DrakarKit/Host/UnixSocket.swift ] \
   && pass "socket(), bind() and listen() only in the session host's UnixSocket.swift" \
   || fail "socket(), bind() or listen() called in: $(echo $raw)"
 
 # The MCP server. Its listener is swift-mcp-kit's LoopbackListener, which binds 127.0.0.1
 # and checks the bearer token before any request reaches a tool; Drakar makes one, in the
-# controller, and nowhere else starts another.
-n=$(count 'LoopbackListener\(')
-made_in=$(where 'LoopbackListener\(')
+# controller, and nowhere else starts another (`LoopbackListener(` or `.init(`).
+n=$(count 'LoopbackListener(\.init)?\(')
+made_in=$(where 'LoopbackListener(\.init)?\(')
 [ "$n" -eq 1 ] && [ "$made_in" = apps/apple/Drakar/MCP/MCPServerController.swift ] \
   && pass "one MCP listener, made only in MCPServerController" \
   || fail "expected one LoopbackListener( in MCPServerController.swift, found $n in: $(echo $made_in)"
 
-# Off until you turn it on: every @AppStorage of the switch defaults to false, nothing sets
-# it to true, and the key is spelled once, so no other read of it can bring its own default.
+# Off until you turn it on: every @AppStorage of the switch defaults to false, no line
+# names the key beside `true`, no file holding one of those @AppStorage assigns
+# `isEnabled = true` (the switch's own Toggle is how you turn it on), and the key is spelled
+# once, so no other read of it can bring its own default.
 stores=$(count '@AppStorage\(MCPSettingsKey\.enabled\)')
 off=$(count '@AppStorage\(MCPSettingsKey\.enabled\) private var [a-zA-Z]* = false')
 on=$(count 'MCPSettingsKey\.enabled.*true|true.*MCPSettingsKey\.enabled')
+switch_files=$(where '@AppStorage\(MCPSettingsKey\.enabled\)')
+if [ -n "$switch_files" ]; then
+  on=$((on + $(grep -hE '(^|[^A-Za-z0-9_])isEnabled[[:space:]]*=[[:space:]]*true([^A-Za-z0-9_]|$)' \
+    $switch_files | grep -vE '^[[:space:]]*//' | wc -l | tr -d ' ')))
+fi
 keys=$(count '"drakar\.mcp\.enabled"')
 [ "$stores" -gt 0 ] && [ "$stores" -eq "$off" ] && [ "$on" -eq 0 ] && [ "$keys" -eq 1 ] \
   && pass "MCP server off by default ($stores switch(es), all false)" \
   || fail "MCP switch: $off of $stores @AppStorage default to false, $on line(s) set it true, key spelled $keys time(s)"
 
 # The token is the kit's Keychain store, made only by the controller.
-made_in=$(where 'KeychainTokenStore\(service:')
+made_in=$(where 'KeychainTokenStore(\.init)?\(service:')
 [ "$made_in" = apps/apple/Drakar/MCP/MCPServerController.swift ] \
   && pass "MCP token kept in the Keychain, by MCPServerController" \
   || fail "KeychainTokenStore(service: expected only in MCPServerController.swift, found in: $(echo ${made_in:-nothing})"

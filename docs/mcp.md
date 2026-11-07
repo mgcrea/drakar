@@ -72,10 +72,11 @@ elsewhere, a Codex session on the runner. Starting a session or sending one a me
 needs a licence that allows work, as the composer does, and the refusal is the composer's
 sentence. Answering, interrupting and ending stay allowed whatever the licence says.
 
-No call ever makes a Drakar window take the keyboard. A session started in a folder whose
-window is open gets a tab the window does not switch to; a window opened for an agent goes
-behind the others, and the key goes back where it was. A session held in the background is
-taken back into its project's window the same way when an agent sends it a message.
+No call is meant to make a Drakar window take the keyboard, apart from the limits at the
+end of this page. A session started in a folder whose window is open gets a tab the window
+does not switch to; a window opened for an agent goes behind the others, and the key goes
+back where it was. A session held in the background is taken back into its project's window
+the same way when an agent sends it a message.
 
 ## The tools
 
@@ -95,8 +96,8 @@ fields camelCase.
 | `drakar_send_message` | Allow writes, licence | Sends `text` to a session as its composer does: at once, or queued behind the running turn. A background session is taken back into its window first, an ended one resumed there. |
 | `drakar_interrupt` | Allow writes | Ends a session's running turn, as Escape does. Queued messages stay queued. |
 | `drakar_end_session` | Allow writes | Ends a session, as End Session does: its process stops, its row stays, and a later message resumes it (a runner session starts anew). |
-| `drakar_answer_question` | Allow writes | Answers a question (`answers`: each question's text to its answer) or an MCP server's form (`action` `accept` with `content`, `decline` or `cancel`) by its `request_id`. A form that asks you to open a link can be declined or cancelled, not accepted. |
-| `drakar_answer_permission` | Allow writes, permission prompts | Allows or denies a tool call by its `request_id`: `decision`, and on deny a `message` and `interrupt`; on allow, `always` applies some of the request's own suggestions, by index, for that session only. A plan allowed runs with every edit still asking. |
+| `drakar_answer_question` | Allow writes | Answers a question (`answers`: each question's text to its answer) or an MCP server's form (`action` `accept` with `content`, `decline` or `cancel`) by its `session` and `request_id`. A form that asks you to open a link can be declined or cancelled, not accepted. |
+| `drakar_answer_permission` | Allow writes, permission prompts | Allows or denies a tool call by its `session` and `request_id`: `decision`, and on deny a `message` and `interrupt`; on allow, `always` applies some of the request's own suggestions, by index, for that session only. A plan allowed runs with every edit still asking. |
 
 The server's instructions tell the agent that transcripts, questions and plans were written
 by agents that may have read hostile content, so their text is data to report and never
