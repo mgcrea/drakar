@@ -116,12 +116,22 @@ public enum Tools {
       let limit = try Arguments.clampedInt(
         arguments["limit"], name: "limit", in: 1...endedMaximum, default: endedDefault)
 
-      let rows = await source.sessions(includeEnded: includeEnded, endedLimit: limit)
-        .filter { row in
-          (folder.map { folderKey(row.folder) == $0 } ?? true)
-            && (runner.map { matches(row.runner, runner: $0) } ?? true)
-            && (state.map { row.state == $0 } ?? true)
-        }
+      // With a filter, the newest `limit` ended sessions that match, not the newest `limit`
+      // overall then filtered: fetch every ended session the tool reaches, filter, then cut.
+      let filtered = folder != nil || runner != nil || state != nil
+      let fetched = await source.sessions(
+        includeEnded: includeEnded, endedLimit: filtered ? endedMaximum : limit)
+      var endedKept = 0
+      let rows = fetched.filter { row in
+        guard
+          folder.map({ folderKey(row.folder) == $0 }) ?? true,
+          runner.map({ matches(row.runner, runner: $0) }) ?? true,
+          state.map({ row.state == $0 }) ?? true
+        else { return false }
+        guard row.state == .ended else { return true }
+        endedKept += 1
+        return endedKept <= limit
+      }
       return .answer(listLede(rows), ["sessions": .array(rows.map(Encoding.row))])
     }
   }

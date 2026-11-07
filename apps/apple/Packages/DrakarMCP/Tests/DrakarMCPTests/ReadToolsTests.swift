@@ -84,6 +84,26 @@ struct ReadToolsTests {
     #expect(result.text == "0 live sessions, 20 ended.")
   }
 
+  @Test("With a filter, the ended limit counts the matching sessions")
+  func endedLimitAfterFilter() async throws {
+    source.sessions = [Self.row("aaaaaaaa-1", state: .working)]
+    source.ended = (0..<30).map { index in
+      SessionRow(
+        id: "ended-\(index)", agent: .claude, folder: index == 24 ? "/x" : "/Users/me/app",
+        state: .ended, place: .window)
+    }
+    var result = await call("drakar_list_sessions", ["include_ended": true, "folder": "/x"])
+    #expect(result.structuredContent?["sessions"]?.arrayValue?.map { $0["id"] } == ["ended-24"])
+
+    // A filter that matches many still keeps at most `limit` ended rows, live rows apart.
+    result = await call(
+      "drakar_list_sessions", ["include_ended": true, "runner": "this-mac", "limit": 5])
+    let rows = try #require(result.structuredContent?["sessions"]?.arrayValue)
+    #expect(rows.count == 6)
+    #expect(rows.first?["id"] == "aaaaaaaa-1")
+    #expect(rows.last?["id"] == "ended-4")
+  }
+
   @Test("state and folder filter; an unknown state is refused")
   func filtersByStateAndFolder() async throws {
     source.sessions = [
