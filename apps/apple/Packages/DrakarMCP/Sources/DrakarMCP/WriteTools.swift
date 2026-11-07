@@ -17,7 +17,7 @@ extension Tools {
   /// `.requiresWrites`, in table order. A test keeps the two the same.
   public static let writeTools = [
     "drakar_start_session", "drakar_send_message", "drakar_interrupt", "drakar_end_session",
-    "drakar_answer_question",
+    "drakar_answer_question", "drakar_answer_permission",
   ]
 
   /// The write tools, added after the reads in the order `writeTools` lists them.
@@ -27,6 +27,7 @@ extension Tools {
     addInterrupt(to: &table, source: source)
     addEndSession(to: &table, source: source)
     addAnswerQuestion(to: &table, source: source)
+    addAnswerPermission(to: &table, source: source)
   }
 
   private static func addStartSession(to table: inout ToolTable, source: some SessionSource) {
@@ -164,7 +165,8 @@ extension Tools {
           + "drakar_needs_attention or drakar_get_session. A question (AskUserQuestion) takes "
           + "answers: every question's text to the label chosen, or to text of your own; "
           + "several labels of a multiSelect question joined with \", \". An MCP server's form "
-          + "(an elicitation) takes action, and content with the form's values on accept. A "
+          + "(an elicitation) takes action, and content with the form's values on accept; one "
+          + "that asks the person to open a link can be declined or cancelled, not accepted. A "
           + "permission prompt is answered with drakar_answer_permission instead.",
         properties: [
           "session": sessionArgument,
@@ -190,12 +192,7 @@ extension Tools {
     ) { arguments in
       let id = try await Arguments.session(arguments["session"], in: source)
       let requestID = try Arguments.requiredString(arguments["request_id"], name: "request_id")
-      guard let detail = await source.detail(of: id) else { throw SessionIDs.unknown(id) }
-      guard let pending = detail.pending.first(where: { $0.requestID == requestID }) else {
-        throw SessionError(
-          "Request \(requestID) is no longer waiting: already answered, or the turn ended.")
-      }
-      switch pending {
+      switch try await pending(requestID, of: id, in: source) {
       case .permission(_, let request):
         guard request.isChoice else {
           throw SessionError(
@@ -207,8 +204,9 @@ extension Tools {
         try await source.answer(
           id, requestID: requestID,
           with: .allow(updatedInput: UserQuestion.answering(request.input, with: answers)))
-      case .elicitation:
-        let answer = try elicitationAnswer(arguments["action"], content: arguments["content"])
+      case .elicitation(_, let elicitation):
+        let answer = try elicitationAnswer(
+          arguments["action"], content: arguments["content"], to: elicitation)
         try await source.answer(id, requestID: requestID, with: answer)
       }
       return .answer("Answered \(requestID).", ["ok": true])
@@ -248,10 +246,25 @@ extension Tools {
     return answers
   }
 
-  /// An elicitation's answer from `action` and, on accept, `content` (the form's values).
-  static func elicitationAnswer(_ action: MCPKit.JSONValue?, content: MCPKit.JSONValue?) throws
-    -> ElicitationAnswer
+  /// The request `requestID` that session `id` waits on, or a refusal saying it is not
+  /// waiting any more.
+  static func pending(_ requestID: String, of id: String, in source: some SessionSource)
+    async throws -> PendingItem
   {
+    guard let detail = await source.detail(of: id) else { throw SessionIDs.unknown(id) }
+    guard let pending = detail.pending.first(where: { $0.requestID == requestID }) else {
+      throw SessionError(
+        "Request \(requestID) is no longer waiting: already answered, or the turn ended.")
+    }
+    return pending
+  }
+
+  /// An elicitation's answer from `action` and, on accept, `content` (the form's values). Only
+  /// a form is accepted, as its card accepts only a form: a link is the person's to open, and
+  /// a request Drakar cannot show can only be declined.
+  static func elicitationAnswer(
+    _ action: MCPKit.JSONValue?, content: MCPKit.JSONValue?, to elicitation: Elicitation
+  ) throws -> ElicitationAnswer {
     guard let action = try Arguments.choice(action, name: "action", as: ElicitationAction.self)
     else {
       throw SessionError("Give action: accept, decline or cancel.")
@@ -260,11 +273,106 @@ extension Tools {
     case .decline: return .decline
     case .cancel: return .cancel
     case .accept:
-      guard let content, !content.isNull else { return .accept(nil) }
+      switch elicitation.content {
+      case .form: break
+      case .url, .nonWebLink:
+        throw SessionError(
+          "This asks the person to open a link; an agent can decline or cancel it, not accept it.")
+      case .unsupported:
+        throw SessionError(
+          "Drakar cannot show this request, so it can be declined or cancelled, not accepted.")
+      }
+      guard let content, !content.isNull else {
+        throw SessionError("Accepting this form needs its values in content.")
+      }
       guard let fields = content.objectValue else {
         throw SessionError("content must be an object of the form's field keys to their values.")
       }
       return .accept(fields.mapValues(JSONBridge.drakar))
+    }
+  }
+
+  // MARK: - Permissions
+
+  private static func addAnswerPermission(to table: inout ToolTable, source: some SessionSource) {
+    table.add(
+      MCPTool(
+        name: "drakar_answer_permission",
+        description:
+          "Allow or deny a tool call a session is waiting on, by its requestId from "
+          + "drakar_needs_attention or drakar_get_session. The call runs with the input it "
+          + "asked for. always applies some of the request's own suggestions, by index: only "
+          + "those it lists, each lasting no longer than the session. A plan (ExitPlanMode) "
+          + "allowed runs with every edit still asking; denied, it keeps planning, message "
+          + "being what to change. Needs Let agents answer permission prompts in Drakar's "
+          + "Settings › MCP Server. A question or an MCP server's form is answered with "
+          + "drakar_answer_question instead.",
+        properties: [
+          "session": sessionArgument,
+          "request_id": ["type": "string", "description": "The request's requestId."],
+          "decision": [
+            "type": "string",
+            "enum": .array(PermissionAnswer.Verdict.allCases.map { .string($0.rawValue) }),
+          ],
+          "message": [
+            "type": "string",
+            "description": "On deny, the reason the session's model is told.",
+          ],
+          "interrupt": [
+            "type": "boolean", "default": false,
+            "description": "On deny, end the session's turn too.",
+          ],
+          "always": [
+            "type": "array", "items": ["type": "integer", "minimum": 0],
+            "description":
+              "On allow, the indices of the request's suggestions to apply for the session.",
+          ],
+        ],
+        required: ["session", "request_id", "decision"],
+        gate: .requiresWrites,
+        annotations: .mutating(destructive: false, idempotent: false))
+    ) { arguments in
+      guard await source.permissionsAllowed() else {
+        throw SessionError(
+          "Answering permission prompts is off. The person can turn on \"Let agents answer "
+            + "permission prompts\" in Drakar's Settings › MCP Server.")
+      }
+      let id = try await Arguments.session(arguments["session"], in: source)
+      let requestID = try Arguments.requiredString(arguments["request_id"], name: "request_id")
+      guard
+        let verdict = try Arguments.choice(
+          arguments["decision"], name: "decision", as: PermissionAnswer.Verdict.self)
+      else {
+        throw SessionError("Give decision: allow or deny.")
+      }
+      let message = try Arguments.string(arguments["message"], name: "message")
+      let interrupt = try Arguments.bool(arguments["interrupt"], name: "interrupt") ?? false
+      let always = try indices(arguments["always"], name: "always")
+
+      guard case .permission(_, let request) = try await pending(requestID, of: id, in: source)
+      else {
+        throw SessionError(
+          "Request \(requestID) is an MCP server's form: use drakar_answer_question.")
+      }
+      let decision = try PermissionAnswer.decision(
+        for: request, verdict: verdict, message: message, interrupt: interrupt, always: always)
+      try await source.answer(id, requestID: requestID, with: decision)
+      return .answer(
+        "\(verdict == .allow ? "Allowed" : "Denied") \(requestID).", ["ok": true])
+    }
+  }
+
+  /// A list of whole numbers; empty when absent or null.
+  static func indices(_ value: MCPKit.JSONValue?, name: String) throws -> [Int] {
+    guard let value, !value.isNull else { return [] }
+    guard let items = value.arrayValue else {
+      throw SessionError("\(name) must be a list of suggestion indices.")
+    }
+    return try items.map { item in
+      guard let index = try Arguments.int(item, name: name) else {
+        throw SessionError("\(name) must be a list of suggestion indices.")
+      }
+      return index
     }
   }
 }

@@ -88,9 +88,8 @@ enum Encoding {
       "tool": .string(request.toolName),
       "summary": .string(request.summary),
       "input": input,
-      // The session-long "always" answers drakar_answer_permission may apply. Empty until
-      // that tool lands with the filter that decides which are offered.
-      "suggestions": [],
+      // The session-long "always" answers drakar_answer_permission may apply, by index.
+      "suggestions": .array(AlwaysOffer.offered(request).map(suggestion)),
     ]
     if truncated { fields["inputTruncated"] = true }
     if request.isChoice {
@@ -105,6 +104,18 @@ enum Encoding {
     } else if request.kind == .planApproval {
       fields["kind"] = "plan"
       fields["plan"] = string(PlanApproval.plan(request.input))
+    }
+    return .object(fields)
+  }
+
+  /// An offered suggestion: its index, and the rules it allows for the session or, for Codex,
+  /// its decision.
+  private static func suggestion(_ suggestion: PermissionSuggestion) -> MCPKit.JSONValue {
+    var fields: [String: MCPKit.JSONValue] = ["index": .int(suggestion.id)]
+    switch suggestion.kind {
+    case .addRules(let rules): fields["rules"] = .array(rules.map(MCPKit.JSONValue.string))
+    case .codexDecision(let decision): fields["decision"] = .string(decision)
+    case .addDirectories, .setMode, .other: break
     }
     return .object(fields)
   }

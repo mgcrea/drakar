@@ -13,7 +13,7 @@ struct WriteToolsTests {
   static let id = "aaaaaaaa-1111"
   static let names = [
     "drakar_start_session", "drakar_send_message", "drakar_interrupt", "drakar_end_session",
-    "drakar_answer_question",
+    "drakar_answer_question", "drakar_answer_permission",
   ]
 
   private func call(_ name: String, _ arguments: MCPKit.JSONValue = [:]) async -> ToolResult {
@@ -282,5 +282,61 @@ struct WriteToolsTests {
     #expect(!result.isError)
     #expect(
       source.elicitationAnswer == .accept(["repo": .string("drakar"), "stars": .number(3)]))
+  }
+
+  @Test("A form accepted needs its values")
+  func formAcceptNeedsContent() async throws {
+    live(pending: [.elicitation(requestID: "e1", elicitation: try Self.elicitation())])
+    let result = await call(
+      "drakar_answer_question",
+      ["session": .string(Self.id), "request_id": "e1", "action": "accept"])
+    #expect(result.isError)
+    #expect(result.text == "Accepting this form needs its values in content.")
+    #expect(source.calls.isEmpty)
+  }
+
+  @Test("A link can be declined or cancelled, never accepted")
+  func linkNotAccepted() async throws {
+    for link in ["https://example.com/auth", "vscode://open"] {
+      let elicitation = try #require(
+        Elicitation(
+          claudeRequest: .object([
+            "mcp_server_name": .string("github"), "message": .string("Sign in"),
+            "mode": .string("url"), "url": .string(link),
+          ])))
+      live(pending: [.elicitation(requestID: "e1", elicitation: elicitation)])
+      let before = source.calls.count
+      var result = await call(
+        "drakar_answer_question",
+        ["session": .string(Self.id), "request_id": "e1", "action": "accept"])
+      #expect(result.isError)
+      #expect(
+        result.text
+          == "This asks the person to open a link; an agent can decline or cancel it, not accept it."
+      )
+      #expect(source.calls.count == before)
+
+      result = await call(
+        "drakar_answer_question",
+        ["session": .string(Self.id), "request_id": "e1", "action": "cancel"])
+      #expect(!result.isError)
+      #expect(source.elicitationAnswer == .cancel)
+    }
+  }
+
+  @Test("A form Drakar cannot show can be declined or cancelled, never accepted")
+  func unsupportedNotAccepted() async throws {
+    let elicitation = try #require(
+      Elicitation(
+        claudeRequest: .object([
+          "mcp_server_name": .string("github"), "message": .string("Pick"),
+          "mode": .string("telepathy"),
+        ])))
+    live(pending: [.elicitation(requestID: "e1", elicitation: elicitation)])
+    let result = await call(
+      "drakar_answer_question",
+      ["session": .string(Self.id), "request_id": "e1", "action": "accept", "content": [:]])
+    #expect(result.isError)
+    #expect(source.calls.isEmpty)
   }
 }
