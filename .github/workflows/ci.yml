@@ -249,8 +249,11 @@ jobs:
       - name: Build 🏗️
         run: make -C apps/apple build-release XCARGS="CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO"
 
-      # DrakarKit's suite: the stream-json codec against captured fixtures, process
-      # supervision, the session index, the IDE bridge's protocol. Offline, no app.
+      # The package suites, no app. DrakarKit's: the stream-json codec against
+      # captured fixtures, process supervision, the session index, the IDE bridge's
+      # protocol, all offline. DrakarMCP's: the MCP server's tools against a fake
+      # source, which first resolves swift-mcp-kit from GitHub, the suite's one network
+      # fetch, and then runs offline too.
       # `-C apps/apple`, because the root's `make test` also runs the script and
       # Worker suites, which `node` has already run.
       - name: Tests (swift) 🧪

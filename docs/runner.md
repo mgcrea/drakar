@@ -233,6 +233,16 @@ and Bring Back in the runner's Drakar sends them to the old name, which no Mac a
 Rename it with no runner sessions held, or carry on with them in the runner's Drakar after
 (Take Over Here).
 
+## From an agent
+
+An agent on the Mac can drive the runner's sessions through the Mac's Drakar, once its MCP
+server is on (`docs/mcp.md`): list them with the Mac's own, see which want you, read their
+transcripts, start one in a folder on the runner (`drakar_start_session` with `runner`),
+send it work and answer its prompts, as far as Settings › MCP Server allows. A session
+started that way is Claude Code, like any runner session, and opens in its window on the Mac
+without taking the keyboard. The agent never talks to the runner itself; the Mac's Drakar
+does, over the same ssh.
+
 ## What v1 leaves out
 
 The editor and file links in a runner session's window (use Open on the Runner); resuming,

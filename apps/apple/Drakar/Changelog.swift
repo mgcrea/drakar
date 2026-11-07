@@ -515,6 +515,25 @@ nonisolated enum Changelog {
   /// `nil` in any tagged build: CI asserts the CHANGELOG's head section is the
   /// tag's version, so there is no `[Unreleased]` left to emit by then. The
   /// pane shows it in debug builds only, where it is true of what is running.
-  static let unreleased: Release? = nil
+  // swift-format-ignore
+  private static let unreleasedRelease: Release = Release(
+    version: "Unreleased",
+    date: "",
+    sections: [
+      Section(
+        name: "Added",
+        lead: [],
+        entries: [
+          Entry(
+            ordinal: 0,
+            headline: "An MCP server.",
+            body: [
+              "Turned on in Settings › MCP Server, it lets an AI agent on your Mac, such as Claude Code or Codex, see your sessions, here and on your runner, read their transcripts and wait for one to need you. Allow writes lets it also start sessions, send them messages, interrupt and end them, and answer their questions; answering their permission prompts is a switch of its own. It is off until you turn it on, listens on 127.0.0.1 only, and answers only a client holding the token Drakar keeps in your Keychain. The pane sets up Claude Code, Codex or Bastion for it.",
+            ]),
+        ]),
+    ])
+
+  // swift-format-ignore
+  static let unreleased: Release? = unreleasedRelease
   // </generated:changelog>
 }

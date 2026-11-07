@@ -2,23 +2,31 @@
 # Falsify Drakar's network claim:
 #
 #   Drakar listens on one network socket, on 127.0.0.1, which answers only a client
-#   holding this launch's token, and its session host on one Unix socket, which only your
-#   own Drakar can reach. The only connections Drakar opens of its own are Sparkle's, to
-#   check for and fetch updates, and only once you said yes to update checks. Everything
-#   else that reaches the network is the `claude`, `codex` or, once you name a runner, `ssh`
-#   you installed.
+#   holding this launch's token, and, only if you turn on its MCP server, a second one on
+#   127.0.0.1, which answers only a client holding the token in your Keychain. Its session
+#   host listens on one Unix socket, which only your own Drakar can reach. The only
+#   connections Drakar opens of its own are Sparkle's, to check for and fetch updates, and
+#   only once you said yes to update checks. Everything else that reaches the network is
+#   the `claude`, `codex` or, once you name a runner, `ssh` you installed.
+#
+# (The MCP server's sentence is the one drafted for README and SECURITY.md, pending the
+# person's review there; if theirs changes, this one follows.)
 #
 # A marketing claim CI can check is the property worth keeping (bastion's
 # audit-listener.sh); this asserts the rules in Drakar/Services/IDEServer.swift's header,
-# and the session host's in DrakarKit's Host/UnixSocket.swift and HostServer.swift.
+# the session host's in DrakarKit's Host/UnixSocket.swift and HostServer.swift, and the
+# MCP server's in Drakar/MCP/MCPServerController.swift. The MCP listener itself is
+# swift-mcp-kit's (MCPKitLoopback), outside these sources: what is checked here is that
+# Drakar adds no listener of its own for it, starts the kit's from one place, leaves it
+# off until you turn it on, and keeps its token in the Keychain.
 # Static rules prove the code cannot be talked into misbehaving by a setting; --running
 # proves the live process does not; --app proves the artifact does not carry what the
 # sources say they lack, so anyone can point it at the .app they downloaded and get the
 # answer CI got.
 #
 #   scripts/audit-network.sh            # sources
-#   scripts/audit-network.sh --running  # and the running app: lsof, lock files, the token,
-#                                       # the session host's socket
+#   scripts/audit-network.sh --running  # and the running app: lsof, the MCP server's port,
+#                                       # lock files, the token, the session host's socket
 #   scripts/audit-network.sh --app path/to/Drakar.app
 #                                       # and the built bundle: every Mach-O swept for URL
 #                                       # loading, DNS and TLS, with two exact allowances
@@ -58,7 +66,9 @@ done
 case "$app" in "" | /*) ;; *) app="$PWD/$app" ;; esac
 
 cd "$(dirname "$0")/.."
-SOURCES="apps/apple/Drakar apps/apple/DrakarHost apps/apple/Packages/DrakarKit/Sources"
+# DrakarMCP is Drakar's too: the MCP server's tools, which must open no socket either.
+# swift-mcp-kit, which holds the listener, is a dependency and is not listed.
+SOURCES="apps/apple/Drakar apps/apple/DrakarHost apps/apple/Packages/DrakarKit/Sources apps/apple/Packages/DrakarMCP/Sources"
 failures=0
 checked=0
 
@@ -67,9 +77,15 @@ fail() { checked=$((checked + 1)); failures=$((failures + 1)); printf '  FAIL  %
 # Swift lines only, comments dropped, so a rule quoted in a comment cannot satisfy it.
 code() { grep -rhE --include='*.swift' "$1" $SOURCES | grep -vE '^[[:space:]]*//'; }
 count() { code "$1" | wc -l | tr -d ' '; }
+# The files whose code matches, comments dropped as in code(), one per line.
+where() {
+  grep -rHE --include='*.swift' "$1" $SOURCES | grep -vE '^[^:]*:[[:space:]]*//' \
+    | cut -d: -f1 | LC_ALL=C sort -u
+}
 
 echo "Sources"
 
+# The IDE bridge's. Still one with the MCP server built in: its listener is the kit's.
 n=$(count 'NWListener\(')
 [ "$n" -eq 1 ] && pass "exactly one NWListener" || fail "expected one NWListener, found $n"
 
@@ -92,8 +108,45 @@ n=$(count 'socket\(AF_UNIX')
 [ "$n" -eq 1 ] && pass "exactly one Unix socket, the session host's" \
   || fail "expected one socket(AF_UNIX, found $n"
 
-inet=$(count 'socket\((AF|PF)_INET')
-[ "$inet" -eq 0 ] && pass "no raw network socket" || fail "$inet socket(AF_INET...) call(s)"
+# No IPv4 or IPv6 socket of Drakar's own, by any route: socket(), bind() and listen() take
+# an address family or an address of one, and neither may be an internet one anywhere.
+inet=$(count 'AF_INET|PF_INET|sockaddr_in')
+[ "$inet" -eq 0 ] && pass "no IPv4 or IPv6 socket, bind or listen" \
+  || fail "$inet line(s) naming AF_INET, PF_INET or sockaddr_in"
+
+# And the BSD calls themselves only where the session host's Unix socket is made, so a
+# listener cannot grow elsewhere with an address that rule does not spell. A function of
+# Drakar's own that happens to share a name is declared with `func`, which is left out.
+raw=$(grep -rHE --include='*.swift' '(Darwin\.|^|[^A-Za-z0-9_.])(socket|bind|listen)\(' $SOURCES \
+  | grep -vE '^[^:]*:[[:space:]]*//' | grep -v 'func ' | cut -d: -f1 | LC_ALL=C sort -u)
+[ "$raw" = apps/apple/Packages/DrakarKit/Sources/DrakarKit/Host/UnixSocket.swift ] \
+  && pass "socket(), bind() and listen() only in the session host's UnixSocket.swift" \
+  || fail "socket(), bind() or listen() called in: $(echo $raw)"
+
+# The MCP server. Its listener is swift-mcp-kit's LoopbackListener, which binds 127.0.0.1
+# and checks the bearer token before any request reaches a tool; Drakar makes one, in the
+# controller, and nowhere else starts another.
+n=$(count 'LoopbackListener\(')
+made_in=$(where 'LoopbackListener\(')
+[ "$n" -eq 1 ] && [ "$made_in" = apps/apple/Drakar/MCP/MCPServerController.swift ] \
+  && pass "one MCP listener, made only in MCPServerController" \
+  || fail "expected one LoopbackListener( in MCPServerController.swift, found $n in: $(echo $made_in)"
+
+# Off until you turn it on: every @AppStorage of the switch defaults to false, nothing sets
+# it to true, and the key is spelled once, so no other read of it can bring its own default.
+stores=$(count '@AppStorage\(MCPSettingsKey\.enabled\)')
+off=$(count '@AppStorage\(MCPSettingsKey\.enabled\) private var [a-zA-Z]* = false')
+on=$(count 'MCPSettingsKey\.enabled.*true|true.*MCPSettingsKey\.enabled')
+keys=$(count '"drakar\.mcp\.enabled"')
+[ "$stores" -gt 0 ] && [ "$stores" -eq "$off" ] && [ "$on" -eq 0 ] && [ "$keys" -eq 1 ] \
+  && pass "MCP server off by default ($stores switch(es), all false)" \
+  || fail "MCP switch: $off of $stores @AppStorage default to false, $on line(s) set it true, key spelled $keys time(s)"
+
+# The token is the kit's Keychain store, made only by the controller.
+made_in=$(where 'KeychainTokenStore\(service:')
+[ "$made_in" = apps/apple/Drakar/MCP/MCPServerController.swift ] \
+  && pass "MCP token kept in the Keychain, by MCPServerController" \
+  || fail "KeychainTokenStore(service: expected only in MCPServerController.swift, found in: $(echo ${made_in:-nothing})"
 
 code 'chmod\(directory\.path, 0o700\)' >/dev/null \
   && pass "session host folder made 0700" || fail "session host folder mode not set"
@@ -132,6 +185,14 @@ fi
 # could never be the test; the address family is, and "Sources" above asserts it (no
 # AF_INET, exactly one AF_UNIX). Nor the IDE bridge's NWListener, which "Sources" pins to
 # one, on 127.0.0.1, token-gated; here it is the one row for Drakar's own executable.
+#
+# Since the MCP server, Drakar's executable also carries swift-mcp-kit's LoopbackListener,
+# linked in statically: an AF_INET socket bound to 127.0.0.1, through the same BSD calls,
+# and the Keychain through Security. Neither is denied below, so it needs no row: measured
+# 2026-11-07 on an unsigned `make -C apps/apple build-release`, Drakar's hits were still the
+# Network.framework link and nothing else. "Sources" pins where it is made and that it
+# starts switched off. Its address is a constant in the kit (INADDR_LOOPBACK, in
+# MCPKitLoopback's LoopbackListener.swift), and --running checks the live one.
 
 # High-level networking only. Every one of these implies an intent no local path has:
 # loading a URL, resolving a name, negotiating TLS.
@@ -391,6 +452,9 @@ if [ "$running" -eq 1 ]; then
   if [ -z "$pid" ]; then
     fail "Drakar is not running"
   else
+    locks=$(grep -l '"ideName":"Drakar"' "$HOME"/.claude/ide/*.lock "$HOME"/.claude-*/ide/*.lock 2>/dev/null \
+      | while read -r f; do grep -q "\"pid\":$pid[,}]" "$f" && echo "$f"; done)
+
     listening=$(lsof -nP -a -p "$pid" -iTCP -sTCP:LISTEN 2>/dev/null | awk 'NR > 1 {print $9}')
     if [ -z "$listening" ]; then
       fail "no listening socket (is a session window open, or the scope set to Never?)"
@@ -398,10 +462,26 @@ if [ "$running" -eq 1 ]; then
       bad=$(printf '%s\n' "$listening" | grep -v '^127\.0\.0\.1:' | wc -l | tr -d ' ')
       [ "$bad" -eq 0 ] && pass "listening only on 127.0.0.1 ($listening)" \
         || fail "listening beyond loopback: $listening"
+
+      # Beyond the IDE bridge's port, which its lock files name, the one listener allowed is
+      # the MCP server's: on the port Settings › MCP Server stored, or, with none stored, a
+      # build's default (8811 Release, 8812 a copy run from Xcode; both builds share the
+      # preferences, so which one runs cannot be told from them).
+      ide_ports=$(for f in $locks; do basename "$f" .lock; done | LC_ALL=C sort -u)
+      ports=$(printf '%s\n' "$listening" | sed 's/.*://' | LC_ALL=C sort -u)
+      extra=$(lines_not_in "$ports" "$ide_ports")
+      mcp_port=$(defaults read io.mgcrea.Drakar drakar.mcp.port 2>/dev/null)
+      want=${mcp_port:-8811 8812}
+      stray=$(lines_not_in "$extra" "$(printf '%s\n' $want)")
+      if [ -z "$extra" ]; then
+        pass "no listener beyond the IDE bridge's (no MCP server running)"
+      elif [ "$(printf '%s\n' "$extra" | grep -c .)" -eq 1 ] && [ -z "$stray" ]; then
+        pass "one more listener, the MCP server's, on its port ($extra)"
+      else
+        fail "listening on $(echo $extra) beyond the IDE bridge's port; the MCP server may take only ${mcp_port:-8811 or 8812}"
+      fi
     fi
 
-    locks=$(grep -l '"ideName":"Drakar"' "$HOME"/.claude/ide/*.lock "$HOME"/.claude-*/ide/*.lock 2>/dev/null \
-      | while read -r f; do grep -q "\"pid\":$pid[,}]" "$f" && echo "$f"; done)
     if [ -z "$locks" ]; then
       fail "no lock file for pid $pid"
     else

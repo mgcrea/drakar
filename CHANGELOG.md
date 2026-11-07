@@ -8,6 +8,18 @@ Releases are tagged `app-v<version>` the way the sibling repos are, `app-v1.3.0`
 The GitHub release notes, the Sparkle update dialog and the app's What's New pane are all rendered
 from this file, which is the curated summary. `### Internal` sections are left out of all three.
 
+## [Unreleased]
+
+### Added
+
+- **An MCP server.** Turned on in Settings › MCP Server, it lets an AI agent on your Mac, such
+  as Claude Code or Codex, see your sessions, here and on your runner, read their transcripts
+  and wait for one to need you. Allow writes lets it also start sessions, send them messages,
+  interrupt and end them, and answer their questions; answering their permission prompts is a
+  switch of its own. It is off until you turn it on, listens on 127.0.0.1 only, and answers only
+  a client holding the token Drakar keeps in your Keychain. The pane sets up Claude Code, Codex
+  or Bastion for it.
+
 ## [1.3.0] - 2026-11-04
 
 **Sessions in tabs.** A project window's sessions are tabs that switch at once, and closing one
