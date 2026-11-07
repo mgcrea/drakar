@@ -419,6 +419,9 @@ final class Project {
   @ObservationIgnored var pendingSwitch: (id: ProjectSession.ID, state: OSSignpostIntervalState)?
   /// While `broadcast` sends: a prompt to the marked rows doesn't move on.
   @ObservationIgnored private var isBroadcasting = false
+  /// While `forAgent` runs: what an agent sends or answers through the MCP server is not the
+  /// person's reply, and moves the window on to no other session.
+  @ObservationIgnored private var isWritingForAgent = false
   /// Stands in for the located binary in every session this window makes, in tests.
   @ObservationIgnored var executableOverride: URL?
   /// Where the sessions this window doesn't hold are listed from; tests give it their own.
@@ -1278,13 +1281,14 @@ final class Project {
   /// as a tab of the window's own when something is typed or attached in it, which closing it
   /// would lose. The new preview takes the place of the one it replaces when that one was
   /// shown, so that going through the sidebar's rows leaves the tabs where they were.
+  /// Not `showing` (an agent's, through the MCP server), the tab shown stays shown.
   @discardableResult func attach(
     _ target: ResumeTarget, watching: Bool = false, readOnly: Bool = false,
-    focusingComposer: Bool = true
+    focusingComposer: Bool = true, showing: Bool = true
   ) -> ProjectSession {
     if target.forks != true, let existing = session(withID: target.sessionID) {
       if !watching { takeOver(existing) }
-      select(existing, focusingComposer: focusingComposer)
+      if showing { select(existing, focusingComposer: focusingComposer) }
       return existing
     }
     let session = AgentSession(
@@ -1296,7 +1300,11 @@ final class Project {
     item.dismissedAsk = dismissedElsewhere[target.sessionID]
     let index = watching ? replacePreview() ?? opensAt : opensAt
     sessions.insert(item, at: index)
-    select(item, focusingComposer: focusingComposer)
+    if showing {
+      select(item, focusingComposer: focusingComposer)
+    } else if selectedID == nil {
+      selectedID = item.id
+    }
     return item
   }
 
@@ -1558,11 +1566,16 @@ final class Project {
     return item.id == selectedID
   }
 
-  /// An ended session, watched here.
-  func openEnded(_ summary: SessionSummary, focusingComposer: Bool = true) {
-    if let target = ResumeTarget(summary) {
-      attach(target, watching: true, focusingComposer: focusingComposer)
-    }
+  /// An ended session, watched here. Not `showing` (an agent's, through the MCP server), it
+  /// opens as one of the window's own tabs and the tab shown stays: a preview would take the
+  /// place of the one the person may be looking at. Its row; nil when the summary names no
+  /// folder to resume it in.
+  @discardableResult func openEnded(
+    _ summary: SessionSummary, focusingComposer: Bool = true, showing: Bool = true
+  ) -> ProjectSession? {
+    guard let target = ResumeTarget(summary) else { return nil }
+    return attach(
+      target, watching: showing, focusingComposer: focusingComposer, showing: showing)
   }
 
   /// The sidebar's ↑ and ↓: the row `offset` rows from the one the preview tab shows (else
@@ -1678,7 +1691,9 @@ final class Project {
   /// sent to the marked rows, which the person is working through together; an answer or a
   /// Dismiss on the shown row moves on with rows marked too.
   private func replied(_ item: ProjectSession) {
-    guard movesOnAfterReply, item.id == selectedID, !isBroadcasting else { return }
+    guard movesOnAfterReply, item.id == selectedID, !isBroadcasting, !isWritingForAgent else {
+      return
+    }
     Task { [weak self] in
       guard let self, self.selectedID == item.id, item.urgency == nil,
         let next = self.nextNeedingAttention(ownRowsOnly: true)?.item
@@ -1898,8 +1913,9 @@ final class Project {
   ///
   /// It stays listed as closed at work until it is a tab again, and an open meanwhile (the
   /// second click of a double-click) is this one's: so it never falls through to a preview
-  /// beside the tab coming back.
-  func reopen(_ hostID: String, among held: [HeldProcess]) async {
+  /// beside the tab coming back. Not `showing` (an agent's, through the MCP server), the tab
+  /// shown stays shown.
+  func reopen(_ hostID: String, among held: [HeldProcess], showing: Bool = true) async {
     guard reopening.insert(hostID).inserted else { return }
     defer { reopening.remove(hostID) }
     closedHere.remove(hostID)
@@ -1911,7 +1927,7 @@ final class Project {
     closedAtWork = closedAtWork.filter { $0.value != hostID }
     guard let item = sessions.first(where: { $0.session.hostID == hostID }) else { return }
     if closed { item.session.reopenedAfterClose() }
-    select(item)
+    if showing { select(item) }
   }
 
   private func isShownReadOnly(_ hostID: String) -> Bool {
@@ -2075,6 +2091,19 @@ final class Project {
     // Its process, under the host, is this app's own now, not another app's live session.
     if session.isHosted { SessionMonitor.shared.hostedChanged() }
     Attention.shared.refresh()
+  }
+
+  /// `write`, an agent's prompt or answer through the MCP server: Next After Replying leaves
+  /// the tab shown where it is, whose composer the person may be typing in.
+  func forAgent(_ write: () -> Void) {
+    isWritingForAgent = true
+    defer { isWritingForAgent = false }
+    write()
+  }
+
+  /// The window's blank row, the one a new window makes, if it has one.
+  func blankRow() -> ProjectSession? {
+    sessions.first(where: isBlank)
   }
 
   /// A new session never started, nothing typed in it.

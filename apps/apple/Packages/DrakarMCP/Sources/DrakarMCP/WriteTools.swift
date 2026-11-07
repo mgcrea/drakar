@@ -253,8 +253,7 @@ extension Tools {
   {
     guard let detail = await source.detail(of: id) else { throw SessionIDs.unknown(id) }
     guard let pending = detail.pending.first(where: { $0.requestID == requestID }) else {
-      throw SessionError(
-        "Request \(requestID) is no longer waiting: already answered, or the turn ended.")
+      throw SessionError.noLongerWaiting(requestID)
     }
     return pending
   }

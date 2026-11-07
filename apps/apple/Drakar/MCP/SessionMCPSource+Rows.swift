@@ -95,6 +95,10 @@ extension SessionMCPSource {
   @MainActor struct Background {
     var row: SessionRow
     var meta: SessionMeta
+    /// The session host's id for the process, which taking it back names.
+    var hostID: String
+    /// The runner whose host holds it (`RunnerSettings.id`); nil for this Mac's.
+    var runnerID: String?
 
     /// What it resumes or was saved as, which names its transcript and account.
     private var target: ResumeTarget? { meta.savedTarget ?? meta.start.resuming }
@@ -144,7 +148,7 @@ extension SessionMCPSource {
         model: meta.modelPick ?? summary?.modelID, contextUsed: gauge?.used,
         contextLimit: gauge?.window.limit,
         lastActivity: live?.updatedAt ?? summary?.modified, place: .background)
-      rows.append(Background(row: row, meta: meta))
+      rows.append(Background(row: row, meta: meta, hostID: process.id))
     }
     return rows
   }

@@ -21,6 +21,11 @@ nonisolated final class SessionMCPSource: SessionSource, @unchecked Sendable {
   /// (a host slower than its limit) says nothing of what it holds, so the last one stands
   /// rather than every background row dropping out for that call.
   @MainActor private var lastHeld: [HostListings.Key: [HeldProcess]] = [:]
+  /// The runner set up now; tests give their own.
+  @MainActor var runnerHost: () -> SessionHost? = { SessionHost.runner }
+  /// How a project's window is opened when none is (`MCPWindows`), nil before any window has
+  /// handed the scene's action over; tests give their own.
+  @MainActor var openWindow: () -> ((WindowRoute) -> Void)? = { MCPWindows.openWindow }
 
   /// Tests give a scratch `defaults`, their own windows and a monitor of their own.
   @MainActor
@@ -71,20 +76,354 @@ nonisolated final class SessionMCPSource: SessionSource, @unchecked Sendable {
     await MainActor.run { defaults.bool(forKey: MCPSettingsKey.allowsPermissions) }
   }
 
-  // MARK: - Writes (Task 8)
+  // MARK: - Writes
 
-  func start(_ request: StartRequest) async throws -> String { throw Self.notReady }
-  func send(to id: String, text: String) async throws -> SendOutcome { throw Self.notReady }
-  func interrupt(_ id: String) async throws { throw Self.notReady }
-  func end(_ id: String) async throws { throw Self.notReady }
+  func start(_ request: StartRequest) async throws -> String {
+    try await startOnMain(request)
+  }
+
+  func send(to id: String, text: String) async throws -> SendOutcome {
+    try await sendOnMain(to: id, text: text)
+  }
+
+  func interrupt(_ id: String) async throws {
+    try await interruptOnMain(id)
+  }
+
+  func end(_ id: String) async throws {
+    try await endOnMain(id)
+  }
+
   func answer(_ id: String, requestID: String, with decision: PermissionDecision) async throws {
-    throw Self.notReady
-  }
-  func answer(_ id: String, requestID: String, with answer: ElicitationAnswer) async throws {
-    throw Self.notReady
+    try await answerOnMain(id, requestID: requestID, with: decision)
   }
 
-  private static let notReady = SessionError("Not ready")
+  func answer(_ id: String, requestID: String, with answer: ElicitationAnswer) async throws {
+    try await answerOnMain(id, requestID: requestID, with: answer)
+  }
+}
+
+// MARK: - Writes
+
+// Each write is the call the window's own control makes (spec Anti-goals), on the main actor
+// as the window makes it, and none takes the keyboard: no tab is selected for it, and a window
+// it needs is found or opened through `MCPWindows`.
+extension SessionMCPSource {
+  /// How long a session started has to report its id.
+  static let sessionIDLimit = Duration.seconds(30)
+
+  /// A new session in the folder's project window, sent its first prompt: the window's own
+  /// blank row when the window was opened for it, else a new tab it does not switch to.
+  @MainActor private func startOnMain(_ request: StartRequest) async throws -> String {
+    if !EntitlementMonitor.allowsWorkNow { throw SessionError(LockedComposerCard.refusal) }
+    let route =
+      try request.runner.map { try runnerRoute(request.folder, runner: $0) }
+      ?? localRoute(request.folder)
+    let wasOpen = openSessions.project(for: route) != nil
+    let project = try await windowed(route)
+    let agent: AgentKind? = request.agent.map { $0 == .codex ? .codex : .claude }
+    let blank = wasOpen ? nil : project.blankRow()
+    let item =
+      blank.flatMap { agent == nil || $0.session.agent == agent ? $0 : nil }
+      ?? project.newSession(agent: agent, select: false)
+    guard item.session.canSend else { throw SessionError(sendRefusal(item, in: project)) }
+    if let model = request.model { item.session.setModel(model) }
+    project.forAgent { item.session.send(request.prompt) }
+    return try await sessionID(
+      of: item, startedIn: route.folder?.path(percentEncoded: false) ?? request.folder)
+  }
+
+  /// This Mac's folder, `~` being this Mac's home; refused when it is not a folder here.
+  @MainActor private func localRoute(_ folder: String) throws -> WindowRoute {
+    let path = NSString(string: folder).expandingTildeInPath
+    var isDirectory: ObjCBool = false
+    guard FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory),
+      isDirectory.boolValue
+    else {
+      throw SessionError("There is no folder at \(folder) on this Mac.")
+    }
+    return .project(URL(filePath: path, directoryHint: .isDirectory))
+  }
+
+  /// The runner's folder, `~` being the runner's home as New Session on Runner takes it;
+  /// refused unless the runner named is the one set up, and connected.
+  @MainActor private func runnerRoute(_ folder: String, runner name: String) throws
+    -> WindowRoute
+  {
+    guard let settings = RunnerSettings.read(from: defaults),
+      settings.displayName.caseInsensitiveCompare(name) == .orderedSame
+    else {
+      throw SessionError("No runner named \(name) is set up.")
+    }
+    let id = settings.id.uuidString
+    let host = runnerHost()
+    guard let host, host.reaches(runner: id), host.isAvailable else {
+      throw SessionError("\(settings.displayName) can't be reached: \(Self.reason(host)).")
+    }
+    guard let path = NewRunnerSession.path(from: folder, home: host.facts?.home) else {
+      throw SessionError("\(folder) names no folder on \(settings.displayName).")
+    }
+    return .project(URL(filePath: path, directoryHint: .isDirectory), runner: id)
+  }
+
+  /// Why a runner is out of reach, as its last failure says, without a closing period.
+  @MainActor private static func reason(_ host: SessionHost?) -> String {
+    let message = host?.failure?.message.trimmingCharacters(in: CharacterSet(charactersIn: ". "))
+    return message.flatMap { $0.isEmpty ? nil : $0 } ?? "it isn't connected"
+  }
+
+  /// The project `route` names, its window opened behind the others when none is.
+  @MainActor private func windowed(_ route: WindowRoute) async throws -> Project {
+    try await MCPWindows.project(for: route, in: openSessions, opening: openWindow()).get()
+  }
+
+  /// `item`'s session id once it has one; refused when its start failed, or once
+  /// `sessionIDLimit` has gone by.
+  @MainActor private func sessionID(of item: ProjectSession, startedIn folder: String)
+    async throws -> String
+  {
+    let deadline = ContinuousClock.now + Self.sessionIDLimit
+    while true {
+      if let id = item.sessionID { return id }
+      switch item.session.phase {
+      case .failed(let reason):
+        throw SessionError("The session in \(folder) could not start: \(reason)")
+      case .exited:
+        throw SessionError("The session in \(folder) ended before it had a session id.")
+      case .idle, .starting, .ready: break
+      }
+      guard ContinuousClock.now < deadline else { break }
+      do {
+        try await Task.sleep(for: .milliseconds(100))
+      } catch {
+        break
+      }
+    }
+    throw SessionError(
+      "Started in \(folder), but it has no session id yet. drakar_list_sessions will show it "
+        + "once it does.")
+  }
+
+  /// Sent as the composer sends: now when the session can take a prompt, queued behind a
+  /// running turn. A session in the background is taken back into its window first, and an
+  /// ended one resumed there.
+  @MainActor private func sendOnMain(to id: String, text: String) async throws -> SendOutcome {
+    let (project, item) = try await target(of: id, resumingEnded: true)
+    let session = item.session
+    // As showing its tab reads it, before the composer could send.
+    if !session.hasLoadedHistory { await session.loadHistory() }
+    let outcome: SendOutcome
+    if session.canSend {
+      outcome = .sent
+    } else if session.canQueue {
+      outcome = .queued
+    } else {
+      throw SessionError(sendRefusal(item, in: project))
+    }
+    Self.send(text, to: item, in: project)
+    return outcome
+  }
+
+  /// As the composer sends: a watched row becomes one of the window's own first. Not async,
+  /// so that it is the window's `takeOver`, not the handoff's of the same name.
+  @MainActor private static func send(_ text: String, to item: ProjectSession, in project: Project)
+  {
+    project.takeOver(item)
+    project.forAgent { item.session.send(text) }
+  }
+
+  /// Escape: the running turn ends, and what was queued behind it runs next.
+  @MainActor private func interruptOnMain(_ id: String) async throws {
+    // A background process this Mac's registry says is idle is not taken back for nothing.
+    let (project, item) = try await target(of: id, resumingEnded: false) { row in
+      if row.runner == nil, row.state == .idle {
+        throw SessionError("\(row.title ?? row.id) has no turn running.")
+      }
+    }
+    if let refusal = heldRefusal(item, in: project) { throw SessionError(refusal) }
+    let session = item.session
+    let title = Self.shownTitle(of: item)
+    // Nothing would reach the process until the connection is back.
+    if session.isReconnecting { throw Self.reconnecting(title) }
+    guard session.status.isRunning, session.isProcessRunning else {
+      throw SessionError("\(title) has no turn running.")
+    }
+    session.interrupt(keepingQueued: true)
+  }
+
+  /// End Session: the process stops, the row stays.
+  @MainActor private func endOnMain(_ id: String) async throws {
+    let (project, item) = try await target(of: id, resumingEnded: false)
+    if let refusal = heldRefusal(item, in: project) { throw SessionError(refusal) }
+    project.end(item)
+  }
+
+  @MainActor private func answerOnMain(
+    _ id: String, requestID: String, with decision: PermissionDecision
+  ) async throws {
+    let (project, session) = try await answering(id, requestID: requestID)
+    // Read again now: the person may have answered it since it was listed.
+    guard
+      let pending = session.status.pendingPermissions.first(where: {
+        $0.requestID == requestID
+      })
+    else { throw SessionError.noLongerWaiting(requestID) }
+    project.forAgent { session.answer(pending, decision) }
+  }
+
+  @MainActor private func answerOnMain(
+    _ id: String, requestID: String, with answer: ElicitationAnswer
+  ) async throws {
+    let (project, session) = try await answering(id, requestID: requestID)
+    guard
+      let pending = session.status.pendingElicitations.first(where: {
+        $0.requestID == requestID
+      })
+    else { throw SessionError.noLongerWaiting(requestID) }
+    project.forAgent { session.answer(pending, answer) }
+  }
+
+  /// The window's session a request is answered in. Only a window's session has requests to
+  /// answer; one reconnecting keeps them waiting, as its panel does.
+  @MainActor private func answering(_ id: String, requestID: String) async throws
+    -> (Project, AgentSession)
+  {
+    guard case .window(let project, let item, _) = await find(id) else {
+      throw SessionError.noLongerWaiting(requestID)
+    }
+    if item.session.isReconnecting { throw Self.reconnecting(Self.shownTitle(of: item)) }
+    // With no process, an answer would reach nobody.
+    guard item.session.isProcessRunning else { throw SessionError.noLongerWaiting(requestID) }
+    return (project, item.session)
+  }
+
+  /// The window row a write acts on: a window's as it is; one in the background taken back
+  /// into its project's window first, as Home's rows take one back; with `resumingEnded`, an
+  /// ended one opened in its project's window to be resumed, as Home's "open" does. One live
+  /// in another process is refused, as is one ended for anything but a message. `vetting`
+  /// may refuse a background row before it is taken back.
+  @MainActor private func target(
+    of id: String, resumingEnded: Bool, vetting: (SessionRow) throws -> Void = { _ in }
+  ) async throws -> (Project, ProjectSession) {
+    switch await find(id) {
+    case .window(let project, let item, _):
+      return (project, item)
+    case .background(let background):
+      try vetting(background.row)
+      return try await takeBack(background)
+    case .monitored(let summary, let row):
+      let title = row.title ?? id
+      // An ended session is listed elsewhere too: ended is read first.
+      guard row.state == .ended else {
+        throw SessionError(
+          "\(title) runs in \(row.heldBy ?? "another app"); Drakar only follows it.")
+      }
+      guard resumingEnded else {
+        throw SessionError("\(title) has ended. drakar_send_message resumes it.")
+      }
+      return try await resume(summary, row: row)
+    case nil:
+      throw SessionError("No session \(id). drakar_list_sessions lists them.")
+    }
+  }
+
+  /// An ended session opened in its project's window as one of its tabs, not shown.
+  @MainActor private func resume(_ summary: SessionSummary, row: SessionRow) async throws
+    -> (Project, ProjectSession)
+  {
+    let refusal = SessionError(
+      "\(row.title ?? row.id) can't be resumed: its transcript names no folder.")
+    guard !row.folder.isEmpty else { throw refusal }
+    let project = try await windowed(
+      .project(URL(filePath: row.folder, directoryHint: .isDirectory)))
+    guard let item = project.openEnded(summary, focusingComposer: false, showing: false) else {
+      throw refusal
+    }
+    return (project, item)
+  }
+
+  /// A process the session host holds with no window, taken back into its project's window
+  /// as Home's runner rows take one back (`RunnerSection.open`), the tab shown staying.
+  @MainActor private func takeBack(_ background: Background) async throws
+    -> (Project, ProjectSession)
+  {
+    let row = background.row
+    let title = row.title ?? row.id
+    if row.state == .unreachable {
+      throw SessionError(
+        "\(title) is on \(row.runner ?? "the runner"), which can't be reached: "
+          + "\(Self.reason(runnerHost())).")
+    }
+    let project = try await windowed(
+      .project(
+        URL(filePath: background.meta.windowFolder, directoryHint: .isDirectory),
+        runner: background.runnerID))
+    let listings = await listHosts()
+    let held =
+      background.runnerID == nil
+      ? listings.local
+      : listings.runner.flatMap { $0.id == background.runnerID ? $0.held : nil }
+    guard let held else {
+      throw SessionError("\(title)'s session host did not answer. Try again in a moment.")
+    }
+    await project.reopen(background.hostID, among: held, showing: false)
+    // A window just opened takes back what it may by itself (`takeBackHeld`), and `reopen`
+    // leaves the process to it: the row comes once that is done.
+    let deadline = ContinuousClock.now + MCPWindows.registrationLimit
+    while true {
+      if let item = project.sessions.first(where: {
+        $0.session.hostID == background.hostID || (!$0.isWatching && $0.sessionID == row.id)
+      }) {
+        return (project, item)
+      }
+      guard ContinuousClock.now < deadline else { break }
+      do {
+        try await Task.sleep(for: .milliseconds(50))
+      } catch {
+        break
+      }
+    }
+    throw SessionError("\(title) could not be taken back from the background. Try again.")
+  }
+
+  /// Why `item` takes no message now, in the order the composer's place says it.
+  @MainActor private func sendRefusal(_ item: ProjectSession, in project: Project) -> String {
+    if let held = heldRefusal(item, in: project) { return held }
+    let session = item.session
+    let title = Self.shownTitle(of: item)
+    if session.isReconnecting { return Self.reconnecting(title).message }
+    if let gone = session.goneOnRunnerText { return gone }
+    if session.isOutOfReach {
+      return "\(title) can't be reached: its process runs on where this Mac can't send to it."
+    }
+    if !EntitlementMonitor.allowsWorkNow { return LockedComposerCard.refusal }
+    if session.isMoving { return "\(title) is moving to another account. Try again once it has." }
+    if session.waitsForHost || session.phase == .starting {
+      return "\(title) is starting. Try again in a moment."
+    }
+    return "\(title) can't take a message now."
+  }
+
+  /// Why nothing is sent to `item` from here: another Drakar holds its process, or another
+  /// app runs it and this window only follows it. Nil for a row of the window's own.
+  @MainActor private func heldRefusal(_ item: ProjectSession, in project: Project) -> String? {
+    let row = windowRow(item, in: project, summary: item.sessionID.flatMap { summariesByID()[$0] })
+    guard row.readOnly else { return nil }
+    let title = Self.shownTitle(of: item)
+    let holder = row.heldBy ?? "another app"
+    if item.session.heldElsewhere != nil {
+      return "\(title) is held by \(holder); send it from there."
+    }
+    return "\(title) runs in \(holder); Drakar only follows it."
+  }
+
+  @MainActor private static func reconnecting(_ title: String) -> SessionError {
+    SessionError("\(title) is reconnecting to its session host. Try again in a moment.")
+  }
+
+  @MainActor private static func shownTitle(of item: ProjectSession) -> String {
+    item.knownTitle ?? item.sessionID ?? "This session"
+  }
 }
 
 // MARK: - Finding sessions
@@ -118,16 +457,20 @@ extension SessionMCPSource {
     let windows = windowEntries(summaries: summaries)
     var listed = Set(windows.map(\.row.id))
     var background: [Background] = []
-    let hosts: [(processes: [HeldProcess], runner: String?, unreachable: Bool)] = [
-      (held.local, nil, false), (held.runner, held.runnerName, held.runnerUnreachable),
-    ]
-    for (processes, runner, unreachable) in hosts {
+    let hosts: [(processes: [HeldProcess], runner: String?, runnerID: String?, unreachable: Bool)] =
+      [
+        (held.local, nil, nil, false),
+        (held.runner, held.runnerName, held.runnerID, held.runnerUnreachable),
+      ]
+    for (processes, runner, runnerID, unreachable) in hosts {
       var rows = Self.backgroundRows(
         processes, runner: runner, live: monitor.liveSessions, excluding: listed,
         summary: { summaries[$0] }, accountModel: { [monitor] in monitor.accountModel(for: $0) })
-      // Kept from before the connection dropped: nothing can be sent to them until it is back.
-      if unreachable {
-        for index in rows.indices { rows[index].row.state = .unreachable }
+      for index in rows.indices {
+        rows[index].runnerID = runnerID
+        // Kept from before the connection dropped: nothing can be sent to them until it is
+        // back.
+        if unreachable { rows[index].row.state = .unreachable }
       }
       listed.formUnion(rows.map(\.row.id))
       background += rows
@@ -193,13 +536,15 @@ extension SessionMCPSource {
   /// asked only when it runs, the runner's only while connected. `runnerUnreachable`: the
   /// runner is not connected, and what it holds is as last listed.
   @MainActor private func heldProcesses() async -> (
-    local: [HeldProcess], runner: [HeldProcess], runnerName: String?, runnerUnreachable: Bool
+    local: [HeldProcess], runner: [HeldProcess], runnerName: String?, runnerID: String?,
+    runnerUnreachable: Bool
   ) {
     let listings = await listHosts()
     let local = held(listings.local, by: .thisMac)
-    guard let runner = listings.runner else { return (local, [], nil, false) }
+    guard let runner = listings.runner else { return (local, [], nil, nil, false) }
     return (
-      local, held(runner.held, by: .runner(runner.id)), runner.name, !runner.isConnected
+      local, held(runner.held, by: .runner(runner.id)), runner.name, runner.id,
+      !runner.isConnected
     )
   }
 

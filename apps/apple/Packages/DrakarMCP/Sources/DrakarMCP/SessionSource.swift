@@ -191,6 +191,13 @@ public struct SessionError: LocalizedError, Sendable, Equatable {
   }
 
   public var errorDescription: String? { message }
+
+  /// A request answered since it was listed, or whose turn ended: the one sentence for it,
+  /// whether the tool or the app finds it gone.
+  public static func noLongerWaiting(_ requestID: String) -> SessionError {
+    SessionError(
+      "Request \(requestID) is no longer waiting: already answered, or the turn ended.")
+  }
 }
 
 /// Everything the tools read and do, answered by the app with the calls its own controls make.
