@@ -170,7 +170,9 @@ extension Tools {
           + "permission prompt is answered with drakar_answer_permission instead.",
         properties: [
           "session": sessionArgument,
-          "request_id": ["type": "string", "description": "The request's requestId."],
+          "request_id": [
+            "type": "string", "description": "The request's requestId, passed back as given.",
+          ],
           "answers": [
             "type": "object", "additionalProperties": ["type": "string"],
             "description": "For a question: each question's text to its answer.",
@@ -307,13 +309,16 @@ extension Tools {
           + "drakar_needs_attention or drakar_get_session. The call runs with the input it "
           + "asked for. always applies some of the request's own suggestions, by index: only "
           + "those it lists, each lasting no longer than the session. A plan (ExitPlanMode) "
-          + "allowed runs with every edit still asking; denied, it keeps planning, message "
-          + "being what to change. Needs Let agents answer permission prompts in Drakar's "
-          + "Settings › MCP Server. A question or an MCP server's form is answered with "
-          + "drakar_answer_question instead.",
+          + "allowed runs with every edit still asking; denied with a message, it keeps "
+          + "planning, message being what to change; denied without one, its turn ends. "
+          + "interrupt does not apply to a plan. Needs Let agents answer permission prompts in "
+          + "Drakar's Settings › MCP Server. A question or an MCP server's form is answered "
+          + "with drakar_answer_question instead.",
         properties: [
           "session": sessionArgument,
-          "request_id": ["type": "string", "description": "The request's requestId."],
+          "request_id": [
+            "type": "string", "description": "The request's requestId, passed back as given.",
+          ],
           "decision": [
             "type": "string",
             "enum": .array(PermissionAnswer.Verdict.allCases.map { .string($0.rawValue) }),
@@ -324,7 +329,7 @@ extension Tools {
           ],
           "interrupt": [
             "type": "boolean", "default": false,
-            "description": "On deny, end the session's turn too.",
+            "description": "On deny, end the session's turn too. Not for a plan.",
           ],
           "always": [
             "type": "array", "items": ["type": "integer", "minimum": 0],

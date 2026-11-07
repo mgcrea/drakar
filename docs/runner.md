@@ -236,12 +236,14 @@ Rename it with no runner sessions held, or carry on with them in the runner's Dr
 ## From an agent
 
 An agent on the Mac can drive the runner's sessions through the Mac's Drakar, once its MCP
-server is on (`docs/mcp.md`): list them with the Mac's own, see which want you, read their
-transcripts, start one in a folder on the runner (`drakar_start_session` with `runner`),
-send it work and answer its prompts, as far as Settings › MCP Server allows. A session
-started that way is Claude Code, like any runner session, and opens in its window on the Mac
-without taking the keyboard, apart from the limits in `docs/mcp.md`. The agent never talks
-to the runner itself; the Mac's Drakar does, over the same ssh.
+server is on (`docs/mcp.md`): list them with the Mac's own, see which want you, read the
+transcripts of those open in a window (one held in the background is read once it is opened
+in Drakar, its transcript being on the runner), start one in a folder on the runner
+(`drakar_start_session` with `runner`), send it work and answer its prompts, as far as
+Settings › MCP Server allows. A session started that way is Claude Code, like any runner
+session, and opens in its window on the Mac without taking the keyboard, apart from the
+limits in `docs/mcp.md`. The agent never talks to the runner itself; the Mac's Drakar does,
+over the same ssh.
 
 ## What v1 leaves out
 

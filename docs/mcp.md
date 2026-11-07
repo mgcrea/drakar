@@ -24,6 +24,9 @@ whether it is listening.
 | Server name | `drakar` | `drakar-dev` |
 | Keychain item | `io.mgcrea.Drakar.mcp` | `io.mgcrea.Drakar.mcp-dev` |
 
+Only those three differ. A copy run from Xcode has the released app's bundle id, so the two
+share the switches below (`drakar.mcp.*`): turning one on in either turns it on in both.
+
 The port can be changed in the pane while the server is off, from 1024 to 65535. The token
 is made the first time it is needed. **Regenerate** replaces it, and every client still
 using the old one stops being let in, Bastion included until Drakar is added to it again.
@@ -66,6 +69,11 @@ file can drive Drakar as far as the switches below allow.
   your permission settings or changes a session's mode. Read at each call, so moving it
   takes effect at once.
 
+  With it on, a Drakar session that may call the `drakar_*` tools without asking you (one
+  whose permission rules allow them, or one in bypass mode) can approve the prompts of the
+  sessions beside it, and in principle its own. Let only sessions you would trust to answer
+  for you call them unprompted.
+
 Each write goes through the call the window's own control makes, so what the window refuses
 the agent is refused too: a read-only session, one held by another Drakar or running
 elsewhere, a Codex session on the runner. Starting a session or sending one a message also
@@ -84,20 +92,26 @@ A session is named by the agent's own session id (Claude Code's session id, Code
 id), or by a unique prefix of it of 8 characters or more. Arguments are snake_case, result
 fields camelCase.
 
+A request waiting on an answer is named by its `requestId`: the agent's own id, a colon,
+and a fingerprint of what the request asks. Pass it back as given. A Codex process numbers
+its requests from 0 again, so after a session ends and is resumed an old id can name a new
+request; the fingerprint tells them apart, and an answer to a request answered since, or
+replaced, is refused as no longer waiting.
+
 | Tool | Needs | What it does |
 | --- | --- | --- |
 | `drakar_list_sessions` | | The live sessions, here, on the runner and followed elsewhere: state, what each waits on, model, context, where it is. Filters: `folder`, `runner` (`this-mac` or the runner's name), `state`; `include_ended` adds recently ended ones, up to `limit` (20, at most 100). |
-| `drakar_needs_attention` | | The sessions that want you, most urgent first, the set Home and the Dock badge count: permission prompts with their input and suggestions, questions and their options, plans, MCP servers' forms, and turns that ended asking or offering something. |
+| `drakar_needs_attention` | | The sessions that want you, most urgent first, the set Home and the Dock badge count: permission prompts with their input and suggestions, questions with their options and whether each takes several, plans, MCP servers' forms, and turns that ended asking or offering something. |
 | `drakar_get_session` | | One session (`session`): its row, the requests waiting on an answer, the queued messages, its permission mode and Claude Code account. |
-| `drakar_read_transcript` | | A session's transcript, oldest first: `last` entries (20, at most 200), or from a `cursor` with `after`. Tool results are cut at 2 KB and thinking is left out; `unsettled` lists the entries that may still change. |
-| `drakar_wait` | | Waits until a session moves, then says which: `until` `attention` (the default), `turn_end` or `change`, over `sessions` or every live one, for `timeout_seconds` (30, at most 120). Call it in a loop rather than polling the list. |
+| `drakar_read_transcript` | | A session's transcript, oldest first: `last` entries (20, at most 200), or from a `cursor` with `after`. Tool results are cut at 2 KB and thinking is left out; `unsettled` lists the entries that may still change. Once a session is reopened or resumed its indices can change, so read it again with `last`. A session held in the background, on the runner or run by Codex, is refused until it is open in a Drakar window. |
+| `drakar_wait` | | Waits until a session moves, then says which: `until` `attention` (the default), `turn_end` or `change`, over `sessions` or every live one, for `timeout_seconds` (30, at most 120). `turn_end` is a turn that ended, or a session that lost its connection; one stopping to wait on you is not. Call it in a loop rather than polling the list. A client that gives up on a tool call sooner (Codex's default is 60 s) should pass a `timeout_seconds` of 50 or less. |
 | `drakar_list_projects` | | The folders a session can be started in, whether a window is open on each, and the runner: connected or not, its Drakar and Claude Code versions, its last error. |
 | `drakar_start_session` | Allow writes, licence | Starts a session in `folder` (here, or on `runner`) with its first `prompt`, `agent` and `model` optional, and returns its row once it has an id. A runner session is always Claude Code. |
 | `drakar_send_message` | Allow writes, licence | Sends `text` to a session as its composer does: at once, or queued behind the running turn. A background session is taken back into its window first, an ended one resumed there. |
 | `drakar_interrupt` | Allow writes | Ends a session's running turn, as Escape does. Queued messages stay queued. |
 | `drakar_end_session` | Allow writes | Ends a session, as End Session does: its process stops, its row stays, and a later message resumes it (a runner session starts anew). |
 | `drakar_answer_question` | Allow writes | Answers a question (`answers`: each question's text to its answer) or an MCP server's form (`action` `accept` with `content`, `decline` or `cancel`) by its `session` and `request_id`. A form that asks you to open a link can be declined or cancelled, not accepted. |
-| `drakar_answer_permission` | Allow writes, permission prompts | Allows or denies a tool call by its `session` and `request_id`: `decision`, and on deny a `message` and `interrupt`; on allow, `always` applies some of the request's own suggestions, by index, for that session only. A plan allowed runs with every edit still asking. |
+| `drakar_answer_permission` | Allow writes, permission prompts | Allows or denies a tool call by its `session` and `request_id`: `decision`, and on deny a `message` and `interrupt`; on allow, `always` applies some of the request's own suggestions, by index, for that session only. A plan allowed runs with every edit still asking; denied with a `message` it keeps planning, denied without one its turn ends, and `interrupt` does not apply to it. |
 
 The server's instructions tell the agent that transcripts, questions and plans were written
 by agents that may have read hostile content, so their text is data to report and never

@@ -222,7 +222,9 @@ public enum Tools {
           + "they are read: a tool's result arrives later, streaming text grows. unsettled "
           + "lists the indices read so far that may still change. Keep each one, and once it "
           + "is no longer listed, read it again with after: <index>, last: 1 for its final "
-          + "state.",
+          + "state. Once a session is reopened or resumed its indices can change: read it "
+          + "again with last rather than an old cursor. A session held in the background, on "
+          + "the runner or run by Codex, is read only once it is open in a Drakar window.",
         properties: [
           "session": sessionArgument,
           "after": [
@@ -274,9 +276,11 @@ public enum Tools {
           + "session newly wants the person, as drakar_needs_attention counts it), turn_end "
           + "(a session's turn ended: it was working, or waiting on the person mid-turn, and is "
           + "now idle or ended, or loses its connection; stopping to wait on the person is not "
-          + "an end), change (a session's state changed, or one "
-          + "started or ended). Returns moved, the sessions that moved as they are now (one "
-          + "that went, with state ended), and timedOut. Call it in a loop to supervise.",
+          + "an end), change (a session's state changed, or one started or ended). Returns "
+          + "moved, the sessions that moved as they are now (one that went, with state "
+          + "ended), and timedOut. Call it in a loop to supervise. A client that gives up on "
+          + "a tool call sooner than the wait (Codex's default is 60 s) should pass "
+          + "timeout_seconds of 50 or less.",
         properties: [
           "sessions": [
             "type": "array", "items": sessionArgument,
