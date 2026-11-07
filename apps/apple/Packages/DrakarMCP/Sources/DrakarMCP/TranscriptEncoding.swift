@@ -43,21 +43,29 @@ enum TranscriptEncoding {
     )
   }
 
-  /// The entries DrakarKit may still rewrite in place, in order: while a turn runs, each tool
-  /// call with no result yet, and the newest main-thread text. A transcript whose turn ended,
-  /// or that was read from its file, has none: nothing will come to change them.
+  /// The entries DrakarKit may still rewrite in place, in order: each tool call with no result
+  /// yet while its turn runs, or while the subagent it runs under (or that it started) still
+  /// runs, which a background fork does after its turn ended; and the newest main-thread text
+  /// while a turn runs. A transcript read from its file, or whose process exited, has none:
+  /// nothing will come to change them.
   static func unsettled(_ transcript: Transcript) -> [Int] {
-    guard transcript.isRunning else { return [] }
     let all = transcript.entries
+    let tasks = transcript.agentTasks
+    func taskRuns(_ callID: String?) -> Bool {
+      callID.flatMap { tasks[$0]?.status } == .running
+    }
     var indices = all.indices.filter { index in
-      if case .tool(let call) = all[index].kind { return call.result == nil }
-      return false
+      guard case .tool(let call) = all[index].kind, call.result == nil else { return false }
+      return transcript.isRunning || taskRuns(all[index].parentToolUseID) || taskRuns(call.id)
     }
-    let newestText = all.indices.last { index in
-      guard all[index].parentToolUseID == nil, case .text = all[index].kind else { return false }
-      return true
+    if transcript.isRunning,
+      let newestText = all.indices.last(where: { index in
+        guard all[index].parentToolUseID == nil, case .text = all[index].kind else { return false }
+        return true
+      })
+    {
+      indices.append(newestText)
     }
-    if let newestText { indices.append(newestText) }
     return indices.sorted()
   }
 

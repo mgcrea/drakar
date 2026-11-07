@@ -224,8 +224,9 @@ public enum Tools {
           + "resultTruncated when it was) instead of text. Thinking is left out. Returns "
           + "cursor: pass it as after to read only what came since. Entries can change after "
           + "they are read: a tool's result arrives later, streaming text grows. unsettled "
-          + "lists the indices read so far that may still change; read one again with after: "
-          + "<index>, last: 1.",
+          + "lists the indices read so far that may still change. Keep each one, and once it "
+          + "is no longer listed, read it again with after: <index>, last: 1 for its final "
+          + "state.",
         properties: [
           "session": sessionArgument,
           "after": [

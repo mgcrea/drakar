@@ -194,6 +194,34 @@ struct TranscriptToolTests {
     #expect(page.unsettled == [2])
   }
 
+  /// DrakarKit's `fork-subagent` capture: a fork started in the background, its turn ended,
+  /// then the fork's Bash call (line 9) and its result (line 11) arrived.
+  private static func forkSession(lines count: Int) throws -> Transcript {
+    let url = URL(filePath: #filePath).deletingLastPathComponent()
+      .appending(path: "../../../DrakarKit/Tests/DrakarKitTests/Fixtures/fork-subagent.jsonl")
+      .standardizedFileURL
+    let lines = try Data(contentsOf: url).split(separator: UInt8(ascii: "\n"))
+    var feed = ClaudeFeed()
+    feed.addPrompt("Fork it")
+    for line in lines.prefix(count) { feed.apply(try StreamMessage(line: Data(line))) }
+    return feed.transcript
+  }
+
+  @Test("A fork's call stays unsettled after its turn ended, until its result comes")
+  func forkCallUnsettledBetweenTurns() throws {
+    let started = try Self.forkSession(lines: 9)
+    #expect(!started.isRunning)
+    let call = try #require(
+      started.entries.indices.first { index in
+        guard case .tool(let call) = started.entries[index].kind else { return false }
+        return call.name == "Bash"
+      })
+    #expect(TranscriptEncoding.page(started, after: nil, last: 20).unsettled == [call])
+
+    let answered = try Self.forkSession(lines: 11)
+    #expect(!TranscriptEncoding.page(answered, after: nil, last: 20).unsettled.contains(call))
+  }
+
   @Test("A transcript the source cannot read is refused with its sentence")
   func unreadableTranscript() async {
     serve(Transcript())
