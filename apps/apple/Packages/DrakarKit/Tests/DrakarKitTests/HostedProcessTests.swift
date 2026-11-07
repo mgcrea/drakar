@@ -84,8 +84,14 @@ import Testing
     first.detach()
     // The connection stays open, yet the process is free for another app to take.
     let other = try await connected(host)
-    let held = try #require(try await client.list().first)
-    #expect(held.attachedApp == nil)
+    // The detach is a message of its own: on a loaded machine the host may answer a listing
+    // before it has read it, so wait for the listing to say the process is free.
+    let held = try await within {
+      while true {
+        if let held = try await client.list().first, held.attachedApp == nil { return held }
+        try await Task.sleep(for: .milliseconds(10))
+      }
+    }
     let taken = HostedProcess(client: other, held: held)
     _ = try await within { try await taken.replay() }
     #expect(try await client.list().first?.attachedApp == getpid())
