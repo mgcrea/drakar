@@ -4,8 +4,9 @@
  * Drakar claims", shortened; if one of them changes there, it changes here in the
  * same commit, as the privacy page does.
  *
- * The three sockets are drawn as the audit would list them: the one listener,
- * the one Unix socket, and the one outgoing caller, with what guards each.
+ * The sockets are drawn as the audit would list them: the IDE bridge's listener,
+ * the MCP server's (only once you turn it on), the one Unix socket, and the one
+ * outgoing caller, with what guards each.
  */
 import { DOCS, DOWNLOAD, REPO_URL } from "../config";
 import SectionHeader from "./SectionHeader.astro";
@@ -17,6 +18,13 @@ const SOCKETS = [
     what: "The IDE bridge, for claude --ide",
     guard:
       "Bound to loopback, refuses non-local clients, and refuses the WebSocket upgrade to anyone without this launch's token, written 0600 into the lock file Claude Code reads.",
+  },
+  {
+    label: "listens",
+    where: "127.0.0.1",
+    what: "The MCP server, for your agents",
+    guard:
+      "Off until you turn it on in Settings. Bound to loopback, and refuses any request without the token Drakar keeps in your Keychain.",
   },
   {
     label: "listens",
@@ -45,7 +53,7 @@ const AUDITS = [
   <div class="wrap flex flex-col gap-12">
     <SectionHeader
       eyebrow="What it connects to"
-      heading="One loopback port, one private socket, and the updater you allowed."
+      heading="One loopback port, two with the MCP server on, one private socket, and the updater you allowed."
       class="mb-0!"
     >
       Everything else that reaches the network is the <code class="font-mono text-[0.9em] text-fg">claude</code>
@@ -54,7 +62,7 @@ const AUDITS = [
       crash reporter and no account.
     </SectionHeader>
 
-    <div class="grid grid-cols-1 gap-4 lg:grid-cols-3">
+    <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
       {
         SOCKETS.map((s) => (
           <article class="reveal flex flex-col gap-4 rounded-[16px] border border-rule bg-bg-2 p-6">
@@ -93,9 +101,9 @@ const AUDITS = [
         <h3 class="m-0 text-[17px] font-semibold tracking-[-0.015em]">Don't take our word for it.</h3>
         <p class="m-0 text-[13.5px] leading-[1.65] text-pretty text-fg-dim">
           The audit script exists to falsify the claim above, and CI runs it on every release: one
-          loopback listener, one Unix socket, nothing outgoing but Sparkle; no entitlements, on the app
-          or any helper; the hardened runtime on every binary. The source is MIT, so you can run it
-          yourself, or build Drakar from it.
+          loopback listener, two with the MCP server on, one Unix socket, nothing outgoing but
+          Sparkle; no entitlements, on the app or any helper; the hardened runtime on every binary.
+          The source is MIT, so you can run it yourself, or build Drakar from it.
         </p>
         <p class="m-0 flex flex-wrap gap-x-5 gap-y-1 text-[13.5px]">
           <a href={DOCS.security} target="_blank" rel="noopener" class="text-fg underline decoration-rule-2 underline-offset-4 hover:text-accent-hi">SECURITY.md ↗</a>

@@ -50,8 +50,9 @@ Not affiliated with Anthropic or OpenAI.
 ## Privacy and security
 
 - Drakar listens on one network socket, on 127.0.0.1, which answers only a client holding this
-  launch's token (the IDE bridge), and its session host on one Unix socket, which only your own
-  Drakar can reach.
+  launch's token (the IDE bridge), and, only if you turn on its MCP server, a second one on
+  127.0.0.1, which answers only a client holding the token in your Keychain. Its session host
+  listens on one Unix socket, which only your own Drakar can reach.
 - The only connections Drakar opens of its own are Sparkle's, to check for and fetch updates,
   and only once you said yes to update checks. A check reads drakar.mgcrea.io/appcast.xml and
   sends no identifier. Everything else that reaches the network is the `claude` or `codex` you

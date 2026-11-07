@@ -16,10 +16,12 @@ release, with a 30-minute trial and a 30-day refund, under [their own terms](app
 the source is free to read and build.
 
 Drakar listens on one network socket, on 127.0.0.1, which answers only a client holding
-this launch's token, and its session host on one Unix socket, which only your own Drakar
-can reach. The only connections Drakar opens of its own are Sparkle's, to check for and
-fetch updates, and only once you said yes to update checks. Everything else that reaches
-the network is the `claude`, `codex` or, once you name a runner, `ssh` you installed.
+this launch's token, and, only if you turn on its MCP server, a second one on 127.0.0.1,
+which answers only a client holding the token in your Keychain. Its session host listens
+on one Unix socket, which only your own Drakar can reach. The only connections Drakar
+opens of its own are Sparkle's, to check for and fetch updates, and only once you said yes
+to update checks. Everything else that reaches the network is the `claude`, `codex` or,
+once you name a runner, `ssh` you installed.
 [SECURITY.md](SECURITY.md) says how to check that yourself, and how to report a hole.
 
 Settings â€º General picks which `claude` runs when more than one is installed, and the
@@ -47,11 +49,12 @@ prompt, as in the VS Code extension, and with a terminal `claude --ide`'s too. â
 selection so the next one can be added beside it.
 
 `make audit` checks the network claim against the sources (one loopback listener, on
-127.0.0.1 and token-gated, for the IDE bridge; one Unix socket for the session host, that
-only your own Drakar can reach; nothing outgoing), `make audit-running` against the
-running app, and `make audit-release` against the built bundle (every Mach-O swept for URL
-loading, DNS and TLS, with two exact allowances, Sparkle's URL loading and Drakar's
-Network.framework link for the listener; no entitlements; the hardened runtime).
+127.0.0.1 and token-gated, for the IDE bridge; the MCP server's, swift-mcp-kit's, made in
+one place, off until you turn it on, its token in the Keychain; one Unix socket for the
+session host, that only your own Drakar can reach; nothing outgoing), `make audit-running`
+against the running app, and `make audit-release` against the built bundle (every Mach-O
+swept for URL loading, DNS and TLS, with two exact allowances, Sparkle's URL loading and
+Drakar's Network.framework link for the listener; no entitlements; the hardened runtime).
 
 ## Sessions on another Mac
 

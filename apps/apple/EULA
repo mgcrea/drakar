@@ -166,10 +166,12 @@ audit asserts that. It is not sandboxed, because the agents it starts work on
 your files and read their own settings in your home folder. It asks for no
 Accessibility or other privacy permission.
 
-It listens on two sockets and opens neither to the network: the editor bridge, on
-127.0.0.1 only, which answers only a client holding the token it writes, readable
-by you alone, into Claude Code's lock file; and its helper's, a Unix socket only
-your own Drakar can reach. `SECURITY.md` in the repository says how to check both.
+It listens on two sockets, or three with its MCP server on, and opens none to the
+network: the editor bridge, on 127.0.0.1 only, which answers only a client holding
+the token it writes, readable by you alone, into Claude Code's lock file; its
+helper's, a Unix socket only your own Drakar can reach; and the MCP server, on
+127.0.0.1 only, which answers only a client holding the token in your Keychain.
+`SECURITY.md` in the repository says how to check them.
 
 9. UPDATES
 

@@ -16,16 +16,22 @@ else's is not needed and not wanted.
 ## What Drakar claims
 
 Drakar listens on one network socket, on 127.0.0.1, which answers only a client holding
-this launch's token, and its session host on one Unix socket, which only your own Drakar
-can reach. The only connections Drakar opens of its own are Sparkle's, to check for and
-fetch updates, and only once you said yes to update checks. Everything else that reaches
-the network is the `claude`, `codex` or, once you name a runner, `ssh` you installed.
+this launch's token, and, only if you turn on its MCP server, a second one on 127.0.0.1,
+which answers only a client holding the token in your Keychain. Its session host listens
+on one Unix socket, which only your own Drakar can reach. The only connections Drakar
+opens of its own are Sparkle's, to check for and fetch updates, and only once you said yes
+to update checks. Everything else that reaches the network is the `claude`, `codex` or,
+once you name a runner, `ssh` you installed.
 
 In detail:
 
-- **The listener is the IDE bridge**, for `claude --ide` in a terminal. It is bound to
+- **The first listener is the IDE bridge**, for `claude --ide` in a terminal. It is bound to
   `127.0.0.1` and refuses non-local clients, and it refuses the WebSocket upgrade to any
   client without the token written, 0600, into the lock file Claude Code reads.
+- **The second listener is the MCP server**, for an agent on this Mac
+  ([docs/mcp.md](docs/mcp.md)), and it does not exist until you turn it on in Settings ›
+  MCP Server. It is swift-mcp-kit's, bound to `127.0.0.1`, and it refuses any request
+  without the token Drakar keeps in your Keychain.
 - **The session host's socket** is a Unix socket in a 0700 folder, made 0600 before it
   listens, and it lets in only a peer running as you, signed with Drakar's identifier by
   Drakar's team.
@@ -80,9 +86,11 @@ scripts/audit-network.sh --running                # and the Drakar running now
 
 - **The sources** (`make audit`): exactly one `NWListener`, bound to the loopback address
   with non-local clients refused and no wildcard address anywhere; the token check before
-  the upgrade; exactly one Unix socket and no internet one; the session host's folder and
-  socket modes and its peer check; no outgoing networking API (`URLSession`,
-  `NWConnection` to a host, `NWBrowser`, `getaddrinfo`); no entitlements file.
+  the upgrade; the MCP server's listener, swift-mcp-kit's, made in one place, its switch
+  off by default and its token in the Keychain; exactly one Unix socket and no internet
+  one; the session host's folder and socket modes and its peer check; no outgoing
+  networking API (`URLSession`, `NWConnection` to a host, `NWBrowser`, `getaddrinfo`); no
+  entitlements file.
 - **The bundle** (`make audit-release` on the release build): every Mach-O in it, found
   rather than listed, swept with `nm -u` and `otool -L` for URL loading, name lookup and
   TLS, and for Network.framework's outgoing API. A binary the tools could not read fails,
@@ -95,10 +103,11 @@ scripts/audit-network.sh --running                # and the Drakar running now
   the shipped Info.plist (no automatic checks, no automatic installs and no option to turn
   them on, no profile, that one feed), its sandbox-only XPC services stripped, no
   entitlements in any signature, and the hardened runtime on every binary.
-- **The running app** (`make audit-running`): it listens only on `127.0.0.1`; its lock
-  files are 0600 in a folder no one else can write; the upgrade is refused without the
-  token or with a wrong one, and accepted with it; the session host's socket is 0600, in a
-  0700 folder, and the session host holds no network socket.
+- **The running app** (`make audit-running`): it listens only on `127.0.0.1`, and beyond
+  the IDE bridge's port only on the MCP server's; its lock files are 0600 in a folder no
+  one else can write; the upgrade is refused without the token or with a wrong one, and
+  accepted with it; the session host's socket is 0600, in a 0700 folder, and the session
+  host holds no network socket.
 
 A failure in any of them is the claim being false, and worth a report.
 

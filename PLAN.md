@@ -50,9 +50,10 @@ Core promises, in priority order:
 3. Your Claude Code, not ours. The `claude` you installed, your settings, hooks, skills,
    MCP servers and accounts, unchanged. Sessions resume from either side (§2.3).
 4. Drakar itself reaches nothing you did not ask for: its one network socket listens on
-   127.0.0.1 for terminal sessions holding its token, and the only connections it opens
-   of its own are Sparkle's, once you said yes to update checks (§5, the checkable
-   claim).
+   127.0.0.1 for terminal sessions holding its token, and, only if you turn on its MCP
+   server, a second one on 127.0.0.1 answers only a client holding the token in your
+   Keychain. The only connections it opens of its own are Sparkle's, once you said yes to
+   update checks (§5, the checkable claim).
 
 ## 2. How it drives Claude
 
@@ -231,11 +232,12 @@ first release, `app-v1.0.0`, free; and selling, when the owner opens the store. 
 checklist for all three, in the order its steps must run.
 
 **The checkable claim:** _Drakar listens on one network socket, on 127.0.0.1, which
-answers only a client holding this launch's token, and its session host on one Unix
-socket, which only your own Drakar can reach. The only connections Drakar opens of its own
-are Sparkle's, to check for and fetch updates, and only once you said yes to update
-checks. Everything else that reaches the network is the `claude` or `codex` you
-installed._ `make audit` asserts the sources, `make audit-running` the live process since
+answers only a client holding this launch's token, and, only if you turn on its MCP
+server, a second one on 127.0.0.1, which answers only a client holding the token in your
+Keychain. Its session host listens on one Unix socket, which only your own Drakar can
+reach. The only connections Drakar opens of its own are Sparkle's, to check for and fetch
+updates, and only once you said yes to update checks. Everything else that reaches the
+network is the `claude` or `codex` you installed._ `make audit` asserts the sources, `make audit-running` the live process since
 phase 3, and `make audit-release` the built bundle since Sparkle landed. The last is
 cupertino's `audit-network.sh` model, by way of armada's: an `nm -u`/`otool -L` sweep over
 every Mach-O in the bundle, failing on any binary it could not read, with two named
