@@ -16,6 +16,13 @@
 		DD5BC15626DF390ABC899053 /* SupportKitUI in Frameworks */ = {isa = PBXBuildFile; productRef = B334DF48ECFE129A1A02AE0D /* SupportKitUI */; };
 		A67751313FD68891A2295F85 /* SupportKitSettings in Frameworks */ = {isa = PBXBuildFile; productRef = 4FE77CC5D1BB07D94B933CEF /* SupportKitSettings */; };
 		94D48F1EBCF8BBE9AB5FB3FF /* DrakarKit in Frameworks */ = {isa = PBXBuildFile; productRef = F178B41C2C2E859D9D6CA057 /* DrakarKit */; };
+		5B78266CDE749C6924B00318 /* DrakarMCP in Frameworks */ = {isa = PBXBuildFile; productRef = AA2A0436CCC6549F07E5AFF0 /* DrakarMCP */; };
+		9DF4A1EA800A713D3CC3DECB /* MCPKit in Frameworks */ = {isa = PBXBuildFile; productRef = 59DFAC694ADF704DD1AD01D4 /* MCPKit */; };
+		3CF5BD10756EB1168E596033 /* MCPKitLoopback in Frameworks */ = {isa = PBXBuildFile; productRef = BD36209925E9D6874D97317F /* MCPKitLoopback */; };
+		3E7A506480F5BC25237028C0 /* MCPKitUI in Frameworks */ = {isa = PBXBuildFile; productRef = 875EF516850CB6A529011EF7 /* MCPKitUI */; };
+		739DEE3A3F4D4AFC4E5CC2CD /* MCPKitWiring in Frameworks */ = {isa = PBXBuildFile; productRef = 93324D17A4A6C05223BB449B /* MCPKitWiring */; };
+		027B04455585F9150E0CF816 /* DrakarMCP in Frameworks */ = {isa = PBXBuildFile; productRef = 721AABF622D18594BB653D7B /* DrakarMCP */; };
+		9FF49684F0D32CD825334569 /* MCPKit in Frameworks */ = {isa = PBXBuildFile; productRef = A8F8FA0C1633ECA5C4F7AE61 /* MCPKit */; };
 		EF7EAC0B1BC134F525CD88FE /* DrakarHost in Copy Helpers */ = {isa = PBXBuildFile; fileRef = 79A4DE3982FADB7CFFEC5922 /* DrakarHost */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 		6B92CDB6218E9F51660781CA /* Sparkle.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = ADE50A70A5B8AF2B2D076906 /* Sparkle.framework */; };
 		2F455B3E74E673B6342C9633 /* Sparkle.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = ADE50A70A5B8AF2B2D076906 /* Sparkle.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
@@ -97,6 +104,11 @@
 				F1C9B657C93050E3F977D0BD /* SupportKit in Frameworks */,
 				64C74DC5A1E47ABDC1D6D619 /* SupportKitUI in Frameworks */,
 				C12D79D19C8932BB5DDA1C56 /* SupportKitSettings in Frameworks */,
+				5B78266CDE749C6924B00318 /* DrakarMCP in Frameworks */,
+				9DF4A1EA800A713D3CC3DECB /* MCPKit in Frameworks */,
+				3CF5BD10756EB1168E596033 /* MCPKitLoopback in Frameworks */,
+				3E7A506480F5BC25237028C0 /* MCPKitUI in Frameworks */,
+				739DEE3A3F4D4AFC4E5CC2CD /* MCPKitWiring in Frameworks */,
 				6B92CDB6218E9F51660781CA /* Sparkle.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -109,6 +121,8 @@
 				9C6C5EA1B2F3CA06F0C1162F /* SupportKit in Frameworks */,
 				DD5BC15626DF390ABC899053 /* SupportKitUI in Frameworks */,
 				A67751313FD68891A2295F85 /* SupportKitSettings in Frameworks */,
+				027B04455585F9150E0CF816 /* DrakarMCP in Frameworks */,
+				9FF49684F0D32CD825334569 /* MCPKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -179,6 +193,11 @@
 				C279DA30D7E3D3646465C3FF /* SupportKit */,
 				24E6378434F4CE00BE121D77 /* SupportKitUI */,
 				20A2A3B33FD206E5D7B00920 /* SupportKitSettings */,
+				AA2A0436CCC6549F07E5AFF0 /* DrakarMCP */,
+				59DFAC694ADF704DD1AD01D4 /* MCPKit */,
+				BD36209925E9D6874D97317F /* MCPKitLoopback */,
+				875EF516850CB6A529011EF7 /* MCPKitUI */,
+				93324D17A4A6C05223BB449B /* MCPKitWiring */,
 			);
 			productName = Drakar;
 			productReference = 47660703AFB87958CFE6D8C8 /* Drakar.app */;
@@ -206,6 +225,8 @@
 				6AE69D3EEC51E82E422259BC /* SupportKit */,
 				B334DF48ECFE129A1A02AE0D /* SupportKitUI */,
 				4FE77CC5D1BB07D94B933CEF /* SupportKitSettings */,
+				721AABF622D18594BB653D7B /* DrakarMCP */,
+				A8F8FA0C1633ECA5C4F7AE61 /* MCPKit */,
 			);
 			productName = DrakarTests;
 			productReference = 951157530562D85D92CD3B43 /* DrakarTests.xctest */;
@@ -267,6 +288,8 @@
 			packageReferences = (
 				BF91AAA2345F1653B274ABF8 /* XCLocalSwiftPackageReference "Packages/DrakarKit" */,
 				DDA411622527A1114A78C853 /* XCRemoteSwiftPackageReference "swift-support-kit" */,
+				E7FA8B692D030A1310CC916A /* XCLocalSwiftPackageReference "Packages/DrakarMCP" */,
+				3ED43B2421854EB5C52BFD70 /* XCRemoteSwiftPackageReference "swift-mcp-kit" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = ACC88B4F5A33BC51C9AB99EE /* Products */;
@@ -673,6 +696,10 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = Packages/DrakarKit;
 		};
+		E7FA8B692D030A1310CC916A /* XCLocalSwiftPackageReference "Packages/DrakarMCP" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/DrakarMCP;
+		};
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCRemoteSwiftPackageReference section */
@@ -682,6 +709,14 @@
 			requirement = {
 				kind = upToNextMinorVersion;
 				minimumVersion = 1.20.1;
+			};
+		};
+		3ED43B2421854EB5C52BFD70 /* XCRemoteSwiftPackageReference "swift-mcp-kit" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/mgcrea/swift-mcp-kit.git";
+			requirement = {
+				kind = upToNextMinorVersion;
+				minimumVersion = 1.6.1;
 			};
 		};
 /* End XCRemoteSwiftPackageReference section */
@@ -728,6 +763,39 @@
 		F178B41C2C2E859D9D6CA057 /* DrakarKit */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = DrakarKit;
+		};
+		AA2A0436CCC6549F07E5AFF0 /* DrakarMCP */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = DrakarMCP;
+		};
+		59DFAC694ADF704DD1AD01D4 /* MCPKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 3ED43B2421854EB5C52BFD70 /* XCRemoteSwiftPackageReference "swift-mcp-kit" */;
+			productName = MCPKit;
+		};
+		BD36209925E9D6874D97317F /* MCPKitLoopback */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 3ED43B2421854EB5C52BFD70 /* XCRemoteSwiftPackageReference "swift-mcp-kit" */;
+			productName = MCPKitLoopback;
+		};
+		875EF516850CB6A529011EF7 /* MCPKitUI */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 3ED43B2421854EB5C52BFD70 /* XCRemoteSwiftPackageReference "swift-mcp-kit" */;
+			productName = MCPKitUI;
+		};
+		93324D17A4A6C05223BB449B /* MCPKitWiring */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 3ED43B2421854EB5C52BFD70 /* XCRemoteSwiftPackageReference "swift-mcp-kit" */;
+			productName = MCPKitWiring;
+		};
+		721AABF622D18594BB653D7B /* DrakarMCP */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = DrakarMCP;
+		};
+		A8F8FA0C1633ECA5C4F7AE61 /* MCPKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 3ED43B2421854EB5C52BFD70 /* XCRemoteSwiftPackageReference "swift-mcp-kit" */;
+			productName = MCPKit;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

@@ -7,6 +7,14 @@ import UserNotifications
 /// The app, started by `DrakarMain` when the binary is not a relay.
 struct DrakarApp: App {
   @NSApplicationDelegateAdaptor private var delegate: AppDelegate
+  // Settings › MCP Server, watched here so the server follows them with no window open.
+  @AppStorage(MCPSettingsKey.enabled) private var isEnabled = false
+  @AppStorage(MCPSettingsKey.allowsWrites) private var allowsWrites = false
+  @AppStorage(MCPSettingsKey.port) private var port = MCPServerController.defaultPort
+
+  private var mcpConfiguration: MCPServerController.Configuration {
+    .init(isEnabled: isEnabled, allowsWrites: allowsWrites, port: port)
+  }
 
   var body: some Scene {
     // One window per project, keyed by its route: a window opened without one shows the
@@ -33,6 +41,11 @@ struct DrakarApp: App {
       // ⌘P, as in VS Code and Zed: Drakar prints nothing.
       CommandGroup(replacing: .printItem) { QuickOpenCommand() }
       CommandGroup(before: .windowList) { SkillsCommand() }
+    }
+    // The MCP server follows Settings from the app itself, not from a window: it serves with
+    // every window closed. `initial` runs it once at launch; `sync` refuses under a test host.
+    .onChange(of: mcpConfiguration, initial: true) { _, configuration in
+      MCPServerController.shared.sync(configuration)
     }
 
     // A real Settings scene: Drakar is a windowed app with a Dock icon and menus, unlike
