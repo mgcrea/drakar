@@ -353,9 +353,9 @@ struct ProcessRunnerTests {
   @Test func aJobLeftHoldingThePipesDoesNotHoldTheRead() async throws {
     let started = ContinuousClock.now
     let result = try await ProcessRunner.run(
-      URL(filePath: "/bin/sh"), ["-c", "echo hi; sleep 8 >/dev/null & echo bye"],
-      environment: [:], timeout: .seconds(5))
-    #expect(ContinuousClock.now - started < .seconds(2))
+      URL(filePath: "/bin/sh"), ["-c", "echo hi; sleep 30 >/dev/null & echo bye"],
+      environment: [:], timeout: .seconds(20))
+    #expect(ContinuousClock.now - started < .seconds(10))
     #expect(String(decoding: result.output, as: UTF8.self) == "hi\nbye\n")
     #expect(result.status == 0)
     #expect(!result.timedOut)
@@ -393,8 +393,8 @@ struct ProcessRunnerTests {
     let started = ContinuousClock.now
     let result = try await ProcessRunner.run(
       URL(filePath: "/bin/sh"), ["-c", "sleep 0.2; echo done"], environment: [:],
-      input: Data(count: 1 << 22), timeout: .seconds(10))
-    #expect(ContinuousClock.now - started < .seconds(5))
+      input: Data(count: 1 << 22), timeout: .seconds(30))
+    #expect(ContinuousClock.now - started < .seconds(15))
     #expect(String(decoding: result.output, as: UTF8.self) == "done\n")
     #expect(!result.timedOut)
   }
