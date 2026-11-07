@@ -227,16 +227,35 @@ struct ReadToolsTests {
       "questions": .array([
         .object([
           "question": .string("Which?"),
+          "header": .string("Pick"),
+          "multiSelect": .bool(true),
           "options": .array([
-            .object(["label": .string("A")]), .object(["label": .string("B")]),
+            .object(["label": .string("A"), "description": .string("The first")]),
+            .object(["label": .string("B")]),
           ]),
-        ])
+        ]),
+        .object([
+          "question": .string("Why?"),
+          "options": .array([.object(["label": .string("C")])]),
+        ]),
       ])
     ])
     let question = Encoding.pending(
       .permission(requestID: "q", request: Self.request("AskUserQuestion", questionInput)))
     #expect(question["kind"] == "question")
-    #expect(question["questions"] == [["question": "Which?", "options": ["A", "B"]]])
+    #expect(
+      question["questions"] == [
+        [
+          "question": "Which?", "header": "Pick", "multiSelect": true,
+          "options": [
+            ["label": "A", "description": "The first"], ["label": "B", "description": nil],
+          ],
+        ],
+        [
+          "question": "Why?", "header": nil, "multiSelect": false,
+          "options": [["label": "C", "description": nil]],
+        ],
+      ])
     #expect(question["inputTruncated"] == nil)
 
     let plan = Encoding.pending(

@@ -96,18 +96,27 @@ enum Encoding {
     if truncated { fields["inputTruncated"] = true }
     if request.isChoice {
       fields["kind"] = "question"
-      fields["questions"] = .array(
-        UserQuestion.list(request.input).map { question in
-          [
-            "question": .string(question.question),
-            "options": .array(question.options.map { .string($0.label) }),
-          ]
-        })
+      fields["questions"] = .array(UserQuestion.list(request.input).map(question))
     } else if request.kind == .planApproval {
       fields["kind"] = "plan"
       fields["plan"] = string(PlanApproval.plan(request.input))
     }
     return .object(fields)
+  }
+
+  /// One question of an AskUserQuestion: its text and header, whether it takes several
+  /// labels (`multiSelect`, joined with ", " in the answer), and each option's label and
+  /// description.
+  private static func question(_ question: UserQuestion) -> MCPKit.JSONValue {
+    [
+      "question": .string(question.question),
+      "header": string(question.header),
+      "multiSelect": .bool(question.multiSelect),
+      "options": .array(
+        question.options.map { option in
+          ["label": .string(option.label), "description": string(option.description)]
+        }),
+    ]
   }
 
   /// An offered suggestion: its index, and the rules it allows for the session or, for Codex,
