@@ -321,6 +321,92 @@ struct PermissionToolTests {
 
   // MARK: - Codex
 
+  /// A Codex file-change approval as `CodexTranslator` builds it: tool "Edit", an empty
+  /// input, the patch only in its kind.
+  private static func codexPatch(
+    _ edits: [FileEdit], reason: String? = nil, itemID: String = "item_1"
+  ) -> PermissionRequest {
+    var request = PermissionRequest(
+      toolName: "Edit", input: .object([:]), description: reason, toolUseID: itemID,
+      kind: .fileChange(path: edits.first?.path ?? "", edits: edits))
+    request.suggestions = [CodexPolicy.acceptForSession]
+    return request
+  }
+
+  /// Reads `first` as raw id "0", then puts `second` in its place under the same raw id, as a
+  /// new `codex app-server` process does after End Session and a resume, and answers the id
+  /// read with `always`.
+  private func answerReadIDAfterReplacement(
+    _ first: PermissionRequest, _ second: PermissionRequest, always: MCPKit.JSONValue? = nil
+  ) async -> (read: MCPKit.JSONValue, result: ToolResult) {
+    live(pending: [.permission(requestID: "0", request: first)])
+    let read = requestID("0")
+    live(pending: [.permission(requestID: "0", request: second)])
+    var arguments: [String: MCPKit.JSONValue] = [
+      "session": .string(Self.id), "request_id": read, "decision": "allow",
+    ]
+    if let always { arguments["always"] = always }
+    return (read, await call(.object(arguments)))
+  }
+
+  private func expectNoLongerWaiting(_ read: MCPKit.JSONValue, _ result: ToolResult) {
+    #expect(result.isError)
+    #expect(
+      result.text
+        == "Request \(read.stringValue ?? "") is no longer waiting: already answered, or the turn ended."
+    )
+    #expect(source.calls.isEmpty)
+    #expect(source.decision == nil)
+  }
+
+  @Test("Two Codex patches under raw id 0 differing only in their edits are told apart")
+  func codexPatchesDifferingInEdits() async {
+    let first = Self.codexPatch([
+      FileEdit(path: "/repo/a.swift", change: .patch("@@ -1 +1 @@\n-old\n+new"))
+    ])
+    let second = Self.codexPatch([
+      FileEdit(path: "/repo/a.swift", change: .patch("@@ -1 +1 @@\n-old\n+rm -rf ~"))
+    ])
+    #expect(
+      RequestID.fingerprint(of: .permission(requestID: "0", request: first))
+        != RequestID.fingerprint(of: .permission(requestID: "0", request: second)))
+    let (read, result) = await answerReadIDAfterReplacement(first, second)
+    expectNoLongerWaiting(read, result)
+  }
+
+  @Test("Two Codex requests under raw id 0 differing only in their reason are told apart")
+  func codexRequestsDifferingInDescription() async {
+    let edits = [FileEdit(path: "/repo/a.swift", change: .patch("@@ -1 +1 @@\n-a\n+b"))]
+    let first = Self.codexPatch(edits, reason: "Fix the typo")
+    let second = Self.codexPatch(edits, reason: "Write outside the workspace")
+    #expect(
+      RequestID.fingerprint(of: .permission(requestID: "0", request: first))
+        != RequestID.fingerprint(of: .permission(requestID: "0", request: second)))
+    let (read, result) = await answerReadIDAfterReplacement(first, second)
+    expectNoLongerWaiting(read, result)
+  }
+
+  @Test("Two requests under raw id 0 differing only in their suggestions are told apart")
+  func requestsDifferingInSuggestions() async {
+    let rule = { (content: String) -> DrakarKit.JSONValue in
+      .object([
+        "type": .string("addRules"),
+        "rules": .array([
+          .object(["toolName": .string("Bash"), "ruleContent": .string(content)])
+        ]),
+        "behavior": .string("allow"),
+        "destination": .string("session"),
+      ])
+    }
+    let first = Self.request("Bash", Self.bashInput, suggestions: [rule("ls:*")])
+    let second = Self.request("Bash", Self.bashInput, suggestions: [rule("rm:*")])
+    #expect(
+      RequestID.fingerprint(of: .permission(requestID: "0", request: first))
+        != RequestID.fingerprint(of: .permission(requestID: "0", request: second)))
+    let (read, result) = await answerReadIDAfterReplacement(first, second, always: [0])
+    expectNoLongerWaiting(read, result)
+  }
+
   @Test("Codex's session-long yes is the decision the permission sheet sends")
   func codexDecisionMatchesSheet() async throws {
     var request = PermissionRequest(

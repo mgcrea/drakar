@@ -97,6 +97,9 @@ and a fingerprint of what the request asks. Pass it back as given. A Codex proce
 its requests from 0 again, so after a session ends and is resumed an old id can name a new
 request; the fingerprint tells them apart, and an answer to a request answered since, or
 replaced, is refused as no longer waiting.
+The id names the request's exact content (tool, input, description, the call it asks about,
+a file change's every edit and the suggestions offered), so an id read before a session
+restarted is refused even when the new request reuses its raw id.
 
 | Tool | Needs | What it does |
 | --- | --- | --- |
