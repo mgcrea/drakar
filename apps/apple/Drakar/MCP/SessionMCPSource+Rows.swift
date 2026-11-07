@@ -76,7 +76,7 @@ extension SessionMCPSource {
   /// One item per request a window's session waits on; with none, the ask its turn ended on.
   static func attentionItems(of item: ProjectSession, row: SessionRow) -> [AttentionItem] {
     let waiting = pending(of: item).map {
-      AttentionItem(session: row, kind: kind(of: $0), pending: $0)
+      AttentionItem(session: row, kind: Self.kind(of: $0), pending: $0)
     }
     guard waiting.isEmpty, let ask = item.closingAsk else { return waiting }
     let kind: AttentionKind = ask.kind == .question ? .askedInText : .offeredInText
