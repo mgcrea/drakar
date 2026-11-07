@@ -20,6 +20,8 @@ final class FakeSessionSource: SessionSource, @unchecked Sendable {
   private var _runner: RunnerStatus?
   private var _refusal: String?
   private var _allowsPermissions = false
+  private var _liveThen: [[SessionRow]] = []
+  private var _attentionThen: [[AttentionItem]] = []
 
   /// Live sessions, served first.
   var sessions: [SessionRow] {
@@ -60,6 +62,19 @@ final class FakeSessionSource: SessionSource, @unchecked Sendable {
   var allowsPermissions: Bool {
     get { lock.withLock { _allowsPermissions } }
     set { lock.withLock { _allowsPermissions = newValue } }
+  }
+
+  /// What `sessions` becomes after each look at the live sessions alone, one list per look:
+  /// a session moving under `drakar_wait`'s polls. A look that asks for ended sessions too,
+  /// as resolving an id does, leaves it be.
+  var liveThen: [[SessionRow]] {
+    get { lock.withLock { _liveThen } }
+    set { lock.withLock { _liveThen = newValue } }
+  }
+  /// What `attentionItems` becomes after each `attention()`, one list per call.
+  var attentionThen: [[AttentionItem]] {
+    get { lock.withLock { _attentionThen } }
+    set { lock.withLock { _attentionThen = newValue } }
   }
 
   // MARK: Writes, settable per test
@@ -106,11 +121,22 @@ final class FakeSessionSource: SessionSource, @unchecked Sendable {
   // MARK: SessionSource
 
   func sessions(includeEnded: Bool, endedLimit: Int) async -> [SessionRow] {
-    lock.withLock { _sessions + (includeEnded ? Array(_ended.prefix(endedLimit)) : []) }
+    lock.withLock {
+      let answer = _sessions + (includeEnded ? Array(_ended.prefix(endedLimit)) : [])
+      if !includeEnded, !_liveThen.isEmpty { _sessions = _liveThen.removeFirst() }
+      return answer
+    }
   }
 
   func detail(of id: String) async -> SessionDetail? { lock.withLock { _details[id] } }
-  func attention() async -> [AttentionItem] { lock.withLock { _attention } }
+
+  func attention() async -> [AttentionItem] {
+    lock.withLock {
+      let answer = _attention
+      if !_attentionThen.isEmpty { _attention = _attentionThen.removeFirst() }
+      return answer
+    }
+  }
 
   func transcript(of id: String) async throws -> Transcript {
     guard let transcript = lock.withLock({ _transcripts[id] }) else {

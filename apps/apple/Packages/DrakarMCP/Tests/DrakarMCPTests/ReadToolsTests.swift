@@ -32,14 +32,12 @@ struct ReadToolsTests {
 
   // MARK: - The listing
 
-  // Extended as the later tasks add read tools; the final order is list_sessions,
-  // needs_attention, get_session, read_transcript, wait, list_projects.
   @Test("Without writes, the read tools are listed in their order")
   func listingWithoutWrites() {
     #expect(
       table.listing(allowWrites: false).map(\.name) == [
         "drakar_list_sessions", "drakar_needs_attention", "drakar_get_session",
-        "drakar_list_projects",
+        "drakar_read_transcript", "drakar_wait", "drakar_list_projects",
       ])
   }
 

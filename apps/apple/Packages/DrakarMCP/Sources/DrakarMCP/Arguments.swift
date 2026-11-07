@@ -24,15 +24,22 @@ enum Arguments {
     return flag
   }
 
+  /// Nil when absent or null; refused when it is not a whole number. A whole number passed
+  /// as a string is taken.
+  static func int(_ value: MCPKit.JSONValue?, name: String) throws -> Int? {
+    guard let value, !value.isNull else { return nil }
+    guard let number = value.intValue ?? value.stringValue.flatMap({ Int($0) }) else {
+      throw SessionError("\(name) must be a whole number.")
+    }
+    return number
+  }
+
   /// `fallback` when absent; otherwise held to `range`, a number outside it taken as the
   /// nearest end rather than refused. A whole number passed as a string is taken.
   static func clampedInt(
     _ value: MCPKit.JSONValue?, name: String, in range: ClosedRange<Int>, default fallback: Int
   ) throws -> Int {
-    guard let value, !value.isNull else { return fallback }
-    guard let number = value.intValue ?? value.stringValue.flatMap({ Int($0) }) else {
-      throw SessionError("\(name) must be a whole number.")
-    }
+    guard let number = try int(value, name: name) else { return fallback }
     return min(max(number, range.lowerBound), range.upperBound)
   }
 
@@ -54,8 +61,35 @@ enum Arguments {
     -> String
   {
     let given = try requiredString(value, name: "session")
-    let known = await source.sessions(includeEnded: true, endedLimit: 100).map(\.id)
-    return try SessionIDs.resolve(given, among: known)
+    return try SessionIDs.resolve(given, among: await knownIDs(in: source))
+  }
+
+  /// The sessions `value` names, a list of ids each resolved as `session` resolves one; nil
+  /// when absent, null or empty, which means every session. One id alone is taken too.
+  static func sessions(_ value: MCPKit.JSONValue?, in source: some SessionSource) async throws
+    -> Set<String>?
+  {
+    guard let value, !value.isNull else { return nil }
+    let given: [String]
+    if let items = value.arrayValue {
+      given = try items.compactMap { item in
+        guard !item.isNull, item.stringValue != nil else {
+          throw SessionError("sessions must be a list of session ids.")
+        }
+        return try string(item, name: "sessions")
+      }
+    } else if value.stringValue != nil {
+      given = try string(value, name: "sessions").map { [$0] } ?? []
+    } else {
+      throw SessionError("sessions must be a list of session ids.")
+    }
+    guard !given.isEmpty else { return nil }
+    let known = await knownIDs(in: source)
+    return Set(try given.map { try SessionIDs.resolve($0, among: known) })
+  }
+
+  private static func knownIDs(in source: some SessionSource) async -> [String] {
+    await source.sessions(includeEnded: true, endedLimit: Tools.endedMaximum).map(\.id)
   }
 }
 

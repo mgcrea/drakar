@@ -49,6 +49,8 @@ public enum Tools {
     addListSessions(to: &table, source: source)
     addNeedsAttention(to: &table, source: source)
     addGetSession(to: &table, source: source)
+    addReadTranscript(to: &table, source: source)
+    addWait(to: &table, source: source, pollInterval: pollInterval)
     addListProjects(to: &table, source: source)
     return table
   }
@@ -205,6 +207,119 @@ public enum Tools {
       let name = detail.row.title ?? detail.row.id
       return .answer("\(name): \(detail.row.state.rawValue).", Encoding.detail(detail))
     }
+  }
+
+  /// The entries `drakar_read_transcript` gives by default, and at most.
+  static let transcriptDefault = 20
+  static let transcriptMaximum = 200
+
+  private static func addReadTranscript(to table: inout ToolTable, source: some SessionSource) {
+    table.add(
+      MCPTool(
+        name: "drakar_read_transcript",
+        description:
+          "Read a session's transcript, oldest entry first. Each entry: index, role (user, "
+          + "assistant, tool, system) and text; a tool call has name, summary (the one line "
+          + "Drakar's tool card shows), status (running, done, error) and result (cut at 2 KB, "
+          + "resultTruncated when it was) instead of text. Thinking is left out. Returns "
+          + "cursor: pass it as after to read only what came since.",
+        properties: [
+          "session": sessionArgument,
+          "after": [
+            "type": "integer", "minimum": 0,
+            "description":
+              "A cursor from an earlier call: the entries from there on, at most last of them.",
+          ],
+          "last": [
+            "type": "integer", "minimum": 1, "maximum": .int(transcriptMaximum),
+            "default": .int(transcriptDefault),
+            "description": "The most entries to give: the newest ones, without after.",
+          ],
+        ],
+        required: ["session"],
+        annotations: .readOnly)
+    ) { arguments in
+      let id = try await Arguments.session(arguments["session"], in: source)
+      let after = try Arguments.int(arguments["after"], name: "after").map { max($0, 0) }
+      let last = try Arguments.clampedInt(
+        arguments["last"], name: "last", in: 1...transcriptMaximum, default: transcriptDefault)
+      let transcript = try await source.transcript(of: id)
+      let (entries, cursor) = TranscriptEncoding.page(transcript, after: after, last: last)
+      let lede =
+        entries.isEmpty
+        ? (after == nil ? "No entries." : "Nothing new.")
+        : "\(entries.count) \(entries.count == 1 ? "entry" : "entries")."
+      return .answer(lede, ["entries": .array(entries), "cursor": .int(cursor)])
+    }
+  }
+
+  /// How long `drakar_wait` waits by default, and at most, in seconds.
+  static let waitDefault = 30
+  static let waitMaximum = 120
+
+  private static func addWait(
+    to table: inout ToolTable, source: some SessionSource, pollInterval: Duration
+  ) {
+    table.add(
+      MCPTool(
+        name: "drakar_wait",
+        description:
+          "Wait until a session moves, then say which. until: attention (the default: a "
+          + "session newly wants the person, as drakar_needs_attention counts it), turn_end "
+          + "(a session that was working stopped), change (a session's state changed, or one "
+          + "started or ended). Returns moved, the sessions that moved as they are now (one "
+          + "that went, with state ended), and timedOut. Call it in a loop to supervise.",
+        properties: [
+          "sessions": [
+            "type": "array", "items": sessionArgument,
+            "description": "The sessions to watch; every live session when left out.",
+          ],
+          "until": [
+            "type": "string",
+            "enum": .array(WaitUntil.allCases.map { .string($0.rawValue) }),
+            "default": .string(WaitUntil.attention.rawValue),
+          ],
+          "timeout_seconds": [
+            "type": "integer", "minimum": 1, "maximum": .int(waitMaximum),
+            "default": .int(waitDefault),
+            "description": "How long to wait before answering timedOut.",
+          ],
+        ],
+        annotations: .readOnly)
+    ) { arguments in
+      let watched = try await Arguments.sessions(arguments["sessions"], in: source)
+      let until =
+        try Arguments.choice(arguments["until"], name: "until", as: WaitUntil.self) ?? .attention
+      let timeout = try Arguments.clampedInt(
+        arguments["timeout_seconds"], name: "timeout_seconds", in: 1...waitMaximum,
+        default: waitDefault)
+
+      let clock = ContinuousClock()
+      let deadline = clock.now.advanced(by: .seconds(timeout))
+      var before = await snapshot(of: source)
+      while clock.now < deadline {
+        try await clock.sleep(for: min(pollInterval, deadline - clock.now))
+        let now = await snapshot(of: source)
+        let moved = Waiting.moved(
+          from: before.rows, attention: before.attention, to: now.rows, attention: now.attention,
+          until: until, watched: watched)
+        if !moved.isEmpty {
+          let lede = "\(moved.count) \(moved.count == 1 ? "session" : "sessions") moved."
+          return .answer(lede, ["moved": .array(moved.map(Encoding.row)), "timedOut": false])
+        }
+        before = now
+      }
+      return .answer("Nothing moved in \(timeout) s.", ["moved": [], "timedOut": true])
+    }
+  }
+
+  /// The live sessions and the ids of those that want the person, as `drakar_wait` compares.
+  private static func snapshot(of source: some SessionSource) async -> (
+    rows: [SessionRow], attention: Set<String>
+  ) {
+    let rows = await source.sessions(includeEnded: false, endedLimit: 0)
+    let attention = await source.attention().map(\.session.id)
+    return (rows, Set(attention))
   }
 
   private static func addListProjects(to table: inout ToolTable, source: some SessionSource) {
