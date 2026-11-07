@@ -7,7 +7,8 @@ import SwiftUI
 /// The panes, in three sections, as Cupertino and Armada draw them.
 ///
 /// The first is how sessions behave: General, Transcript, Theme, Attention, then Runner, which
-/// says where they may run.
+/// says where they may run, and MCP Server, which says what an agent on this Mac may do with
+/// them.
 ///
 /// The second is the fleet's information section: What's New and Updates are the version pair
 /// (what this build changed, and is there a newer one), and About answers which build this is.
@@ -24,6 +25,7 @@ enum SettingsPane: String, SupportKitSettings.SettingsPane {
   case theme
   case attention
   case runner
+  case mcp
   case whatsNew
   case updates
   case about
@@ -36,6 +38,7 @@ enum SettingsPane: String, SupportKitSettings.SettingsPane {
     case .theme: "Theme"
     case .attention: "Attention"
     case .runner: "Runner"
+    case .mcp: "MCP Server"
     case .updates: "Updates"
     case .licence: "Licence"
     case .whatsNew: "What's New"
@@ -50,6 +53,7 @@ enum SettingsPane: String, SupportKitSettings.SettingsPane {
     case .theme: "paintpalette"
     case .attention: "bell.badge"
     case .runner: "desktopcomputer.and.macbook"
+    case .mcp: "point.3.connected.trianglepath.dotted"
     case .updates: "arrow.triangle.2.circlepath"
     case .licence: "key"
     case .whatsNew: "sparkles"
@@ -59,7 +63,7 @@ enum SettingsPane: String, SupportKitSettings.SettingsPane {
 
   var group: SettingsPaneGroup {
     switch self {
-    case .general, .transcript, .theme, .attention, .runner: .configuration
+    case .general, .transcript, .theme, .attention, .runner, .mcp: .configuration
     case .whatsNew, .updates, .about: .information
     case .licence: .entitlement
     }
@@ -355,6 +359,7 @@ struct SettingsView: View {
       case .theme: ThemePane()
       case .attention: AttentionPane()
       case .runner: RunnerSettingsPane()
+      case .mcp: MCPSettingsPane()
       case .updates: UpdatesPane()
       case .licence: LicensePane()
       case .whatsNew: WhatsNewPane()

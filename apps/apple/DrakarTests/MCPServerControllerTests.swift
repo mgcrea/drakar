@@ -55,6 +55,18 @@ import Testing
     #expect(Set(Tools.writeTools).isSubset(of: Set(names)))
     #expect(server.info.name == MCPSetup.serverName)
   }
+
+  /// Settings › MCP Server closes the configuration section, after Runner.
+  @Test func settingsPaneListed() throws {
+    let panes = SettingsPane.allCases
+    let mcp = try #require(panes.firstIndex(of: .mcp))
+    let runner = try #require(panes.firstIndex(of: .runner))
+    #expect(mcp == runner + 1)
+    #expect(SettingsPane.mcp.group == .configuration)
+    #expect(panes.last { $0.group == .configuration } == .mcp)
+    #expect(SettingsPane.mcp.title == "MCP Server")
+    #expect(SettingsPane.mcp.systemImage == "point.3.connected.trianglepath.dotted")
+  }
 }
 
 /// A source with nothing in it: the table is built from the source's type, not its answers.
