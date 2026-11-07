@@ -2,9 +2,10 @@ PROJECT = Drakar.xcodeproj
 DERIVED_DATA = .build
 BUNDLE_ID = io.mgcrea.Drakar
 
-# The local packages, cheapest and most load-bearing first. DrakarKit is the only one today;
-# later ones join this list, `test-all` and SWIFT_SRC as they arrive.
+# The local packages, cheapest and most load-bearing first. Later ones join this list, `test`,
+# `clean` and SWIFT_SRC as they arrive.
 KIT = Packages/DrakarKit
+MCP = Packages/DrakarMCP
 
 # Mac only: a Developer ID app, never on the store, so there is no iOS destination and no
 # `build-ios` (fleet-direct-conventions). DESTINATION stays a variable for an arm64/x86_64 pin.
@@ -84,12 +85,14 @@ build-release: sparkle ## Build the app in Release (the root's build-release is 
 
 # ── Tests ─────────────────────────────────────────────────────────────────────
 #
-# `test` is the package suite and resolves nothing: DrakarKit has no dependencies and no
-# networking, and its tests are where the model is argued about. `test-app` is the hosted
-# suite, which needs Xcode and launches the app.
+# `test` is the package suites. DrakarKit's resolves nothing: it has no dependencies and no
+# networking, and its tests are where the model is argued about. DrakarMCP resolves
+# swift-mcp-kit from GitHub, the one network fetch of the suite; once resolved, it runs
+# offline too. `test-app` is the hosted suite, which needs Xcode and launches the app.
 
-test: ## Run the DrakarKit tests (offline, no network, no Xcode)
+test: ## Run the DrakarKit and DrakarMCP tests (offline, no Xcode)
 	swift test --package-path $(KIT)
+	swift test --package-path $(MCP)
 
 # `xcodebuild test` on the app scheme does NOT run the local SPM test targets -- it reports
 # green while skipping them -- so `test-all` invokes each half explicitly. A suite that
@@ -187,7 +190,10 @@ SWIFT_SRC := \
 	DrakarTests \
 	$(KIT)/Package.swift \
 	$(KIT)/Sources \
-	$(KIT)/Tests
+	$(KIT)/Tests \
+	$(MCP)/Package.swift \
+	$(MCP)/Sources \
+	$(MCP)/Tests
 
 # swift-format's version follows whichever Xcode is selected, so a toolchain bump can
 # reformat the whole tree with no change to `.swift-format` and turn the gate red on code
@@ -253,7 +259,7 @@ icon: ## Rebuild Drakar.icon from design/drakar-icon.svg
 # ── Clean ─────────────────────────────────────────────────────────────────────
 
 clean: ## Remove build products
-	rm -rf $(DERIVED_DATA) $(KIT)/.build
+	rm -rf $(DERIVED_DATA) $(KIT)/.build $(MCP)/.build
 
 .PHONY: help sparkle build build-release test test-app test-all profile bench quit run \
 	swift-format-version format-swift format-swift-check blame-setup icon clean
