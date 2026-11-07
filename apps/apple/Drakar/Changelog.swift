@@ -205,14 +205,32 @@ nonisolated enum Changelog {
 
   // <generated:changelog> generated from CHANGELOG.md by `make changelog` — do not edit by hand
 
-  /// The most recent 4 releases, newest first.
+  /// The most recent 5 releases, newest first.
   ///
   /// Split into one `let` per release rather than a single nested literal.
   /// Swift's expression type-checker is superlinear in the depth of an array
   /// literal, and this one is releases of sections of entries of strings — the
   /// exact shape that turns into a multi-second type-check with no diagnostic.
   // swift-format-ignore
-  static let releases: [Release] = [v1_3_0, v1_2_0, v1_1_0, v1_0_0]
+  static let releases: [Release] = [v1_4_0, v1_3_0, v1_2_0, v1_1_0, v1_0_0]
+
+  // swift-format-ignore
+  private static let v1_4_0: Release = Release(
+    version: "1.4.0",
+    date: "2026-11-07",
+    sections: [
+      Section(
+        name: "Added",
+        lead: [],
+        entries: [
+          Entry(
+            ordinal: 0,
+            headline: "An MCP server.",
+            body: [
+              "Turned on in Settings › MCP Server, it lets an AI agent on your Mac, such as Claude Code or Codex, see your sessions, here and on your runner, read their transcripts and wait for one to need you. Allow writes lets it also start sessions, send them messages, interrupt and end them, and answer their questions; answering their permission prompts is a switch of its own. It is off until you turn it on, listens on 127.0.0.1 only, and answers only a client holding the token Drakar keeps in your Keychain. The pane sets up Claude Code, Codex or Bastion for it.",
+            ]),
+        ]),
+    ])
 
   // swift-format-ignore
   private static let v1_3_0: Release = Release(
@@ -515,25 +533,6 @@ nonisolated enum Changelog {
   /// `nil` in any tagged build: CI asserts the CHANGELOG's head section is the
   /// tag's version, so there is no `[Unreleased]` left to emit by then. The
   /// pane shows it in debug builds only, where it is true of what is running.
-  // swift-format-ignore
-  private static let unreleasedRelease: Release = Release(
-    version: "Unreleased",
-    date: "",
-    sections: [
-      Section(
-        name: "Added",
-        lead: [],
-        entries: [
-          Entry(
-            ordinal: 0,
-            headline: "An MCP server.",
-            body: [
-              "Turned on in Settings › MCP Server, it lets an AI agent on your Mac, such as Claude Code or Codex, see your sessions, here and on your runner, read their transcripts and wait for one to need you. Allow writes lets it also start sessions, send them messages, interrupt and end them, and answer their questions; answering their permission prompts is a switch of its own. It is off until you turn it on, listens on 127.0.0.1 only, and answers only a client holding the token Drakar keeps in your Keychain. The pane sets up Claude Code, Codex or Bastion for it.",
-            ]),
-        ]),
-    ])
-
-  // swift-format-ignore
-  static let unreleased: Release? = unreleasedRelease
+  static let unreleased: Release? = nil
   // </generated:changelog>
 }
