@@ -104,10 +104,11 @@ final class FakeSessionSource: SessionSource, @unchecked Sendable {
   private var _started: StartRequest?
   private var _decision: PermissionDecision?
   private var _elicitationAnswer: ElicitationAnswer?
+  private var _answered: RequestID?
 
   /// Each write, in order: `"start <folder> <prompt>"`, `"send <id> <text>"`,
-  /// `"interrupt <id>"`, `"end <id>"`, `"permission <id> <requestID>"`,
-  /// `"elicitation <id> <requestID>"`.
+  /// `"interrupt <id>"`, `"end <id>"`, `"permission <id> <raw requestID>"`,
+  /// `"elicitation <id> <raw requestID>"`.
   var calls: [String] { lock.withLock { _calls } }
   /// The last request `start` received.
   var started: StartRequest? { lock.withLock { _started } }
@@ -115,6 +116,8 @@ final class FakeSessionSource: SessionSource, @unchecked Sendable {
   var decision: PermissionDecision? { lock.withLock { _decision } }
   /// The last elicitation answer received.
   var elicitationAnswer: ElicitationAnswer? { lock.withLock { _elicitationAnswer } }
+  /// The request the last answer named, with its fingerprint.
+  var answered: RequestID? { lock.withLock { _answered } }
 
   static let transcriptMissing = SessionError("No transcript for that session.")
 
@@ -169,12 +172,20 @@ final class FakeSessionSource: SessionSource, @unchecked Sendable {
     try record("end \(id)") {}
   }
 
-  func answer(_ id: String, requestID: String, with decision: PermissionDecision) async throws {
-    try record("permission \(id) \(requestID)") { _decision = decision }
+  func answer(_ id: String, requestID: RequestID, with decision: PermissionDecision)
+    async throws
+  {
+    try record("permission \(id) \(requestID.raw)") {
+      _answered = requestID
+      _decision = decision
+    }
   }
 
-  func answer(_ id: String, requestID: String, with answer: ElicitationAnswer) async throws {
-    try record("elicitation \(id) \(requestID)") { _elicitationAnswer = answer }
+  func answer(_ id: String, requestID: RequestID, with answer: ElicitationAnswer) async throws {
+    try record("elicitation \(id) \(requestID.raw)") {
+      _answered = requestID
+      _elicitationAnswer = answer
+    }
   }
 
   /// Logs the call and keeps what it was handed, under the lock, then throws `writeError`

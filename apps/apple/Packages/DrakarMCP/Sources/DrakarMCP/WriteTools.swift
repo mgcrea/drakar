@@ -192,22 +192,23 @@ extension Tools {
     ) { arguments in
       let id = try await Arguments.session(arguments["session"], in: source)
       let requestID = try Arguments.requiredString(arguments["request_id"], name: "request_id")
-      switch try await pending(requestID, of: id, in: source) {
-      case .permission(_, let request):
-        guard request.isChoice else {
+      let (item, named) = try await pending(requestID, of: id, in: source)
+      switch item {
+      case .permission(_, let permission):
+        guard permission.isChoice else {
           throw SessionError(
             "Request \(requestID) is a permission prompt: use drakar_answer_permission.")
         }
         // The input sent back is the request's own with the answers added, built here and
         // never taken from the caller, as the question panel answers.
-        let answers = try questionAnswers(arguments["answers"], to: request)
+        let answers = try questionAnswers(arguments["answers"], to: permission)
         try await source.answer(
-          id, requestID: requestID,
-          with: .allow(updatedInput: UserQuestion.answering(request.input, with: answers)))
+          id, requestID: named,
+          with: .allow(updatedInput: UserQuestion.answering(permission.input, with: answers)))
       case .elicitation(_, let elicitation):
         let answer = try elicitationAnswer(
           arguments["action"], content: arguments["content"], to: elicitation)
-        try await source.answer(id, requestID: requestID, with: answer)
+        try await source.answer(id, requestID: named, with: answer)
       }
       return .answer("Answered \(requestID).", ["ok": true])
     }
@@ -246,16 +247,20 @@ extension Tools {
     return answers
   }
 
-  /// The request `requestID` that session `id` waits on, or a refusal saying it is not
-  /// waiting any more.
+  /// The request `requestID` (a `RequestID` as the tools give it out) that session `id`
+  /// waits on, or a refusal saying it is not waiting any more: none by that raw id, or one
+  /// asking something else than the request the caller read, as a Codex id reused by a
+  /// later process does. An id without its fingerprint is refused the same way.
   static func pending(_ requestID: String, of id: String, in source: some SessionSource)
-    async throws -> PendingItem
+    async throws -> (PendingItem, RequestID)
   {
     guard let detail = await source.detail(of: id) else { throw SessionIDs.unknown(id) }
-    guard let pending = detail.pending.first(where: { $0.requestID == requestID }) else {
+    guard let request = RequestID(parsing: requestID),
+      let pending = detail.pending.first(where: request.names)
+    else {
       throw SessionError.noLongerWaiting(requestID)
     }
-    return pending
+    return (pending, request)
   }
 
   /// An elicitation's answer from `action` and, on accept, `content` (the form's values). Only
@@ -348,14 +353,14 @@ extension Tools {
       let interrupt = try Arguments.bool(arguments["interrupt"], name: "interrupt") ?? false
       let always = try indices(arguments["always"], name: "always")
 
-      guard case .permission(_, let request) = try await pending(requestID, of: id, in: source)
-      else {
+      let (item, named) = try await pending(requestID, of: id, in: source)
+      guard case .permission(_, let request) = item else {
         throw SessionError(
           "Request \(requestID) is an MCP server's form: use drakar_answer_question.")
       }
       let decision = try PermissionAnswer.decision(
         for: request, verdict: verdict, message: message, interrupt: interrupt, always: always)
-      try await source.answer(id, requestID: requestID, with: decision)
+      try await source.answer(id, requestID: named, with: decision)
       return .answer(
         "\(verdict == .allow ? "Allowed" : "Denied") \(requestID).", ["ok": true])
     }

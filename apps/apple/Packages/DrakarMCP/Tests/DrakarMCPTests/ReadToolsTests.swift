@@ -199,10 +199,10 @@ struct ReadToolsTests {
       "file_path": .string("/tmp/a.txt"),
       "content": .string(String(repeating: "x", count: 10_000)),
     ])
-    let encoded = Encoding.pending(
-      .permission(requestID: "req-1", request: Self.request("Write", input)))
+    let item = PendingItem.permission(requestID: "req-1", request: Self.request("Write", input))
+    let encoded = Encoding.pending(item)
     #expect(encoded["kind"] == "permission")
-    #expect(encoded["requestId"] == "req-1")
+    #expect(encoded["requestId"] == .string("req-1:\(RequestID.fingerprint(of: item))"))
     #expect(encoded["tool"] == "Write")
     #expect(encoded["summary"] == "/tmp/a.txt")
     #expect(encoded["input"]?["content"]?.stringValue?.utf8.count == 4096)
@@ -262,9 +262,10 @@ struct ReadToolsTests {
             "required": .array([.string("repo")]),
           ]),
         ])))
-    let encoded = Encoding.pending(.elicitation(requestID: "e", elicitation: elicitation))
+    let item = PendingItem.elicitation(requestID: "e", elicitation: elicitation)
+    let encoded = Encoding.pending(item)
     #expect(encoded["kind"] == "elicitation")
-    #expect(encoded["requestId"] == "e")
+    #expect(encoded["requestId"] == .string("e:\(RequestID.fingerprint(of: item))"))
     #expect(encoded["server"] == "github")
     #expect(encoded["message"] == "Pick a repo")
     let field = try #require(encoded["fields"]?[0])
@@ -291,7 +292,8 @@ struct ReadToolsTests {
     let rows = try #require(result.structuredContent?["sessions"]?.arrayValue)
     #expect(rows.map { $0["id"] } == ["bbbbbbbb-1", "aaaaaaaa-1", "cccccccc-1"])
     #expect(rows.map { $0["kind"] } == ["permission", "asked_in_text", "offered_in_text"])
-    #expect(rows[0]["wants"]?["requestId"] == "r1")
+    let shown = RequestID(.permission(requestID: "r1", request: request)).description
+    #expect(rows[0]["wants"]?["requestId"] == .string(shown))
     #expect(rows[0]["wants"]?["summary"] == "ls")
     #expect(rows[1]["wants"] == ["text": "Ship it?"])
     #expect(rows[2]["wants"]?["text"] == "Want me to push?")
@@ -313,7 +315,8 @@ struct ReadToolsTests {
     let result = await call("drakar_get_session", ["session": .string(id)])
     let detail = try #require(result.structuredContent)
     #expect(detail["state"] == "waiting")
-    #expect(detail["pending"]?[0]?["requestId"] == "r1")
+    let shown = RequestID(.permission(requestID: "r1", request: request)).description
+    #expect(detail["pending"]?[0]?["requestId"] == .string(shown))
     #expect(detail["queued"] == ["then this"])
     #expect(detail["permissionMode"] == "default")
     #expect(detail["accountFolder"] == "/Users/me/.claude")

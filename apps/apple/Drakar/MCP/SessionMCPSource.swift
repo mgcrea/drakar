@@ -97,11 +97,13 @@ nonisolated final class SessionMCPSource: SessionSource, @unchecked Sendable {
     try await endOnMain(id)
   }
 
-  func answer(_ id: String, requestID: String, with decision: PermissionDecision) async throws {
+  func answer(_ id: String, requestID: RequestID, with decision: PermissionDecision)
+    async throws
+  {
     try await answerOnMain(id, requestID: requestID, with: decision)
   }
 
-  func answer(_ id: String, requestID: String, with answer: ElicitationAnswer) async throws {
+  func answer(_ id: String, requestID: RequestID, with answer: ElicitationAnswer) async throws {
     try await answerOnMain(id, requestID: requestID, with: answer)
   }
 }
@@ -264,42 +266,47 @@ extension SessionMCPSource {
     project.end(item)
   }
 
+  // Each answer reads the request again now, by its raw id and what it asks: the person may
+  // have answered it since it was listed, or a process started since (a Codex one numbers its
+  // requests from "0" again) may wait on another request under the same id.
+
   @MainActor private func answerOnMain(
-    _ id: String, requestID: String, with decision: PermissionDecision
+    _ id: String, requestID: RequestID, with decision: PermissionDecision
   ) async throws {
     let (project, session) = try await answering(id, requestID: requestID)
-    // Read again now: the person may have answered it since it was listed.
     guard
       let pending = session.status.pendingPermissions.first(where: {
-        $0.requestID == requestID
+        requestID.names(.permission(requestID: $0.requestID, request: $0.request))
       })
-    else { throw SessionError.noLongerWaiting(requestID) }
+    else { throw SessionError.noLongerWaiting(requestID.description) }
     project.forAgent { session.answer(pending, decision) }
   }
 
   @MainActor private func answerOnMain(
-    _ id: String, requestID: String, with answer: ElicitationAnswer
+    _ id: String, requestID: RequestID, with answer: ElicitationAnswer
   ) async throws {
     let (project, session) = try await answering(id, requestID: requestID)
     guard
       let pending = session.status.pendingElicitations.first(where: {
-        $0.requestID == requestID
+        requestID.names(.elicitation(requestID: $0.requestID, elicitation: $0.elicitation))
       })
-    else { throw SessionError.noLongerWaiting(requestID) }
+    else { throw SessionError.noLongerWaiting(requestID.description) }
     project.forAgent { session.answer(pending, answer) }
   }
 
   /// The window's session a request is answered in. Only a window's session has requests to
   /// answer; one reconnecting keeps them waiting, as its panel does.
-  @MainActor private func answering(_ id: String, requestID: String) async throws
+  @MainActor private func answering(_ id: String, requestID: RequestID) async throws
     -> (Project, AgentSession)
   {
     guard case .window(let project, let item, _) = await find(id) else {
-      throw SessionError.noLongerWaiting(requestID)
+      throw SessionError.noLongerWaiting(requestID.description)
     }
     if item.session.isReconnecting { throw Self.reconnecting(Self.shownTitle(of: item)) }
     // With no process, an answer would reach nobody.
-    guard item.session.isProcessRunning else { throw SessionError.noLongerWaiting(requestID) }
+    guard item.session.isProcessRunning else {
+      throw SessionError.noLongerWaiting(requestID.description)
+    }
     return (project, item.session)
   }
 

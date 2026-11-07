@@ -63,6 +63,7 @@ public struct SessionRow: Sendable, Equatable {
 }
 
 /// A request waiting on an answer: a tool's permission, or an MCP server's question.
+/// `requestID` is the agent's own; the tools give it out as a `RequestID`.
 public enum PendingItem: Sendable, Equatable {
   case permission(requestID: String, request: PermissionRequest)
   case elicitation(requestID: String, elicitation: Elicitation)
@@ -220,6 +221,9 @@ public protocol SessionSource: Sendable {
   func send(to id: String, text: String) async throws -> SendOutcome
   func interrupt(_ id: String) async throws
   func end(_ id: String) async throws
-  func answer(_ id: String, requestID: String, with decision: PermissionDecision) async throws
-  func answer(_ id: String, requestID: String, with answer: ElicitationAnswer) async throws
+  /// Answers the request `requestID.raw` names, refused as no longer waiting unless it still
+  /// asks what the caller read (`RequestID.names`).
+  func answer(_ id: String, requestID: RequestID, with decision: PermissionDecision)
+    async throws
+  func answer(_ id: String, requestID: RequestID, with answer: ElicitationAnswer) async throws
 }

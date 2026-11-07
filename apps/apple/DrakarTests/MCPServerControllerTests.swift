@@ -83,6 +83,6 @@ private nonisolated struct NoSessions: SessionSource {
   func send(to id: String, text: String) async throws -> SendOutcome { .sent }
   func interrupt(_ id: String) async throws {}
   func end(_ id: String) async throws {}
-  func answer(_ id: String, requestID: String, with decision: PermissionDecision) async throws {}
-  func answer(_ id: String, requestID: String, with answer: ElicitationAnswer) async throws {}
+  func answer(_ id: String, requestID: RequestID, with decision: PermissionDecision) async throws {}
+  func answer(_ id: String, requestID: RequestID, with answer: ElicitationAnswer) async throws {}
 }

@@ -31,6 +31,17 @@ struct WriteToolsTests {
     source.details = [Self.id: SessionDetail(row: Self.row(), pending: pending)]
   }
 
+  /// The id the tools give out for the request `raw` the session waits on, as a caller reads
+  /// it; `raw` itself when it waits on none.
+  private func requestID(_ raw: String) -> MCPKit.JSONValue {
+    .string(shownID(raw))
+  }
+
+  private func shownID(_ raw: String) -> String {
+    let item = source.details[Self.id]?.pending.first { $0.requestID == raw }
+    return item.map { RequestID($0).description } ?? raw
+  }
+
   private static func request(_ toolName: String, _ input: DrakarKit.JSONValue)
     -> PermissionRequest
   {
@@ -204,7 +215,7 @@ struct WriteToolsTests {
     live(pending: [.permission(requestID: "q1", request: request)])
     let result = await call(
       "drakar_answer_question",
-      ["session": .string(Self.id), "request_id": "q1", "answers": ["Which?": "B"]])
+      ["session": .string(Self.id), "request_id": requestID("q1"), "answers": ["Which?": "B"]])
     #expect(!result.isError)
     #expect(source.calls == ["permission \(Self.id) q1"])
     #expect(
@@ -218,15 +229,16 @@ struct WriteToolsTests {
     let request = Self.request(UserQuestion.toolName, Self.questionInput)
     live(pending: [.permission(requestID: "q1", request: request)])
     var result = await call(
-      "drakar_answer_question", ["session": .string(Self.id), "request_id": "q1"])
+      "drakar_answer_question", ["session": .string(Self.id), "request_id": requestID("q1")])
     #expect(result.isError)
     result = await call(
       "drakar_answer_question",
-      ["session": .string(Self.id), "request_id": "q1", "answers": ["Where?": "B"]])
+      ["session": .string(Self.id), "request_id": requestID("q1"), "answers": ["Where?": "B"]])
     #expect(result.isError)
     #expect(result.text.contains("Where?"))
     result = await call(
-      "drakar_answer_question", ["session": .string(Self.id), "request_id": "q1", "answers": [:]])
+      "drakar_answer_question",
+      ["session": .string(Self.id), "request_id": requestID("q1"), "answers": [:]])
     #expect(result.text == "Answer every question: \"Which?\" has no answer.")
     #expect(source.calls.isEmpty)
   }
@@ -236,7 +248,7 @@ struct WriteToolsTests {
     live()
     let result = await call(
       "drakar_answer_question",
-      ["session": .string(Self.id), "request_id": "q1", "answers": ["Which?": "B"]])
+      ["session": .string(Self.id), "request_id": requestID("q1"), "answers": ["Which?": "B"]])
     #expect(result.isError)
     #expect(
       result.text == "Request q1 is no longer waiting: already answered, or the turn ended.")
@@ -249,9 +261,12 @@ struct WriteToolsTests {
     live(pending: [.permission(requestID: "p1", request: request)])
     let result = await call(
       "drakar_answer_question",
-      ["session": .string(Self.id), "request_id": "p1", "action": "accept"])
+      ["session": .string(Self.id), "request_id": requestID("p1"), "action": "accept"])
     #expect(result.isError)
-    #expect(result.text == "Request p1 is a permission prompt: use drakar_answer_permission.")
+    #expect(
+      result.text
+        == "Request \(shownID("p1")) is a permission prompt: use drakar_answer_permission."
+    )
     #expect(source.calls.isEmpty)
   }
 
@@ -260,7 +275,7 @@ struct WriteToolsTests {
     live(pending: [.elicitation(requestID: "e1", elicitation: try Self.elicitation())])
     let result = await call(
       "drakar_answer_question",
-      ["session": .string(Self.id), "request_id": "e1", "action": "decline"])
+      ["session": .string(Self.id), "request_id": requestID("e1"), "action": "decline"])
     #expect(!result.isError)
     #expect(source.calls == ["elicitation \(Self.id) e1"])
     #expect(source.elicitationAnswer == .decline)
@@ -270,13 +285,13 @@ struct WriteToolsTests {
   func elicitationAccept() async throws {
     live(pending: [.elicitation(requestID: "e1", elicitation: try Self.elicitation())])
     var result = await call(
-      "drakar_answer_question", ["session": .string(Self.id), "request_id": "e1"])
+      "drakar_answer_question", ["session": .string(Self.id), "request_id": requestID("e1")])
     #expect(result.isError)
 
     result = await call(
       "drakar_answer_question",
       [
-        "session": .string(Self.id), "request_id": "e1", "action": "accept",
+        "session": .string(Self.id), "request_id": requestID("e1"), "action": "accept",
         "content": ["repo": "drakar", "stars": 3],
       ])
     #expect(!result.isError)
@@ -284,12 +299,29 @@ struct WriteToolsTests {
       source.elicitationAnswer == .accept(["repo": .string("drakar"), "stars": .number(3)]))
   }
 
+  @Test("A form replaced by another server's under the same raw id is no longer waiting")
+  func elicitationReplacedUnderTheSameRawID() async throws {
+    live(pending: [.elicitation(requestID: "0", elicitation: try Self.elicitation())])
+    let read = requestID("0")
+    var other = try Self.elicitation()
+    other.message = "Delete a repo"
+    live(pending: [.elicitation(requestID: "0", elicitation: other)])
+
+    let result = await call(
+      "drakar_answer_question",
+      ["session": .string(Self.id), "request_id": read, "action": "decline"])
+    #expect(result.isError)
+    #expect(result.text.hasSuffix("is no longer waiting: already answered, or the turn ended."))
+    #expect(source.calls.isEmpty)
+    #expect(source.elicitationAnswer == nil)
+  }
+
   @Test("A form accepted needs its values")
   func formAcceptNeedsContent() async throws {
     live(pending: [.elicitation(requestID: "e1", elicitation: try Self.elicitation())])
     let result = await call(
       "drakar_answer_question",
-      ["session": .string(Self.id), "request_id": "e1", "action": "accept"])
+      ["session": .string(Self.id), "request_id": requestID("e1"), "action": "accept"])
     #expect(result.isError)
     #expect(result.text == "Accepting this form needs its values in content.")
     #expect(source.calls.isEmpty)
@@ -308,7 +340,7 @@ struct WriteToolsTests {
       let before = source.calls.count
       var result = await call(
         "drakar_answer_question",
-        ["session": .string(Self.id), "request_id": "e1", "action": "accept"])
+        ["session": .string(Self.id), "request_id": requestID("e1"), "action": "accept"])
       #expect(result.isError)
       #expect(
         result.text
@@ -318,7 +350,7 @@ struct WriteToolsTests {
 
       result = await call(
         "drakar_answer_question",
-        ["session": .string(Self.id), "request_id": "e1", "action": "cancel"])
+        ["session": .string(Self.id), "request_id": requestID("e1"), "action": "cancel"])
       #expect(!result.isError)
       #expect(source.elicitationAnswer == .cancel)
     }
@@ -335,7 +367,10 @@ struct WriteToolsTests {
     live(pending: [.elicitation(requestID: "e1", elicitation: elicitation)])
     let result = await call(
       "drakar_answer_question",
-      ["session": .string(Self.id), "request_id": "e1", "action": "accept", "content": [:]])
+      [
+        "session": .string(Self.id), "request_id": requestID("e1"), "action": "accept",
+        "content": [:],
+      ])
     #expect(result.isError)
     #expect(source.calls.isEmpty)
   }

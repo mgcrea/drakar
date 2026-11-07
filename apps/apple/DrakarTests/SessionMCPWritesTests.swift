@@ -83,6 +83,11 @@ struct SessionMCPWritesTests {
     return []
   }
 
+  /// The id the MCP tools give out for `pending`.
+  private static func requestID(_ pending: Transcript.PendingPermission) -> RequestID {
+    RequestID(.permission(requestID: pending.requestID, request: pending.request))
+  }
+
   /// One window, registered in an `OpenSessions` of the test's own.
   private func window() throws -> (Project, OpenSessions, UUID) {
     let project = Project(folder: try folder())
@@ -318,7 +323,8 @@ struct SessionMCPWritesTests {
     let pending = try #require(item.session.status.pendingPermissions.first)
 
     try await source(open).answer(
-      "s-perm", requestID: "r1", with: .allow(updatedInput: pending.request.input))
+      "s-perm", requestID: Self.requestID(pending),
+      with: .allow(updatedInput: pending.request.input))
 
     let lines = try await responses(to: "r1", in: stdin)
     #expect(lines.count == 1)
@@ -340,16 +346,47 @@ struct SessionMCPWritesTests {
     let pending = try #require(item.session.status.pendingPermissions.first)
     let source = source(open)
 
+    let requestID = Self.requestID(pending)
     try await source.answer(
-      "s-twice", requestID: "r1", with: .allow(updatedInput: pending.request.input))
-    await #expect(throws: SessionError.noLongerWaiting("r1")) {
+      "s-twice", requestID: requestID, with: .allow(updatedInput: pending.request.input))
+    await #expect(throws: SessionError.noLongerWaiting(requestID.description)) {
       try await source.answer(
-        "s-twice", requestID: "r1", with: .deny(message: "No", interrupt: false))
+        "s-twice", requestID: requestID, with: .deny(message: "No", interrupt: false))
     }
 
     #expect(try await responses(to: "r1", in: stdin).count == 1)
     try await Task.sleep(for: .milliseconds(200))
     #expect(try await responses(to: "r1", in: stdin).count == 1)
+  }
+
+  /// The request waiting under the raw id asks something else than the one the caller read,
+  /// as a Codex id reused by a later process does: refused, and nothing reaches the session.
+  @Test func answerToAReplacedRequestRefused() async throws {
+    let (project, open, window) = try window()
+    defer {
+      project.stopAll()
+      open.unregister(window: window)
+    }
+    let (item, stdin) = try await session("s-reused", [Self.permission], in: project) {
+      !$0.status.pendingPermissions.isEmpty
+    }
+    let pending = try #require(item.session.status.pendingPermissions.first)
+    let read = RequestID(
+      .permission(
+        requestID: pending.requestID,
+        request: PermissionRequest(
+          toolName: "Bash", input: .object(["command": .string("git push --force")]),
+          toolUseID: "toolu_0", kind: .other)))
+    #expect(read.raw == "r1")
+
+    await #expect(throws: SessionError.noLongerWaiting(read.description)) {
+      try await source(open).answer(
+        "s-reused", requestID: read, with: .allow(updatedInput: pending.request.input))
+    }
+    try await Task.sleep(for: .milliseconds(300))
+    let sent = (try? String(contentsOf: stdin, encoding: .utf8)) ?? ""
+    #expect(!sent.contains(#""type":"control_response""#))
+    #expect(item.session.status.pendingPermissions.count == 1)
   }
 
   /// With Next After Replying on, the person's reply to the tab shown moves the window on;
@@ -372,7 +409,8 @@ struct SessionMCPWritesTests {
     let pending = try #require(shown.session.status.pendingPermissions.first)
 
     try await source(open).answer(
-      "s-shown", requestID: "r1", with: .allow(updatedInput: pending.request.input))
+      "s-shown", requestID: Self.requestID(pending),
+      with: .allow(updatedInput: pending.request.input))
     try await Task.sleep(for: .milliseconds(200))
     #expect(project.selectedID == shown.id)
   }

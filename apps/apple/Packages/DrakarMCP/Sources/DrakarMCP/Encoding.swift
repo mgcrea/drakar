@@ -69,11 +69,13 @@ enum Encoding {
 
   // MARK: - Pending requests
 
+  /// A request, named by its `RequestID`: what the answer tools take back.
   static func pending(_ item: PendingItem) -> MCPKit.JSONValue {
-    switch item {
-    case .permission(let requestID, let request):
+    let requestID = RequestID(item).description
+    return switch item {
+    case .permission(_, let request):
       permission(requestID: requestID, request: request)
-    case .elicitation(let requestID, let elicitation):
+    case .elicitation(_, let elicitation):
       self.elicitation(requestID: requestID, elicitation)
     }
   }
