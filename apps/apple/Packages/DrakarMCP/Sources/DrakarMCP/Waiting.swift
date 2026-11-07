@@ -4,7 +4,8 @@ import Foundation
 enum WaitUntil: String, CaseIterable {
   /// A session newly in `drakar_needs_attention`'s set, whatever the kind.
   case attention
-  /// A session that was working is not any more.
+  /// A session's turn ended: it was working, or waiting on the person mid-turn, and is now
+  /// neither. Going from working to waiting is not an end; losing the connection is counted.
   case turnEnd = "turn_end"
   /// A session's state changed, or a session appeared or went.
   case change
@@ -32,9 +33,12 @@ enum Waiting {
     case .attention:
       candidates = new.filter { newAttention.contains($0.id) && !oldAttention.contains($0.id) }
     case .turnEnd:
+      // Waiting on the person is a turn paused, on either side: a turn that waits and then
+      // ends without working again (denied with an interrupt) ends when it leaves waiting.
+      let inTurn: Set<SessionState> = [.working, .waiting]
       candidates =
         (new + gone).filter { row in
-          before[row.id]?.state == .working && row.state != .working
+          before[row.id].map { inTurn.contains($0.state) } == true && !inTurn.contains(row.state)
         }
     case .change:
       candidates = new.filter { before[$0.id]?.state != $0.state } + gone

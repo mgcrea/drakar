@@ -272,7 +272,9 @@ public enum Tools {
         description:
           "Wait until a session moves, then say which. until: attention (the default: a "
           + "session newly wants the person, as drakar_needs_attention counts it), turn_end "
-          + "(a session that was working stopped), change (a session's state changed, or one "
+          + "(a session's turn ended: it was working, or waiting on the person mid-turn, and is "
+          + "now idle or ended, or loses its connection; stopping to wait on the person is not "
+          + "an end), change (a session's state changed, or one "
           + "started or ended). Returns moved, the sessions that moved as they are now (one "
           + "that went, with state ended), and timedOut. Call it in a loop to supervise.",
         properties: [

@@ -100,6 +100,26 @@ struct WaitToolTests {
     #expect(moved.map(\.state) == [.waiting, .working, .ended])
   }
 
+  @Test("turn_end: stopping to wait on the person is not an end; leaving that wait idle is")
+  func turnEndSkipsWaiting() {
+    let paused = Waiting.moved(
+      from: [Self.row(Self.a, .working)], attention: [],
+      to: [Self.row(Self.a, .waiting)], attention: [Self.a], until: .turnEnd, watched: nil)
+    #expect(paused.isEmpty)
+
+    let resumed = Waiting.moved(
+      from: [Self.row(Self.a, .waiting)], attention: [Self.a],
+      to: [Self.row(Self.a, .working)], attention: [], until: .turnEnd, watched: nil)
+    #expect(resumed.isEmpty)
+
+    let ended = Waiting.moved(
+      from: [Self.row(Self.a, .waiting), Self.row(Self.b, .working)], attention: [Self.a],
+      to: [Self.row(Self.a, .idle), Self.row(Self.b, .reconnecting)], attention: [],
+      until: .turnEnd, watched: nil)
+    #expect(ended.map(\.id) == [Self.a, Self.b])
+    #expect(ended.map(\.state) == [.idle, .reconnecting])
+  }
+
   @Test("turn_end counts a working session that went; attention only a newcomer to the set")
   func turnEndAndAttention() {
     let gone = Waiting.moved(
