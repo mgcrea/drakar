@@ -169,7 +169,9 @@ public enum Tools {
           + "and Dock badge count. Each is a session row with kind (permission, question, "
           + "plan, elicitation, asked_in_text, offered_in_text) and wants: for a permission, "
           + "its requestId, tool, a one-line summary, its input (each string cut at 4 KB, "
-          + "inputTruncated when one was) and the suggestions that may be applied; for a "
+          + "inputTruncated when one was), for a file change its path and every edit in "
+          + "changes (cut the same way, changesTruncated when one was), and the suggestions "
+          + "that may be applied; for a "
           + "question, its questions and their options; for a plan, the plan text; for an "
           + "elicitation, the MCP server, its message and the form's fields; for the in-text "
           + "kinds, the text that asks or offers.",
