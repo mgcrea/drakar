@@ -26,6 +26,8 @@
 		EF7EAC0B1BC134F525CD88FE /* DrakarHost in Copy Helpers */ = {isa = PBXBuildFile; fileRef = 79A4DE3982FADB7CFFEC5922 /* DrakarHost */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 		6B92CDB6218E9F51660781CA /* Sparkle.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = ADE50A70A5B8AF2B2D076906 /* Sparkle.framework */; };
 		2F455B3E74E673B6342C9633 /* Sparkle.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = ADE50A70A5B8AF2B2D076906 /* Sparkle.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
+		F1696363A8ABFC2D1B25C480 /* SupportKitTestHost in Frameworks */ = {isa = PBXBuildFile; productRef = 46DC658CEED4F093ABBE66E5 /* SupportKitTestHost */; };
+		9A2A8571220B1AE16A73E9D0 /* SupportKitTestHost in Frameworks */ = {isa = PBXBuildFile; productRef = D228C0D57AB4623CEBFC8AC0 /* SupportKitTestHost */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -110,6 +112,7 @@
 				3E7A506480F5BC25237028C0 /* MCPKitUI in Frameworks */,
 				739DEE3A3F4D4AFC4E5CC2CD /* MCPKitWiring in Frameworks */,
 				6B92CDB6218E9F51660781CA /* Sparkle.framework in Frameworks */,
+				F1696363A8ABFC2D1B25C480 /* SupportKitTestHost in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -123,6 +126,7 @@
 				A67751313FD68891A2295F85 /* SupportKitSettings in Frameworks */,
 				027B04455585F9150E0CF816 /* DrakarMCP in Frameworks */,
 				9FF49684F0D32CD825334569 /* MCPKit in Frameworks */,
+				9A2A8571220B1AE16A73E9D0 /* SupportKitTestHost in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -198,6 +202,7 @@
 				BD36209925E9D6874D97317F /* MCPKitLoopback */,
 				875EF516850CB6A529011EF7 /* MCPKitUI */,
 				93324D17A4A6C05223BB449B /* MCPKitWiring */,
+				46DC658CEED4F093ABBE66E5 /* SupportKitTestHost */,
 			);
 			productName = Drakar;
 			productReference = 47660703AFB87958CFE6D8C8 /* Drakar.app */;
@@ -227,6 +232,7 @@
 				4FE77CC5D1BB07D94B933CEF /* SupportKitSettings */,
 				721AABF622D18594BB653D7B /* DrakarMCP */,
 				A8F8FA0C1633ECA5C4F7AE61 /* MCPKit */,
+				D228C0D57AB4623CEBFC8AC0 /* SupportKitTestHost */,
 			);
 			productName = DrakarTests;
 			productReference = 951157530562D85D92CD3B43 /* DrakarTests.xctest */;
@@ -708,7 +714,7 @@
 			repositoryURL = "https://github.com/mgcrea/swift-support-kit.git";
 			requirement = {
 				kind = upToNextMinorVersion;
-				minimumVersion = 1.20.1;
+				minimumVersion = 1.24.0;
 			};
 		};
 		3ED43B2421854EB5C52BFD70 /* XCRemoteSwiftPackageReference "swift-mcp-kit" */ = {
@@ -796,6 +802,16 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 3ED43B2421854EB5C52BFD70 /* XCRemoteSwiftPackageReference "swift-mcp-kit" */;
 			productName = MCPKit;
+		};
+		46DC658CEED4F093ABBE66E5 /* SupportKitTestHost */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = DDA411622527A1114A78C853 /* XCRemoteSwiftPackageReference "swift-support-kit" */;
+			productName = SupportKitTestHost;
+		};
+		D228C0D57AB4623CEBFC8AC0 /* SupportKitTestHost */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = DDA411622527A1114A78C853 /* XCRemoteSwiftPackageReference "swift-support-kit" */;
+			productName = SupportKitTestHost;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

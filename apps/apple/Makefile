@@ -94,10 +94,24 @@ test: ## Run the DrakarKit and DrakarMCP tests (offline, no Xcode)
 	swift test --package-path $(KIT)
 	swift test --package-path $(MCP)
 
+# The hosted suite runs on the Mac someone is working at, so a test window is a `HostedWindow`,
+# off every screen, and a document is shown through `HostedWindow.show`: a plain `NSWindow(`,
+# an `openUntitledDocumentAndDisplay(true)` or a bare `showWindows()` draws over their work.
+# Checked before every run, so the next helper written the old way fails here instead.
+# Two exceptions, both by name. The streaming benchmark runs only under `make bench`, never
+# in `test-app`, and measures a session drawing on screen, so its window is a real one. The
+# MCP windows suite's stand-ins override `makeKeyAndOrderFront` to record it and never reach
+# the window server; only that call is let through there.
+hosted-windows-check: ## Fail on a hosted test that would draw on screen
+	@bad=$$(grep -nE 'NSWindow\(|NSPanel\(|openUntitledDocumentAndDisplay\(true\)|showWindows\(\)|makeKeyAndOrderFront|orderFrontRegardless' \
+		DrakarTests/*.swift | grep -v '^DrakarTests/SessionStreamingBench\.swift:' \
+		| grep -vE '^DrakarTests/MCPWindowsTests\.swift:[0-9]+:[^(]*makeKeyAndOrderFront\((_ sender: Any\?|nil)\)'); \
+	if [ -n "$$bad" ]; then echo "$$bad"; echo "Use HostedWindow (SupportKitTestHost)." >&2; exit 1; fi
+
 # `xcodebuild test` on the app scheme does NOT run the local SPM test targets -- it reports
 # green while skipping them -- so `test-all` invokes each half explicitly. A suite that
 # silently stops running is worse than one that fails.
-test-app: sparkle ## Run the app target's tests
+test-app: sparkle hosted-windows-check ## Run the app target's tests
 	xcodebuild test -project $(PROJECT) -scheme $(SCHEME) -destination 'platform=macOS' \
 		-derivedDataPath $(DERIVED_DATA)
 
@@ -261,5 +275,5 @@ icon: ## Rebuild Drakar.icon from design/drakar-icon.svg
 clean: ## Remove build products
 	rm -rf $(DERIVED_DATA) $(KIT)/.build $(MCP)/.build
 
-.PHONY: help sparkle build build-release test test-app test-all profile bench quit run \
+.PHONY: help sparkle build build-release test test-app hosted-windows-check test-all profile bench quit run \
 	swift-format-version format-swift format-swift-check blame-setup icon clean

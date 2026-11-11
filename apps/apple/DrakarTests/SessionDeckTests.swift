@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import SupportKitTestHost
 import SwiftUI
 import Testing
 
@@ -22,12 +23,12 @@ struct SessionDeckTests {
       path: "drakar-deck-\(UUID().uuidString)", directoryHint: .isDirectory)
     try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
     project = Project(folder: folder)
-    window = NSWindow(
-      contentRect: NSRect(x: 80, y: 80, width: 700, height: 600),
-      styleMask: [.titled, .resizable], backing: .buffered, defer: false)
-    window.isReleasedWhenClosed = false
-    // Above the windows of whoever is using the Mac: SwiftUI holds back the updates of a
-    // window nothing of shows, and these wait on them.
+    window = HostedWindow(
+      contentRect: NSRect(x: 0, y: 0, width: 700, height: 600), styleMask: [.titled, .resizable])
+    // Floating kept this window above the person's own when it was on screen, as SwiftUI was
+    // thought to hold back the updates of a window nothing of shows, and these wait on them.
+    // Off every screen it is never visible, floating or not, and SwiftUI updates the pane all
+    // the same (measured 2026-11-11: every change of its model drawn into the view).
     window.level = .floating
     let content = NSView(frame: NSRect(x: 0, y: 0, width: 700, height: 600))
     let pane = NSHostingView(rootView: SelectedSessionPane(project: project))
@@ -35,7 +36,7 @@ struct SessionDeckTests {
     content.addSubview(pane)
     content.addSubview(outside)
     window.contentView = content
-    window.orderFrontRegardless()
+    window.orderFront(nil)
   }
 
   /// Until `condition` holds, or a few seconds have gone.

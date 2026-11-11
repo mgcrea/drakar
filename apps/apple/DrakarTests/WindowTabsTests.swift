@@ -1,4 +1,5 @@
 import AppKit
+import SupportKitTestHost
 import Testing
 
 @testable import Drakar
@@ -7,9 +8,7 @@ import Testing
 @Suite("Which window a new tab joins")
 struct WindowTabsTests {
   private func window() -> NSWindow {
-    NSWindow(
-      contentRect: NSRect(x: 0, y: 0, width: 200, height: 100), styleMask: [.titled],
-      backing: .buffered, defer: true)
+    HostedWindow(contentRect: NSRect(x: 0, y: 0, width: 200, height: 100))
   }
 
   /// New Tab with Settings or the Skills window in front joins the frontmost of Drakar's

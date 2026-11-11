@@ -1,6 +1,7 @@
 import AppKit
 import DrakarKit
 import Foundation
+import SupportKitTestHost
 import Testing
 
 @testable import Drakar
@@ -28,11 +29,8 @@ struct ReopenedWindowsTests {
   private func path(_ url: URL) -> String { ProjectPath.normalize(url) }
 
   private func window() -> NSWindow {
-    let window = NSWindow(
-      contentRect: NSRect(x: 0, y: 0, width: 400, height: 300), styleMask: [.titled, .resizable],
-      backing: .buffered, defer: true)
-    window.isReleasedWhenClosed = false
-    return window
+    HostedWindow(
+      contentRect: NSRect(x: 0, y: 0, width: 400, height: 300), styleMask: [.titled, .resizable])
   }
 
   /// No window restored: the launch's window becomes the first project saved, and each one

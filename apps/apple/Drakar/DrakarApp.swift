@@ -1,5 +1,6 @@
 import AppKit
 import DrakarKit
+import SupportKitTestHost
 import SupportKitUI
 import SwiftUI
 import UserNotifications
@@ -23,6 +24,9 @@ struct DrakarApp: App {
       ContentView(route: $route)
         .themed()
     }
+    // A test host opens no window at launch (SupportKitTestHost): it would sit over the work
+    // of whoever is at the Mac for the whole run.
+    .defaultLaunchBehavior(TestHost.launchBehavior)
     .commands {
       SupportCommands(app: Support.app, preferIssueTracker: Support.preferIssueTracker)
       CommandGroup(replacing: .newItem) { NewWindowCommand() }
@@ -65,6 +69,7 @@ struct DrakarApp: App {
     }
     .defaultSize(width: 1040, height: 640)
     .restorationBehavior(.disabled)
+    .defaultLaunchBehavior(TestHost.launchBehavior)
     .commandsRemoved()
   }
 }
@@ -294,6 +299,12 @@ private struct OpenPlanCommand: View {
 /// down at quit: a lock left behind beside a live one stops `claude --ide` from connecting
 /// to either.
 final class AppDelegate: NSObject, NSApplicationDelegate {
+  /// Under a test host, an accessory app whose windows stay off every display, so a hosted
+  /// run takes neither the screen nor the keyboard of whoever is at the Mac; else nothing.
+  func applicationWillFinishLaunching(_ notification: Notification) {
+    TestHost.stayInBackground()
+  }
+
   func applicationDidFinishLaunching(_ notification: Notification) {
     // Before any view reads `Changelog.hasUnseen`, or a fresh install draws the
     // What's New count on its very first launch.

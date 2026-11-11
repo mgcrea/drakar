@@ -1,6 +1,7 @@
 import AppKit
 import DrakarKit
 import Foundation
+import SupportKitTestHost
 import Testing
 
 @testable import Drakar
@@ -180,10 +181,8 @@ struct WindowCloseGuardTests {
     try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
     let file = folder.appending(path: "a.txt")
     try "one\n".write(to: file, atomically: false, encoding: .utf8)
-    let window = NSWindow(
-      contentRect: NSRect(x: 0, y: 0, width: 400, height: 300), styleMask: [.titled, .closable],
-      backing: .buffered, defer: true)
-    window.isReleasedWhenClosed = false
+    let window = HostedWindow(
+      contentRect: NSRect(x: 0, y: 0, width: 400, height: 300), styleMask: [.titled, .closable])
     let original = Original()
     window.delegate = original
     let workspace = Workspace(folder: folder)
