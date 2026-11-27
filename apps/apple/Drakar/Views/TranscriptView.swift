@@ -8,6 +8,8 @@ import SwiftUI
 /// measurement; the AppKit fallback replaces this view and nothing around it.
 struct TranscriptView: View {
   let transcript: Transcript
+  /// Which provider runs this session, for provider-specific chrome like the working indicator.
+  var agent: AgentKind = .claude
   /// The entry at the top when this session was last shown; nil while following.
   @Binding var anchor: String?
   /// Takes back a prompt queued behind the turn; nil where the agent can't, so no Cancel.
@@ -69,7 +71,7 @@ struct TranscriptView: View {
         // Not while a permission or a question waits on the user: nothing is being worked on
         // then.
         if transcript.isRunning && !transcript.isWaitingOnPerson {
-          WorkingIndicator(status: workingStatus)
+          WorkingIndicator(agent: agent, status: workingStatus)
         }
         // Below the turn they wait behind, until the CLI takes each into the conversation.
         // Send now on the first only: the queue goes whole and in order, so one further down

@@ -817,7 +817,7 @@ private struct LiveTranscript: View {
 
   var body: some View {
     TranscriptView(
-      transcript: session.displayedTranscript, anchor: $anchor, cancelQueued: cancelQueued,
-      sendQueuedNow: sendQueuedNow)
+      transcript: session.displayedTranscript, agent: session.agent, anchor: $anchor,
+      cancelQueued: cancelQueued, sendQueuedNow: sendQueuedNow)
   }
 }

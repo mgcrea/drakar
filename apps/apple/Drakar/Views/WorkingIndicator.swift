@@ -1,35 +1,46 @@
 import SwiftUI
 
-/// What the transcript shows while Claude works, after the extension: a glyph that pulses out
-/// to a star and back, beside a verb that types itself in and changes every few seconds.
+/// What the transcript shows while an agent works: a provider-specific animated glyph beside a
+/// verb that types itself in and changes every few seconds.
 struct WorkingIndicator: View {
+  /// Which provider's glyph animation, colour and verb list to show.
+  var agent: AgentKind = .claude
   /// Said in place of the verbs while it holds, such as "Retrying (2/10)".
   var status: String?
-  @State private var verb = Self.verbs.randomElement()!
+  @State private var verb: String
   /// The line as drawn, mid-way through typing in `verb` over the one before it.
   @State private var shown = String(repeating: " ", count: Self.width)
 
+  init(agent: AgentKind = .claude, status: String? = nil) {
+    self.agent = agent
+    self.status = status
+    _verb = State(initialValue: Self.style(for: agent).verbs.randomElement()!)
+  }
+
   var body: some View {
+    let style = Self.style(for: agent)
     HStack(spacing: 4) {
-      TimelineView(.periodic(from: .now, by: Self.frameInterval)) { context in
-        Text(Self.frames[Self.frame(at: context.date)])
+      TimelineView(.periodic(from: .now, by: style.frameInterval)) { context in
+        Text(style.frame(at: context.date))
           .font(.system(size: 18, design: .monospaced))
-          .foregroundStyle(Self.clay)
+          .foregroundStyle(style.foreground)
           .frame(width: 24)
       }
       Text(shown).fontWeight(.medium)
     }
     .accessibilityElement(children: .ignore)
     .accessibilityLabel(status ?? "Working")
-    .task { await rotateVerbs() }
+    .task(id: agent) { await rotateVerbs() }
     .task(id: status ?? verb) { await typeIn((status ?? verb) + "...") }
   }
 
   /// A new verb after 2s, then 3s, then every 5s.
   private func rotateVerbs() async {
+    let verbs = Self.style(for: agent).verbs
+    if !verbs.contains(verb) { verb = verbs.randomElement()! }
     for change in 0... {
       do { try await Task.sleep(for: .seconds(change < 2 ? [2, 3][change] : 5)) } catch { return }
-      verb = Self.verbs.filter { $0 != verb }.randomElement()!
+      verb = verbs.filter { $0 != verb }.randomElement()!
     }
   }
 
@@ -55,19 +66,65 @@ struct WorkingIndicator: View {
     }
   }
 
-  private static func frame(at date: Date) -> Int {
-    Int(date.timeIntervalSinceReferenceDate / frameInterval) % frames.count
+  /// Per-provider spinner frames, cadence, colour and verbs.
+  struct Style {
+    let frames: [String]
+    let frameInterval: TimeInterval
+    let foreground: AnyShapeStyle
+    let verbs: [String]
+
+    func frame(at date: Date) -> String {
+      let step = Int(floor(date.timeIntervalSinceReferenceDate / frameInterval + 1e-9))
+      let index = ((step % frames.count) + frames.count) % frames.count
+      return frames[index]
+    }
   }
 
-  private static let frameInterval = 0.12
-  private static let glyphs = ["·", "✢", "*", "✶", "✻", "✽"]
-  private static let frames = glyphs + glyphs.reversed()
-  private static let clay = Color(red: 0xD9 / 255, green: 0x77 / 255, blue: 0x57 / 255)
+  static func style(for agent: AgentKind) -> Style {
+    switch agent {
+    case .claude:
+      // After the Claude Code extension: a starburst pulsing out and back in terracotta.
+      Style(
+        frames: claudeFrames, frameInterval: 0.12, foreground: AnyShapeStyle(claudeClay),
+        verbs: claudeVerbs)
+    case .codex:
+      // A crisp braille terminal spinner in OpenAI emerald.
+      Style(
+        frames: codexFrames, frameInterval: 0.08, foreground: AnyShapeStyle(codexEmerald),
+        verbs: codexVerbs)
+    case .grok:
+      Style(frames: codexFrames, frameInterval: 0.08, foreground: AnyShapeStyle(Color.primary), verbs: ["Working"])
+    case .agy:
+      // A four-point sparkle pulsing in Antigravity's blue-to-violet gradient.
+      Style(
+        frames: agyFrames, frameInterval: 0.15, foreground: AnyShapeStyle(agyGradient),
+        verbs: agyVerbs)
+    }
+  }
+
+  private static let claudeGlyphs = ["·", "✢", "*", "✶", "✻", "✽"]
+  private static let claudeFrames = claudeGlyphs + claudeGlyphs.reversed()
+  private static let claudeClay = Color(red: 0xD9 / 255, green: 0x77 / 255, blue: 0x57 / 255)
+
+  private static let codexFrames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+  private static let codexEmerald = Color(red: 0x10 / 255, green: 0xA3 / 255, blue: 0x7F / 255)
+
+  private static let agyGlyphs = ["·", "⋆", "✧", "✦"]
+  private static let agyFrames = agyGlyphs + agyGlyphs.reversed()
+  private static let agyGradient = LinearGradient(
+    colors: [
+      Color(red: 0x42 / 255, green: 0x85 / 255, blue: 0xF4 / 255),
+      Color(red: 0x9B / 255, green: 0x72 / 255, blue: 0xCB / 255),
+    ],
+    startPoint: .topLeading,
+    endPoint: .bottomTrailing)
+
   /// Room for the longest verb and its ellipsis, so a shorter one wipes the longer before it.
-  private static let width = verbs.map(\.count).max()! + 3
+  private static let width =
+    (sharedVerbs + ["Clauding", "Codexing", "Antigraviting"]).map(\.count).max()! + 3
 
   /// The extension's own list.
-  private static let verbs = [
+  private static let claudeVerbs = [
     "Accomplishing", "Actioning", "Actualizing", "Baking", "Booping", "Brewing", "Calculating",
     "Cerebrating", "Channeling", "Churning", "Clauding", "Coalescing", "Cogitating", "Computing",
     "Combobulating", "Concocting", "Considering", "Contemplating", "Cooking", "Crafting",
@@ -82,8 +139,18 @@ struct WorkingIndicator: View {
     "Synthesizing", "Thinking", "Tinkering", "Transmuting", "Unfurling", "Unraveling", "Vibing",
     "Wandering", "Whirring", "Wibbling", "Working", "Wrangling",
   ]
+
+  /// Verbs shared by every provider, with each provider's own signature verb layered on top.
+  private static let sharedVerbs = claudeVerbs.filter { $0 != "Clauding" }
+  private static let codexVerbs = sharedVerbs + ["Codexing"]
+  private static let agyVerbs = sharedVerbs + ["Antigraviting"]
 }
 
 #Preview {
-  WorkingIndicator().padding()
+  VStack(alignment: .leading, spacing: 12) {
+    WorkingIndicator(agent: .claude)
+    WorkingIndicator(agent: .codex)
+    WorkingIndicator(agent: .agy)
+  }
+  .padding()
 }
