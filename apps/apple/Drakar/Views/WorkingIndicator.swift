@@ -14,7 +14,7 @@ struct WorkingIndicator: View {
   init(agent: AgentKind = .claude, status: String? = nil) {
     self.agent = agent
     self.status = status
-    _verb = State(initialValue: Self.style(for: agent).verbs.randomElement()!)
+    _verb = State(initialValue: Self.style(for: agent).verbs.randomElement() ?? "Working")
   }
 
   var body: some View {
@@ -36,11 +36,12 @@ struct WorkingIndicator: View {
 
   /// A new verb after 2s, then 3s, then every 5s.
   private func rotateVerbs() async {
-    let verbs = Self.style(for: agent).verbs
-    if !verbs.contains(verb) { verb = verbs.randomElement()! }
+    let style = Self.style(for: agent)
+    if !style.verbs.contains(verb) { verb = style.verbs.randomElement() ?? "Working" }
     for change in 0... {
       do { try await Task.sleep(for: .seconds(change < 2 ? [2, 3][change] : 5)) } catch { return }
-      verb = verbs.filter { $0 != verb }.randomElement()!
+      guard let nextVerb = style.nextVerb(after: verb) else { return }
+      verb = nextVerb
     }
   }
 
@@ -72,6 +73,10 @@ struct WorkingIndicator: View {
     let frameInterval: TimeInterval
     let foreground: AnyShapeStyle
     let verbs: [String]
+
+    func nextVerb(after currentVerb: String) -> String? {
+      verbs.filter { $0 != currentVerb }.randomElement()
+    }
 
     func frame(at date: Date) -> String {
       let step = Int(floor(date.timeIntervalSinceReferenceDate / frameInterval + 1e-9))

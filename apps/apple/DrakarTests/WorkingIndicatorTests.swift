@@ -33,6 +33,13 @@ struct WorkingIndicatorTests {
     #expect(!agy.verbs.contains("Codexing"))
   }
 
+  @Test func keepsGroksOnlyVerbWhenRotationIsDue() {
+    let style = WorkingIndicator.style(for: .grok)
+
+    #expect(style.nextVerb(after: "Thinking") == "Working")
+    #expect(style.nextVerb(after: "Working") == nil)
+  }
+
   @Test func cyclesThroughEveryFrameForEachAgent() {
     for agent in AgentKind.allCases {
       let style = WorkingIndicator.style(for: agent)
