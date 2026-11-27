@@ -5,6 +5,11 @@ import UniformTypeIdentifiers
 /// Home: the projects the person tracks, how busy each is, and folders with recent sessions
 /// to add. Searching also finds sessions, across every account and folder.
 struct HomeView: View {
+  private enum Sort: String {
+    case lastUsed
+    case activeSessions
+  }
+
   /// A session picked: `forking` when it is open in another process.
   let pick: (SessionSummary, Bool) -> Void
   /// A project entered, this Mac's or a runner's: this window becomes it, or its open window
@@ -14,6 +19,8 @@ struct HomeView: View {
   @State private var query = ""
   @State private var choosingFolder = false
   @State private var showsAllSuggestions = false
+  @AppStorage("home.projectSort") private var sort: Sort = .lastUsed
+  @Environment(\.appearsActive) private var appearsActive
   /// The order rows were last sorted in: kept while the list is on screen, so a row never
   /// moves under the pointer when a session writes.
   @State private var order: [String] = []
@@ -77,6 +84,9 @@ struct HomeView: View {
     .onChange(of: query) { resort() }
     .onChange(of: list.tracked.paths) { resort() }
     .onChange(of: monitor.isLoaded) { resort() }
+    .onChange(of: monitor.folders.isEmpty) { resort() }
+    .onChange(of: sort) { resort() }
+    .onChange(of: appearsActive) { if appearsActive { resort() } }
     .confirmationDialog(
       "This session is open in \(openElsewhere.map { monitor.host(of: $0) } ?? "")",
       isPresented: Binding(get: { openElsewhere != nil }, set: { if !$0 { openElsewhere = nil } }),
@@ -104,6 +114,23 @@ struct HomeView: View {
           .foregroundStyle(.secondary)
       }
       Spacer()
+      if !list.tracked.projects.isEmpty {
+        Menu {
+          Picker("Sort Projects", selection: $sort) {
+            Text("Last Used").tag(Sort.lastUsed)
+            Text("Active Sessions").tag(Sort.activeSessions)
+          }
+          .pickerStyle(.inline)
+        } label: {
+          Image(systemName: "arrow.up.arrow.down")
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("Sort projects")
+        .accessibilityLabel("Sort Projects")
+        .accessibilityIdentifier("home.sortProjects")
+      }
       Button("Add Project…") { choosingFolder = true }
         .buttonStyle(.borderedProminent)
         .accessibilityIdentifier("home.addProject")
@@ -224,7 +251,21 @@ struct HomeView: View {
   }
 
   private func resort() {
-    order = list.tracked.ordered(by: stats).map(\.path)
+    let stats = self.stats
+    let recent = list.tracked.ordered(by: stats).map(\.path)
+    guard sort == .activeSessions else {
+      order = recent
+      return
+    }
+
+    let own = self.own
+    func activeCount(_ path: String) -> Int {
+      let registered = stats[path] ?? ProjectStats()
+      let local = own[path] ?? (0, 0)
+      return registered.running + registered.waiting + local.running + local.waiting
+    }
+    // The stable sort keeps the most recently used project first when counts tie.
+    order = recent.sorted { activeCount($0) > activeCount($1) }
   }
 
   @ViewBuilder private func menu(for entry: TrackedProjects.Entry) -> some View {
