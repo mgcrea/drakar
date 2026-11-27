@@ -239,9 +239,8 @@ import Testing
       Issue.record("got \(refused)")
       return
     }
-    try? await Task.sleep(for: .milliseconds(50))
     // Nothing of the attach; only that another app let it go.
-    #expect(host.inbox.of(first) == [.released(id: id)])
+    #expect(await eventually { host.inbox.of(first) == [.released(id: id)] })
   }
 
   @Test func aRecordWhileNobodyIsAttachedSaysSo() async throws {
