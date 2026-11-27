@@ -5,7 +5,8 @@ import SwiftUI
 /// While a turn runs, Stop ends it, and what is typed is queued: sent now, taken when the CLI can.
 ///
 /// A `/` at the start opens the commands it lists, narrowed as the name is typed: ↑ and ↓
-/// move, Return or Tab writes the name in, Esc closes the list until the draft changes.
+/// move, Return runs the highlighted command, Tab fills it in for editing, and Esc closes
+/// the list until the draft changes.
 ///
 /// The editor's open file or selection goes with the prompt, as the extension's
 /// `attachOpenFile` does by default; a click on it leaves it out of this one. Selections
@@ -265,11 +266,10 @@ struct ComposerView: View {
   }
 
   private func submit() {
-    // Return on the menu writes the command in rather than sending the half-typed name.
-    let menu = menu
-    if menu.indices.contains(highlighted) { return choose(menu[highlighted]) }
     guard canSend, hasContent else { return }
-    send(text, pinned + (leavesContextOut ? [] : live.map { [$0] } ?? []))
+    let menu = menu
+    let prompt = menu.indices.contains(highlighted) ? "/\(menu[highlighted].name)" : text
+    send(prompt, pinned + (leavesContextOut ? [] : live.map { [$0] } ?? []))
     text = ""
   }
 
