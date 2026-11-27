@@ -753,6 +753,28 @@ final class Project {
     return item
   }
 
+  /// Switches the selected session's agent in place when it has not started yet (no history,
+  /// no process), carrying over any unsent draft so switching agents in the toolbar takes
+  /// effect immediately on a fresh tab. Sessions that have already run keep their own agent.
+  func switchUnstartedAgent(to agent: AgentKind) {
+    guard runner == nil,
+      let current = selected,
+      current.session.agent != agent,
+      current.session.phase == .idle,
+      current.session.resuming == nil,
+      !current.session.status.hasEntries,
+      !current.session.isReadOnly,
+      let index = sessions.firstIndex(where: { $0.id == current.id })
+    else { return }
+    let replacement = make(AgentSession(folder: current.session.folder, agent: agent))
+    replacement.draft = current.draft
+    replacement.attachments =
+      agent.features.acceptsPDF
+      ? current.attachments : current.attachments.filter { $0.kind != .pdf }
+    sessions[index] = replacement
+    select(replacement)
+  }
+
   /// New Session on Runner…: the window's blank row shown, or a new one made.
   func showNewSession() {
     if let blank = sessions.first(where: isBlank) { select(blank) } else { newSession() }

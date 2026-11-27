@@ -149,4 +149,29 @@ struct AccountChoiceTests {
     #expect(AgentSession(folder: project, resuming: target).effectiveAccount?.name == "picked")
     #expect(AgentSession(folder: project).effectiveAccount == nil)
   }
+
+  @Test func folderAgentPickBeatsSettingsDefault() {
+    defer { cleanUp() }
+    defaults.set(AgentKind.codex.rawValue, forKey: PreferenceKey.defaultAgent)
+    #expect(choosing { ClaudeChoice.agent(forNewSessionIn: project) } == .codex)
+    choosing { ClaudeChoice.pick(.agy, for: project) }
+    #expect(choosing { ClaudeChoice.pickedAgent(for: project) } == .agy)
+    #expect(choosing { ClaudeChoice.agent(forNewSessionIn: project) } == .agy)
+    choosing { ClaudeChoice.pick(.claude, for: project) }
+    #expect(choosing { ClaudeChoice.agent(forNewSessionIn: project) } == .claude)
+  }
+
+  @Test func switchingUnstartedAgentReplacesBlankTabKeepingDraft() {
+    defer { cleanUp() }
+    choosing { ClaudeChoice.pick(.claude, for: project) }
+    let window = choosing { Project(folder: project) }
+    let first = choosing { window.newSession(agent: .claude) }
+    first.draft = "Hello world"
+    window.switchUnstartedAgent(to: .agy)
+    #expect(window.selected?.session.agent == .agy)
+    #expect(window.selected?.draft == "Hello world")
+    window.switchUnstartedAgent(to: .codex)
+    #expect(window.selected?.session.agent == .codex)
+    #expect(window.selected?.draft == "Hello world")
+  }
 }

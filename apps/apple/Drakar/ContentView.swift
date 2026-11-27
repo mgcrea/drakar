@@ -176,7 +176,9 @@ struct ContentView: View {
       if let name = project.runnerName {
         RunnerToolbarItem(name: name, session: project.selected?.session)
       } else {
-        AccountToolbarItem(folder: project.folder)
+        AccountToolbarItem(folder: project.folder) { agent in
+          project.switchUnstartedAgent(to: agent)
+        }
       }
     }
     ToolbarItem(placement: .primaryAction) {
@@ -398,11 +400,19 @@ struct ContentView: View {
       guard let path = defaults.string(forKey: "drakar.debugFolder") else { return }
       route = .project(URL(filePath: path, directoryHint: .isDirectory))
       open(route)  // now, not on the next update: the rest needs the project
-      let codex = defaults.string(forKey: "drakar.debugAgent") == "codex"
+      let debugAgent = defaults.string(forKey: "drakar.debugAgent").flatMap(
+        AgentKind.init(rawValue:))
       guard let project else { return }
-      let item = codex ? project.newSession(agent: .codex) : project.selected
+      let item =
+        if let debugAgent, debugAgent != .claude {
+          project.newSession(agent: debugAgent)
+        } else {
+          project.selected
+        }
       guard let item else { return }
-      if codex, let model = defaults.string(forKey: "drakar.debugModel") {
+      if debugAgent != nil && debugAgent != .claude,
+        let model = defaults.string(forKey: "drakar.debugModel")
+      {
         item.session.setModel(model)
       }
       (item.session.backend as? ClaudeBackend)?.command = ClaudeCommand(
