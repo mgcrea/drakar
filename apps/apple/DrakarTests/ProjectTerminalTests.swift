@@ -71,6 +71,19 @@ struct ProjectTerminalTests {
     #expect(surface.hitTest(leftPaddingPoint) === view)
     #expect(surface.hitTest(rightPaddingPoint) === view)
 
+    window.makeFirstResponder(nil)
+    #expect(window.firstResponder !== view)
+    let centerPoint = view.convert(NSPoint(x: view.bounds.midX, y: view.bounds.midY), to: nil)
+    let click = try #require(
+      NSEvent.mouseEvent(
+        with: .leftMouseDown, location: centerPoint, modifierFlags: [], timestamp: 0,
+        windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1,
+        pressure: 1))
+    let surfaceSuperview = try #require(surface.superview)
+    let hit = try #require(surface.hitTest(surfaceSuperview.convert(centerPoint, from: nil)))
+    hit.mouseDown(with: click)
+    #expect(window.firstResponder === view)
+
     defaults.set(19, forKey: PreferenceKey.terminalFontSize)
     defaults.set("visual", forKey: PreferenceKey.terminalBell)
     for _ in 0..<100 where view.font.pointSize != 19 || view.bellStyle.tagName != "visual" {

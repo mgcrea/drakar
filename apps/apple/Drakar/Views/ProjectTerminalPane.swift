@@ -209,6 +209,15 @@ private final class ShellTerminalView: LocalProcessTerminalView {
     }
   }
 
+  override func mouseDown(with event: NSEvent) {
+    // Metal-backed SwiftTerm inserts a layer view that declines first responder and
+    // forwards clicks up the responder chain without reclaiming focus itself.
+    if window?.firstResponder !== self {
+      window?.makeFirstResponder(self)
+    }
+    super.mouseDown(with: event)
+  }
+
   override func processTerminated(_ source: LocalProcess, exitCode: Int32?) {
     super.processTerminated(source, exitCode: exitCode)
     if let exitCode, exitCode != 0 {
