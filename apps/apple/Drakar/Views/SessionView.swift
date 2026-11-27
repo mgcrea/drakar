@@ -122,7 +122,8 @@ struct SessionView: View {
                   .allow(
                     updatedInput: UserQuestion.answering(choice.request.input, with: answers)))
               },
-              skip: { session.answer(choice, .deny(message: UserQuestion.declinedMessage)) }
+              skip: { session.answer(choice, .deny(message: UserQuestion.declinedMessage)) },
+              agentName: session.agent.shortName
             )
             .id(choice.id)
           }

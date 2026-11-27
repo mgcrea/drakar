@@ -143,9 +143,10 @@ final class Attention: NSObject, UNUserNotificationCenterDelegate {
 
   func turnEnded(_ item: ProjectSession, in project: Project) {
     refresh()
+    let choice = item.closingAsk == nil && item.urgency == .choice ? item.wants : nil
     guard !inView(item, in: project),
       let notice = Self.turnEndNotice(
-        ask: item.closingAsk, level: item.urgency,
+        ask: item.closingAsk, choice: choice, level: item.urgency,
         notifiesTurnEnds: AttentionChoice.notifiesTurnEnds,
         levelNotifies: { AttentionChoice.isOn($0, .notifies) })
     else { return }
@@ -180,10 +181,10 @@ final class Attention: NSObject, UNUserNotificationCenterDelegate {
   /// What a turn's end posts: its ask when that level notifies; otherwise "Finished its
   /// turn." when those are on, whatever the turn ended on; otherwise nothing.
   static func turnEndNotice(
-    ask: ClosingAsk?, level: Urgency?, notifiesTurnEnds: Bool,
+    ask: ClosingAsk?, choice: String? = nil, level: Urgency?, notifiesTurnEnds: Bool,
     levelNotifies: (Urgency) -> Bool
   ) -> (body: String, wantsAnswer: Bool)? {
-    if let ask, let level, levelNotifies(level) { return (ask.text, true) }
+    if let body = ask?.text ?? choice, let level, levelNotifies(level) { return (body, true) }
     return notifiesTurnEnds ? (String(localized: "Finished its turn."), false) : nil
   }
 

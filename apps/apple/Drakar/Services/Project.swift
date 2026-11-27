@@ -203,7 +203,11 @@ final class ProjectSession: Identifiable {
       pending.request.isChoice || pending.request.isPlan ? Urgency.choice : .permission
     }
     let question: Urgency? = pendingElicitation == nil ? nil : .permission
-    if let waiting = [permission, question].compactMap(\.self).max() { return waiting }
+    let unanswered: Urgency? =
+      session.phase == .ready && session.earlierQuestion != nil ? .choice : nil
+    if let waiting = [permission, question, unanswered].compactMap(\.self).max() {
+      return waiting
+    }
     switch closingAsk?.kind {
     case .question: return .question
     case .offer: return .offer
@@ -219,7 +223,11 @@ final class ProjectSession: Identifiable {
     if let pending = session.status.pendingPermissions.first, pending.request.isPlan {
       return String(localized: "Claude has finished a plan and is waiting for your review.")
     }
-    return waitingFor ?? closingAsk?.text
+    if let waitingFor { return waitingFor }
+    if session.phase == .ready, let unanswered = session.earlierQuestion {
+      return UserQuestion.list(unanswered.input).first?.question ?? closingAsk?.text
+    }
+    return closingAsk?.text
   }
 
   /// The question or offer the newest turn ended on, while it waits: nil once a prompt

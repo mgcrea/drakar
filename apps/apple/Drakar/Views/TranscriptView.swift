@@ -85,6 +85,7 @@ struct TranscriptView: View {
       }
       .scrollTargetLayout()
       .environment(\.thinkingDisclosure, thinkingDisclosure)
+      .environment(\.agentName, agent.shortName)
       .padding(16)
       .frame(maxWidth: 820, alignment: .leading)
       .frame(maxWidth: .infinity)
@@ -624,6 +625,8 @@ extension EnvironmentValues {
   @Entry var runnerName: String?
   /// Set by the transcript; one made here would be a new instance on every read.
   @Entry var thinkingDisclosure = ThinkingDisclosure()
+  /// The short name of the agent running this session, for question cards.
+  @Entry var agentName = "Claude"
 }
 
 /// Equal per workspace rather than a bare closure, which SwiftUI cannot compare: every

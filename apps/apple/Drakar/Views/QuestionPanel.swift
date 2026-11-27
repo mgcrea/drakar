@@ -20,6 +20,8 @@ struct QuestionPanel: View {
   /// changed the focus on appearing, or sized a scroll view of its own, laid the transcript
   /// out again without end until AppKit stopped the app.
   var focusRequest: Int?
+  var agentName: String = "Claude"
+  var isEarlier: Bool = false
 
   @State private var current = 0
   @State private var picked: [String: Set<String>] = [:]
@@ -40,7 +42,10 @@ struct QuestionPanel: View {
   ) -> [String: String]? {
     var answers: [String: String] = [:]
     for question in questions {
-      let typed = otherPicked.contains(question.question) ? other[question.question] ?? "" : ""
+      let usesDirectText = question.options.isEmpty && question.allowsOther
+      let typed =
+        (usesDirectText || otherPicked.contains(question.question))
+        ? (other[question.question] ?? "") : ""
       guard let answer = question.answer(picked: picked[question.question] ?? [], other: typed)
       else { return nil }
       answers[question.question] = answer
@@ -143,7 +148,7 @@ struct QuestionPanel: View {
     }
     .onDisappear { advance?.cancel() }
     .accessibilityElement(children: .contain)
-    .accessibilityLabel("Claude is asking you a question")
+    .accessibilityLabel("\(agentName) is asking you a question")
     .accessibilityIdentifier("question.panel")
   }
 
@@ -206,23 +211,40 @@ struct QuestionPanel: View {
         )
         .accessibilityIdentifier("question.option.\(option.label)")
       }
-      let otherIndex = question.options.count
-      OptionRow(
-        label: String(localized: "Other"), description: nil, multiSelect: question.multiSelect,
-        isSelected: otherPicked.contains(question.question),
-        isHighlighted: highlighted == otherIndex, number: otherIndex + 1,
-        pick: { pick(otherIndex) }, hover: { highlighted = $0 ? otherIndex : nil }
-      )
-      .accessibilityIdentifier("question.other")
-      if otherPicked.contains(question.question) {
-        TextField("Type your answer…", text: otherBinding(question), axis: .vertical)
-          .lineLimit(1...5)
-          .focused($focus, equals: .other)
-          .padding(.leading, 30)
-          .accessibilityIdentifier("question.otherField")
+      if question.options.isEmpty {
+        if question.allowsOther {
+          answerField(for: question)
+        }
+      } else if question.allowsOther {
+        let otherIndex = question.options.count
+        OptionRow(
+          label: String(localized: "Other"), description: nil, multiSelect: question.multiSelect,
+          isSelected: otherPicked.contains(question.question),
+          isHighlighted: highlighted == otherIndex, number: otherIndex + 1,
+          pick: { pick(otherIndex) }, hover: { highlighted = $0 ? otherIndex : nil }
+        )
+        .accessibilityIdentifier("question.other")
+        if otherPicked.contains(question.question) {
+          answerField(for: question)
+            .padding(.leading, 30)
+        }
       }
     }
     .frame(maxWidth: .infinity, alignment: .leading)
+  }
+
+  @ViewBuilder
+  private func answerField(for question: UserQuestion) -> some View {
+    if question.isSecret {
+      SecureField("Type your answer…", text: otherBinding(question))
+        .focused($focus, equals: .other)
+        .accessibilityIdentifier("question.otherField")
+    } else {
+      TextField("Type your answer…", text: otherBinding(question), axis: .vertical)
+        .lineLimit(1...5)
+        .focused($focus, equals: .other)
+        .accessibilityIdentifier("question.otherField")
+    }
   }
 
   /// The preview of the option under the pointer or the keyboard, else of the one picked.
@@ -262,7 +284,13 @@ struct QuestionPanel: View {
       Spacer()
       Button("Skip", action: skip)
         .keyboardShortcut(.cancelAction)
-        .help("Tell Claude you won't answer, and let it wait for your next message")
+        .help(
+          isEarlier
+            ? String(localized: "Dismiss these questions and reply in your own words")
+            : String(
+              localized: "Tell \(agentName) you won't answer, and let it wait for your next message"
+            )
+        )
         .accessibilityIdentifier("question.skip")
       Button(
         answers == nil ? String(localized: "Next") : String(localized: "Answer"), action: primary
@@ -273,8 +301,17 @@ struct QuestionPanel: View {
     }
   }
 
+  private func rowCount(for question: UserQuestion) -> Int {
+    question.options.count + (question.allowsOther && !question.options.isEmpty ? 1 : 0)
+  }
+
   private var hint: String {
-    let count = (question?.options.count ?? 0) + 1
+    let count = question.map(rowCount) ?? 0
+    if count == 0 {
+      return questions.count > 1
+        ? String(localized: "←→ between questions, ⏎ to go on")
+        : String(localized: "⏎ to answer")
+    }
     return questions.count > 1
       ? String(
         localized: "1–\(count) to pick, with ⌘ to answer too, ←→ between questions, ⏎ to go on")
@@ -294,7 +331,9 @@ struct QuestionPanel: View {
   /// the pick leaves every question with an answer. Otherwise a single choice moves on to the
   /// next question by itself, after a beat so the pick is seen; "Other" waits for its text.
   private func pick(_ index: Int, answering: Bool = false) {
-    guard let question, index >= 0, index <= question.options.count else { return }
+    guard let question else { return }
+    let rows = rowCount(for: question)
+    guard index >= 0, index < rows else { return }
     highlighted = index
     Self.pick(index, in: question, picked: &picked, otherPicked: &otherPicked)
     if index == question.options.count {
@@ -318,7 +357,8 @@ struct QuestionPanel: View {
 
   private func move(_ step: Int) -> KeyPress.Result {
     guard let question else { return .ignored }
-    let rows = question.options.count + 1
+    let rows = rowCount(for: question)
+    guard rows > 0 else { return .ignored }
     highlighted = ((highlighted ?? (step > 0 ? -1 : rows)) + step + rows) % rows
     return .handled
   }
@@ -372,6 +412,7 @@ struct OptionRow: View {
         .foregroundStyle(isSelected ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
       VStack(alignment: .leading, spacing: 2) {
         Text(label)
+          .fixedSize(horizontal: false, vertical: true)
         if let description {
           Text(description)
             .font(.caption)

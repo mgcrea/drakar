@@ -94,4 +94,13 @@ struct QuestionPanelTests {
     // The same call asked live, and then as the question its process ended on.
     #expect(asked("r1") != asked(nil))
   }
+
+  @Test func freeTextQuestionWithoutOptionsAnswersDirectly() {
+    let open = UserQuestion(
+      question: "API key?", header: "Auth", options: [], multiSelect: false, isSecret: true)
+    #expect(QuestionPanel.answers(for: [open], picked: [:], otherPicked: [], other: [:]) == nil)
+    #expect(
+      QuestionPanel.answers(for: [open], picked: [:], otherPicked: [], other: ["API key?": "tok"])
+        == ["API key?": "tok"])
+  }
 }

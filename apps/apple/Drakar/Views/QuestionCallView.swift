@@ -34,6 +34,7 @@ struct QuestionCallView: View {
   let call: Transcript.ToolCall
   @State private var isExpanded = true
   @Environment(\.askedQuestion) private var asked
+  @Environment(\.agentName) private var agentName
 
   private var questions: [UserQuestion] { UserQuestion.list(call.input) }
   private var outcome: Transcript.QuestionOutcome { call.questionOutcome ?? .other }
@@ -48,7 +49,7 @@ struct QuestionCallView: View {
       // Not collapsible: folded away, an unanswered question would stall the turn unseen.
       QuestionPanel(
         questions: questions, answer: asked.answer, skip: asked.skip,
-        focusRequest: asked.focusRequest
+        focusRequest: asked.focusRequest, agentName: agentName, isEarlier: asked.requestID == nil
       )
       .id(call.id)
       .background(.background.secondary, in: RoundedRectangle(cornerRadius: 8))
@@ -68,7 +69,7 @@ struct QuestionCallView: View {
           answered(question)
         }
         // An answer that cannot be read back as options, or a result of another kind.
-        if let result = call.result, answers == nil, showsResult {
+        if let result = call.result, answers == nil, showsResult, !result.content.isEmpty {
           CodeBlock(text: result.content)
             .foregroundStyle(result.isError ? .red : .primary)
         }
@@ -77,7 +78,7 @@ struct QuestionCallView: View {
     } label: {
       HStack(spacing: 8) {
         statusIcon
-        Text(questions.count == 1 ? "Question" : "Questions").fontWeight(.semibold)
+        Text(questions.count <= 1 ? "Question" : "Questions").fontWeight(.semibold)
         Text(status).font(.callout).foregroundStyle(.secondary)
       }
     }

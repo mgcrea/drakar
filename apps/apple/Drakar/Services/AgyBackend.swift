@@ -109,8 +109,8 @@ final class AgyBackend: AgentBackend {
         input: AgyInput.make(text: text, context: context, attachments: attachments), uuid: uuid)
     case .answer(let id, let decision):
       .answer(requestID: id, decision: decision)
-    case .answerElicitation:
-      nil
+    case .answerElicitation(let id, let noted):
+      .answerElicitation(requestID: id, answer: noted.answer)
     case .interrupt(let cancelQueued):
       .interrupt(cancelQueued: cancelQueued)
     case .cancelQueued(let uuid):

@@ -345,6 +345,10 @@ struct UrgencyTests {
     #expect(
       Attention.turnEndNotice(
         ask: nil, level: nil, notifiesTurnEnds: false, levelNotifies: quietOffers) == nil)
+    #expect(
+      Attention.turnEndNotice(
+        ask: nil, choice: "Which color?", level: .choice, notifiesTurnEnds: false,
+        levelNotifies: quietOffers)?.body == "Which color?")
   }
 
   /// `UserDefaults` is not observable: a switch flipped in the Attention pane must still
