@@ -105,7 +105,7 @@ struct SessionListView: View {
       .labelStyle(.iconOnly)
       .buttonStyle(.borderless)
       .help(
-        "New \(defaultAgent.name) session (⌘N); ⌥-click for \(defaultAgent.other.name) (⌃⌘N)"
+        "New \(defaultAgent.name) session (⌘T); ⌥-click for \(defaultAgent.other.name) (⌃⌘N)"
       )
       .contextMenu {
         ForEach(AgentKind.allCases, id: \.self) { agent in

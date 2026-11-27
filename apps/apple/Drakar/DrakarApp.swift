@@ -74,7 +74,7 @@ struct DrakarApp: App {
   }
 }
 
-/// File > New Tab (⌘T) and New Window (⇧⌘N) open home; ⌘N belongs to New Session.
+/// File > New Project Tab (⇧⌘T) and New Window (⇧⌘N) open home.
 /// Open Project… (⌘O) tracks a folder and opens it in a new tab; New Session on Runner…
 /// starts one in a folder of the runner set up; Close Project (⇧⌘H) goes back to home in
 /// this window.
@@ -85,11 +85,11 @@ private struct NewWindowCommand: View {
   @AppStorage(RunnerSettings.key) private var runner: Data?
 
   var body: some View {
-    Button("New Tab") {
+    Button("New Project Tab") {
       WindowTabs.openWindow = WindowTabs.openWindow ?? openWindow
       WindowTabs.open(.picker(), asTab: true)
     }
-    .keyboardShortcut("t")
+    .keyboardShortcut("t", modifiers: [.command, .shift])
     Button("New Window") { openWindow(value: WindowRoute.picker()) }
       .keyboardShortcut("n", modifiers: [.command, .shift])
     Divider()
@@ -166,7 +166,7 @@ private struct SessionCommands: View {
 
   var body: some View {
     Button("New Session") { project?.newSession() }
-      .keyboardShortcut("n")
+      .keyboardShortcut("t")
       .disabled(project == nil)
     Button("New \(otherAgent.name) Session") {
       project?.newSession(agent: otherAgent)
