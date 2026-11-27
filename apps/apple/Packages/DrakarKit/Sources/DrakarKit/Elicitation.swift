@@ -43,24 +43,54 @@ public struct Elicitation: Sendable, Equatable {
     elicitationID = text("elicitation_id")
     title = text("title")
     description = text("description")
+    content = Self.parseContent(
+      mode: request["mode"] ?? .null,
+      schema: request["requested_schema"],
+      order: request["property_order"]?.arrayValue?.compactMap(\.stringValue),
+      url: text("url"))
+  }
+
+  /// `params` is an ACP `elicitation/create` request (camelCase keys). Nil only when it has
+  /// neither a server name nor a message.
+  public init?(acpRequest params: JSONValue) {
+    func text(_ key: String, in object: JSONValue = params) -> String? {
+      object[key]?.stringValue.flatMap { $0.isEmpty ? nil : $0 }
+    }
+    let meta = params["_meta"] ?? .null
+    let server =
+      text("mcpServerName", in: meta) ?? text("serverName", in: meta) ?? text("mcpServerName")
+      ?? text("serverName")
+    guard server != nil || text("message") != nil else { return nil }
+    serverName = server ?? ""
+    displayName = text("displayName", in: meta) ?? text("displayName")
+    message = text("message") ?? ""
+    elicitationID = text("elicitationId")
+    title = text("title")
+    description = text("description")
+    content = Self.parseContent(
+      mode: params["mode"] ?? .null,
+      schema: params["requestedSchema"],
+      order: params["propertyOrder"]?.arrayValue?.compactMap(\.stringValue),
+      url: text("url"))
+  }
+
+  private static func parseContent(
+    mode: JSONValue, schema: JSONValue?, order: [String]?, url: String?
+  ) -> Content {
     // `mode` is optional and means a form when absent.
-    switch request["mode"] ?? .null {
+    switch mode {
     case .null, .string("form"):
-      content =
-        request["requested_schema"]
-        .flatMap {
-          ElicitationForm(
-            schema: $0, order: request["property_order"]?.arrayValue?.compactMap(\.stringValue))
-        }
+      return
+        schema
+        .flatMap { ElicitationForm(schema: $0, order: order) }
         .map(Content.form) ?? .unsupported
     case .string("url"):
-      if let link = text("url") {
-        content = URL(string: link).flatMap(Self.webURL).map(Content.url) ?? .nonWebLink(link)
-      } else {
-        content = .unsupported
+      if let link = url {
+        return URL(string: link).flatMap(Self.webURL).map(Content.url) ?? .nonWebLink(link)
       }
+      return .unsupported
     default:
-      content = .unsupported
+      return .unsupported
     }
   }
 

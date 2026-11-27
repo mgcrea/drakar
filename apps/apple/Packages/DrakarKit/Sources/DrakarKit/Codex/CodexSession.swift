@@ -85,6 +85,11 @@ public struct CodexSession: Sendable {
     var method: String
   }
 
+  private struct UserInputRequest: Sendable {
+    var id: CodexRPC.ID
+    var questions: [UserQuestion]
+  }
+
   private struct Waiting: Sendable {
     var input: JSONValue
     var uuid: String
@@ -121,6 +126,8 @@ public struct CodexSession: Sendable {
   private var reportedDropped: Set<String> = []
   /// Approval requests waiting, by the id the transcript knows them by.
   private var approvals: [String: Approval] = [:]
+  /// `item/tool/requestUserInput` requests waiting, by the id the transcript knows them by.
+  private var userInputs: [String: UserInputRequest] = [:]
   private var mode: PermissionMode
   private var model: String?
   private var effort: String?
@@ -161,9 +168,13 @@ public struct CodexSession: Sendable {
       }
       if let write = place(prompt) { step.writes.append(write) }
     case .answer(let requestID, let decision):
-      guard let approval = approvals.removeValue(forKey: requestID) else { break }
-      step.writes.append(
-        CodexRPC.answer(approval.id, result: .object(["decision": CodexPolicy.decision(decision)])))
+      if let req = userInputs.removeValue(forKey: requestID) {
+        step.writes.append(Self.userInputAnswer(req, decision: decision))
+      } else if let approval = approvals.removeValue(forKey: requestID) {
+        step.writes.append(
+          CodexRPC.answer(
+            approval.id, result: .object(["decision": CodexPolicy.decision(decision)])))
+      }
     case .interrupt, .interruptKeepingQueued:
       keepsQueued = command == .interruptKeepingQueued
       for key in approvals.keys.sorted() {
@@ -173,6 +184,12 @@ public struct CodexSession: Sendable {
         }
       }
       approvals.removeAll()
+      for key in userInputs.keys.sorted() {
+        if let req = userInputs[key] {
+          step.writes.append(CodexRPC.answer(req.id, result: .object(["answers": .object([:])])))
+        }
+      }
+      userInputs.removeAll()
       switch turn {
       case .running(let id): step.writes.append(interrupt(id))
       case .starting: interruptsWhenStarted = true
@@ -206,7 +223,7 @@ public struct CodexSession: Sendable {
       if let call = calls.take(id) { answered(call, result: result, into: &step) }
     case .failure(let id, let text):
       if let call = calls.take(id) { failed(call, message: text, into: &step) }
-    case .request(let id, let method, _):
+    case .request(let id, let method, let params):
       if method == "item/commandExecution/requestApproval"
         || method == "item/fileChange/requestApproval"
       {
@@ -216,6 +233,10 @@ public struct CodexSession: Sendable {
           approvals[id.text] = Approval(id: id, method: method)
           step.events += translator.translate(message, at: time)
         }
+      } else if method == "item/tool/requestUserInput" {
+        let questions = UserQuestion.list(.object(["questions": params["questions"] ?? .array([])]))
+        userInputs[id.text] = UserInputRequest(id: id, questions: questions)
+        step.events += translator.translate(message, at: time)
       } else {
         step.writes.append(CodexRPC.refusal(id, message: "Drakar does not answer \(method)."))
         step.events.append(
@@ -391,6 +412,7 @@ public struct CodexSession: Sendable {
       if turn == .starting { return false }
       turn = .idle
       approvals.removeAll()
+      userInputs.removeAll()
       return true
     case "thread/name/updated":
       if let name = params["threadName"]?.stringValue, !name.isEmpty {
@@ -405,7 +427,10 @@ public struct CodexSession: Sendable {
         step.signals.append(.rateLimit(usage))
       }
     case "serverRequest/resolved":
-      if let id = CodexRPC.ID(params["requestId"]) { approvals[id.text] = nil }
+      if let id = CodexRPC.ID(params["requestId"]) {
+        approvals[id.text] = nil
+        userInputs[id.text] = nil
+      }
     case "item/started":
       if params["item"]?["type"] == .string("userMessage"),
         let client = params["item"]?["clientId"]?.stringValue
@@ -456,6 +481,28 @@ public struct CodexSession: Sendable {
 
   private static func accept(_ id: CodexRPC.ID) -> JSONValue {
     CodexRPC.answer(id, result: .object(["decision": .string("accept")]))
+  }
+
+  private static func userInputAnswer(_ req: UserInputRequest, decision: PermissionDecision)
+    -> JSONValue
+  {
+    switch decision {
+    case .allow(let updatedInput, _):
+      let answersInput = updatedInput["answers"]
+      var mapped: [String: JSONValue] = [:]
+      for question in req.questions {
+        guard let answerStr = answersInput?[question.question]?.stringValue else { continue }
+        let key = question.questionID ?? question.question
+        let reading = question.reading(answerStr)
+        var list = reading.picked
+        if let other = reading.other, !other.isEmpty { list.append(other) }
+        if list.isEmpty { list = [answerStr] }
+        mapped[key] = .object(["answers": .array(list.map { .string($0) })])
+      }
+      return CodexRPC.answer(req.id, result: .object(["answers": .object(mapped)]))
+    case .deny:
+      return CodexRPC.answer(req.id, result: .object(["answers": .object([:])]))
+    }
   }
 
   private mutating func sendPendingName(into step: inout Step) {

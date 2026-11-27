@@ -514,9 +514,10 @@ public struct Transcript: Sendable, Equatable {
   private mutating func place(_ item: AgentEvent.Item, replacing: Bool, at time: Date) {
     var kind = item.kind.transcriptKind
     if case .tool(var call) = kind, let index = indexByID[item.id],
-      case .tool(let existing) = entries[index].kind, call.result == nil
+      case .tool(let existing) = entries[index].kind
     {
-      call.result = existing.result
+      if call.result == nil { call.result = existing.result }
+      if call.earlierAnswers == nil { call.earlierAnswers = existing.earlierAnswers }
       kind = .tool(call)
     }
     if let index = indexByID[item.id] {

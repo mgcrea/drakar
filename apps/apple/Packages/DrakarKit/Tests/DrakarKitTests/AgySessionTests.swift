@@ -248,4 +248,201 @@ struct AgySessionTests {
     #expect(step.writes[0]["error"]?["code"] == .number(-32601))
     #expect(step.events.count == 1)
   }
+
+  @Test func advertisesFormElicitationCapability() {
+    var session = AgySession(
+      cwd: "/p", resuming: nil, mode: nil, model: nil, effort: nil, version: "1.4.0")
+    let start = session.start()
+    #expect(
+      start.writes.first?["params"]?["clientCapabilities"]?["elicitation"]?["form"] == .object([:])
+    )
+  }
+
+  @Test func askQuestionElicitationAnswersEvenInBypassModeAndRecordsResult() throws {
+    var session = AgySession(
+      cwd: "/p", resuming: nil, mode: .bypass, model: nil, effort: nil, version: "1.4.0")
+    let start = session.start()
+    _ = session.send(.prompt(input: input("Help"), uuid: "u-1"))
+    let afterInit = try answer(&session, start.writes[0], initResult)
+    _ = try answer(&session, afterInit.writes[0], sessionNewResult)
+
+    var transcript = Transcript()
+    transcript.addPrompt("Help")
+
+    let toolCall = try json(
+      #"""
+      {
+        "jsonrpc": "2.0",
+        "method": "session/update",
+        "params": {
+          "sessionId": "agy-sess-1",
+          "update": {
+            "sessionUpdate": "tool_call",
+            "toolCallId": "call_q",
+            "name": "ask_question",
+            "status": "pending",
+            "kind": "other",
+            "rawInput": {
+              "questions": [
+                {"question": "Q1", "options": ["Alpha", "Beta"], "is_multi_select": false},
+                {"question": "Q2", "options": ["One", "Two"], "is_multi_select": true}
+              ]
+            }
+          }
+        }
+      }
+      """#)
+    for event in session.receive(toolCall, at: .now).events { transcript.apply(event) }
+
+    let elicit = try json(
+      #"""
+      {
+        "jsonrpc": "2.0",
+        "id": "1",
+        "method": "elicitation/create",
+        "params": {
+          "sessionId": "agy-sess-1",
+          "toolCallId": "call_q",
+          "mode": "form",
+          "message": "The agent has 2 questions.",
+          "requestedSchema": {
+            "type": "object",
+            "properties": {
+              "q1": {"type": "string", "title": "Q1", "oneOf": [{"const": "1", "title": "Alpha"}, {"const": "2", "title": "Beta"}]},
+              "q1_other": {"type": "string", "title": "Other"},
+              "q2": {"type": "array", "title": "Q2", "items": {"anyOf": [{"const": "1", "title": "One"}, {"const": "2", "title": "Two"}]}},
+              "q2_other": {"type": "string", "title": "Other"}
+            }
+          }
+        }
+      }
+      """#)
+    let asked = session.receive(elicit, at: .now)
+    // Never auto-approved in Bypass mode.
+    #expect(asked.writes.isEmpty)
+    #expect(asked.events.count == 1)
+    for event in asked.events { transcript.apply(event) }
+    let pending = try #require(transcript.pendingPermissions.first)
+    #expect(pending.request.isChoice)
+    #expect(pending.request.toolUseID == "call_q")
+
+    let answered = session.send(
+      .answer(
+        requestID: "1",
+        decision: .allow(
+          updatedInput: UserQuestion.answering(
+            pending.request.input, with: ["Q1": "Alpha", "Q2": "Two, Custom"]))))
+    #expect(answered.writes.count == 1)
+    #expect(
+      answered.writes[0]
+        == AgyRPC.answer(
+          .string("1"),
+          result: .object([
+            "action": .string("accept"),
+            "content": .object([
+              "q1": .string("1"),
+              "q2": .array([.string("2")]),
+              "q2_other": .string("Custom"),
+            ]),
+          ])))
+    transcript.resolvePermission(requestID: "1")
+
+    let completed = try json(
+      #"""
+      {
+        "jsonrpc": "2.0",
+        "method": "session/update",
+        "params": {
+          "sessionId": "agy-sess-1",
+          "update": {
+            "sessionUpdate": "tool_call_update",
+            "toolCallId": "call_q",
+            "name": "ask_question",
+            "status": "completed",
+            "kind": "other"
+          }
+        }
+      }
+      """#)
+    for event in session.receive(completed, at: .now).events { transcript.apply(event) }
+    if case .tool(let call) = transcript.entry(withID: "call_q")?.kind {
+      #expect(call.questionOutcome == .answered(["Q1": "Alpha", "Q2": "Two, Custom"]))
+    } else {
+      Issue.record("Expected call_q tool call")
+    }
+  }
+
+  @Test func askQuestionDeclineAndGenericElicitation() throws {
+    var session = AgySession(
+      cwd: "/p", resuming: nil, mode: .ask, model: nil, effort: nil, version: "1.4.0")
+    let start = session.start()
+    _ = session.send(.prompt(input: input("Help"), uuid: "u-1"))
+    let afterInit = try answer(&session, start.writes[0], initResult)
+    _ = try answer(&session, afterInit.writes[0], sessionNewResult)
+
+    let question = try json(
+      #"""
+      {
+        "jsonrpc": "2.0",
+        "id": "2",
+        "method": "elicitation/create",
+        "params": {
+          "sessionId": "agy-sess-1",
+          "toolCallId": "call_q2",
+          "mode": "form",
+          "message": "The agent has a question.",
+          "requestedSchema": {
+            "type": "object",
+            "properties": {
+              "q1": {"type": "string", "title": "Continue?", "oneOf": [{"const": "1", "title": "Yes"}, {"const": "2", "title": "No"}]},
+              "q1_other": {"type": "string", "title": "Other"}
+            }
+          }
+        }
+      }
+      """#)
+    let asked = session.receive(question, at: .now)
+    #expect(asked.events.count == 1)
+    let declined = session.send(.answer(requestID: "2", decision: .deny(message: "skip")))
+    #expect(
+      declined.writes == [
+        AgyRPC.answer(.string("2"), result: .object(["action": .string("decline")]))
+      ])
+
+    let mcpElicit = try json(
+      #"""
+      {
+        "jsonrpc": "2.0",
+        "id": "3",
+        "method": "elicitation/create",
+        "params": {
+          "sessionId": "agy-sess-1",
+          "mode": "form",
+          "message": "Enter token",
+          "requestedSchema": {
+            "type": "object",
+            "properties": {"token": {"type": "string"}},
+            "required": ["token"]
+          }
+        }
+      }
+      """#)
+    let mcpStep = session.receive(mcpElicit, at: .now)
+    guard case .elicitationRequested(let pending)? = mcpStep.events.first else {
+      Issue.record("Expected elicitationRequested")
+      return
+    }
+    #expect(pending.requestID == "3")
+    let accepted = session.send(
+      .answerElicitation(requestID: "3", answer: .accept(["token": .string("abc")])))
+    #expect(
+      accepted.writes == [
+        AgyRPC.answer(
+          .string("3"),
+          result: .object([
+            "action": .string("accept"), "content": .object(["token": .string("abc")]),
+          ])
+        )
+      ])
+  }
 }

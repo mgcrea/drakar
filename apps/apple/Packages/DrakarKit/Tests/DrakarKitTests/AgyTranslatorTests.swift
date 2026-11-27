@@ -141,4 +141,100 @@ struct AgyTranslatorTests {
     #expect(transcript.entries[2].kind == .prompt("Second question"))
     #expect(transcript.entries[3].kind == .text("Second answer"))
   }
+
+  @Test func translatesAskQuestionSuppressesFallbackAndPreservesEarlierAnswer() throws {
+    var translator = AgyTranslator()
+    var transcript = Transcript()
+    transcript.addPrompt("Help me choose")
+
+    let turn1: [String] = [
+      #"{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"One thing:"}}"#,
+      #"{"sessionUpdate":"tool_call","toolCallId":"call_q","name":"ask_question","args":{"questions":[{"question":"Color?","options":["Red","Blue"],"is_multi_select":false},{"question":"Toppings?","options":["Cheese","Olives"],"is_multi_select":true}]},"status":"in_progress","kind":"other","rawInput":{"questions":[{"question":"Color?","options":["Red","Blue"],"is_multi_select":false},{"question":"Toppings?","options":["Cheese","Olives"],"is_multi_select":true}]}}"#,
+      #"{"sessionUpdate":"tool_call_update","toolCallId":"call_q","name":"ask_question","args":{"questions":[{"question":"Color?","options":["Red","Blue"],"is_multi_select":false},{"question":"Toppings?","options":["Cheese","Olives"],"is_multi_select":true}]},"status":"pending","kind":"other","rawInput":{"questions":[{"question":"Color?","options":["Red","Blue"],"is_multi_select":false},{"question":"Toppings?","options":["Cheese","Olives"],"is_multi_select":true}]}}"#,
+      #"{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"\nColor?\n- [1] Red\n- [2] Blue\n\nToppings?\n- [1] Cheese\n- [2] Olives\n"}}"#,
+    ]
+    for raw in turn1 {
+      for event in translator.translate(update: try json(raw)) {
+        transcript.apply(event)
+      }
+    }
+    for event in translator.finishOpenStream() { transcript.apply(event) }
+    transcript.apply(.turnEnded(.init(outcome: .completed)))
+
+    #expect(transcript.entries.count == 3)
+    #expect(transcript.entries[1].kind == .text("One thing:"))
+    guard case .tool(let askCall) = transcript.entries[2].kind else {
+      Issue.record("Expected ask_question tool call")
+      return
+    }
+    #expect(askCall.kind == .question)
+    #expect(askCall.name == "Question")
+    #expect(transcript.unansweredQuestion?.id == "call_q")
+
+    // Answering via earlierAnswerPrompt marks the call answered and survives `completed`.
+    let reply = UserQuestion.earlierAnswerPrompt([
+      ("Color?", "Blue"), ("Toppings?", "Cheese, Olives"),
+    ])
+    transcript.addPrompt(reply)
+    let turn2: [String] = [
+      #"{"sessionUpdate":"tool_call_update","toolCallId":"call_q","name":"ask_question","status":"in_progress","kind":"other"}"#,
+      #"{"sessionUpdate":"tool_call_update","toolCallId":"call_q","name":"ask_question","status":"completed","kind":"other"}"#,
+    ]
+    for raw in turn2 {
+      for event in translator.translate(update: try json(raw)) {
+        transcript.apply(event)
+      }
+    }
+    if case .tool(let updated) = transcript.entry(withID: "call_q")?.kind {
+      #expect(
+        updated.questionOutcome
+          == .answered(["Color?": "Blue", "Toppings?": "Cheese, Olives"]))
+    } else {
+      Issue.record("Expected updated call_q")
+    }
+  }
+
+  @Test func keepsTextAfterAskQuestionWhenItDiffersFromFallback() throws {
+    var translator = AgyTranslator()
+    var transcript = Transcript()
+    transcript.addPrompt("Help")
+
+    let updates: [String] = [
+      #"{"sessionUpdate":"tool_call","toolCallId":"call_q","name":"ask_question","status":"pending","kind":"other","rawInput":{"questions":[{"question":"Color?","options":["Red","Blue"]}]}}"#,
+      #"{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"Please tell me your favorite."}}"#,
+    ]
+    for raw in updates {
+      for event in translator.translate(update: try json(raw)) {
+        transcript.apply(event)
+      }
+    }
+    for event in translator.finishOpenStream() { transcript.apply(event) }
+
+    #expect(transcript.entries.count == 3)
+    #expect(transcript.entries[2].kind == .text("Please tell me your favorite."))
+  }
+
+  @Test func recognizesGrokAskUserQuestionMetaToolName() throws {
+    var translator = AgyTranslator()
+    var transcript = Transcript()
+    transcript.addPrompt("Help")
+
+    let update = try json(
+      #"""
+      {
+        "sessionUpdate": "tool_call",
+        "toolCallId": "call-1",
+        "title": "ask_user_question",
+        "rawInput": {"questions": [{"question": "Pick one", "options": [{"label": "A"}, {"label": "B"}]}]},
+        "_meta": {"x.ai/tool": {"name": "ask_user_question"}}
+      }
+      """#)
+    for event in translator.translate(update: update) { transcript.apply(event) }
+    if case .tool(let call) = transcript.entry(withID: "call-1")?.kind {
+      #expect(call.kind == .question)
+      #expect(call.name == "Question")
+    } else {
+      Issue.record("Expected question tool call")
+    }
+  }
 }

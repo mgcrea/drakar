@@ -406,14 +406,97 @@ struct CodexSessionTests {
   @Test func anUnknownRequestIsRefusedAndNoted() throws {
     var session = try running()
     let step = session.receive(
-      json(#"{"method":"item/tool/requestUserInput","id":4,"params":{"threadId":"t-1"}}"#), at: nil)
+      json(#"{"method":"item/tool/call","id":4,"params":{"threadId":"t-1"}}"#), at: nil)
     #expect(step.writes.first?["id"] == .number(4))
     #expect(step.writes.first?["error"]?["code"] == .number(-32601))
     guard case .note(let note)? = step.events.first else {
       Issue.record("\(step.events)")
       return
     }
-    #expect(note.text.contains("item/tool/requestUserInput"))
+    #expect(note.text.contains("item/tool/call"))
+  }
+
+  @Test func requestUserInputAsksQuestionsEvenInBypassAndMapsAnswersByID() throws {
+    var session = try running()
+    _ = session.send(.setMode(.bypass))
+
+    let req = json(
+      #"""
+      {
+        "method": "item/tool/requestUserInput",
+        "id": 7,
+        "params": {
+          "threadId": "t-1",
+          "turnId": "turn-1",
+          "itemId": "call_q1",
+          "questions": [
+            {
+              "id": "language",
+              "header": "Language",
+              "question": "Which language?",
+              "isOther": true,
+              "isSecret": false,
+              "options": [
+                {"label": "Python (Recommended)", "description": "Use Python."},
+                {"label": "Shell", "description": "Use sh."}
+              ]
+            },
+            {
+              "id": "token",
+              "header": "Token",
+              "question": "API token?",
+              "isOther": true,
+              "isSecret": true,
+              "options": null
+            }
+          ]
+        }
+      }
+      """#)
+    let asked = session.receive(req, at: nil)
+    #expect(asked.writes.isEmpty)
+    guard case .permissionRequested(let pending)? = asked.events.first else {
+      Issue.record("Expected permissionRequested")
+      return
+    }
+    #expect(pending.requestID == "7")
+    #expect(pending.request.isChoice)
+    let questions = UserQuestion.list(pending.request.input)
+    #expect(questions.map(\.questionID) == ["language", "token"])
+    #expect(questions[1].isSecret)
+    #expect(questions[1].options.isEmpty)
+
+    let answered = session.send(
+      .answer(
+        requestID: "7",
+        decision: .allow(
+          updatedInput: UserQuestion.answering(
+            pending.request.input,
+            with: ["Which language?": "Python (Recommended)", "API token?": "secret-123"]))))
+    #expect(
+      answered.writes == [
+        CodexRPC.answer(
+          .number(7),
+          result: .object([
+            "answers": .object([
+              "language": .object(["answers": .array([.string("Python (Recommended)")])]),
+              "token": .object(["answers": .array([.string("secret-123")])]),
+            ])
+          ]))
+      ])
+  }
+
+  @Test func interruptingAnswersPendingUserInputWithEmptyAnswers() throws {
+    var session = try running()
+    _ = session.receive(
+      json(
+        #"{"method":"item/tool/requestUserInput","id":8,"params":{"threadId":"t-1","turnId":"turn-1","questions":[{"id":"q","header":"Q","question":"Go?","isOther":false,"isSecret":false,"options":[{"label":"Yes","description":""}]}]}}"#
+      ),
+      at: nil)
+    let stopped = session.send(.interrupt)
+    #expect(
+      stopped.writes.contains(
+        CodexRPC.answer(.number(8), result: .object(["answers": .object([:])]))))
   }
 
   @Test func notSignedInMakesTheSessionUnusable() throws {

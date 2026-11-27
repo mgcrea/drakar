@@ -11,6 +11,7 @@ public struct AgySession: Sendable {
   public enum Command: Sendable, Equatable {
     case prompt(input: JSONValue, uuid: String)
     case answer(requestID: String, decision: PermissionDecision)
+    case answerElicitation(requestID: String, answer: ElicitationAnswer)
     /// Stop: cancels the running turn and drops queued prompts.
     case interrupt(cancelQueued: Bool)
     case cancelQueued(uuid: String)
@@ -45,6 +46,7 @@ public struct AgySession: Sendable {
       "clientCapabilities": .object([
         "fs": .object(["readTextFile": .bool(false), "writeTextFile": .bool(false)]),
         "terminal": .bool(false),
+        "elicitation": .object(["form": .object([:])]),
       ]),
       "clientInfo": .object([
         "name": .string("drakar"),
@@ -96,6 +98,10 @@ public struct AgySession: Sendable {
   private var queued: [Waiting] = []
   /// Pending `session/request_permission` requests by their text id.
   private var approvals: [String: Approval] = [:]
+  /// Pending `ask_question` prompts arrived via `elicitation/create`, by their text id.
+  private var questionPrompts: [String: AgyQuestionPrompt] = [:]
+  /// Pending generic MCP `elicitation/create` requests, by their text id.
+  private var elicitations: [String: AgyRPC.ID] = [:]
   private var mode: PermissionMode
   private var explicitMode: Bool
   private var model: String?
@@ -140,9 +146,20 @@ public struct AgySession: Sendable {
       }
 
     case .answer(let requestID, let decision):
-      guard let approval = approvals.removeValue(forKey: requestID) else { break }
-      step.writes.append(
-        AgyRPC.answer(approval.id, result: AgyPolicy.result(decision, options: approval.options)))
+      if let prompt = questionPrompts.removeValue(forKey: requestID) {
+        let (write, outcome) = prompt.response(for: decision)
+        if let callID = prompt.toolCallID {
+          translator.recordQuestionOutcome(callID: callID, outcome: outcome)
+        }
+        step.writes.append(write)
+      } else if let approval = approvals.removeValue(forKey: requestID) {
+        step.writes.append(
+          AgyRPC.answer(approval.id, result: AgyPolicy.result(decision, options: approval.options)))
+      }
+
+    case .answerElicitation(let requestID, let answer):
+      guard let rpcID = elicitations.removeValue(forKey: requestID) else { break }
+      step.writes.append(AgyRPC.answer(rpcID, result: answer.json))
 
     case .interrupt(let cancelQueued):
       for key in approvals.keys.sorted() {
@@ -152,6 +169,25 @@ public struct AgySession: Sendable {
         }
       }
       approvals.removeAll()
+      for key in questionPrompts.keys.sorted() {
+        if let prompt = questionPrompts[key] {
+          if let callID = prompt.toolCallID {
+            translator.recordQuestionOutcome(callID: callID, outcome: .interrupted)
+          }
+          step.writes.append(
+            AgyRPC.answer(prompt.id, result: .object(["action": .string("cancel")])))
+          step.events.append(.permissionWithdrawn(requestID: key))
+        }
+      }
+      questionPrompts.removeAll()
+      for key in elicitations.keys.sorted() {
+        if let rpcID = elicitations[key] {
+          step.writes.append(
+            AgyRPC.answer(rpcID, result: .object(["action": .string("cancel")])))
+          step.events.append(.permissionWithdrawn(requestID: key))
+        }
+      }
+      elicitations.removeAll()
       if cancelQueued {
         for item in queued { step.events.append(.queue(id: item.uuid, .cancelled)) }
         queued.removeAll()
@@ -249,6 +285,21 @@ public struct AgySession: Sendable {
         } else {
           approvals[id.text] = Approval(id: id, options: options)
           step.events += translator.permission(id: id, params: params)
+        }
+      } else if method == "elicitation/create" {
+        // Questions and elicitations always ask the person, even when Bypass is active.
+        if let (event, prompt) = translator.questionElicitation(id: id, params: params) {
+          questionPrompts[id.text] = prompt
+          step.events.append(event)
+        } else {
+          elicitations[id.text] = id
+          let elicitation =
+            Elicitation(acpRequest: params)
+            ?? Elicitation(
+              serverName: "", displayName: nil, message: "", elicitationID: nil, title: nil,
+              description: nil, content: .unsupported)
+          step.events.append(
+            .elicitationRequested(.init(requestID: id.text, elicitation: elicitation)))
         }
       } else {
         step.writes.append(AgyRPC.refusal(id, message: "Drakar does not answer \(method)."))
@@ -358,6 +409,8 @@ public struct AgySession: Sendable {
     case .prompt:
       isTurnRunning = false
       approvals.removeAll()
+      questionPrompts.removeAll()
+      elicitations.removeAll()
       step.events += translator.finishOpenStream()
       let stopReason = result["stopReason"]?.stringValue
       let outcome: Transcript.TurnEnd =
@@ -396,6 +449,8 @@ public struct AgySession: Sendable {
     case .prompt:
       isTurnRunning = false
       approvals.removeAll()
+      questionPrompts.removeAll()
+      elicitations.removeAll()
       step.events += translator.finishOpenStream()
       let text = message.isEmpty ? String(localized: "\(name) failed.") : message
       step.events.append(.turnEnded(TurnSummary(outcome: .failed, failureText: text)))

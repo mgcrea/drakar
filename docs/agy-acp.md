@@ -109,3 +109,14 @@ agy acp
 - Deny (continue turn): select the `reject_once` option.
 - Deny with interrupt / Cancel: `{"outcome": {"outcome": "cancelled"}}`.
 - Any `allow_always` option is surfaced as a permission suggestion in Drakar's sheet.
+
+## Questions and elicitations (verified)
+
+- Advertising `"elicitation": {"form": {}}` in `initialize` `clientCapabilities` causes `agy acp` to
+  deliver `ask_question` calls as `elicitation/create` requests rather than falling back to
+  numbered text in chat:
+  - First emits `tool_call` (`name: "ask_question"`, `rawInput: {"questions": [{"question": "…", "options": ["…"], "is_multi_select": false}]}`), then `elicitation/create` (`toolCallId`, `mode: "form"`, `requestedSchema` with `q1`, `q1_other`, … where `oneOf` / `items.anyOf` use `"1"`, `"2"`, … as `const` values).
+  - Answer with `{"action": "accept", "content": {"q1": "1", "q2": ["1", "2"], "q1_other": "…"}}`
+    or decline with `{"action": "decline"}` (or `"cancel"`).
+  - On answer, `agy acp` completes the `ask_question` tool call (`status: "completed"`) without
+    echoing `rawOutput`; Drakar records the answers on the transcript entry itself.

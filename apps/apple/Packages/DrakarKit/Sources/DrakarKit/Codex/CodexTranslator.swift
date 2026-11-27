@@ -67,6 +67,8 @@ public struct CodexTranslator: Sendable {
       events.append(.itemDelta(id: id, .thinking(delta)))
     case "item/commandExecution/requestApproval", "item/fileChange/requestApproval":
       events += approval(method: method, id: message["id"], params: params)
+    case "item/tool/requestUserInput":
+      events += userInput(id: message["id"], params: params)
     case "serverRequest/resolved":
       guard let id = CodexRPC.ID(params["requestId"]) else { break }
       events.append(.permissionWithdrawn(requestID: id.text))
@@ -278,6 +280,16 @@ public struct CodexTranslator: Sendable {
         request.suggestions = [CodexPolicy.acceptForSession]
       }
     }
+    return [.permissionRequested(.init(requestID: requestID, request: request))]
+  }
+
+  private func userInput(id: JSONValue?, params: JSONValue) -> [AgentEvent] {
+    guard let requestID = CodexRPC.ID(id)?.text else { return [] }
+    let input = JSONValue.object(["questions": params["questions"] ?? .array([])])
+    var request = PermissionRequest(
+      toolName: "Question", displayName: String(localized: "Question"), input: input,
+      description: nil, toolUseID: params["itemId"]?.stringValue, kind: .question)
+    request.requiresUserInteraction = true
     return [.permissionRequested(.init(requestID: requestID, request: request))]
   }
 

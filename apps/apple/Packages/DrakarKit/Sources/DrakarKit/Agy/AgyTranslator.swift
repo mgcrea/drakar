@@ -3,9 +3,21 @@ import Foundation
 /// Antigravity's ACP notifications and requests (`agy acp`, docs/agy-acp.md) as agent events:
 /// live lines through `translate`, `session/load`'s replayed updates through `history`.
 public struct AgyTranslator: Sendable {
+  public enum RecordedQuestionOutcome: Sendable, Equatable {
+    case answered([String: String])
+    case declined
+    case interrupted
+  }
+
   private enum OpenStream: Sendable, Equatable {
     case text(id: String, accumulated: String)
     case thinking(id: String, accumulated: String)
+  }
+
+  private struct PendingQuestionFallback: Sendable, Equatable {
+    let callID: String
+    let expected: String
+    var buffered: String = ""
   }
 
   private var nextItemID = 1
@@ -13,8 +25,18 @@ public struct AgyTranslator: Sendable {
   /// Tool calls already started in this translator, so `tool_call_update` updates rather than
   /// re-adding them and permission requests know their latest details.
   private var toolCalls: [String: Transcript.ToolCall] = [:]
+  /// Holds the numbered-list fallback `agy acp` emits right after `ask_question` so it is
+  /// suppressed when it matches, or flushed if real text arrives instead.
+  private var pendingQuestionFallback: PendingQuestionFallback?
+  /// Outcomes of `ask_question` prompts answered through `elicitation/create`, preserved so
+  /// the subsequent `tool_call_update` (`status: "completed"`, no `rawOutput`) records them.
+  private var questionOutcomes: [String: RecordedQuestionOutcome] = [:]
 
   public init() {}
+
+  public mutating func recordQuestionOutcome(callID: String, outcome: RecordedQuestionOutcome) {
+    questionOutcomes[callID] = outcome
+  }
 
   /// Translates one ACP `session/update` payload (its `params["update"]` object).
   public mutating func translate(update: JSONValue) -> [AgentEvent] {
@@ -65,14 +87,25 @@ public struct AgyTranslator: Sendable {
 
   /// Closes any open streaming text or thinking item (at turn end, or before a tool call).
   public mutating func finishOpenStream() -> [AgentEvent] {
-    guard let open = openStream else { return [] }
+    var events: [AgentEvent] = []
+    if let pending = pendingQuestionFallback {
+      pendingQuestionFallback = nil
+      let trimmed = pending.buffered.trimmingCharacters(in: .whitespacesAndNewlines)
+      if !trimmed.isEmpty, trimmed != pending.expected {
+        let id = "agy-msg-\(nextItemID)"
+        nextItemID += 1
+        events.append(.itemCompleted(.init(id: id, parent: nil, kind: .text(pending.buffered))))
+      }
+    }
+    guard let open = openStream else { return events }
     openStream = nil
     switch open {
     case .text(let id, let accumulated):
-      return [.itemCompleted(.init(id: id, parent: nil, kind: .text(accumulated)))]
+      events.append(.itemCompleted(.init(id: id, parent: nil, kind: .text(accumulated))))
     case .thinking(let id, let accumulated):
-      return [.itemCompleted(.init(id: id, parent: nil, kind: .thinking(accumulated)))]
+      events.append(.itemCompleted(.init(id: id, parent: nil, kind: .thinking(accumulated))))
     }
+    return events
   }
 
   /// Translates a `session/request_permission` server request into a pending permission event.
@@ -93,6 +126,47 @@ public struct AgyTranslator: Sendable {
       description: description, toolUseID: callID, kind: kind)
     request.suggestions = AgyPolicy.suggestions(from: options)
     return [.permissionRequested(.init(requestID: id.text, request: request))]
+  }
+
+  /// Translates an `elicitation/create` request into a question prompt when it belongs to an
+  /// `ask_question` call (or matches `agy`'s `q1`/`q1_other` question schema). Returns nil for
+  /// generic MCP elicitations so `AgySession` falls back to `Elicitation`.
+  public mutating func questionElicitation(id: AgyRPC.ID, params: JSONValue) -> (
+    event: AgentEvent, prompt: AgyQuestionPrompt
+  )? {
+    let toolCallID = params["toolCallId"]?.stringValue
+    let existing = toolCallID.flatMap { toolCalls[$0] }
+    let schema = params["requestedSchema"] ?? .null
+
+    let questions: [UserQuestion]
+    let input: JSONValue
+    if let existing, existing.kind == .question {
+      let parsed = UserQuestion.list(existing.input)
+      if !parsed.isEmpty {
+        questions = parsed
+        input = existing.input
+      } else if let fromSchema = Self.questions(fromElicitationSchema: schema) {
+        questions = fromSchema.questions
+        input = fromSchema.input
+      } else {
+        return nil
+      }
+    } else if let fromSchema = Self.questions(fromElicitationSchema: schema) {
+      questions = fromSchema.questions
+      input = fromSchema.input
+    } else {
+      return nil
+    }
+
+    var request = PermissionRequest(
+      toolName: "Question", displayName: String(localized: "Question"), input: input,
+      description: params["message"]?.stringValue, toolUseID: toolCallID, kind: .question)
+    request.requiresUserInteraction = true
+    pendingQuestionFallback = nil
+    let prompt = AgyQuestionPrompt(
+      id: id, toolCallID: toolCallID, questions: questions,
+      optionValues: Self.optionValues(fromElicitationSchema: schema, count: questions.count))
+    return (.permissionRequested(.init(requestID: id.text, request: request)), prompt)
   }
 
   /// Folds `session/load`'s replayed `session/update` payloads into a finished conversation.
@@ -157,6 +231,16 @@ public struct AgyTranslator: Sendable {
   }
 
   private mutating func appendText(_ chunk: String) -> [AgentEvent] {
+    if var pending = pendingQuestionFallback {
+      pending.buffered += chunk
+      let trimmed = pending.buffered.trimmingCharacters(in: .whitespacesAndNewlines)
+      if trimmed.isEmpty || pending.expected.hasPrefix(trimmed) {
+        pendingQuestionFallback = pending
+        return []
+      }
+      pendingQuestionFallback = nil
+      return appendText(pending.buffered)
+    }
     if case .text(let id, let accumulated) = openStream {
       openStream = .text(id: id, accumulated: accumulated + chunk)
       return [.itemDelta(id: id, .text(chunk))]
@@ -198,24 +282,62 @@ public struct AgyTranslator: Sendable {
       let output = Self.toolOutput(from: update)
       let exitCode = update["rawOutput"]?["exit_code"]?.intValue
       let isError = status == "failed" || (exitCode != nil && exitCode != 0)
-      events.append(
-        .toolResult(
-          callID: callID,
-          .init(content: output ?? (isError ? String(localized: "Failed") : ""), isError: isError)))
+      if call.kind == .question, let outcome = questionOutcomes.removeValue(forKey: callID) {
+        let result: Transcript.ToolResult =
+          switch outcome {
+          case .answered(let answers):
+            .init(
+              content: output
+                ?? UserQuestion.formattedResult(
+                  answers, order: UserQuestion.list(call.input).map(\.question)),
+              isError: false, answers: answers)
+          case .declined:
+            .init(content: output ?? UserQuestion.declinedMessage, isError: true)
+          case .interrupted:
+            .init(content: output ?? "[Request interrupted by user]", isError: true)
+          }
+        events.append(.toolResult(callID: callID, result))
+      } else {
+        events.append(
+          .toolResult(
+            callID: callID,
+            .init(content: output ?? (isError ? String(localized: "Failed") : ""), isError: isError)
+          ))
+      }
     } else if existing == nil {
       events.append(.itemStarted(.init(id: callID, parent: nil, kind: .tool(call))))
     } else {
       // Update input/kind in place if diffs or locations arrived on a `pending` update.
       events.append(.itemCompleted(.init(id: callID, parent: nil, kind: .tool(call))))
     }
+    if !isTerminal, call.kind == .question,
+      let expected = Self.questionFallbackText(for: call.input)
+    {
+      pendingQuestionFallback = PendingQuestionFallback(callID: callID, expected: expected)
+    }
     return events
+  }
+
+  /// The numbered markdown list `agy acp` emits right after `ask_question` so text-only clients
+  /// can still answer it.
+  private static func questionFallbackText(for input: JSONValue) -> String? {
+    let questions = UserQuestion.list(input)
+    guard !questions.isEmpty else { return nil }
+    return questions.map { question in
+      let options = question.options.enumerated().map { "- [\($0.offset + 1)] \($0.element.label)" }
+      return ([question.question] + options).joined(separator: "\n")
+    }
+    .joined(separator: "\n\n")
+    .trimmingCharacters(in: .whitespacesAndNewlines)
   }
 
   private static func toolCall(from json: JSONValue, fallback: Transcript.ToolCall?)
     -> Transcript.ToolCall?
   {
     guard let callID = json["toolCallId"]?.stringValue ?? fallback?.id else { return nil }
-    let rawName = json["name"]?.stringValue ?? fallback?.name ?? ""
+    let rawName =
+      json["name"]?.stringValue ?? json["_meta"]?["x.ai/tool"]?["name"]?.stringValue
+      ?? fallback?.name ?? ""
     let input = json["rawInput"] ?? json["args"] ?? fallback?.input ?? .object([:])
     let acpKind = json["kind"]?.stringValue
     let title = json["title"]?.stringValue
@@ -241,6 +363,7 @@ public struct AgyTranslator: Sendable {
     case "search_web": "Web Search"
     case "invoke_subagent": "Subagent"
     case "call_mcp_tool": "MCP Tool"
+    case "ask_question", "ask_user_question": "Question"
     default: rawName.isEmpty ? nil : rawName
     }
   }
@@ -286,6 +409,8 @@ public struct AgyTranslator: Sendable {
       return .mcp(
         server: input["ServerName"]?.stringValue ?? "",
         tool: input["ToolName"]?.stringValue ?? "")
+    case "ask_question", "ask_user_question":
+      return .question
     default:
       break
     }
@@ -341,5 +466,120 @@ public struct AgyTranslator: Sendable {
     guard let content else { return nil }
     if let text = content.stringValue { return text }
     return content["text"]?.stringValue
+  }
+
+  /// Parses `agy`'s `q1`, `q1_other`, `q2`, ... elicitation schema into `UserQuestion`s when
+  /// the preceding `ask_question` tool call was absent or lacked input.
+  private static func questions(fromElicitationSchema schema: JSONValue) -> (
+    questions: [UserQuestion], input: JSONValue
+  )? {
+    guard case .object(let properties) = schema["properties"] else { return nil }
+    var questions: [UserQuestion] = []
+    var rawQuestions: [JSONValue] = []
+    var index = 1
+    while let prop = properties["q\(index)"] {
+      defer { index += 1 }
+      guard let question = prop["title"]?.stringValue, !question.isEmpty else { continue }
+      let multiSelect = prop["type"]?.stringValue == "array"
+      let entries =
+        multiSelect
+        ? (prop["items"]?["anyOf"]?.arrayValue ?? prop["items"]?["oneOf"]?.arrayValue ?? [])
+        : (prop["oneOf"]?.arrayValue ?? prop["anyOf"]?.arrayValue ?? [])
+      let labels = entries.compactMap { $0["title"]?.stringValue ?? $0["const"]?.stringValue }
+      let allowsOther = properties["q\(index)_other"] != nil
+      questions.append(
+        UserQuestion(
+          question: question, header: nil,
+          options: labels.map { UserQuestion.Option(label: $0, description: nil) },
+          multiSelect: multiSelect, allowsOther: allowsOther))
+      rawQuestions.append(
+        .object([
+          "question": .string(question),
+          "options": .array(labels.map { .string($0) }),
+          "is_multi_select": .bool(multiSelect),
+          "isOther": .bool(allowsOther),
+        ]))
+    }
+    guard !questions.isEmpty else { return nil }
+    return (questions, .object(["questions": .array(rawQuestions)]))
+  }
+
+  private static func optionValues(fromElicitationSchema schema: JSONValue, count: Int) -> [[String:
+    String]]
+  {
+    guard case .object(let properties) = schema["properties"] else {
+      return Array(repeating: [:], count: count)
+    }
+    return (1...max(1, count)).prefix(count).map { index in
+      guard let prop = properties["q\(index)"] else { return [:] }
+      let entries =
+        prop["type"]?.stringValue == "array"
+        ? (prop["items"]?["anyOf"]?.arrayValue ?? prop["items"]?["oneOf"]?.arrayValue ?? [])
+        : (prop["oneOf"]?.arrayValue ?? prop["anyOf"]?.arrayValue ?? [])
+      var map: [String: String] = [:]
+      for entry in entries {
+        if let value = entry["const"]?.stringValue,
+          let title = entry["title"]?.stringValue
+        {
+          map[title] = value
+        }
+      }
+      return map
+    }
+  }
+}
+
+/// A pending Antigravity `ask_question` prompt received over ACP `elicitation/create`.
+public struct AgyQuestionPrompt: Sendable, Equatable {
+  public let id: AgyRPC.ID
+  public let toolCallID: String?
+  public let questions: [UserQuestion]
+  /// Per-question map from option label to schema `const` value (`"1"`, `"2"`, …).
+  public let optionValues: [[String: String]]
+
+  public func response(for decision: PermissionDecision) -> (
+    write: JSONValue, outcome: AgyTranslator.RecordedQuestionOutcome
+  ) {
+    switch decision {
+    case .allow(let updatedInput, _):
+      let answersInput = updatedInput["answers"]
+      var answers: [String: String] = [:]
+      var content: [String: JSONValue] = [:]
+      for (index, question) in questions.enumerated() {
+        let key = "q\(index + 1)"
+        let otherKey = "\(key)_other"
+        guard let answerStr = answersInput?[question.question]?.stringValue else { continue }
+        answers[question.question] = answerStr
+        let reading = question.reading(answerStr)
+        let valuesByLabel = optionValues.indices.contains(index) ? optionValues[index] : [:]
+        func wireValue(for label: String) -> String {
+          if let mapped = valuesByLabel[label] { return mapped }
+          if let idx = question.options.firstIndex(where: { $0.label == label }) {
+            return String(idx + 1)
+          }
+          return label
+        }
+        if question.multiSelect {
+          let picked = reading.picked.map(wireValue)
+          if !picked.isEmpty { content[key] = .array(picked.map { .string($0) }) }
+        } else if let first = reading.picked.first {
+          content[key] = .string(wireValue(for: first))
+        }
+        if let typed = reading.other, !typed.isEmpty {
+          content[otherKey] = .string(typed)
+        }
+      }
+      return (
+        AgyRPC.answer(
+          id, result: .object(["action": .string("accept"), "content": .object(content)])),
+        .answered(answers)
+      )
+    case .deny(_, let interrupt):
+      return (
+        AgyRPC.answer(
+          id, result: .object(["action": .string(interrupt ? "cancel" : "decline")])),
+        interrupt ? .interrupted : .declined
+      )
+    }
   }
 }

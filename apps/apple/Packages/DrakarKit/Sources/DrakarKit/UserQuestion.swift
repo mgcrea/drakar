@@ -38,22 +38,38 @@ public struct UserQuestion: Sendable, Equatable, Identifiable {
   public var header: String?
   public var options: [Option]
   public var multiSelect: Bool
+  /// The question's wire id when its agent keys answers by id (Codex `requestUserInput`).
+  public var questionID: String?
+  /// Whether a free-form "Other" answer is offered (true for Claude/Antigravity, `isOther` for Codex).
+  public var allowsOther: Bool
+  /// Whether typed answers should be masked (Codex `isSecret`).
+  public var isSecret: Bool
 
-  public init(question: String, header: String?, options: [Option], multiSelect: Bool) {
+  public init(
+    question: String, header: String?, options: [Option], multiSelect: Bool,
+    questionID: String? = nil, allowsOther: Bool = true, isSecret: Bool = false
+  ) {
     self.question = question
     self.header = header
     self.options = options
     self.multiSelect = multiSelect
+    self.questionID = questionID
+    self.allowsOther = allowsOther
+    self.isSecret = isSecret
   }
 
-  /// The questions of an `AskUserQuestion` input, in order.
+  /// The questions of an `AskUserQuestion`, Antigravity `ask_question`, or Codex `requestUserInput`
+  /// input, in order.
   public static func list(_ input: JSONValue) -> [UserQuestion] {
     (input["questions"]?.arrayValue ?? []).compactMap { entry in
       guard let question = entry["question"]?.stringValue else { return nil }
       return UserQuestion(
         question: question, header: entry["header"]?.stringValue,
         options: (entry["options"]?.arrayValue ?? []).compactMap { option in
-          option["label"]?.stringValue.map {
+          if let label = option.stringValue {
+            return Option(label: label, description: nil, preview: nil)
+          }
+          return option["label"]?.stringValue.map {
             let preview = option["preview"]?.stringValue
             return Option(
               label: $0, description: option["description"]?.stringValue,
@@ -61,7 +77,11 @@ public struct UserQuestion: Sendable, Equatable, Identifiable {
                 ? preview : nil)
           }
         },
-        multiSelect: entry["multiSelect"]?.boolValue ?? false)
+        multiSelect: entry["multiSelect"]?.boolValue ?? entry["is_multi_select"]?.boolValue
+          ?? false,
+        questionID: entry["id"]?.stringValue,
+        allowsOther: entry["isOther"]?.boolValue ?? true,
+        isSecret: entry["isSecret"]?.boolValue ?? false)
     }
   }
 
@@ -121,6 +141,16 @@ public struct UserQuestion: Sendable, Equatable, Identifiable {
     ". You can now continue with these answers in mind.",
     ". Read the answers carefully — they may request clarification, changes, or that you not proceed — and follow what they actually say.",
   ]
+
+  /// Result text formatted as `answers(inResult:questions:)` expects, when an agent answers a
+  /// question out-of-band without echoing a structured result on the tool call.
+  public static func formattedResult(_ answers: [String: String], order: [String]) -> String {
+    let pairs = order.compactMap { question in
+      answers[question].map { "\"\(question)\"=\"\($0)\"" }
+    }
+    guard !pairs.isEmpty else { return unansweredMessage }
+    return "\(answeredPrefixes[0])\(pairs.joined(separator: ", "))\(answeredSuffixes[0])"
+  }
 
   /// The answers a result names, `"<question>"="<answer>", …`, for `questions` in their
   /// order; nil when the text is not an answer. The structured `answers` the CLI writes

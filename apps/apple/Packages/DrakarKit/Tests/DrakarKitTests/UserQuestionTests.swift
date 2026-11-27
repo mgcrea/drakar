@@ -110,4 +110,35 @@ struct UserQuestionTests {
         == ["Which?": "A, B", "Then?": "C"])
     #expect(UserQuestion.earlierAnswers(in: "Use a.txt", questions: ["Which file?"]) == nil)
   }
+
+  /// Antigravity's `ask_question` sends options as plain strings and `is_multi_select` in
+  /// snake_case rather than Claude's `{label, description}` objects and `multiSelect`.
+  @Test func readsAntigravityAskQuestion() throws {
+    let input = try JSONValue.parse(
+      Data(
+        #"{"questions":[{"question":"Color?","options":["Red","Blue"],"is_multi_select":false},{"question":"Toppings?","options":["Cheese","Olives"],"is_multi_select":true}]}"#
+          .utf8))
+    let questions = UserQuestion.list(input)
+    #expect(questions.count == 2)
+    #expect(questions[0].options.map(\.label) == ["Red", "Blue"])
+    #expect(!questions[0].multiSelect)
+    #expect(questions[1].options.map(\.label) == ["Cheese", "Olives"])
+    #expect(questions[1].multiSelect)
+  }
+
+  @Test func readsCodexMetadataAndFormatsResult() throws {
+    let input = try JSONValue.parse(
+      Data(
+        #"{"questions":[{"id":"lang","question":"Language?","isOther":false,"isSecret":true,"options":[{"label":"Swift","description":"Use Swift"}]}]}"#
+          .utf8))
+    let q = try #require(UserQuestion.list(input).first)
+    #expect(q.questionID == "lang")
+    #expect(!q.allowsOther)
+    #expect(q.isSecret)
+
+    let formatted = UserQuestion.formattedResult(["Language?": "Swift"], order: ["Language?"])
+    #expect(
+      UserQuestion.answers(inResult: formatted, questions: ["Language?"])
+        == ["Language?": "Swift"])
+  }
 }

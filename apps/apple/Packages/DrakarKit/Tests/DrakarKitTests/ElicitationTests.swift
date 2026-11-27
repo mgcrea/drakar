@@ -251,4 +251,37 @@ struct ElicitationTests {
     #expect(
       form.content(from: form.initialInputs) == ["agree": .bool(false), "team": .string("web")])
   }
+
+  @Test func parsesACPElicitationRequest() throws {
+    let formReq = try #require(
+      Elicitation(
+        acpRequest: try json(
+          #"""
+          {
+            "mode": "form",
+            "message": "Authenticate with Linear",
+            "requestedSchema": {
+              "type": "object",
+              "properties": {"api_key": {"type": "string"}},
+              "required": ["api_key"]
+            },
+            "_meta": {"mcpServerName": "linear", "displayName": "Linear"}
+          }
+          """#)))
+    #expect(formReq.serverName == "linear")
+    #expect(formReq.serverLabel == "Linear")
+    if case .form(let form) = formReq.content {
+      #expect(form.fields.map(\.key) == ["api_key"])
+    } else {
+      Issue.record("Expected form content")
+    }
+
+    let urlReq = try #require(
+      Elicitation(
+        acpRequest: try json(
+          #"{"mode":"url","message":"Sign in","url":"https://example.com/auth","elicitationId":"e-9"}"#
+        )))
+    #expect(urlReq.elicitationID == "e-9")
+    #expect(urlReq.content == .url(URL(string: "https://example.com/auth")!))
+  }
 }
