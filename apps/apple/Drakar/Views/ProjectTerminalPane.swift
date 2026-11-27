@@ -116,7 +116,7 @@ private struct TerminalSurface: NSViewRepresentable {
 private final class TerminalContainerView: NSView {
   private let horizontalPadding: CGFloat
   private(set) weak var terminalView: LocalProcessTerminalView?
-  private var oscObservation: TerminalOscObservation?
+  private var layerObserver: LayerBackgroundObserver?
 
   init(terminalView: LocalProcessTerminalView, horizontalPadding: CGFloat) {
     self.horizontalPadding = horizontalPadding
@@ -131,10 +131,7 @@ private final class TerminalContainerView: NSView {
   override var wantsUpdateLayer: Bool { true }
 
   override func updateLayer() {
-    guard let layer, let terminalView else { return }
-    effectiveAppearance.performAsCurrentDrawingAppearance {
-      layer.backgroundColor = terminalView.nativeBackgroundColor.cgColor
-    }
+    syncBackgroundColor()
   }
 
   func attach(_ view: LocalProcessTerminalView) {
@@ -147,25 +144,40 @@ private final class TerminalContainerView: NSView {
       view.removeFromSuperview()
       addSubview(view)
     }
-    if changed || oscObservation == nil {
-      oscObservation?.cancel()
-      oscObservation = view.observeOscEvents(codes: [11, 111]) { [weak self] _ in
-        DispatchQueue.main.async { [weak self] in
-          self?.needsDisplay = true
+    if changed || layerObserver == nil {
+      layerObserver?.cancel()
+      if let targetLayer = view.layer {
+        layerObserver = LayerBackgroundObserver(layer: targetLayer) { [weak self] in
+          self?.syncBackgroundColor()
         }
+      } else {
+        layerObserver = nil
       }
     }
     needsLayout = true
-    needsDisplay = true
+    syncBackgroundColor()
   }
 
   func detach() {
-    oscObservation?.cancel()
-    oscObservation = nil
+    layerObserver?.cancel()
+    layerObserver = nil
     if let terminalView, terminalView.superview === self {
       terminalView.removeFromSuperview()
     }
     terminalView = nil
+  }
+
+  private func syncBackgroundColor() {
+    guard let layer, let terminalView else { return }
+    if let terminalBackground = terminalView.layer?.backgroundColor,
+      terminalBackground.alpha > 0
+    {
+      layer.backgroundColor = terminalBackground
+      return
+    }
+    effectiveAppearance.performAsCurrentDrawingAppearance {
+      layer.backgroundColor = terminalView.nativeBackgroundColor.cgColor
+    }
   }
 
   override func layout() {
@@ -177,12 +189,12 @@ private final class TerminalContainerView: NSView {
 
   override func viewDidMoveToWindow() {
     super.viewDidMoveToWindow()
-    needsDisplay = true
+    syncBackgroundColor()
   }
 
   override func viewDidChangeEffectiveAppearance() {
     super.viewDidChangeEffectiveAppearance()
-    needsDisplay = true
+    syncBackgroundColor()
   }
 
   override func hitTest(_ point: NSPoint) -> NSView? {
@@ -194,6 +206,50 @@ private final class TerminalContainerView: NSView {
   override func resetCursorRects() {
     guard let terminalView else { return }
     addCursorRect(bounds, cursor: terminalView.pointerCursor(modifiers: []))
+  }
+}
+
+private nonisolated final class LayerBackgroundObserver: NSObject, @unchecked Sendable {
+  private nonisolated(unsafe) static var context: UInt8 = 0
+  private let lock = NSLock()
+  private weak var layer: CALayer?
+  private let onChange: @MainActor @Sendable () -> Void
+
+  @MainActor
+  init(layer: CALayer, onChange: @escaping @MainActor @Sendable () -> Void) {
+    self.layer = layer
+    self.onChange = onChange
+    super.init()
+    layer.addObserver(
+      self, forKeyPath: "backgroundColor", options: [.new], context: &Self.context)
+  }
+
+  func cancel() {
+    lock.lock()
+    let target = layer
+    layer = nil
+    lock.unlock()
+    target?.removeObserver(self, forKeyPath: "backgroundColor", context: &Self.context)
+  }
+
+  deinit {
+    cancel()
+  }
+
+  override func observeValue(
+    forKeyPath keyPath: String?, of object: Any?,
+    change: [NSKeyValueChangeKey: Any]?, context: UnsafeMutableRawPointer?
+  ) {
+    guard context == &Self.context else {
+      super.observeValue(forKeyPath: keyPath, of: object, change: change, context: context)
+      return
+    }
+    let handler = onChange
+    if Thread.isMainThread {
+      MainActor.assumeIsolated { handler() }
+    } else {
+      DispatchQueue.main.async { handler() }
+    }
   }
 }
 

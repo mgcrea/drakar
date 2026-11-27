@@ -64,6 +64,25 @@ struct ProjectTerminalTests {
     #expect(view.frame.minX == 8)
     #expect(view.frame.width == 624)
     #expect(view.frame.height == surface.bounds.height)
+    // SwiftTerm updates `nativeBackgroundColor` and its layer background to the terminal's
+    // default black asynchronously on the main actor after `setupOptions()`.
+    for _ in 0..<100 {
+      if let bg = surface.layer?.backgroundColor,
+        let rgb = NSColor(cgColor: bg)?.usingColorSpace(.sRGB),
+        rgb.redComponent == 0, rgb.greenComponent == 0, rgb.blueComponent == 0,
+        view.layer?.backgroundColor == bg
+      {
+        break
+      }
+      try await Task.sleep(for: .milliseconds(20))
+    }
+    let terminalBg = try #require(view.layer?.backgroundColor)
+    let surfaceBg = try #require(surface.layer?.backgroundColor)
+    #expect(terminalBg == surfaceBg)
+    let resolvedBg = try #require(NSColor(cgColor: surfaceBg)?.usingColorSpace(.sRGB))
+    #expect(resolvedBg.redComponent == 0)
+    #expect(resolvedBg.greenComponent == 0)
+    #expect(resolvedBg.blueComponent == 0)
     let leftPaddingPoint = surface.convert(
       NSPoint(x: 2, y: surface.bounds.midY), to: surface.superview)
     let rightPaddingPoint = surface.convert(
