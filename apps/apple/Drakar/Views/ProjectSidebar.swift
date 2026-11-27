@@ -191,13 +191,7 @@ struct SessionListView: View {
       if !groups.ended.isEmpty {
         Section(isExpanded: Bindable(project).showsEnded) {
           ForEach(project.listedEnded(groups)) { summary in
-            SummaryRow(summary: summary, host: nil, urgency: nil, monitor: monitor)
-              .pressableRow(isSelected: project.isWatched(summary)) {
-                open(summary) { project.openEnded(summary) }
-              }
-              .contextMenu { menu(for: summary, ended: true) }
-              .accessibilityAddTraits(.isButton)
-              .accessibilityIdentifier("sessions.ended.\(summary.sessionID)")
+            endedRow(summary)
           }
           if groups.ended.count > 20, !project.showsAllEnded {
             Button("Show All \(groups.ended.count)") { project.showsAllEnded = true }
@@ -205,6 +199,14 @@ struct SessionListView: View {
           }
         } header: {
           Text("Ended (\(groups.ended.count))")
+        }
+      }
+      let archived = project.archivedEnded
+      if !archived.isEmpty {
+        Section(isExpanded: Bindable(project).showsArchived) {
+          ForEach(archived) { summary in endedRow(summary, archived: true) }
+        } header: {
+          Text("Archived (\(archived.count))")
         }
       }
     }
@@ -233,6 +235,16 @@ struct SessionListView: View {
       return .handled
     }
     .accessibilityIdentifier("sessions")
+  }
+
+  private func endedRow(_ summary: SessionSummary, archived: Bool = false) -> some View {
+    SummaryRow(summary: summary, host: nil, urgency: nil, monitor: monitor)
+      .pressableRow(isSelected: project.isWatched(summary)) {
+        open(summary) { project.openEnded(summary) }
+      }
+      .contextMenu { menu(for: summary, ended: true, archived: archived) }
+      .accessibilityAddTraits(.isButton)
+      .accessibilityIdentifier("sessions.\(archived ? "archived" : "ended").\(summary.sessionID)")
   }
 
   /// A row opened in the window's preview tab; the second click of a double click keeps it
@@ -265,7 +277,9 @@ struct SessionListView: View {
 
   /// A row of Elsewhere or Ended. Resuming one live elsewhere would interleave two writers:
   /// it forks, or moves here once the app running it has been told to let it go.
-  @ViewBuilder private func menu(for summary: SessionSummary, ended: Bool) -> some View {
+  @ViewBuilder private func menu(
+    for summary: SessionSummary, ended: Bool, archived: Bool = false
+  ) -> some View {
     let showable = !ended && ShowInVSCode.canShow(summary)
     let dismissable = !ended && [.question, .offer].contains(project.urgency(of: summary))
     if showable {
@@ -290,11 +304,24 @@ struct SessionListView: View {
     if let watched = project.session(withID: summary.sessionID), watched.isWatching {
       Button("Close") { project.remove(watched) }
     }
-    moveMenu(for: summary, host: ended ? nil : monitor.host(of: summary))
+    if ended {
+      if archived {
+        Button("Unarchive") { monitor.setArchived(summary, to: false) }
+      } else {
+        Button("Archive") { monitor.setArchived(summary, to: true) }
+      }
+    }
+    if summary.agentKind.features.moves {
+      moveMenu(for: summary, host: ended ? nil : monitor.host(of: summary))
+    }
     Divider()
     copyIDButton(summary.sessionID)
-    Button("Show Transcript in Finder") {
-      NSWorkspace.shared.activateFileViewerSelecting([summary.file])
+    Button(
+      summary.agentKind == .grok ? "Show Session Folder in Finder" : "Show Transcript in Finder"
+    ) {
+      let file =
+        summary.agentKind == .grok ? summary.file.deletingLastPathComponent() : summary.file
+      NSWorkspace.shared.activateFileViewerSelecting([file])
     }
   }
 
@@ -321,14 +348,7 @@ struct OpenSessionRow: View {
       StateDot(state: state)
       VStack(alignment: .leading, spacing: 2) {
         HStack(spacing: 4) {
-          if let symbol = item.session.agent.sidebarSymbol {
-            Image(systemName: symbol)
-              .font(.caption)
-              .foregroundStyle(.secondary)
-              .help(item.session.agent.name)
-              .accessibilityLabel(item.session.agent.name)
-              .accessibilityIdentifier("sessions.agent.\(item.session.agent.rawValue)")
-          }
+          SidebarProviderIcon(agent: item.session.agent)
           Text(item.displayTitle)
             .lineLimit(1)
             .fontWeight(item.isUnread ? .semibold : .regular)
@@ -423,7 +443,10 @@ struct SummaryRow: View {
         StateDot(state: state)
       }
       VStack(alignment: .leading, spacing: 2) {
-        Text(summary.displayTitle).lineLimit(1)
+        HStack(spacing: 4) {
+          SidebarProviderIcon(agent: summary.agentKind)
+          Text(summary.displayTitle).lineLimit(1)
+        }
         Text(detail).font(.caption).foregroundStyle(.secondary).lineLimit(1)
       }
       Spacer(minLength: 4)
@@ -460,6 +483,19 @@ struct SummaryRow: View {
       attachmentModelID: summary.modelID,
       accountModelID: monitor.accountModel(for: summary.account),
       messageModelID: summary.context?.modelID)
+  }
+}
+
+private struct SidebarProviderIcon: View {
+  let agent: AgentKind
+
+  var body: some View {
+    Image(systemName: agent.sidebarSymbol ?? "sun.max")
+      .font(.caption)
+      .foregroundStyle(.secondary)
+      .help(agent.name)
+      .accessibilityLabel(agent.name)
+      .accessibilityIdentifier("sessions.agent.\(agent.rawValue)")
   }
 }
 

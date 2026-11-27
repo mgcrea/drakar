@@ -167,6 +167,24 @@ struct SessionStepTests {
     #expect(!project.stepSidebar(-1))
   }
 
+  @Test func archivingMovesAnEndedRowAndUnarchivingRestoresIt() async throws {
+    let project = try project()
+    try await ended(["e1", "e2"], in: project)
+    let summary = try #require(project.groups.ended.first)
+    project.monitor.setArchived(summary, to: true)
+
+    #expect(project.listedGroups.ended.count == 1)
+    #expect(project.archivedEnded == [summary])
+    #expect(FileManager.default.fileExists(atPath: summary.file.path))
+    project.showsArchived = true
+    #expect(project.stepSidebar(1))
+    #expect(project.selected?.sessionID == summary.sessionID)
+
+    project.monitor.setArchived(summary, to: false)
+    #expect(project.listedGroups.ended.count == 2)
+    #expect(project.archivedEnded.isEmpty)
+  }
+
   /// A row another Drakar window holds as a tab is that window's to show: ↓ goes past it,
   /// rather than bringing that window forward and landing on the same row again.
   @Test func theSidebarsArrowKeysGoPastASessionAnotherWindowHolds() async throws {

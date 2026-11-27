@@ -636,6 +636,8 @@ final class Project {
   /// `groups`, Elsewhere as the sidebar lists it.
   var listedGroups: ProjectGroups {
     var groups = groups
+    let archived = monitor.archived
+    groups.ended.removeAll { archived.contains($0.archiveKey) }
     groups.elsewhere = sessionOrder.sorted(groups.elsewhere) { summary in
       SessionOrder.Key(
         state: RowState(elsewhere: summary, urgency: urgency(of: summary)),
@@ -1608,6 +1610,12 @@ final class Project {
   /// newest 20.
   var showsEnded = false
   var showsAllEnded = false
+  var showsArchived = false
+
+  var archivedEnded: [SessionSummary] {
+    let archived = monitor.archived
+    return groups.ended.filter { archived.contains($0.archiveKey) }
+  }
 
   /// Ended's rows as the sidebar lists them, expanded or not.
   func listedEnded(_ groups: ProjectGroups) -> [SessionSummary] {
@@ -1628,8 +1636,10 @@ final class Project {
     _ summary: SessionSummary, focusingComposer: Bool = true, showing: Bool = true
   ) -> ProjectSession? {
     guard let target = ResumeTarget(summary) else { return nil }
-    return attach(
+    let item = attach(
       target, watching: showing, focusingComposer: focusingComposer, showing: showing)
+    item.preview = summary
+    return item
   }
 
   /// The sidebar's ↑ and ↓: the row `offset` rows from the selected one (else the first row),
@@ -1651,6 +1661,7 @@ final class Project {
       listedHeld.map(Row.held)
       + elsewhere.map(Row.elsewhere)
       + (showsEnded ? listedEnded(groups).map(Row.ended) : [])
+      + (showsArchived ? archivedEnded.map(Row.ended) : [])
     guard !rows.isEmpty else { return false }
     let selected = self.selected
     let current = rows.firstIndex { row in

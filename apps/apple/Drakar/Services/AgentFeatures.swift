@@ -106,3 +106,9 @@ struct AgentFeatures: Equatable {
     showsAccount: false, showsPromptCache: false, acceptsPDF: false,
     usesSettingsDefaults: false, picksApplyAtOnce: true, controlsTasks: false)
 }
+
+extension SessionSummary {
+  var agentKind: AgentKind { provider.flatMap(AgentKind.init(rawValue:)) ?? .claude }
+
+  var archiveKey: String { "\(agentKind.rawValue):\(sessionID)" }
+}

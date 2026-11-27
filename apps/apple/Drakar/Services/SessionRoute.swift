@@ -72,11 +72,13 @@ struct ResumeTarget: Codable, Hashable {
   }
 
   init?(_ summary: SessionSummary, forking: Bool = false) {
-    guard let cwd = summary.cwd else { return nil }
+    let agent = summary.agentKind
+    guard let cwd = summary.cwd, !forking || agent.features.forks else { return nil }
     self.init(
       sessionID: summary.sessionID, cwd: cwd, file: summary.file.path(percentEncoded: false),
       accountDirectory: summary.account.directory.path(percentEncoded: false),
-      accountIsDefault: summary.account.isDefault, forks: forking ? true : nil)
+      accountIsDefault: summary.account.isDefault, forks: forking ? true : nil,
+      agent: agent == .claude ? nil : agent)
   }
 
   var account: ClaudeAccount {

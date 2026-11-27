@@ -2,17 +2,21 @@ import DrakarKit
 import Foundation
 import Observation
 
-/// Every session on disk, kept current from FSEvents: what a project window lists as
-/// elsewhere and ended, and what the picker lists. One for the app, since every window
-/// reads the same folders. Armada's `SessionWatcher`, narrowed to what Drakar shows.
+/// Claude Code transcripts and liveness for the picker and project windows, plus ended
+/// sessions from the other providers for project sidebars. Shared by the app's windows.
 @Observable
 final class SessionMonitor {
-  static let shared = SessionMonitor(
-    cacheFile: ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
-      ? nil
-      : SessionSummaryCache.file(
-        bundleID: Bundle.main.bundleIdentifier ?? "io.mgcrea.Drakar",
-        home: FileManager.default.homeDirectoryForCurrentUser))
+  static let shared: SessionMonitor = {
+    let monitor = SessionMonitor(
+      cacheFile: ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+        ? nil
+        : SessionSummaryCache.file(
+          bundleID: Bundle.main.bundleIdentifier ?? "io.mgcrea.Drakar",
+          home: FileManager.default.homeDirectoryForCurrentUser))
+    monitor.archiveDefaults = .standard
+    monitor.archived = Set(UserDefaults.standard.stringArray(forKey: archivePreference) ?? [])
+    return monitor
+  }()
 
   /// By transcript path, its folder resolved (`key(_:)`): one id can have a transcript per
   /// account.
@@ -20,6 +24,19 @@ final class SessionMonitor {
     didSet { changedSummaries() }
   }
   private(set) var isLoaded = false
+  private var providerSessions: [SessionSummary] = [] {
+    didSet { changedSummaries() }
+  }
+  @ObservationIgnored private var providerScan: Task<Void, Never>?
+  private(set) var archived: Set<String> = []
+  @ObservationIgnored private var archiveDefaults: UserDefaults?
+  private static let archivePreference = "drakar.archivedSessions"
+
+  func setArchived(_ summary: SessionSummary, to value: Bool) {
+    if value { archived.insert(summary.archiveKey) } else { archived.remove(summary.archiveKey) }
+    archiveDefaults?.set(archived.sorted(), forKey: Self.archivePreference)
+  }
+
   /// Every transcript folder, for home's counts: every session on disk, not only the newest
   /// listed in `byFile`.
   private(set) var folders: [TranscriptFolder] = []
@@ -86,6 +103,26 @@ final class SessionMonitor {
     self.cacheFile = cacheFile
   }
 
+  private func startProviderScan() {
+    guard providerScan == nil else { return }
+    providerScan = Task { [weak self] in
+      while !Task.isCancelled {
+        guard self != nil else { return }
+        let accounts = AccountStore.shared
+        let (codex, grok) = (accounts.codexHome, accounts.grokHome)
+        let antigravity = FileManager.default.homeDirectoryForCurrentUser
+          .appending(path: ".gemini/antigravity-cli")
+        let summaries = await Task.detached {
+          ProviderSessionIndex.list(codex: codex, grok: grok, antigravity: antigravity)
+            .sorted { $0.id < $1.id }
+        }.value
+        guard !Task.isCancelled else { return }
+        if self?.providerSessions != summaries { self?.providerSessions = summaries }
+        try? await Task.sleep(for: .seconds(15))
+      }
+    }
+  }
+
   /// The ids a `claude` process has open now.
   var liveIDs: Set<String> { Set(live.values.flatMap(\.keys)) }
 
@@ -95,9 +132,10 @@ final class SessionMonitor {
   func summaries(under folder: String) -> [SessionSummary] {
     // Read whether or not the result is kept, so that a view asking is redrawn on a change.
     let byFile = byFile
+    let providerSessions = providerSessions
     if let kept = underFolder[folder] { return kept }
     let owners = ProjectPath.Owners([folder])
-    let found = byFile.values.filter { summary in
+    let found = (Array(byFile.values) + providerSessions).filter { summary in
       summary.cwd.map { owners.owner(of: checkout(of: $0)) != nil } ?? false
     }
     underFolder[folder] = found
@@ -273,10 +311,13 @@ final class SessionMonitor {
     watching = false
     sweep?.invalidate()
     sweep = nil
+    providerScan?.cancel()
+    providerScan = nil
   }
 
   /// A project window's own sessions, past the 500 newest the app reads at launch.
   func include(folder: String) async {
+    if archiveDefaults != nil { startProviderScan() }
     guard included.insert(folder).inserted else { return }
     await ensureAccounts()
     let accounts = self.accounts

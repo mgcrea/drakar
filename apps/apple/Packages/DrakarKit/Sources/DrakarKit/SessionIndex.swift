@@ -85,6 +85,8 @@ public struct SessionSummary: Codable, Sendable, Hashable, Identifiable {
   public var sessionID: String
   public var account: ClaudeAccount
   public var file: URL
+  /// Nil for Claude Code summaries written before provider discovery.
+  public var provider: String?
   /// The folder the session worked in, from inside the transcript: the project folder's
   /// name is an encoding of it that cannot be reversed (every `/` and `.` became `-`).
   public var cwd: String?
@@ -112,7 +114,8 @@ public struct SessionSummary: Codable, Sendable, Hashable, Identifiable {
   /// Everything read from the transcript, not `live`: whether a process has it open is
   /// the registry's to say each time, never a saved answer.
   private enum CodingKeys: String, CodingKey {
-    case sessionID, account, file, cwd, title, lastPrompt, modified, size, context, modelID
+    case sessionID, account, file, provider, cwd, title, lastPrompt, modified, size, context,
+      modelID
     case awaitsToolResult, pendingQuestion, closingAsk, closingMessageID
   }
 

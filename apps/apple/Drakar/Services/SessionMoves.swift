@@ -49,7 +49,8 @@ enum SessionMoves {
   ) -> [Candidate] {
     var byID: [String: Candidate] = [:]
     var order: [String] = []
-    for summary in summaries where summary.account.key != target.key {
+    for summary in summaries
+    where summary.agentKind.features.moves && summary.account.key != target.key {
       if byID[summary.sessionID] == nil { order.append(summary.sessionID) }
       byID[summary.sessionID] = Candidate(
         sessionID: summary.sessionID, title: summary.displayTitle, transcript: summary.file,
