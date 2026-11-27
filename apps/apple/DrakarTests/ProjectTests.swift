@@ -1110,4 +1110,23 @@ struct ProjectTests {
     #expect(preview.session.phase == .ready)
     #expect(project.slashCommands(for: preview.session).map(\.name) == ["deploy"])
   }
+
+  /// Starting ignores sessions that are read-only or unable to send.
+  @Test func startIgnoresReadOnlyAndMovingSessions() {
+    let project = Project(folder: folder)
+    let readOnly = project.attach(target("ro"), watching: true, readOnly: true)
+    let beforeReadOnlyFocus = readOnly.focusRequest
+    project.start(readOnly)
+    #expect(readOnly.isWatching)
+    #expect(readOnly.session.phase == .idle)
+    #expect(readOnly.focusRequest == beforeReadOnlyFocus)
+
+    let moving = project.attach(target("mv"), watching: true)
+    moving.session.isMoving = true
+    let beforeMovingFocus = moving.focusRequest
+    project.start(moving)
+    #expect(moving.isWatching)
+    #expect(moving.session.phase == .idle)
+    #expect(moving.focusRequest == beforeMovingFocus)
+  }
 }
