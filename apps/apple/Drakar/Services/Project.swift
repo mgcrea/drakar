@@ -146,6 +146,9 @@ final class ProjectSession: Identifiable {
   /// not shown yet has its title and gauge without its whole history being read, and every
   /// row its last activity.
   var preview: SessionSummary?
+  /// Last known title carried over from `StoredProject` until the transcript or preview is
+  /// read, so reopened tabs never flash "New session" on launch.
+  var restoredTitle: String?
   /// Opened from Elsewhere or Ended to look at: listed there, not with the window's own rows,
   /// and not kept between launches, until it is taken over.
   var isWatching = false
@@ -175,6 +178,7 @@ final class ProjectSession: Identifiable {
     if let preview = unloadedPreview, let title = preview.title ?? preview.lastPrompt {
       return String(title.prefix(80))
     }
+    if !session.hasLoadedHistory, let restoredTitle { return restoredTitle }
     return nil
   }
 
@@ -350,6 +354,10 @@ struct StoredProject: Codable, Equatable {
   /// Forks that ran no turn, so have no transcript of their own to resume. Optional so that a
   /// window stored before they were kept still decodes.
   var pendingForks: [StoredFork]?
+  /// Last known title per session id, so reopened tabs show their title immediately before
+  /// background previews or history finish loading. Optional so that a window stored before
+  /// it existed still decodes.
+  var titles: [String: String]? = nil
 
   /// Nothing worth bringing back: no session, no tab, no batch, and no sort or switch chosen.
   var isEmpty: Bool {
@@ -531,6 +539,7 @@ final class Project {
       let folder = URL(filePath: target.cwd, directoryHint: .isDirectory)
       let item = make(AgentSession(folder: folder, resuming: target))
       item.dismissedAsk = stored?.dismissedQuestions?[target.sessionID]
+      item.restoredTitle = stored?.titles?[target.sessionID]
       sessions.append(item)
     }
     // Each its own row, though it shares its original's session id until its first turn.
@@ -540,6 +549,7 @@ final class Project {
       if let name = fork.name { session.rename(to: name) }
       let item = make(session)
       item.draft = fork.draft
+      if fork.name == nil { item.restoredTitle = stored?.titles?[fork.target.sessionID] }
       sessions.append(item)
     }
     // No fan-out runs on a runner's folder (remote sessions spec §4).
@@ -2307,6 +2317,7 @@ final class Project {
       item.attachments = row.attachments
       item.dismissedAsk = row.dismissedAsk
       item.preview = row.preview
+      item.restoredTitle = row.restoredTitle
       sessions[replaced] = item
       marked.remove(row.id)
       if selectedID == row.id { selectedID = item.id }
@@ -2475,6 +2486,12 @@ final class Project {
       else { return nil }
       return StoredFork(target: target, name: session.name, draft: item.draft)
     }
+    let titles = held.compactMap { item -> (String, String)? in
+      guard let id = item.session.savedTarget?.sessionID, let title = item.knownTitle else {
+        return nil
+      }
+      return (id, title)
+    }
     return StoredProject(
       sessions: held.compactMap(\.session.savedTarget),
       selected: selected.flatMap { $0.isWatching ? nil : $0.session.savedTarget?.sessionID },
@@ -2487,7 +2504,8 @@ final class Project {
       sessionOrder: sessionOrder == .opened ? nil : sessionOrder,
       movesOnAfterReply: movesOnAfterReply ? true : nil,
       fanOuts: batches.isEmpty ? nil : batches,
-      pendingForks: forks.isEmpty ? nil : forks)
+      pendingForks: forks.isEmpty ? nil : forks,
+      titles: titles.isEmpty ? nil : Dictionary(titles, uniquingKeysWith: { first, _ in first }))
   }
 
   /// Closes `item`'s tab once the turn a shortcut with Auto-close sent finishes cleanly,
@@ -2579,12 +2597,22 @@ final class Project {
   /// row shows them, while only the selected one reads its history.
   private func readPreview(_ item: ProjectSession) {
     guard let target = item.session.resuming else { return }
-    guard target.agentKind == .claude else { return readRolloutDate(item) }
-    let (file, account) = (target.transcriptFile, target.account)
+    let kind = target.agentKind
+    if kind == .codex { readRolloutDate(item) }
+    let (id, provider, file, home, account) = (
+      target.sessionID, kind.rawValue, target.file, target.account.directory, target.account
+    )
     Task { [weak item] in
-      let summary = await Task.detached { SessionIndex.summary(of: file, account: account) }.value
-      item?.preview = summary
-      Attention.shared.refresh()
+      let summary = await Task.detached {
+        if kind == .claude {
+          return SessionIndex.summary(of: URL(filePath: file), account: account)
+        }
+        return ProviderSessionIndex.summary(sessionID: id, provider: provider, home: home, file: file)
+      }.value
+      if let summary {
+        item?.preview = summary
+        Attention.shared.refresh()
+      }
     }
   }
 

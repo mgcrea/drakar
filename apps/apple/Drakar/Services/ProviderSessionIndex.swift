@@ -9,14 +9,22 @@ nonisolated enum ProviderSessionIndex {
     codexSessions(in: codex) + grokSessions(in: grok) + antigravitySessions(in: antigravity)
   }
 
-  private static func codexSessions(in home: URL) -> [SessionSummary] {
-    let locks = children(home.appending(path: "thread-writer-locks"))
-    let active = Set(
-      locks.filter { $0.pathExtension == "lock" }.map {
-        $0.deletingPathExtension().lastPathComponent
-      })
-    // Use the newest schema installed in this home. Only select columns shared by
-    // the thread databases, and leave Codex's own archived threads in Codex.
+  /// Reads metadata for one restored session without spawning its CLI.
+  static func summary(sessionID: String, provider: String, home: URL, file: String) -> SessionSummary? {
+    switch provider {
+    case "codex":
+      return codexSummary(sessionID: sessionID, home: home, fallbackFile: URL(filePath: file))
+    case "grok":
+      return grokSummary(sessionID: sessionID, home: home, file: file)
+    case "agy":
+      return antigravitySummary(sessionID: sessionID, home: home)
+    default:
+      return nil
+    }
+  }
+
+  private static func codexDatabase(in home: URL) -> URL? {
+    // Use the newest schema installed in this home.
     let databases = children(home).compactMap { file -> (Int, URL)? in
       let stem = file.deletingPathExtension().lastPathComponent
       guard file.pathExtension == "sqlite", stem.hasPrefix("state_"),
@@ -24,7 +32,18 @@ nonisolated enum ProviderSessionIndex {
       else { return nil }
       return (version, file)
     }
-    guard let database = databases.max(by: { $0.0 < $1.0 })?.1 else { return [] }
+    return databases.max(by: { $0.0 < $1.0 })?.1
+  }
+
+  private static func codexSessions(in home: URL) -> [SessionSummary] {
+    let locks = children(home.appending(path: "thread-writer-locks"))
+    let active = Set(
+      locks.filter { $0.pathExtension == "lock" }.map {
+        $0.deletingPathExtension().lastPathComponent
+      })
+    guard let database = codexDatabase(in: home) else { return [] }
+    // Only select columns shared by the thread databases, and leave Codex's own archived
+    // threads in Codex.
     let threads = """
       FROM threads WHERE archived = 0 AND source NOT LIKE '%"subagent"%'
       """
@@ -45,6 +64,24 @@ nonisolated enum ProviderSessionIndex {
     }
   }
 
+  private static func codexSummary(sessionID: String, home: URL, fallbackFile: URL) -> SessionSummary? {
+    guard let database = codexDatabase(in: home) else { return nil }
+    return read(
+      database,
+      "SELECT id, cwd, rollout_path, coalesce(nullif(trim(name), ''), title), updated_at FROM threads WHERE id = ?",
+      fallbackSQL: "SELECT id, cwd, rollout_path, title, updated_at FROM threads WHERE id = ?",
+      bind: { bindText($0, 1, sessionID) }
+    ) { row in
+      let id = column(row, 0)
+      let cwd = column(row, 1)
+      let path = column(row, 2)
+      let file = path.isEmpty ? fallbackFile : URL(filePath: path)
+      return restoredSummary(
+        id: id, cwd: cwd, title: column(row, 3), home: home, file: file,
+        modified: Date(timeIntervalSince1970: sqlite3_column_double(row, 4)), provider: "codex")
+    }.first
+  }
+
   private static func grokSessions(in home: URL) -> [SessionSummary] {
     let registry = try? Data(contentsOf: home.appending(path: "active_sessions.json"))
     let entries =
@@ -59,29 +96,63 @@ nonisolated enum ProviderSessionIndex {
       })
     return children(home.appending(path: "sessions")).flatMap { project in
       children(project).compactMap { directory in
-        let file = directory.appending(path: "summary.json")
-        guard UUID(uuidString: directory.lastPathComponent) != nil,
-          let data = try? Data(contentsOf: file),
-          let metadata = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-          let info = metadata["info"] as? [String: Any],
-          let id = (info["id"] as? String)?.lowercased(), !active.contains(id),
-          let cwd = info["cwd"] as? String
-        else { return nil }
-        let timestamp =
-          (metadata["last_active_at"] as? String) ?? (metadata["updated_at"] as? String)
-        let modified =
-          timestamp.flatMap(date)
-          ?? (try? file.resourceValues(forKeys: [.contentModificationDateKey]))?
-          .contentModificationDate
-        guard let modified else { return nil }
-        let title =
-          (metadata["generated_title"] as? String).flatMap(nonEmpty)
-          ?? metadata["session_summary"] as? String
-        return summary(
-          id: id, cwd: cwd, title: title, home: home, file: file,
-          modified: modified, provider: "grok")
+        guard UUID(uuidString: directory.lastPathComponent) != nil else { return nil }
+        return grokSummary(
+          from: directory.appending(path: "summary.json"), home: home, excluding: active)
       }
     }
+  }
+
+  private static func grokSummary(sessionID: String, home: URL, file: String) -> SessionSummary? {
+    if !file.isEmpty {
+      let url = URL(filePath: file)
+      if FileManager.default.fileExists(atPath: url.path),
+        let parsed = grokSummary(from: url, home: home, excluding: [], requireValidCwd: false)
+      {
+        return parsed
+      }
+    }
+    let target = sessionID.lowercased()
+    for project in children(home.appending(path: "sessions")) {
+      for directory in children(project)
+      where directory.lastPathComponent.lowercased() == target {
+        let summaryFile = directory.appending(path: "summary.json")
+        if let parsed = grokSummary(
+          from: summaryFile, home: home, excluding: [], requireValidCwd: false)
+        {
+          return parsed
+        }
+      }
+    }
+    return nil
+  }
+
+  private static func grokSummary(
+    from file: URL, home: URL, excluding active: Set<String>, requireValidCwd: Bool = true
+  ) -> SessionSummary? {
+    guard let data = try? Data(contentsOf: file),
+      let metadata = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+      let info = metadata["info"] as? [String: Any],
+      let id = (info["id"] as? String)?.lowercased(), !active.contains(id)
+    else { return nil }
+    let cwd = info["cwd"] as? String ?? ""
+    if requireValidCwd && !cwd.hasPrefix("/") { return nil }
+    let timestamp =
+      (metadata["last_active_at"] as? String) ?? (metadata["updated_at"] as? String)
+    let modified =
+      timestamp.flatMap(date)
+      ?? (try? file.resourceValues(forKeys: [.contentModificationDateKey]))?
+      .contentModificationDate
+    guard let modified else { return nil }
+    let title =
+      (metadata["generated_title"] as? String).flatMap(nonEmpty)
+      ?? metadata["session_summary"] as? String
+    if requireValidCwd {
+      return summary(
+        id: id, cwd: cwd, title: title, home: home, file: file, modified: modified, provider: "grok")
+    }
+    return restoredSummary(
+      id: id, cwd: cwd, title: title, home: home, file: file, modified: modified, provider: "grok")
   }
 
   private static func antigravitySessions(in home: URL) -> [SessionSummary] {
@@ -102,16 +173,45 @@ nonisolated enum ProviderSessionIndex {
       """
     ) { row in
       let id = column(row, 0).lowercased()
-      guard !active.contains(id), let modified = date(column(row, 4)) else { return nil }
-      let data = Data(column(row, 1).utf8)
-      let workspaces = (try? JSONSerialization.jsonObject(with: data)) as? [String] ?? []
-      let workspace = workspaces.lazy.compactMap(URL.init(string:)).first(where: \.isFileURL)
-      let file = home.appending(path: "conversations/\(id).db")
-      return summary(
-        id: id, cwd: workspace?.path(percentEncoded: false) ?? folders[id] ?? "",
-        title: nonEmpty(column(row, 2)) ?? column(row, 3), home: home, file: file,
-        modified: modified, provider: "agy")
+      guard !active.contains(id) else { return nil }
+      return antigravitySummary(from: row, id: id, home: home, folders: folders, requireFile: true)
     }
+  }
+
+  private static func antigravitySummary(sessionID: String, home: URL) -> SessionSummary? {
+    read(
+      home.appending(path: "conversation_summaries.db"),
+      """
+      SELECT conversation_id, workspace_uris, title, preview, last_modified_time
+      FROM conversation_summaries
+      WHERE lower(conversation_id) = ?
+      """,
+      bind: { bindText($0, 1, sessionID.lowercased()) }
+    ) { row in
+      let id = column(row, 0).lowercased()
+      return antigravitySummary(from: row, id: id, home: home, folders: [:], requireFile: false)
+    }.first
+  }
+
+  private static func antigravitySummary(
+    from row: OpaquePointer, id: String, home: URL, folders: [String: String], requireFile: Bool
+  ) -> SessionSummary? {
+    let parsedDate = date(column(row, 4))
+    if requireFile && parsedDate == nil { return nil }
+    let data = Data(column(row, 1).utf8)
+    let workspaces = (try? JSONSerialization.jsonObject(with: data)) as? [String] ?? []
+    let workspace = workspaces.lazy.compactMap(URL.init(string:)).first(where: \.isFileURL)
+    let file = home.appending(path: "conversations/\(id).db")
+    let cwd = workspace?.path(percentEncoded: false) ?? folders[id] ?? ""
+    let title = nonEmpty(column(row, 2)) ?? column(row, 3)
+    if requireFile {
+      return summary(
+        id: id, cwd: cwd, title: title, home: home, file: file,
+        modified: parsedDate ?? .distantPast, provider: "agy")
+    }
+    return restoredSummary(
+      id: id, cwd: cwd, title: title, home: home, file: file,
+      modified: parsedDate ?? .distantPast, provider: "agy")
   }
 
   /// Antigravity keeps presence files after exit. Match the files actually open by agy
@@ -160,10 +260,18 @@ nonisolated enum ProviderSessionIndex {
     guard UUID(uuidString: id) != nil, cwd.hasPrefix("/"),
       FileManager.default.fileExists(atPath: file.path)
     else { return nil }
+    return restoredSummary(
+      id: id, cwd: cwd, title: title, home: home, file: file, modified: modified, provider: provider
+    )
+  }
+
+  private static func restoredSummary(
+    id: String, cwd: String, title: String?, home: URL, file: URL, modified: Date, provider: String
+  ) -> SessionSummary {
     var summary = SessionSummary(
       sessionID: id, account: ClaudeAccount(directory: home, isDefault: true),
       file: file, modified: modified, size: 0)
-    summary.cwd = cwd
+    summary.cwd = cwd.isEmpty ? nil : cwd
     summary.title = title.flatMap(nonEmpty).map { String($0.prefix(120)) }
     summary.provider = provider
     return summary
@@ -189,8 +297,14 @@ nonisolated enum ProviderSessionIndex {
     sqlite3_column_text(row, index).map { String(cString: $0) } ?? ""
   }
 
+  private static func bindText(_ statement: OpaquePointer, _ index: Int32, _ value: String) {
+    let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+    sqlite3_bind_text(statement, index, value, -1, transient)
+  }
+
   private static func read(
     _ file: URL, _ sql: String, fallbackSQL: String? = nil,
+    bind: ((OpaquePointer) -> Void)? = nil,
     row: (OpaquePointer) -> SessionSummary?
   ) -> [SessionSummary] {
     guard FileManager.default.fileExists(atPath: file.path) else { return [] }
@@ -211,6 +325,7 @@ nonisolated enum ProviderSessionIndex {
     }
     guard let statement else { return [] }
     defer { sqlite3_finalize(statement) }
+    bind?(statement)
     var summaries: [SessionSummary] = []
     var step = sqlite3_step(statement)
     while step == SQLITE_ROW {

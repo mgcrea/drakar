@@ -1,5 +1,6 @@
 import DrakarKit
 import Foundation
+import SQLite3
 import Testing
 
 @testable import Drakar
@@ -1128,5 +1129,94 @@ struct ProjectTests {
     #expect(moving.isWatching)
     #expect(moving.session.phase == .idle)
     #expect(moving.focusRequest == beforeMovingFocus)
+  }
+
+  /// Restored tabs carry their last known title right away (even before previews finish),
+  /// and background previews load titles for Codex, Grok, Antigravity, and prompt-only
+  /// Claude sessions without needing to focus those tabs first.
+  @Test func restoredProviderAndPromptOnlyTabsShowTheirTitlesBeforeFocus() async throws {
+    let codexID = UUID().uuidString.lowercased()
+    let grokID = UUID().uuidString.lowercased()
+    let agyID = UUID().uuidString.lowercased()
+    let claudeID = UUID().uuidString.lowercased()
+
+    // Claude transcript with only a user prompt (no ai-title, custom-title, or last-prompt).
+    let claudeFile = folder.appending(path: "\(claudeID).jsonl")
+    try Data(
+      #"{"type":"user","cwd":"\#(folder.path(percentEncoded: false))","message":{"role":"user","content":"Audit the auth middleware"}}"#
+        .appending("\n").utf8
+    ).write(to: claudeFile)
+
+    // Codex state SQLite database.
+    let codexHome = folder.appending(path: "codex-home", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: codexHome, withIntermediateDirectories: true)
+    try writeSQLite(
+      at: codexHome.appending(path: "state_1.sqlite"),
+      statements: [
+        "CREATE TABLE threads (id TEXT PRIMARY KEY, cwd TEXT, rollout_path TEXT, name TEXT, title TEXT, updated_at REAL, archived INTEGER, source TEXT);",
+        "INSERT INTO threads VALUES ('\(codexID)', '\(folder.path(percentEncoded: false))', '', 'Codex Fix', 'Fallback prompt', 1700000000, 0, 'cli');",
+      ])
+
+    // Grok summary.json.
+    let grokHome = folder.appending(path: "grok-home", directoryHint: .isDirectory)
+    let grokDir = grokHome.appending(path: "sessions/proj/\(grokID)", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: grokDir, withIntermediateDirectories: true)
+    try Data(
+      #"{"info":{"id":"\#(grokID)","cwd":"\#(folder.path(percentEncoded: false))"},"generated_title":"Grok Refactor","updated_at":"2026-11-27T20:00:00Z"}"#
+        .utf8
+    ).write(to: grokDir.appending(path: "summary.json"))
+
+    // Antigravity conversation_summaries.db.
+    let agyHome = folder.appending(path: "agy-home", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: agyHome, withIntermediateDirectories: true)
+    try writeSQLite(
+      at: agyHome.appending(path: "conversation_summaries.db"),
+      statements: [
+        "CREATE TABLE conversation_summaries (conversation_id TEXT PRIMARY KEY, workspace_uris TEXT, title TEXT, preview TEXT, last_modified_time TEXT);",
+        "INSERT INTO conversation_summaries VALUES ('\(agyID)', '[]', 'Agy Investigation', 'Preview text', '2026-11-27T20:00:00Z');",
+      ])
+
+    let claudeTarget = target(claudeID)
+    let codexTarget = ResumeTarget(
+      sessionID: codexID, cwd: folder.path(percentEncoded: false), file: "",
+      accountDirectory: codexHome.path(percentEncoded: false), accountIsDefault: true, agent: .codex)
+    let grokTarget = ResumeTarget(
+      sessionID: grokID, cwd: folder.path(percentEncoded: false), file: "",
+      accountDirectory: grokHome.path(percentEncoded: false), accountIsDefault: true, agent: .grok)
+    let agyTarget = ResumeTarget(
+      sessionID: agyID, cwd: folder.path(percentEncoded: false), file: "",
+      accountDirectory: agyHome.path(percentEncoded: false), accountIsDefault: true, agent: .agy)
+
+    // Restore from StoredProject without stored titles: readPreview populates every tab.
+    let stored = StoredProject(
+      sessions: [claudeTarget, codexTarget, grokTarget, agyTarget], selected: claudeID)
+    let project = Project(folder: folder, restoring: stored)
+    let expected = [
+      "Audit the auth middleware",
+      "Codex Fix",
+      "Grok Refactor",
+      "Agy Investigation",
+    ]
+    for _ in 0..<50 where project.sessions.map(\.displayTitle) != expected {
+      try await Task.sleep(for: .milliseconds(50))
+    }
+    #expect(project.sessions.map(\.displayTitle) == expected)
+    #expect(project.sessions.dropFirst().allSatisfy { !$0.session.hasLoadedHistory })
+
+    // Re-encoding and restoring StoredProject carries titles immediately on init.
+    let encoded = try JSONDecoder().decode(
+      StoredProject.self, from: JSONEncoder().encode(project.stored))
+    #expect(encoded.titles?[codexID] == "Codex Fix")
+    let immediate = Project(folder: folder, restoring: encoded)
+    #expect(immediate.sessions.map(\.displayTitle) == expected)
+  }
+
+  private func writeSQLite(at url: URL, statements: [String]) throws {
+    var db: OpaquePointer?
+    try #require(sqlite3_open(url.path(percentEncoded: false), &db) == SQLITE_OK)
+    defer { sqlite3_close(db) }
+    for sql in statements {
+      try #require(sqlite3_exec(db, sql, nil, nil, nil) == SQLITE_OK)
+    }
   }
 }
