@@ -75,7 +75,7 @@ extension Tools {
         .flatMap { matches(nil, runner: $0) ? nil : $0 }
       let prompt = try Arguments.requiredString(arguments["prompt"], name: "prompt")
       let agent = try Arguments.choice(arguments["agent"], name: "agent", as: Agent.self)
-      if runner != nil, agent == .codex {
+      if runner != nil, agent != nil, agent != .claude {
         throw SessionError(
           "A runner's sessions are Claude Code's: leave agent out or pass \"claude\".")
       }

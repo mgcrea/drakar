@@ -22,7 +22,7 @@ extension SessionMCPSource {
     let gauge = item.gauge(
       accountModel: session.resuming.flatMap { monitor.accountModel(for: $0.account) })
     var row = SessionRow(
-      id: id, title: item.knownTitle, agent: session.agent == .codex ? .codex : .claude,
+      id: id, title: item.knownTitle, agent: Self.mcpAgent(session.agent),
       folder: ProjectPath.normalize(project.folder), runner: project.runnerName,
       state: Self.state(of: session), waitingFor: item.waitingFor ?? item.closingAsk?.text,
       model: session.runningModel ?? item.preview?.modelID, contextUsed: gauge?.used,
@@ -40,6 +40,15 @@ extension SessionMCPSource {
       row.waitingFor = level(of: followed, dismissed: dismissed)?.wants(of: followed)
     }
     return row
+  }
+
+  static func mcpAgent(_ kind: AgentKind) -> Agent {
+    switch kind {
+    case .claude: .claude
+    case .codex: .codex
+    case .grok: .grok
+    case .agy: .agy
+    }
   }
 
   /// A window's session folded into the one vocabulary: a connection lost or a process out
@@ -145,7 +154,7 @@ extension SessionMCPSource {
       let state = Self.state(of: live)
       let row = SessionRow(
         id: id, title: meta.name ?? summary.flatMap(Self.title(of:)),
-        agent: meta.agent == .codex ? .codex : .claude,
+        agent: Self.mcpAgent(meta.agent),
         folder: ProjectPath.normalize(meta.windowFolder), runner: runner, state: state,
         waitingFor: state == .waiting ? live?.waitingFor : nil,
         model: meta.modelPick ?? summary?.modelID, contextUsed: gauge?.used,

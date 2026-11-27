@@ -16,7 +16,7 @@ public enum AlwaysOffer {
       switch suggestion.kind {
       case .addRules: suggestion.destination == "session"
       case .codexDecision(let decision): decision == codexSessionDecision
-      case .addDirectories, .setMode, .other: false
+      case .agyOption, .addDirectories, .setMode, .other: false
       }
     }
   }

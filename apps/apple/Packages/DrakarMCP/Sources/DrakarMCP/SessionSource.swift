@@ -7,7 +7,7 @@ import Foundation
 
 /// Which CLI runs a session.
 public enum Agent: String, Sendable, CaseIterable {
-  case claude, codex
+  case claude, codex, agy, grok
 }
 
 /// A session's state as a caller reads it, folded from Drakar's own.

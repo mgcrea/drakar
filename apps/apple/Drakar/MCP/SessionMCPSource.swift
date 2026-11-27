@@ -130,7 +130,14 @@ extension SessionMCPSource {
     // Opening a window can take seconds, in which the trial may have ended: checked again
     // before a row is made for a prompt that would not be sent.
     if !allowsWork() { throw SessionError(LockedComposerCard.refusal) }
-    let agent: AgentKind? = request.agent.map { $0 == .codex ? .codex : .claude }
+    let agent: AgentKind? = request.agent.map {
+      switch $0 {
+      case .claude: .claude
+      case .codex: .codex
+      case .grok: .grok
+      case .agy: .agy
+      }
+    }
     let blank = wasOpen ? nil : project.blankRow()
     let item =
       blank.flatMap { agent == nil || $0.session.agent == agent ? $0 : nil }
@@ -676,6 +683,13 @@ extension SessionMCPSource {
       if background.row.agent == .codex {
         return .refused(
           "Open \(title) in Drakar first: a Codex session's history is read in its window.")
+      }
+      if background.row.agent == .grok {
+        return .refused("Open \(title) in Drakar to read its Grok history.")
+      }
+      if background.row.agent == .agy {
+        return .refused(
+          "Open \(title) in Drakar first: an Antigravity session's history is read in its window.")
       }
       if let file = summariesByID()[id]?.file ?? background.transcriptFile { return .file(file) }
       return .refused("Open \(title) in Drakar first: its transcript was not found on this Mac.")

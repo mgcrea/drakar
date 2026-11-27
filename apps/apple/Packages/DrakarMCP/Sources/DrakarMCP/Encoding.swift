@@ -162,7 +162,7 @@ enum Encoding {
     switch suggestion.kind {
     case .addRules(let rules): fields["rules"] = .array(rules.map(MCPKit.JSONValue.string))
     case .codexDecision(let decision): fields["decision"] = .string(decision)
-    case .addDirectories, .setMode, .other: break
+    case .agyOption, .addDirectories, .setMode, .other: break
     }
     return .object(fields)
   }
