@@ -429,6 +429,16 @@ struct ToolCallView: View {
     TaskCardState.of(result: call.result, task: task, isBackground: task?.isBackgrounded == true)
   }
 
+  private var toolTitle: String {
+    // Some Antigravity calls supply the operation only in their raw input.
+    if call.name == "Tool", let variant = call.input["variant"]?.stringValue,
+      !variant.isEmpty
+    {
+      return variant
+    }
+    return call.name
+  }
+
   /// Under the header: what its task's state says that its result would not.
   private var detail: String? {
     switch state {
@@ -450,7 +460,7 @@ struct ToolCallView: View {
               FileChangeView(change: change)
             }
           } else if case .shell = call.kind, !call.summary.isEmpty {
-            // The whole command, which the one-line header cuts short.
+            // The whole command, which the summary line may cut short.
             CodeBlock(text: call.summary)
           } else {
             CodeBlock(text: call.input.prettyPrinted)
@@ -468,12 +478,20 @@ struct ToolCallView: View {
         VStack(alignment: .leading, spacing: 4) {
           HStack(spacing: 8) {
             TaskStatusIcon(state: state)
-            Text(call.name).fontWeight(.semibold)
-            Text(displayedSummary)
-              .font(.callout.monospaced())
-              .foregroundStyle(.secondary)
-              .lineLimit(1)
-              .truncationMode(.middle)
+            VStack(alignment: .leading, spacing: 2) {
+              Text(toolTitle)
+                .fontWeight(.semibold)
+                .lineLimit(1)
+              let summary = displayedSummary
+              if !summary.isEmpty, summary != toolTitle {
+                Text(summary)
+                  .font(.callout.monospaced())
+                  .foregroundStyle(.secondary)
+                  .lineLimit(1)
+                  .truncationMode(.middle)
+                  .help(summary)
+              }
+            }
             if offer.stop, let taskID = task?.taskID {
               Spacer(minLength: 8)
               StopTaskButton(taskID: taskID)
