@@ -8,6 +8,7 @@ import SwiftUI
 struct LinkText: NSViewRepresentable {
   let text: AttributedString
   var isSecondary = false
+  var textAlignment: MarkdownBlock.TableAlignment = .leading
 
   static func holdsLink(_ text: AttributedString) -> Bool {
     text.runs.contains { $0.link != nil }
@@ -53,7 +54,10 @@ struct LinkText: NSViewRepresentable {
 
   func updateNSView(_ view: NSTextView, context: Context) {
     context.coordinator.openURL = context.environment.openURL
-    let string = Self.styled(text, color: isSecondary ? .secondaryLabelColor : .labelColor)
+    let string = Self.styled(
+      text, color: isSecondary ? .secondaryLabelColor : .labelColor,
+      alignment: textAlignment == .center ? .center : textAlignment == .trailing ? .right : .natural
+    )
     guard let storage = view.textStorage, !storage.isEqual(to: string) else { return }
     storage.setAttributedString(string)
   }
@@ -74,8 +78,12 @@ struct LinkText: NSViewRepresentable {
 
   /// SwiftUI's styling of inline Markdown, in AppKit's attributes: the body font, bold,
   /// italic, code spans and strikethrough, and the links.
-  static func styled(_ text: AttributedString, color: NSColor) -> NSAttributedString {
+  static func styled(
+    _ text: AttributedString, color: NSColor, alignment: NSTextAlignment = .natural
+  ) -> NSAttributedString {
     let base = NSFont.systemFont(ofSize: NSFont.systemFontSize)
+    let paragraph = NSMutableParagraphStyle()
+    paragraph.alignment = alignment
     let result = NSMutableAttributedString()
     for run in text.runs {
       let intent = run.inlinePresentationIntent ?? []
@@ -89,7 +97,9 @@ struct LinkText: NSViewRepresentable {
       if intent.contains(.emphasized) {
         font = NSFontManager.shared.convert(font, toHaveTrait: .italicFontMask)
       }
-      var attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: color]
+      var attributes: [NSAttributedString.Key: Any] = [
+        .font: font, .foregroundColor: color, .paragraphStyle: paragraph,
+      ]
       if intent.contains(.strikethrough) {
         attributes[.strikethroughStyle] = NSUnderlineStyle.single.rawValue
       }

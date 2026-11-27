@@ -16,13 +16,16 @@ public enum MarkdownBlock: Sendable, Equatable {
   /// levels of two spaces, `marker` is `1.` for an ordered item and nil for a bullet.
   case listItem(marker: String?, indent: Int, text: String)
   case quote(String)
-  /// Table rows as written, drawn monospaced so the columns line up.
-  case table([String])
+  case table(header: [String], alignments: [TableAlignment], rows: [[String]])
   case rule
+
+  public enum TableAlignment: Sendable, Equatable {
+    case leading, center, trailing
+  }
 
   public static func parse(_ markdown: String) -> [MarkdownBlock] {
     var parser = Parser()
-    for line in markdown.split(separator: "\n", omittingEmptySubsequences: false) {
+    for line in markdown.split(omittingEmptySubsequences: false, whereSeparator: \.isNewline) {
       parser.consume(String(line))
     }
     return parser.finish()
@@ -33,7 +36,7 @@ private struct Parser {
   var blocks: [MarkdownBlock] = []
   var paragraph: [String] = []
   var quote: [String] = []
-  var table: [String] = []
+  var table: (header: [String], alignments: [MarkdownBlock.TableAlignment], rows: [[String]])?
   var fence: (language: String?, lines: [String])?
 
   mutating func consume(_ line: String) {
@@ -69,12 +72,25 @@ private struct Parser {
       flushParagraph()
       flushTable()
       quote.append(String(trimmed.dropFirst().drop { $0 == " " }))
-    } else if trimmed.hasPrefix("|") {
-      flushParagraph()
-      flushQuote()
-      table.append(String(trimmed))
     } else {
       flushQuote()
+      if trimmed.contains("|"), let cells = Self.tableCells(trimmed) {
+        if let count = table?.header.count {
+          // Keep a partially streamed row visible and give every row the same width.
+          let padding = Array(repeating: "", count: max(0, count - cells.count))
+          table?.rows.append(Array(cells.prefix(count)) + padding)
+          return
+        }
+        if let header = paragraph.last.flatMap({ Self.tableCells($0[...]) }),
+          header.count == cells.count,
+          let alignments = Self.tableAlignments(cells)
+        {
+          paragraph.removeLast()
+          flushParagraph()
+          table = (header, alignments, [])
+          return
+        }
+      }
       flushTable()
       paragraph.append(line)
     }
@@ -110,9 +126,50 @@ private struct Parser {
   }
 
   mutating func flushTable() {
-    guard !table.isEmpty else { return }
-    blocks.append(.table(table))
-    table = []
+    guard let table else { return }
+    blocks.append(.table(header: table.header, alignments: table.alignments, rows: table.rows))
+    self.table = nil
+  }
+
+  static func tableCells(_ line: Substring) -> [String]? {
+    let trimmed = line.trimmingCharacters(in: .whitespaces)
+    var cells: [String] = []
+    var cell = ""
+    var escaped = false
+    for character in trimmed {
+      if escaped {
+        // Consume the table escape here, including inside inline code spans.
+        if character != "|" { cell.append("\\") }
+        cell.append(character)
+        escaped = false
+      } else if character == "\\" {
+        escaped = true
+      } else if character == "|" {
+        cells.append(cell.trimmingCharacters(in: .whitespaces))
+        cell = ""
+      } else {
+        cell.append(character)
+      }
+    }
+    guard !cells.isEmpty else { return nil }
+    if trimmed.hasPrefix("|") { cells.removeFirst() }
+    if escaped { cell.append("\\") }
+    if !cell.isEmpty || !trimmed.hasSuffix("|") {
+      cells.append(cell.trimmingCharacters(in: .whitespaces))
+    }
+    return cells.isEmpty ? nil : cells
+  }
+
+  static func tableAlignments(_ cells: [String]) -> [MarkdownBlock.TableAlignment]? {
+    var alignments: [MarkdownBlock.TableAlignment] = []
+    for cell in cells {
+      let leading = cell.hasPrefix(":")
+      let trailing = cell.hasSuffix(":")
+      let dashes = cell.dropFirst(leading ? 1 : 0).dropLast(trailing ? 1 : 0)
+      guard !dashes.isEmpty, dashes.allSatisfy({ $0 == "-" }) else { return nil }
+      alignments.append(trailing ? (leading ? .center : .trailing) : .leading)
+    }
+    return alignments
   }
 
   static func heading(_ line: Substring) -> MarkdownBlock? {

@@ -65,9 +65,37 @@ struct MarkdownTests {
     #expect(
       MarkdownBlock.parse(text) == [
         .quote("one\ntwo"),
-        .table(["| a | b |", "|---|---|", "| 1 | 2 |"]),
+        .table(header: ["a", "b"], alignments: [.leading, .leading], rows: [["1", "2"]]),
         .rule,
         .paragraph("after"),
+      ])
+  }
+
+  @Test func readsTableAlignmentAndInlineMarkdown() {
+    let text = #"""
+      Provider | What Drakar uses | Count
+      :--- | :---: | ---:
+      **Codex** | `a\|b` and [source](/tmp/file.swift:42) | 1
+      | Grok |
+      """#
+    #expect(
+      MarkdownBlock.parse(text) == [
+        .table(
+          header: ["Provider", "What Drakar uses", "Count"],
+          alignments: [.leading, .center, .trailing],
+          rows: [
+            ["**Codex**", "`a|b` and [source](/tmp/file.swift:42)", "1"],
+            ["Grok", "", ""],
+          ])
+      ])
+  }
+
+  @Test func waitsForAValidTableSeparator() {
+    let partial = "| Provider | Source |\n|---|"
+    #expect(MarkdownBlock.parse(partial) == [.paragraph(partial)])
+    #expect(
+      MarkdownBlock.parse(partial + "---|") == [
+        .table(header: ["Provider", "Source"], alignments: [.leading, .leading], rows: [])
       ])
   }
 

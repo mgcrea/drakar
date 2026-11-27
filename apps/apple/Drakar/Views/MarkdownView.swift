@@ -44,19 +44,49 @@ private struct BlockView: View {
         .overlay(alignment: .leading) {
           Rectangle().fill(.tertiary).frame(width: 3)
         }
-    case .table(let rows):
-      Text(rows.joined(separator: "\n"))
-        .font(.callout.monospaced())
+    case .table(let header, let alignments, let rows):
+      Grid(alignment: .topLeading, horizontalSpacing: 16, verticalSpacing: 6) {
+        tableRow(header, alignments: alignments, isHeader: true)
+        Divider().gridCellUnsizedAxes(.horizontal)
+        ForEach(rows.indices, id: \.self) { index in
+          tableRow(rows[index], alignments: alignments)
+        }
+      }
     case .rule:
       Divider()
     }
   }
 
+  private func tableRow(
+    _ cells: [String], alignments: [MarkdownBlock.TableAlignment], isHeader: Bool = false
+  ) -> some View {
+    GridRow(alignment: .top) {
+      ForEach(cells.indices, id: \.self) { index in
+        let alignment = alignments[index]
+        InlineText(
+          text: inline(cells[index], isBold: isHeader), textAlignment: alignment
+        )
+        .gridColumnAlignment(
+          alignment == .center ? .center : alignment == .trailing ? .trailing : .leading
+        )
+        .accessibilityAddTraits(isHeader ? .isHeader : [])
+      }
+    }
+  }
+
   /// Line breaks kept, as the model wrote them.
-  private func inline(_ text: String) -> AttributedString {
-    (try? AttributedString(
-      markdown: text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
+  private func inline(_ text: String, isBold: Bool = false) -> AttributedString {
+    var attributed =
+      (try? AttributedString(
+        markdown: text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
       ?? AttributedString(text)
+    if isBold {
+      for run in attributed.runs {
+        attributed[run.range].inlinePresentationIntent =
+          (run.inlinePresentationIntent ?? []).union(.stronglyEmphasized)
+      }
+    }
+    return attributed
   }
 }
 
@@ -64,17 +94,21 @@ private struct BlockView: View {
 private struct InlineText: View {
   let text: AttributedString
   var isSecondary = false
+  var textAlignment: MarkdownBlock.TableAlignment = .leading
   @Environment(\.runnerName) private var runner
   @Environment(\.sessionFolder) private var folder
 
   var body: some View {
     let text = runner == nil ? text : LinkText.withoutFileLinks(text, relativeTo: folder)
     if LinkText.holdsLink(text) {
-      LinkText(text: text, isSecondary: isSecondary)
+      LinkText(text: text, isSecondary: isSecondary, textAlignment: textAlignment)
         .alignmentGuide(.firstTextBaseline) { _ in LinkText.firstBaseline }
     } else {
       Text(text).foregroundStyle(
-        isSecondary ? AnyShapeStyle(.secondary) : AnyShapeStyle(.foreground))
+        isSecondary ? AnyShapeStyle(.secondary) : AnyShapeStyle(.foreground)
+      )
+      .multilineTextAlignment(
+        textAlignment == .center ? .center : textAlignment == .trailing ? .trailing : .leading)
     }
   }
 }
