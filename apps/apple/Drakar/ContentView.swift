@@ -9,6 +9,8 @@ struct ContentView: View {
   @State private var project: Project?
   @State private var terminalShown = false
   @State private var terminal = ProjectTerminal()
+  @State private var terminalHeight: CGFloat = 160
+  @State private var terminalDragStart: CGFloat?
   /// Names this window to `OpenSessions`.
   @State private var windowID = UUID()
   @Environment(\.appearsActive) private var appearsActive
@@ -63,23 +65,44 @@ struct ContentView: View {
         // The split view's own edge is half a point to aim at.
         .background(ColumnSash(edge: .trailing))
     } detail: {
-      VSplitView {
-        SplitPanes(
-          fraction: $editorFraction, showsSide: !workspace.documents.isEmpty,
-          edge: editorLeads ? .leading : .trailing
-        ) {
-          EditorView(workspace: workspace)
-        } main: {
-          VStack(spacing: 0) {
-            SessionTabStrip(project: project)
-            SelectedSessionPane(project: project)
+      GeometryReader { geometry in
+        let mainMinimum: CGFloat = 240
+        let dividerHeight: CGFloat = 1
+        let maximum = max(0, geometry.size.height - mainMinimum - dividerHeight)
+        let minimum = min(120, maximum)
+        let height = min(max(terminalHeight, minimum), maximum)
+        VStack(spacing: 0) {
+          SplitPanes(
+            fraction: $editorFraction, showsSide: !workspace.documents.isEmpty,
+            edge: editorLeads ? .leading : .trailing
+          ) {
+            EditorView(workspace: workspace)
+          } main: {
+            VStack(spacing: 0) {
+              SessionTabStrip(project: project)
+              SelectedSessionPane(project: project)
+            }
           }
-        }
-        if terminalShown, project.runner == nil {
-          ProjectTerminalPane(terminal: terminal, folder: project.folder) {
-            terminalShown = false
+          if terminalShown, project.runner == nil {
+            Divider()
+              .frame(height: dividerHeight)
+              .overlay {
+                ResizeHandle(axis: .vertical) { travel in
+                  guard let travel else {
+                    terminalDragStart = nil
+                    return
+                  }
+                  let start = terminalDragStart ?? height
+                  terminalDragStart = start
+                  terminalHeight = min(max(start - travel, minimum), maximum)
+                }
+              }
+              .zIndex(1)
+            ProjectTerminalPane(terminal: terminal, folder: project.folder) {
+              terminalShown = false
+            }
+            .frame(height: height)
           }
-          .frame(minHeight: 120, idealHeight: 220)
         }
       }
     }
@@ -97,6 +120,9 @@ struct ContentView: View {
     }
     .focusedSceneValue(\.inspectorShown, $inspectorShown)
     .focusedSceneValue(\.terminalShown, project.runner == nil ? $terminalShown : nil)
+    .onChange(of: terminalShown) {
+      if !terminalShown { terminalDragStart = nil }
+    }
     .background {
       if project.runner == nil {
         TerminalShortcut { terminalShown.toggle() }
@@ -173,11 +199,14 @@ struct ContentView: View {
         ForkToolbarButton(project: project)
       }
       ToolbarItem(placement: .primaryAction) {
-        Toggle(isOn: $terminalShown) {
+        Button {
+          terminalShown.toggle()
+        } label: {
           Label("Terminal", systemImage: "terminal")
+            .foregroundStyle(terminalShown ? Theme.accent : Color.primary)
         }
-        .toggleStyle(.button)
         .help(terminalShown ? "Hide Terminal" : "Show Terminal")
+        .accessibilityAddTraits(terminalShown ? .isSelected : [])
         .accessibilityIdentifier("window.terminal")
       }
     }
