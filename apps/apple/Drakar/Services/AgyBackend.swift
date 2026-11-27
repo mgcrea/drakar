@@ -124,7 +124,12 @@ final class AgyBackend: AgentBackend {
     case .cancelQueued(let uuid):
       .cancelQueued(uuid: uuid)
     case .setMode(let raw):
-      (agent == .grok ? nil : PermissionMode(rawValue: raw)).map { .setMode($0) }
+      PermissionMode(rawValue: raw).flatMap { mode in
+        if agent == .grok, !GrokPolicy.offeredModes(allowsBypass: true).contains(mode) {
+          return nil
+        }
+        return .setMode(mode)
+      }
     case .setModel(let model):
       .setModel(model)
     case .setEffort(let level):

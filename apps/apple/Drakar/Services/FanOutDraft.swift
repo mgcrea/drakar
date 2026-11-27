@@ -94,7 +94,7 @@ final class FanOutDraft {
     switch agent {
     case .claude: PermissionMode.allCases.filter { $0 != .bypass || ClaudeChoice.allowsBypass }
     case .codex: CodexPolicy.offeredModes(allowsBypass: ClaudeChoice.allowsBypass)
-    case .grok: [.ask]
+    case .grok: GrokPolicy.offeredModes(allowsBypass: ClaudeChoice.allowsBypass)
     case .agy: AgyPolicy.offeredModes(allowsBypass: ClaudeChoice.allowsBypass)
     }
   }
