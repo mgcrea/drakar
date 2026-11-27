@@ -48,34 +48,38 @@ struct AccountToolbarItem: View {
       isShown.toggle()
     } label: {
       TimelineView(.periodic(from: .now, by: 60)) { context in
-        switch activeAgent {
-        case .claude:
-          HStack(spacing: 6) {
-            AgentIcon(agent: .claude)
-            Text(store.profile(for: account).name)
-            UsageMeters(usage: store.usage(for: account), now: context.date, compact: true)
-          }
-        case .codex:
-          HStack(spacing: 6) {
-            AgentIcon(agent: .codex)
-            Text(AgentKind.codex.name)
-            UsageMeters(usage: store.codexUsage?.usage, now: context.date, compact: true)
-          }
-        case .grok:
-          HStack(spacing: 6) {
-            AgentIcon(agent: .grok)
-            Text(AgentKind.grok.name)
-            GrokUsageMeters(usage: store.grokUsage, now: context.date, compact: true)
-          }
-        case .agy:
-          HStack(spacing: 6) {
-            AgentIcon(agent: .agy)
-            Text(AgentKind.agy.name)
-            UsageMeters(
-              usage: store.agyUsage?.summary(at: context.date), now: context.date, compact: true)
+        Group {
+          switch activeAgent {
+          case .claude:
+            HStack(spacing: 6) {
+              AgentIcon(agent: .claude)
+              Text(store.profile(for: account).name)
+              UsageMeters(usage: store.usage(for: account), now: context.date, compact: true)
+            }
+          case .codex:
+            HStack(spacing: 6) {
+              AgentIcon(agent: .codex)
+              Text(AgentKind.codex.name)
+              UsageMeters(usage: store.codexUsage?.usage, now: context.date, compact: true)
+            }
+          case .grok:
+            HStack(spacing: 6) {
+              AgentIcon(agent: .grok)
+              Text(AgentKind.grok.name)
+              GrokUsageMeters(usage: store.grokUsage, now: context.date, compact: true)
+            }
+          case .agy:
+            HStack(spacing: 6) {
+              AgentIcon(agent: .agy)
+              Text(AgentKind.agy.name)
+              UsageMeters(
+                usage: store.agyUsage?.summary(at: context.date), now: context.date, compact: true)
+            }
           }
         }
+        .fixedSize()
       }
+      .fixedSize()
     }
     .help(help(for: activeAgent, account: account))
     .accessibilityIdentifier("window.account")
@@ -179,7 +183,9 @@ struct RunnerToolbarItem: View {
         Text(name)
         UsageMeters(usage: session?.usage, now: context.date, compact: true)
       }
+      .fixedSize()
     }
+    .fixedSize()
     .help(help)
     .accessibilityElement(children: .combine)
     .accessibilityIdentifier("window.runner")
@@ -445,6 +451,7 @@ private struct UsageWindowRow: View {
       Text(window.isRejected ? "100%" : "\(window.percent)%").monospacedDigit()
       if !compact { Text(UsageMeters.resetText(nil, window)).foregroundStyle(.secondary) }
     }
+    .fixedSize(horizontal: compact, vertical: false)
   }
 }
 
