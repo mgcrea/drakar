@@ -246,7 +246,10 @@ struct ComposerView: View {
         .help("Attach images or files (or paste, or drop them on the session)")
         .accessibilityIdentifier("composer.attach")
       shortcutControls
-      if let pills { pills.model }
+      if let pills {
+        pills.provider
+        pills.model
+      }
       Spacer(minLength: 8)
       if let pills { pills.mode }
       button

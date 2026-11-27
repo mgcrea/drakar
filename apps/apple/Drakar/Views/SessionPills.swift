@@ -12,6 +12,11 @@ struct SessionPills {
   /// The account the session runs, or will start, under: whose models the menu lists. None
   /// for a runner session not started yet, whose list is its process's own.
   let account: ClaudeAccount?
+  /// Moves this session (unstarted or started) to another provider; nil when not offered
+  /// (e.g. a runner session or broadcast mode).
+  var canMoveProvider = false
+  var moveProviderRefusal: String? = nil
+  var moveProvider: ((AgentKind) -> Void)? = nil
 
   private var catalog: ModelCatalog { .shared }
 
@@ -67,7 +72,50 @@ struct SessionPills {
     return cache
   }
 
+  @ViewBuilder var provider: some View {
+    if let moveProvider {
+      providerMenu(moveProvider)
+    }
+  }
+
   var mode: some View { modeMenu(Self.models(for: session, account: account)) }
+
+  private func providerMenu(_ move: @escaping (AgentKind) -> Void) -> some View {
+    let isStarted = session.isStarted
+    return Menu {
+      ForEach(AgentKind.allCases, id: \.self) { agent in
+        if agent == session.agent {
+          Button {
+          } label: {
+            Label(agent.name, systemImage: "checkmark")
+          }
+        } else {
+          Button(isStarted ? String(localized: "Move to \(agent.name)") : agent.name) {
+            move(agent)
+          }
+          .disabled(!canMoveProvider)
+        }
+      }
+      if let moveProviderRefusal {
+        Divider()
+        Text(moveProviderRefusal)
+      }
+    } label: {
+      HStack(spacing: 4) {
+        AgentIcon(agent: session.agent)
+        Text(session.agent.shortName).lineLimit(1)
+      }
+      .pill(filled: true)
+    }
+    .pillMenu()
+    .help(
+      moveProviderRefusal
+        ?? (isStarted
+          ? String(localized: "Provider. Move this session to another provider.")
+          : String(localized: "Provider. Switch to another provider."))
+    )
+    .accessibilityIdentifier("composer.provider")
+  }
 
   private func modeMenu(_ models: [ModelOption]?) -> some View {
     let shown = session.shownMode

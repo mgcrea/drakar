@@ -772,19 +772,152 @@ final class Project {
     guard runner == nil,
       let current = selected,
       current.session.agent != agent,
-      current.session.phase == .idle,
-      current.session.resuming == nil,
-      !current.session.status.hasEntries,
-      !current.session.isReadOnly,
-      let index = sessions.firstIndex(where: { $0.id == current.id })
+      isUnstarted(current),
+      !current.session.isReadOnly
     else { return }
-    let replacement = make(AgentSession(folder: current.session.folder, agent: agent))
-    replacement.draft = current.draft
-    replacement.attachments =
-      agent.features.acceptsPDF
-      ? current.attachments : current.attachments.filter { $0.kind != .pdf }
+    replaceTab(current, with: agent, handoverPrompt: nil)
+  }
+
+  /// Whether `item` has not started a conversation or process yet.
+  private func isUnstarted(_ item: ProjectSession) -> Bool {
+    !item.session.isStarted
+  }
+
+  /// Whether `item` may offer moving between providers: local project windows only, never a
+  /// runner's session or one open in another process.
+  func offersProviderMove(for item: ProjectSession) -> Bool {
+    runner == nil && !item.session.isOnRunner && !item.session.isReadOnly
+  }
+
+  /// Why `item` cannot move to another provider right now, or nil when it can.
+  func providerMoveRefusal(for item: ProjectSession) -> String? {
+    if runner != nil || item.session.isOnRunner {
+      return String(localized: "Runner sessions stay on Claude Code.")
+    }
+    if item.session.isReadOnly {
+      return String(localized: "Move or close it in the other app first.")
+    }
+    if item.session.isMoving {
+      return String(localized: "Moving session…")
+    }
+    if item.session.isReconnecting || item.session.waitsForHost || item.session.isOutOfReach {
+      return String(localized: "Wait for the session host to reconnect.")
+    }
+    if item.session.status.isWaitingOnPerson {
+      return String(localized: "Answer the pending request before moving to another provider.")
+    }
+    if item.session.status.isRunning {
+      return String(localized: "Finish or stop the current turn before moving to another provider.")
+    }
+    if !isUnstarted(item), !EntitlementMonitor.allowsWorkNow {
+      return String(
+        localized: "Start a trial or enter a licence key to continue in another provider.")
+    }
+    return nil
+  }
+
+  func canMoveProvider(_ item: ProjectSession) -> Bool {
+    providerMoveRefusal(for: item) == nil
+  }
+
+  /// Moves `item` in place to `agent`, replacing its tab. For an unstarted session, switches
+  /// immediately carrying over any draft and attachments; for a started session, loads its
+  /// transcript if needed, stops its running process if idle, and sends a structured
+  /// transcript handover to the new provider immediately.
+  @discardableResult func moveProvider(_ item: ProjectSession, to agent: AgentKind) async -> Bool {
+    guard canMoveProvider(item), item.session.agent != agent,
+      sessions.contains(where: { $0.id == item.id })
+    else { return false }
+    if isUnstarted(item) {
+      return replaceTab(item, with: agent, handoverPrompt: nil)
+    }
+    let session = item.session
+    session.isMoving = true
+    var moved = false
+    defer {
+      if !moved { session.isMoving = false }
+    }
+    if !session.hasLoadedHistory, session.resuming != nil {
+      await session.loadHistory()
+      guard !isStopped, !session.isReadOnly, !session.status.isRunning,
+        !session.status.isWaitingOnPerson, !session.isReconnecting, !session.waitsForHost,
+        !session.isOutOfReach, sessions.contains(where: { $0.id == item.id })
+      else { return false }
+    }
+    if session.isProcessRunning {
+      guard await session.stopAndWait() else {
+        session.noteNotMoved(to: agent.name)
+        return false
+      }
+      guard !isStopped, sessions.contains(where: { $0.id == item.id }) else { return false }
+    }
+    let title = item.knownTitle.flatMap(SessionTitle.clean)
+    let handover = TranscriptHandover.prompt(
+      from: session.transcript, title: title, from: session.agent.name, to: agent.name)
+    moved = replaceTab(item, with: agent, handoverPrompt: handover, title: title)
+    return moved
+  }
+
+  @discardableResult private func replaceTab(
+    _ item: ProjectSession, with agent: AgentKind, handoverPrompt: String?,
+    title: String? = nil
+  ) -> Bool {
+    guard let index = sessions.firstIndex(where: { $0.id == item.id }) else { return false }
+    let newSession = AgentSession(folder: item.session.folder, agent: agent)
+    if let name = title ?? item.session.name.flatMap(SessionTitle.clean) {
+      newSession.rename(to: name)
+    }
+    if let mode = Self.compatibleMode(from: item.session, to: agent) {
+      newSession.setMode(mode)
+    }
+    let replacement = make(newSession)
+    replacement.draft = item.draft
+    replacement.prefill = item.prefill
+    if agent.features.acceptsPDF {
+      replacement.attachments = item.attachments
+      replacement.attachmentNote = item.attachmentNote
+    } else {
+      let droppedPDFs = item.attachments.filter { $0.kind == .pdf }
+      replacement.attachments = item.attachments.filter { $0.kind != .pdf }
+      if droppedPDFs.isEmpty {
+        replacement.attachmentNote = item.attachmentNote
+      } else {
+        let notes = droppedPDFs.map {
+          String(localized: "\(agent.name) can't read PDFs here: \($0.preview.name ?? "PDF")")
+        }
+        replacement.attachmentNote = ([item.attachmentNote].compactMap(\.self) + notes)
+          .joined(separator: "\n")
+      }
+    }
+    let wasSelected = selectedID == item.id
+    let wasMarked = marked.remove(item.id) != nil
     sessions[index] = replacement
-    select(replacement)
+    if wasMarked { marked.insert(replacement.id) }
+    if wasSelected { select(replacement) }
+    fanOutFinished(item)
+    Attention.shared.refresh()
+    if let handoverPrompt {
+      replacement.session.send(handoverPrompt)
+    }
+    return true
+  }
+
+  private static func compatibleMode(from session: AgentSession, to agent: AgentKind)
+    -> PermissionMode?
+  {
+    guard let mode = session.modePick else { return nil }
+    let offered: [PermissionMode] =
+      switch agent {
+      case .claude:
+        PermissionMode.allCases.filter { $0 != .bypass || ClaudeChoice.allowsBypass }
+      case .codex:
+        CodexPolicy.offeredModes(allowsBypass: ClaudeChoice.allowsBypass)
+      case .agy:
+        AgyPolicy.offeredModes(allowsBypass: ClaudeChoice.allowsBypass)
+      case .grok:
+        [.ask]
+      }
+    return offered.contains(mode) ? mode : nil
   }
 
   /// New Session on Runner…: the window's blank row shown, or a new one made.

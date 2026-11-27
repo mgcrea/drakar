@@ -589,6 +589,9 @@ final class AgentSession {
 
   var isProcessRunning: Bool { process != nil }
 
+  /// Whether this session has started a conversation, process, or resumed history.
+  var isStarted: Bool { phase != .idle || resuming != nil || status.hasEntries }
+
   /// Its process runs in the session host, so it can outlive the app.
   var isHosted: Bool { process is HostedProcess }
 
@@ -736,6 +739,12 @@ final class AgentSession {
   /// Open Plan had no answer from the process: a refusal, its end, or the timeout.
   func notePlanUnread() {
     transcript.addNotice(String(localized: "Couldn't read the plan."))
+  }
+
+  /// Moving to another provider failed because this session's process did not quit in time.
+  func noteNotMoved(to providerName: String) {
+    transcript.addNotice(
+      String(localized: "Couldn't move to \(providerName): \(agent.name) did not quit in time."))
   }
 
   /// A fork from one of this session's prompts was not made: said here, where it was asked

@@ -175,7 +175,13 @@ struct SessionView: View {
               takesFocus: project.focusesComposer,
               hint: item.composerHint, focusRequest: item.focusRequest,
               focused: { workspace.focusedPane = .composer },
-              pills: SessionPills(session: session, folder: project.folder, account: account),
+              pills: SessionPills(
+                session: session, folder: project.folder, account: account,
+                canMoveProvider: project.canMoveProvider(item),
+                moveProviderRefusal: project.providerMoveRefusal(for: item),
+                moveProvider: project.offersProviderMove(for: item) && !toMarked
+                  ? { agent in Task { await project.moveProvider(item, to: agent) } }
+                  : nil),
               cycleMode: { SessionPills.cycle(session, account: account) },
               commands: project.slashCommands(for: session),
               pickCommand: { command in

@@ -39,12 +39,30 @@ struct SessionMenu: View {
       .disabled(project.tabs.count < 2)
     Button("Close Tabs to the Right") { project.closeToTheRight(of: item) }
       .disabled(project.tabs.last?.id == item.id)
-    if let candidate = SessionMoves.candidate(for: item) {
-      let others = SessionMoves.destinations(from: candidate.account)
-      if !others.isEmpty {
-        Divider()
+    let accountCandidate = SessionMoves.candidate(for: item)
+    let accountTargets = accountCandidate.map { SessionMoves.destinations(from: $0.account) } ?? []
+    let offersProvider = project.offersProviderMove(for: item)
+    if offersProvider || !accountTargets.isEmpty {
+      Divider()
+      if offersProvider {
+        let isStarted = item.session.isStarted
+        let refusal = project.providerMoveRefusal(for: item)
+        Menu(isStarted ? "Move to Provider" : "Switch Provider") {
+          ForEach(AgentKind.allCases.filter { $0 != item.session.agent }, id: \.self) { agent in
+            Button(agent.name) {
+              Task { await project.moveProvider(item, to: agent) }
+            }
+            .disabled(refusal != nil)
+          }
+          if let refusal {
+            Divider()
+            Text(refusal)
+          }
+        }
+      }
+      if let candidate = accountCandidate, !accountTargets.isEmpty {
         Menu("Move to") {
-          ForEach(others, id: \.key) { account in
+          ForEach(accountTargets, id: \.key) { account in
             Button(AccountStore.shared.profile(for: account).name) {
               SessionMoves.moveOne(candidate, to: account)
             }
