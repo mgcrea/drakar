@@ -101,19 +101,17 @@ struct SessionPills {
         Text(moveProviderRefusal)
       }
     } label: {
-      HStack(spacing: 4) {
-        AgentIcon(agent: session.agent)
-        Text(session.agent.shortName).lineLimit(1)
-      }
-      .pill(filled: true)
+      AgentIcon(agent: session.agent)
+        .pill(filled: true)
     }
     .pillMenu()
     .help(
       moveProviderRefusal
         ?? (isStarted
-          ? String(localized: "Provider. Move this session to another provider.")
-          : String(localized: "Provider. Switch to another provider."))
+          ? String(localized: "\(session.agent.name). Move this session to another provider.")
+          : String(localized: "\(session.agent.name). Switch to another provider."))
     )
+    .accessibilityLabel(session.agent.name)
     .accessibilityIdentifier("composer.provider")
   }
 
