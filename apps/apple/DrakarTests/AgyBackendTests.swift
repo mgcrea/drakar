@@ -160,9 +160,11 @@ struct AgyBackendTests {
 
   @Test func featuresAndTargetRoundTrip() throws {
     #expect(AgyBackend().features == .agy)
+    #expect(AgyBackend(agent: .grok).features == .grok)
     #expect(AgentFeatures.agy.cancelsQueued)
     #expect(AgentFeatures.agy.picksApplyAtOnce)
     #expect(AgentFeatures.agy.slashCommands)
+    #expect(AgentFeatures.grok.slashCommands)
     #expect(!AgentFeatures.agy.acceptsPDF)
     #expect(AgentKind.agy.name == "Antigravity")
 
@@ -171,5 +173,42 @@ struct AgyBackendTests {
       agent: .agy)
     let decoded = try JSONDecoder().decode(ResumeTarget.self, from: JSONEncoder().encode(target))
     #expect(decoded.agentKind == .agy)
+  }
+
+  @Test func grokAndAgySkillStoresStaySeparatePerFolder() {
+    let folder = URL(filePath: "/tmp/drakar-grok-skills-\(UUID().uuidString)")
+    let agyEntry = AgySkillStore.shared.skills(for: folder, agent: .agy)
+    let grokEntry = AgySkillStore.shared.skills(for: folder, agent: .grok)
+    #expect(agyEntry !== grokEntry)
+    #expect(agyEntry.agent == .agy)
+    #expect(grokEntry.agent == .grok)
+
+    let backend = AgyBackend(agent: .grok)
+    _ = backend.launch(
+      AgentStart(
+        folder: folder, resuming: nil, environment: [:],
+        executableOverride: URL(filePath: "/bin/true"), model: nil, mode: nil, effort: nil,
+        allowsBypass: true, name: nil))
+    let update = JSONValue.object([
+      "jsonrpc": .string("2.0"),
+      "method": .string("session/update"),
+      "params": .object([
+        "sessionId": .string("g-1"),
+        "update": .object([
+          "sessionUpdate": .string("available_commands_update"),
+          "availableCommands": .array([
+            .object(["name": .string("commit-task"), "description": .string("Commit")])
+          ]),
+        ]),
+      ]),
+    ])
+    _ = backend.receive(
+      .json(update),
+      from: AgentProcess(
+        AgyLaunch.configuration(
+          executable: URL(filePath: "/bin/true"), environment: [:], folder: folder, agent: .grok)),
+      at: .now)
+    #expect(grokEntry.skills?.map(\.name) == ["commit-task"])
+    #expect(agyEntry.skills == nil)
   }
 }

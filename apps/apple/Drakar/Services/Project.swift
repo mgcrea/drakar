@@ -970,8 +970,7 @@ final class Project {
       switch skillsAgent {
       case .claude: capabilities.lists.skills ?? []
       case .codex: codexSkills(for: selected?.session).skills ?? []
-      case .grok: []
-      case .agy: agySkills(for: selected?.session).skills ?? []
+      case .agy, .grok: agySkills(for: selected?.session, agent: skillsAgent).skills ?? []
       }
     return all.filter { !$0.isBuiltin }
   }
@@ -987,8 +986,7 @@ final class Project {
     switch skillsAgent {
     case .claude: capabilities.loadIfNeeded()
     case .codex: codexSkills(for: selected?.session).loadIfNeeded()
-    case .grok: break
-    case .agy: agySkills(for: selected?.session).loadIfNeeded()
+    case .agy, .grok: agySkills(for: selected?.session, agent: skillsAgent).loadIfNeeded()
     }
   }
 
@@ -998,13 +996,14 @@ final class Project {
     CodexSkillStore.shared.skills(for: session?.folder ?? folder)
   }
 
-  /// Antigravity's commands and skills for `session`'s folder.
-  func agySkills(for session: AgentSession?) -> AgySkills {
-    AgySkillStore.shared.skills(for: session?.folder ?? folder)
+  /// Antigravity's or Grok's commands and skills for `session`'s folder.
+  func agySkills(for session: AgentSession?, agent: AgentKind? = nil) -> AgySkills {
+    AgySkillStore.shared.skills(
+      for: session?.folder ?? folder, agent: agent ?? session?.agent ?? .agy)
   }
 
-  /// What `session`'s `/` menu offers: Codex's skills for a Codex session, Antigravity's
-  /// commands and skills for an Antigravity session, Claude Code's otherwise.
+  /// What `session`'s `/` menu offers: Codex's skills for a Codex session, Antigravity's or
+  /// Grok's commands and skills for their sessions, Claude Code's otherwise.
   func slashCommands(for session: AgentSession) -> [SkillEntry] {
     guard session.features.slashCommands else { return [] }
     // A runner session's are what its own process listed: none before it has.
@@ -1012,8 +1011,7 @@ final class Project {
     switch session.agent {
     case .claude: return capabilities.lists.commands ?? capabilities.lists.skills ?? []
     case .codex: return codexSkills(for: session).skills ?? []
-    case .grok: return []
-    case .agy: return agySkills(for: session).skills ?? []
+    case .agy, .grok: return agySkills(for: session, agent: session.agent).skills ?? []
     }
   }
 
@@ -1024,8 +1022,7 @@ final class Project {
     switch session.agent {
     case .claude: capabilities.loadIfNeeded()
     case .codex: codexSkills(for: session).loadIfNeeded()
-    case .grok: break
-    case .agy: agySkills(for: session).loadIfNeeded()
+    case .agy, .grok: agySkills(for: session, agent: session.agent).loadIfNeeded()
     }
   }
 

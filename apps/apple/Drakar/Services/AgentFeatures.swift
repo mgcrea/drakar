@@ -88,7 +88,7 @@ struct AgentFeatures: Equatable {
     usesSettingsDefaults: false, picksApplyAtOnce: false, controlsTasks: false)
 
   static let grok = AgentFeatures(
-    agent: .grok, cancelsQueued: true, slashCommands: false, forks: false, moves: false,
+    agent: .grok, cancelsQueued: true, slashCommands: true, forks: false, moves: false,
     showsAccount: false, showsPromptCache: false, acceptsPDF: false,
     usesSettingsDefaults: false, picksApplyAtOnce: true, controlsTasks: false)
 

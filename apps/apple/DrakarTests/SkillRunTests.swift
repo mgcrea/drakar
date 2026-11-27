@@ -182,11 +182,13 @@ struct SkillRunTests {
   }
 
   /// A Codex session's `/` menu lists Codex's skills for its folder; a Claude session's
-  /// lists Claude Code's commands, as before.
+  /// lists Claude Code's commands, and Grok's lists Grok's commands, separately from Antigravity's.
   @Test func theMenuListsTheSessionsAgentsSkills() async throws {
     let project = Project(folder: folder)
     let codex = project.newSession(agent: .codex).session
     let claude = project.newSession(agent: .claude).session
+    let grok = project.newSession(agent: .grok).session
+    let agy = project.newSession(agent: .agy).session
     let entry = project.codexSkills(for: codex)
     #expect(entry === CodexSkillStore.shared.skills(for: folder))
     entry.reader = { _, _ in CodexSkillList.Listing(entries: [self.deploy]) }
@@ -197,8 +199,12 @@ struct SkillRunTests {
     }
     project.capabilities.refresh()
     try await settle(project.capabilities)
+    project.agySkills(for: grok, agent: .grok).record([SkillEntry(name: "commit-task")])
+    project.agySkills(for: agy, agent: .agy).record([check])
     #expect(project.slashCommands(for: codex) == [deploy])
     #expect(project.slashCommands(for: claude) == [audit])
+    #expect(project.slashCommands(for: grok).map(\.name) == ["commit-task"])
+    #expect(project.slashCommands(for: agy) == [check])
   }
 
   /// Typing `/` reads the shown session's agent's list, and only that one.

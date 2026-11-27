@@ -37,7 +37,7 @@ final class FanOutDraft {
     skill: SkillEntry, agent: AgentKind, parent: URL, account: ClaudeAccount,
     source: URL? = nil,
     codexSkills: @escaping (URL) -> CodexSkills = { CodexSkillStore.shared.skills(for: $0) },
-    agySkills: @escaping (URL) -> AgySkills = { AgySkillStore.shared.skills(for: $0) }
+    agySkills: ((URL) -> AgySkills)? = nil
   ) {
     self.skill = skill
     self.agent = agent
@@ -45,7 +45,7 @@ final class FanOutDraft {
     self.account = account
     self.source = source
     self.codexSkills = codexSkills
-    self.agySkills = agySkills
+    self.agySkills = agySkills ?? { AgySkillStore.shared.skills(for: $0, agent: agent) }
     read()
   }
 
@@ -64,8 +64,7 @@ final class FanOutDraft {
     case .codex:
       guard let skills = codexSkills(folder.url).skills else { return true }
       return skills.contains { $0.name == skill.name }
-    case .grok: return false
-    case .agy:
+    case .agy, .grok:
       guard let skills = agySkills(folder.url).skills else { return true }
       return skills.contains { $0.name == skill.name }
     }
@@ -86,8 +85,7 @@ final class FanOutDraft {
     switch agent {
     case .claude: false
     case .codex: shown.contains { codexSkills($0.url).problem != nil }
-    case .grok: false
-    case .agy: shown.contains { agySkills($0.url).problem != nil }
+    case .agy, .grok: shown.contains { agySkills($0.url).problem != nil }
     }
   }
 

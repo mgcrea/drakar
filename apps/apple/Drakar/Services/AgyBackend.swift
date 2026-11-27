@@ -78,7 +78,7 @@ final class AgyBackend: AgentBackend {
         output.signals.append(
           .settingsApplied(effort: effort, model: model, autoModeDisabled: false))
       case .commands(let entries):
-        if agent == .agy, let folder { AgySkillStore.shared.skills(for: folder).record(entries) }
+        if let folder { AgySkillStore.shared.skills(for: folder, agent: agent).record(entries) }
       case .changeAnswered(let requestID, let refusal):
         output.signals.append(.changeAnswered(requestID: requestID, refusal: refusal))
       case .unusable(let message):

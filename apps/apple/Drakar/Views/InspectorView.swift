@@ -104,9 +104,11 @@ private struct SkillsPane: View {
   private var codex: CodexSkills? {
     project.skillsAgent == .codex ? project.codexSkills(for: project.selected?.session) : nil
   }
-  /// Antigravity's list while an Antigravity session is shown; nil otherwise.
+  /// Antigravity's or Grok's list while one of those sessions is shown; nil otherwise.
   private var agy: AgySkills? {
-    project.skillsAgent == .agy ? project.agySkills(for: project.selected?.session) : nil
+    let agent = project.skillsAgent
+    guard agent == .agy || agent == .grok else { return nil }
+    return project.agySkills(for: project.selected?.session, agent: agent)
   }
 
   var body: some View {
@@ -127,7 +129,7 @@ private struct SkillsPane: View {
           refresh: { codex.refresh(force: true) })
       } else if let agy {
         PaneReading(
-          isLoading: agy.isLoading, problem: agy.problem, agent: .agy,
+          isLoading: agy.isLoading, problem: agy.problem, agent: agy.agent,
           refresh: { agy.refresh() })
       } else {
         PaneReading(
