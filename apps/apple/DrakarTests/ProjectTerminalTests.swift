@@ -59,6 +59,18 @@ struct ProjectTerminalTests {
     #expect(view.window === window)
     #expect(view.font.pointSize == 17)
 
+    let surface = try #require(view.superview)
+    #expect(surface.bounds.width == 640)
+    #expect(view.frame.minX == 8)
+    #expect(view.frame.width == 624)
+    #expect(view.frame.height == surface.bounds.height)
+    let leftPaddingPoint = surface.convert(
+      NSPoint(x: 2, y: surface.bounds.midY), to: surface.superview)
+    let rightPaddingPoint = surface.convert(
+      NSPoint(x: surface.bounds.maxX - 2, y: surface.bounds.midY), to: surface.superview)
+    #expect(surface.hitTest(leftPaddingPoint) === view)
+    #expect(surface.hitTest(rightPaddingPoint) === view)
+
     defaults.set(19, forKey: PreferenceKey.terminalFontSize)
     defaults.set("visual", forKey: PreferenceKey.terminalBell)
     for _ in 0..<100 where view.font.pointSize != 19 || view.bellStyle.tagName != "visual" {
