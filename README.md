@@ -5,7 +5,10 @@ prompts and the diffs, in a window as light as Zed. It runs the `claude` you ins
 its stream-json protocol, the same way the VS Code extension does. The product and technical
 plan is [PLAN.md](PLAN.md); the protocol is [docs/claude-stream-json.md](docs/claude-stream-json.md).
 A session can run Codex instead, Drakar's second agent, through its `app-server`, mapped in
-[docs/codex-app-server.md](docs/codex-app-server.md).
+[docs/codex-app-server.md](docs/codex-app-server.md), or Antigravity (`agy`) through its
+ACP stdio server, mapped in [docs/agy-acp.md](docs/agy-acp.md). To use xAI’s Grok Build,
+sign in with `grok` in a terminal, then choose Grok in the project’s agent picker. Drakar
+launches `grok agent stdio` in the session’s folder.
 
 Open source under the [MIT licence](LICENSE), on GitHub at
 [mgcrea/drakar](https://github.com/mgcrea/drakar). Distributed directly (Developer ID,
@@ -20,7 +23,7 @@ this launch's token, and, only if you turn on its MCP server, a second one on 12
 which answers only a client holding the token in your Keychain. Its session host listens
 on one Unix socket, which only your own Drakar can reach. The only connections Drakar
 opens of its own are Sparkle's, to check for and fetch updates, and only once you said yes
-to update checks. Everything else that reaches the network is the `claude`, `codex` or,
+to update checks. Everything else that reaches the network is the `claude`, `codex`, `agy`, `grok` or,
 once you name a runner, `ssh` you installed.
 [SECURITY.md](SECURITY.md) says how to check that yourself, and how to report a hole.
 
