@@ -149,6 +149,9 @@ enum PreferenceKey {
   /// The permission mode new Antigravity sessions start with (`PermissionMode`'s raw value);
   /// empty for Antigravity's default.
   static let agyDefaultMode = "drakar.agyDefaultMode"
+  /// The permission mode new Grok sessions start with (`PermissionMode`'s raw value); empty
+  /// for Grok's default.
+  static let grokDefaultMode = "drakar.grokDefaultMode"
   /// The effort new sessions start with (`low` … `max`); empty for Claude Code's default.
   static let defaultEffort = "drakar.defaultEffort"
   /// The accent colour, as `RRGGBBAA` hex; absent for the catalog's.
@@ -322,6 +325,16 @@ enum ClaudeChoice {
     let mode = stored(PreferenceKey.agyDefaultMode).flatMap(PermissionMode.init(rawValue:))
     return mode.flatMap {
       AgyPolicy.offeredModes(allowsBypass: allowsBypass).contains($0) ? $0 : nil
+    }
+  }
+
+  /// The mode new Grok sessions start with, from Settings: one Grok offers, Bypass only
+  /// while Settings allows it; nil for Grok's default.
+  static var grokDefaultMode: PermissionMode? {
+    _ = AttentionDefaults.shared.revision
+    let mode = stored(PreferenceKey.grokDefaultMode).flatMap(PermissionMode.init(rawValue:))
+    return mode.flatMap {
+      GrokPolicy.offeredModes(allowsBypass: allowsBypass).contains($0) ? $0 : nil
     }
   }
 

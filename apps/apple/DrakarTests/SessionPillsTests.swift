@@ -55,6 +55,12 @@ struct SessionPillsTests {
     scoped(allowsBypass: false) {
       let session = AgentSession(folder: folder)
       #expect(!SessionPills.offeredModes(session, models: models).contains(.bypass))
+      let grok = AgentSession(folder: folder, agent: .grok)
+      #expect(SessionPills.offeredModes(grok, models: nil) == [.ask, .plan])
+    }
+    scoped(allowsBypass: true) {
+      let grok = AgentSession(folder: folder, agent: .grok)
+      #expect(SessionPills.offeredModes(grok, models: nil) == [.ask, .plan, .bypass])
     }
   }
 

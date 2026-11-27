@@ -937,7 +937,7 @@ final class Project {
       case .agy:
         AgyPolicy.offeredModes(allowsBypass: ClaudeChoice.allowsBypass)
       case .grok:
-        [.ask]
+        GrokPolicy.offeredModes(allowsBypass: ClaudeChoice.allowsBypass)
       }
     return offered.contains(mode) ? mode : nil
   }

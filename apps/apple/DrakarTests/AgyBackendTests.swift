@@ -35,12 +35,28 @@ struct AgyBackendTests {
     #expect(launch.account == nil)
   }
 
-  @Test func grokLaunchAndResumeKeepTheirAgent() {
+  @Test func grokLaunchAndResumeKeepTheirAgent() throws {
     let backend = AgentKind.grok.makeBackend()
     let launch = backend.launch(start())
     #expect(launch.configuration?.arguments == ["agent", "stdio"])
     #expect(launch.configuration?.currentDirectory == URL(filePath: "/p"))
     #expect(backend.locateTarget(sessionID: "id", cwd: "/p", in: [])?.agentKind == .grok)
+
+    let process = try process()
+    defer { process.terminate() }
+    try backend.started(process, then: nil)
+    _ = backend.receive(
+      try line(#"{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":1}}"#), from: process,
+      at: .now)
+    _ = try backend.send(
+      .prompt(text: "hi", context: [], uuid: "p-1", attachments: []), to: process)
+    _ = backend.receive(
+      try line(#"{"jsonrpc":"2.0","id":2,"result":{"sessionId":"grok-1"}}"#), from: process,
+      at: .now)
+
+    #expect(try backend.send(.setMode("plan"), to: process) != nil)
+    #expect(try backend.send(.setMode("bypassPermissions"), to: process) != nil)
+    #expect(try backend.send(.setMode("acceptEdits"), to: process) == nil)
   }
 
   @Test func findsAgyOnPathThenLocalBinThenHomebrew() {

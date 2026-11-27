@@ -25,10 +25,18 @@ final class AgyBackend: AgentBackend {
       start.executableOverride
       ?? AgyLaunch.locate(path: start.environment["PATH"], binary: agent.rawValue)
     folder = start.folder
+    let startMode: PermissionMode? =
+      if agent == .grok {
+        start.mode.flatMap {
+          GrokPolicy.offeredModes(allowsBypass: start.allowsBypass).contains($0) ? $0 : nil
+        }
+      } else {
+        start.mode
+      }
     session = AgySession(
       cwd: start.folder.path(percentEncoded: false),
       resuming: start.resuming?.sessionID,
-      mode: agent == .grok ? nil : start.mode,
+      mode: startMode,
       model: start.model == "default" ? nil : start.model,
       effort: start.effort,
       version: AgyLaunch.appVersion, isGrok: agent == .grok)

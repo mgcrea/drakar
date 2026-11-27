@@ -784,7 +784,7 @@ final class AgentSession {
       switch agent {
       case .claude: ClaudeChoice.defaultMode
       case .codex: ClaudeChoice.codexDefaultMode
-      case .grok: nil
+      case .grok: ClaudeChoice.grokDefaultMode
       case .agy: ClaudeChoice.agyDefaultMode
       }
     let mode = modePick ?? (isProcessRunning ? nil : fallback)

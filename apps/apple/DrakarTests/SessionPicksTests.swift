@@ -123,6 +123,25 @@ struct SessionPicksTests {
       #expect(redrawn.value)
     }
   }
+
+  @Test func readsGrokDefaultMode() {
+    scoped {
+      #expect(ClaudeChoice.grokDefaultMode == nil)
+      ClaudeChoice.defaults.set("plan", forKey: PreferenceKey.grokDefaultMode)
+      #expect(ClaudeChoice.grokDefaultMode == .plan)
+      #expect(AgentSession(folder: folder, agent: .grok).startingMode == .plan)
+
+      ClaudeChoice.defaults.set("bypassPermissions", forKey: PreferenceKey.grokDefaultMode)
+      #expect(ClaudeChoice.grokDefaultMode == .bypass)
+      ClaudeChoice.defaults.set(false, forKey: PreferenceKey.allowsBypass)
+      #expect(ClaudeChoice.grokDefaultMode == nil)
+      #expect(AgentSession(folder: folder, agent: .grok).startingMode == nil)
+
+      // A mode Grok doesn't offer is ignored.
+      ClaudeChoice.defaults.set("acceptEdits", forKey: PreferenceKey.grokDefaultMode)
+      #expect(ClaudeChoice.grokDefaultMode == nil)
+    }
+  }
 }
 
 /// Set from an observation callback, which may not capture a variable.

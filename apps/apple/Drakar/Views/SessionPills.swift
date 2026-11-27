@@ -204,13 +204,15 @@ struct SessionPills {
     return models.map { ClaudeChoice.offered($0, keeping: option(for: session, in: $0)?.value) }
   }
 
-  /// Codex's and Antigravity's own lists. Claude Code's: Ask, Edit and Plan always; Auto for
-  /// a model that says it takes it, unless settings turn it off; Bypass while allowed.
+  /// Codex's, Antigravity's and Grok's own lists. Claude Code's: Ask, Edit and Plan always;
+  /// Auto for a model that says it takes it, unless settings turn it off; Bypass while allowed.
   static func offeredModes(_ session: AgentSession, models: [ModelOption]?) -> [PermissionMode] {
     if session.agent == .codex {
       return CodexPolicy.offeredModes(allowsBypass: session.offersBypass)
     }
-    if session.agent == .grok { return [.ask] }
+    if session.agent == .grok {
+      return GrokPolicy.offeredModes(allowsBypass: session.offersBypass)
+    }
     if session.agent == .agy {
       return AgyPolicy.offeredModes(allowsBypass: session.offersBypass)
     }
@@ -293,8 +295,8 @@ struct SessionPills {
 }
 
 extension View {
-  /// A composer pill's menu: its label drawn as is, with no indicator, as the extension's.
-  fileprivate func pillMenu() -> some View {
+  /// A composer toolbar pill's menu: its label drawn as is, with no indicator, as the extension's.
+  func pillMenu() -> some View {
     self
       .menuStyle(.button)
       .buttonStyle(.plain)
@@ -302,9 +304,19 @@ extension View {
       .fixedSize()
   }
 
-  /// A composer pill's label: a capsule behind the model, only under the pointer for the mode.
-  fileprivate func pill(filled: Bool) -> some View {
+  /// A composer toolbar pill's label: a capsule behind the model, only under the pointer for the
+  /// mode and action buttons.
+  func pill(filled: Bool) -> some View {
     modifier(PillChrome(filled: filled))
+  }
+}
+
+/// A borderless composer toolbar button with the same capsule hover chrome as the unfilled pills.
+struct PillButtonStyle: ButtonStyle {
+  func makeBody(configuration: Configuration) -> some View {
+    configuration.label
+      .pill(filled: false)
+      .opacity(configuration.isPressed ? 0.75 : 1)
   }
 }
 
@@ -341,19 +353,21 @@ struct PromptCacheLabel: View {
 
 private struct PillChrome: ViewModifier {
   let filled: Bool
+  @Environment(\.isEnabled) private var isEnabled
   @State private var isHovered = false
 
   func body(content: Content) -> some View {
+    let activeHover = isEnabled && isHovered
     content
       .font(.callout)
-      .foregroundStyle(isHovered ? .primary : .secondary)
+      .foregroundStyle(isEnabled ? (activeHover ? .primary : .secondary) : .tertiary)
       .padding(.horizontal, 8)
       .padding(.vertical, 4)
       .background(
-        Color.secondary.opacity(isHovered ? 0.2 : filled ? 0.12 : 0), in: Capsule()
+        Color.secondary.opacity(activeHover ? 0.2 : filled ? 0.12 : 0), in: Capsule()
       )
       .contentShape(Capsule())
       .onHover { isHovered = $0 }
-      .animation(.easeOut(duration: 0.12), value: isHovered)
+      .animation(.easeOut(duration: 0.12), value: activeHover)
   }
 }

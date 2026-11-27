@@ -10,6 +10,7 @@ struct ModelsSettingsPane: View {
   @AppStorage(PreferenceKey.agyDefaultModel) private var agyDefaultModel = ""
   @AppStorage(PreferenceKey.agyDefaultMode) private var agyDefaultMode = ""
   @AppStorage(PreferenceKey.grokDefaultModel) private var grokDefaultModel = ""
+  @AppStorage(PreferenceKey.grokDefaultMode) private var grokDefaultMode = ""
   @AppStorage(PreferenceKey.allowsBypass) private var allowsBypass = true
 
   @State private var codexPath: String?
@@ -79,7 +80,13 @@ struct ModelsSettingsPane: View {
         models: ModelCatalog.shared.grokModels,
         modelIdentifier: "settings.grokDefaultModel"
       ) {
-        EmptyView()
+        DefaultModePicker(
+          defaultLabel: "Grok's default",
+          emptyTagMode: nil,
+          selection: $grokDefaultMode,
+          modes: GrokPolicy.offeredModes(allowsBypass: allowsBypass),
+          allowsBypass: allowsBypass,
+          identifier: "settings.grokDefaultMode")
       }
     }
     .formStyle(.grouped)

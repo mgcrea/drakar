@@ -200,13 +200,18 @@ struct FanOutDraftTests {
     #expect(project.fanOutSkills == [deploy])
   }
 
-  /// The modes offered are the ones the agent takes: Codex has no Plan or Auto.
+  /// The modes offered are the ones the agent takes: Codex has no Plan or Auto, Grok has Ask,
+  /// Plan and Bypass.
   @Test func theModesFollowTheAgent() {
     #expect(draft().offeredModes.contains(.plan))
     let codex = draft(SkillEntry(name: "deploy"), agent: .codex)
     #expect(!codex.offeredModes.contains(.plan))
     #expect(!codex.offeredModes.contains(.auto))
     #expect(codex.offeredModes.prefix(2) == [.ask, .acceptEdits])
+    let grok = draft(SkillEntry(name: "deploy"), agent: .grok)
+    #expect(grok.offeredModes.prefix(2) == [.ask, .plan])
+    #expect(!grok.offeredModes.contains(.acceptEdits))
+    #expect(!grok.offeredModes.contains(.auto))
   }
 
   /// Codex is asked only about the folders shown: a hidden one is asked once shown.

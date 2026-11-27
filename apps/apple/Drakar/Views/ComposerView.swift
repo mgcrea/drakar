@@ -256,11 +256,10 @@ struct ComposerView: View {
   /// them out. The extension's + opens a menu whose other entries (an @-mention, the browser)
   /// Drakar has not got, so this one picks files straight away.
   private var toolbar: some View {
-    HStack(spacing: 4) {
+    HStack(spacing: 6) {
       Button("Attach", systemImage: "plus") { attach(AttachmentIntake.choose()) }
         .labelStyle(.iconOnly)
-        .buttonStyle(.borderless)
-        .foregroundStyle(.secondary)
+        .buttonStyle(PillButtonStyle())
         .help("Attach images or files (or paste, or drop them on the session)")
         .accessibilityIdentifier("composer.attach")
       shortcutControls
@@ -272,8 +271,7 @@ struct ComposerView: View {
       if let pills { pills.mode }
       button
     }
-    .padding(.leading, 6)
-    .padding(.trailing, 6)
+    .padding(.horizontal, 6)
     .padding(.vertical, 6)
   }
 
@@ -319,10 +317,11 @@ struct ComposerView: View {
       } label: {
         Label("Composer Shortcuts", systemImage: "bolt")
           .labelStyle(.iconOnly)
+          .pill(filled: false)
       }
-      .menuStyle(.borderlessButton)
-      .fixedSize()
+      .pillMenu()
       .help("Composer Shortcuts")
+      .accessibilityLabel("Composer Shortcuts")
       .disabled(!canInsertShortcut)
     }
     if let favorite {
@@ -330,13 +329,12 @@ struct ComposerView: View {
         if let iconName = favorite.iconName {
           Button(favorite.displayTitle, systemImage: iconName) { insert(favorite) }
             .labelStyle(.iconOnly)
-            .foregroundStyle(.secondary)
         } else {
           Button(favorite.displayTitle) { insert(favorite) }
             .lineLimit(1)
         }
       }
-      .buttonStyle(.borderless)
+      .buttonStyle(PillButtonStyle())
       .help(shortcutHelp(favorite))
       .disabled(!canInsertShortcut)
     }
