@@ -57,19 +57,19 @@ struct AccountToolbarItem: View {
           }
         case .codex:
           HStack(spacing: 6) {
-            Image(systemName: "terminal")
+            AgentIcon(agent: .codex)
             Text(AgentKind.codex.name)
             UsageMeters(usage: store.codexUsage?.usage, now: context.date, compact: true)
           }
         case .grok:
           HStack(spacing: 6) {
-            Image(systemName: "bolt")
+            AgentIcon(agent: .grok)
             Text(AgentKind.grok.name)
             GrokUsageMeters(usage: store.grokUsage, now: context.date, compact: true)
           }
         case .agy:
           HStack(spacing: 6) {
-            Image(systemName: "sparkles")
+            AgentIcon(agent: .agy)
             Text(AgentKind.agy.name)
             UsageMeters(
               usage: store.agyUsage?.summary(at: context.date), now: context.date, compact: true)
@@ -243,21 +243,21 @@ private struct AccountPicker: View {
         .accessibilityIdentifier("account.row.\(account.directory.lastPathComponent)")
         Divider()
       }
-      agentButton(.codex, symbol: "terminal", plan: store.codexUsage?.plan, path: codexPath) {
+      agentButton(.codex, plan: store.codexUsage?.plan, path: codexPath) {
         if let codex = store.codexUsage {
           UsageMeters(usage: codex.usage, now: .now, compact: false)
             .padding(.leading, 22)
         }
       }
       Divider()
-      agentButton(.grok, symbol: "bolt", plan: store.grokUsage?.plan, path: grokPath) {
+      agentButton(.grok, plan: store.grokUsage?.plan, path: grokPath) {
         if let grok = store.grokUsage {
           GrokUsageMeters(usage: grok, now: .now, compact: false)
             .padding(.leading, 22)
         }
       }
       Divider()
-      agentButton(.agy, symbol: "sparkles", plan: store.agyUsage?.plan, path: agyPath) {
+      agentButton(.agy, plan: store.agyUsage?.plan, path: agyPath) {
         if let agy = store.agyUsage {
           AgyUsageMeters(usage: agy, now: .now)
             .padding(.leading, 22)
@@ -303,7 +303,7 @@ private struct AccountPicker: View {
   }
 
   private func agentButton<Meters: View>(
-    _ agent: AgentKind, symbol: String, plan: String?, path: String?,
+    _ agent: AgentKind, plan: String?, path: String?,
     @ViewBuilder meters: () -> Meters
   ) -> some View {
     Button {
@@ -314,7 +314,7 @@ private struct AccountPicker: View {
       VStack(alignment: .leading, spacing: 4) {
         HStack {
           Image(systemName: "checkmark").opacity(activeAgent == agent ? 1 : 0)
-          Image(systemName: symbol).foregroundStyle(.secondary)
+          AgentIcon(agent: agent).foregroundStyle(.secondary)
           Text([agent.name, plan].compactMap { $0 }.joined(separator: " · "))
             .fontWeight(.medium)
           Spacer()

@@ -29,7 +29,7 @@ enum AgentKind: String, Codable, CaseIterable {
     }
   }
 
-  var sidebarSymbol: String? {
+  var iconSymbol: String? {
     switch self {
     case .claude: nil
     case .codex: "terminal"

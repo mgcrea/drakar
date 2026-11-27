@@ -353,8 +353,8 @@ struct SessionTab: View, Equatable {
   var body: some View {
     HStack(spacing: 5) {
       mark.frame(width: 10)
-      if let symbol = agent.sidebarSymbol {
-        Image(systemName: symbol)
+      if agent.iconSymbol != nil {
+        AgentIcon(agent: agent)
           .font(.caption)
           .foregroundStyle(.secondary)
           .help(agent.name)

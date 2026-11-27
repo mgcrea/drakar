@@ -490,7 +490,7 @@ private struct SidebarProviderIcon: View {
   let agent: AgentKind
 
   var body: some View {
-    Image(systemName: agent.sidebarSymbol ?? "sun.max")
+    AgentIcon(agent: agent)
       .font(.caption)
       .foregroundStyle(.secondary)
       .help(agent.name)
