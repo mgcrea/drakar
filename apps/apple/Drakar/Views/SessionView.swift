@@ -156,16 +156,22 @@ struct SessionView: View {
             let toMarked = project.sendsToMarked
             ComposerView(
               text: $item.draft,
+              autoClose: $item.armedAutoClose,
               canSend: toMarked ? project.canSendToMarked : session.canSend || session.canQueue,
               isRunning: session.status.isRunning, agentName: session.agent.shortName,
               context: workspace.selection, pinned: workspace.pinned,
               unpin: { selection in workspace.pinned.removeAll { $0 == selection } },
               send: { text, context in
+                let autoClose = item.armedAutoClose
+                item.armedAutoClose = false
                 if project.sendsToMarked {
-                  project.broadcast(text, context: context, attachments: item.attachments)
+                  project.broadcast(
+                    text, context: context, attachments: item.attachments, autoClose: autoClose)
                 } else {
                   project.takeOver(item)
+                  let canAccept = session.canSend || session.canQueue
                   session.send(text, context: context, attachments: item.attachments)
+                  if autoClose, canAccept, !session.isReadOnly { item.closesAfterTurn = true }
                 }
                 workspace.pinned = []
                 item.attachments = []

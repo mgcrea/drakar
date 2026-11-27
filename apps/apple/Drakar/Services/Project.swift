@@ -98,6 +98,10 @@ final class ProjectSession: Identifiable {
   let session: AgentSession
   /// The composer's text, kept across switches.
   var draft = ""
+  /// Armed in the composer by a shortcut with Auto-close; consumed when sent.
+  var armedAutoClose = false
+  /// Closes this tab once its running turn ends cleanly.
+  var closesAfterTurn = false
   /// The images and files going with the next prompt, kept as the draft is.
   var attachments: [Attachment] = []
   /// Why the last things offered were not all attached, until the next are.
@@ -1169,7 +1173,8 @@ final class Project {
   /// runs, skipped where it can't (open elsewhere, moving, starting, or a PDF its agent
   /// can't read). The marks stay.
   @discardableResult func broadcast(
-    _ text: String, context: [EditorSelection], attachments: [Attachment]
+    _ text: String, context: [EditorSelection], attachments: [Attachment],
+    autoClose: Bool = false
   ) -> BroadcastResult {
     var result = BroadcastResult(sent: 0, skipped: 0)
     isBroadcasting = true
@@ -1183,6 +1188,7 @@ final class Project {
         continue
       }
       item.session.send(text, context: context, attachments: attachments)
+      if autoClose, !item.session.isReadOnly { item.closesAfterTurn = true }
       result.sent += 1
     }
     lastBroadcast = result
@@ -2484,6 +2490,23 @@ final class Project {
       pendingForks: forks.isEmpty ? nil : forks)
   }
 
+  /// Closes `item`'s tab once the turn a shortcut with Auto-close sent finishes cleanly,
+  /// leaving it open if the turn failed or was interrupted, asked something, or has an
+  /// unsent draft.
+  func autoCloseIfNeeded(_ item: ProjectSession) -> Bool {
+    guard item.closesAfterTurn else { return false }
+    item.closesAfterTurn = false
+    guard sessions.contains(where: { $0.id == item.id }),
+      item.session.transcript.turnEnd == .completed,
+      !item.session.status.isWaitingOnPerson,
+      item.session.earlierQuestion == nil,
+      item.closingAsk?.kind != .question,
+      closeAsk(for: item) == nil
+    else { return false }
+    closeTab(item)
+    return true
+  }
+
   private func make(_ session: AgentSession) -> ProjectSession {
     if let executableOverride { session.executableOverride = executableOverride }
     session.windowFolder = folder
@@ -2495,6 +2518,7 @@ final class Project {
     session.onTurnEnded = { [weak self, weak item] in
       guard let self, let item else { return }
       self.fanOutFinished(item)
+      if self.autoCloseIfNeeded(item) { return }
       if item.id != self.selectedID { item.isUnread = true }
       self.readRolloutDate(item)
       Attention.shared.turnEnded(item, in: self)
@@ -2502,6 +2526,7 @@ final class Project {
     // A start that failed reports no stop: its slot in a batch is freed all the same.
     session.onFailed = { [weak self, weak item] in
       guard let self, let item else { return }
+      item.closesAfterTurn = false
       self.fanOutFinished(item)
     }
     session.onPermissionRequested = { [weak self, weak item] in
@@ -2513,7 +2538,10 @@ final class Project {
       guard let self, let item else { return }
       self.takenOver(item)
     }
-    session.onPromptSent = { Attention.shared.refresh() }
+    session.onPromptSent = { [weak item] in
+      item?.closesAfterTurn = false
+      Attention.shared.refresh()
+    }
     session.onReplied = { [weak self, weak item] in
       guard let self, let item else { return }
       self.replied(item)
@@ -2521,6 +2549,7 @@ final class Project {
     session.onStopped = { [weak self, weak item] in
       Attention.shared.refresh()
       guard let self, let item else { return }
+      item.closesAfterTurn = false
       self.fanOutFinished(item)
       guard item.id != self.selectedID, item.hasStopped else { return }
       item.isUnread = true

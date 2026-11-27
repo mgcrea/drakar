@@ -1,3 +1,4 @@
+import AppKit
 import DrakarKit
 import SwiftUI
 
@@ -8,16 +9,65 @@ struct ComposerShortcut: Codable, Identifiable {
 
   var id = UUID()
   var label = ""
+  var icon = ""
   var isEnabled = true
   var kind: Kind = .prompt
   var skill = ""
   var prompt = ""
+  var autoSend = false
+  var autoClose = false
+
+  init(
+    id: UUID = UUID(), label: String = "", icon: String = "", isEnabled: Bool = true,
+    kind: Kind = .prompt, skill: String = "", prompt: String = "", autoSend: Bool = false,
+    autoClose: Bool = false
+  ) {
+    self.id = id
+    self.label = label
+    self.icon = icon
+    self.isEnabled = isEnabled
+    self.kind = kind
+    self.skill = skill
+    self.prompt = prompt
+    self.autoSend = autoSend
+    self.autoClose = autoClose
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+    label = try container.decodeIfPresent(String.self, forKey: .label) ?? ""
+    icon = try container.decodeIfPresent(String.self, forKey: .icon) ?? ""
+    isEnabled = try container.decodeIfPresent(Bool.self, forKey: .isEnabled) ?? true
+    kind = try container.decodeIfPresent(Kind.self, forKey: .kind) ?? .prompt
+    skill = try container.decodeIfPresent(String.self, forKey: .skill) ?? ""
+    prompt = try container.decodeIfPresent(String.self, forKey: .prompt) ?? ""
+    autoSend = try container.decodeIfPresent(Bool.self, forKey: .autoSend) ?? false
+    autoClose = try container.decodeIfPresent(Bool.self, forKey: .autoClose) ?? false
+  }
 
   static func read(_ data: Data) -> [Self] {
     (try? JSONDecoder().decode([Self].self, from: data)) ?? []
   }
 
   var title: String { label.trimmingCharacters(in: .whitespacesAndNewlines) }
+
+  var iconName: String? {
+    let name = icon.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !name.isEmpty, NSImage(systemSymbolName: name, accessibilityDescription: nil) != nil
+    else { return nil }
+    return name
+  }
+
+  var hasTrigger: Bool { !title.isEmpty || iconName != nil }
+
+  var displayTitle: String {
+    if !title.isEmpty { return title }
+    if kind == .skill, !skillName.isEmpty { return "/\(skillName)" }
+    let trimmedPrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+    if kind == .prompt, !trimmedPrompt.isEmpty { return String(trimmedPrompt.prefix(40)) }
+    return String(localized: "Untitled Shortcut")
+  }
 
   var skillName: String {
     let name = skill.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -39,14 +89,36 @@ struct ComposerShortcutsPane: View {
 
   private var skillNames: [String] { Set(skills.records.map(\.name)).sorted() }
 
+  static let presetIcons: [(name: String, symbol: String)] = [
+    ("Checkmark", "checkmark.circle"),
+    ("Branch", "arrow.triangle.branch"),
+    ("Push", "arrow.up.circle"),
+    ("Send", "paperplane"),
+    ("Build", "hammer"),
+    ("Tools", "wrench.and.screwdriver"),
+    ("Sparkles", "sparkles"),
+    ("Bolt", "bolt"),
+    ("Search", "magnifyingglass"),
+    ("Debug", "ladybug"),
+    ("Document", "doc.text"),
+    ("Clean", "trash"),
+    ("Run", "play"),
+    ("Flag", "flag"),
+  ]
+
   var body: some View {
     Form {
       Section {
         Picker("Show in toolbar", selection: $favorite) {
           Text("None").tag("")
           ForEach(shortcuts) { shortcut in
-            Text(shortcut.title.isEmpty ? String(localized: "Untitled Shortcut") : shortcut.title)
-              .tag(shortcut.id.uuidString)
+            if let iconName = shortcut.iconName {
+              Label(shortcut.displayTitle, systemImage: iconName)
+                .tag(shortcut.id.uuidString)
+            } else {
+              Text(shortcut.displayTitle)
+                .tag(shortcut.id.uuidString)
+            }
           }
         }
         Button("Add Shortcut", systemImage: "plus") {
@@ -54,14 +126,35 @@ struct ComposerShortcutsPane: View {
         }
       } footer: {
         Text(
-          "Enabled shortcuts appear next to Attach. Choose one to fill the composer, then press Return to send."
+          "Enabled shortcuts appear next to Attach. Shortcuts with an icon show only the icon in the toolbar."
         )
       }
 
       ForEach(Binding(get: { shortcuts }, set: { shortcuts = $0 })) { $shortcut in
         Section {
           TextField("Label", text: $shortcut.label, prompt: Text("Commit"))
+          LabeledContent("Icon") {
+            if let iconName = shortcut.iconName {
+              Image(systemName: iconName)
+                .foregroundStyle(.secondary)
+            }
+            TextField("SF Symbol", text: $shortcut.icon, prompt: Text("Optional"))
+              .labelsHidden()
+            Menu("Choose Icon") {
+              Button("None") { shortcut.icon = "" }
+              Divider()
+              ForEach(Self.presetIcons, id: \.symbol) { preset in
+                Button {
+                  shortcut.icon = preset.symbol
+                } label: {
+                  Label(preset.name, systemImage: preset.symbol)
+                }
+              }
+            }
+          }
           Toggle("Enabled", isOn: $shortcut.isEnabled)
+          Toggle("Send immediately", isOn: $shortcut.autoSend)
+          Toggle("Close conversation after turn", isOn: $shortcut.autoClose)
           Picker("Action", selection: $shortcut.kind) {
             Text("Prompt").tag(ComposerShortcut.Kind.prompt)
             Text("Skill").tag(ComposerShortcut.Kind.skill)

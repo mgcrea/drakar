@@ -13,6 +13,7 @@ import SwiftUI
 /// pinned with ⌥K go too, until a click takes one off.
 struct ComposerView: View {
   @Binding var text: String
+  @Binding var autoClose: Bool
   let canSend: Bool
   let isRunning: Bool
   var agentName = "Claude"
@@ -76,6 +77,21 @@ struct ComposerView: View {
           .buttonStyle(.plain)
           .help("Sent to every marked session. Click to unmark them.")
           .accessibilityIdentifier("composer.broadcast")
+        }
+        if autoClose {
+          Button {
+            autoClose = false
+          } label: {
+            Label("Closes tab after turn", systemImage: "xmark.circle")
+              .font(.caption)
+              .padding(.horizontal, 7)
+              .padding(.vertical, 3)
+              .background(.quaternary.opacity(0.8), in: Capsule())
+          }
+          .buttonStyle(.plain)
+          .foregroundStyle(.secondary)
+          .help("Closes this tab when the turn finishes cleanly. Click to keep it open.")
+          .accessibilityIdentifier("composer.autoClose")
         }
         if let hint {
           Label(hint, systemImage: "text.cursor")
@@ -155,6 +171,7 @@ struct ComposerView: View {
     .onChange(of: text) {
       highlighted = 0
       if menuClosedOn != text { menuClosedOn = nil }
+      if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { autoClose = false }
     }
     .onChange(of: needsShortcutCommands, initial: true) { _, needsCommands in
       if needsCommands { loadCommands() }
@@ -175,6 +192,7 @@ struct ComposerView: View {
   }
 
   private func choose(_ command: SkillEntry) {
+    autoClose = false
     pickCommand(command)
     highlighted = 0
   }
@@ -260,7 +278,7 @@ struct ComposerView: View {
   }
 
   private var shortcuts: [ComposerShortcut] {
-    ComposerShortcut.read(shortcutsData).filter { $0.isEnabled && !$0.title.isEmpty }
+    ComposerShortcut.read(shortcutsData).filter { $0.isEnabled && $0.hasTrigger }
   }
 
   private var needsShortcutCommands: Bool {
@@ -269,6 +287,10 @@ struct ComposerView: View {
 
   private var canInsertShortcut: Bool {
     canSend && !isRunning && text.isEmpty && attachments.isEmpty
+  }
+
+  private var currentContext: [EditorSelection] {
+    pinned + (leavesContextOut ? [] : live.map { [$0] } ?? [])
   }
 
   private func command(for shortcut: ComposerShortcut) -> SkillEntry? {
@@ -288,7 +310,11 @@ struct ComposerView: View {
     if !menuShortcuts.isEmpty {
       Menu {
         ForEach(menuShortcuts) { shortcut in
-          Button(shortcut.title) { insert(shortcut) }
+          if let iconName = shortcut.iconName {
+            Button(shortcut.displayTitle, systemImage: iconName) { insert(shortcut) }
+          } else {
+            Button(shortcut.displayTitle) { insert(shortcut) }
+          }
         }
       } label: {
         Label("Composer Shortcuts", systemImage: "bolt")
@@ -300,23 +326,56 @@ struct ComposerView: View {
       .disabled(!canInsertShortcut)
     }
     if let favorite {
-      Button(favorite.title) { insert(favorite) }
-        .buttonStyle(.borderless)
-        .lineLimit(1)
-        .disabled(!canInsertShortcut)
+      Group {
+        if let iconName = favorite.iconName {
+          Button(favorite.displayTitle, systemImage: iconName) { insert(favorite) }
+            .labelStyle(.iconOnly)
+            .foregroundStyle(.secondary)
+        } else {
+          Button(favorite.displayTitle) { insert(favorite) }
+            .lineLimit(1)
+        }
+      }
+      .buttonStyle(.borderless)
+      .help(shortcutHelp(favorite))
+      .disabled(!canInsertShortcut)
     }
+  }
+
+  private func shortcutHelp(_ shortcut: ComposerShortcut) -> String {
+    var notes: [String] = []
+    if shortcut.autoSend { notes.append(String(localized: "sends immediately")) }
+    if shortcut.autoClose { notes.append(String(localized: "closes tab after turn")) }
+    guard !notes.isEmpty else { return shortcut.displayTitle }
+    return "\(shortcut.displayTitle) (\(notes.joined(separator: ", ")))"
   }
 
   private func insert(_ shortcut: ComposerShortcut) {
     guard canInsertShortcut else { return }
+    let prompt: String
     switch shortcut.kind {
     case .skill:
       guard let command = command(for: shortcut) else { return }
-      choose(command)
+      guard shortcut.autoSend else {
+        choose(command)
+        autoClose = shortcut.autoClose
+        isFocused = true
+        return
+      }
+      prompt = "/\(command.name)"
     case .prompt:
-      text = shortcut.prompt
-      menuClosedOn = text
+      prompt = shortcut.prompt
+      guard shortcut.autoSend else {
+        text = prompt
+        menuClosedOn = text
+        autoClose = shortcut.autoClose
+        isFocused = true
+        return
+      }
     }
+    autoClose = shortcut.autoClose
+    send(prompt, currentContext)
+    text = ""
     isFocused = true
   }
 
@@ -344,7 +403,7 @@ struct ComposerView: View {
     guard canSend, hasContent else { return }
     let menu = menu
     let prompt = menu.indices.contains(highlighted) ? "/\(menu[highlighted].name)" : text
-    send(prompt, pinned + (leavesContextOut ? [] : live.map { [$0] } ?? []))
+    send(prompt, currentContext)
     text = ""
   }
 

@@ -42,6 +42,7 @@ struct CloseTabTests {
     step() { while [ ! -f "$0.$1" ]; do sleep 0.02; done; }
     say() { printf '%s\\n' '{"type":"assistant","message":{"id":"m-'"$1"'","type":"message","role":"assistant","model":"m","content":[{"type":"text","text":"'"$1"'"}],"stop_reason":null},"parent_tool_use_id":null,"session_id":"'"$sid"'"}'; }
     result() { printf '%s\\n' '{"type":"result","subtype":"success","is_error":false,"result":"Done.","stop_reason":"end_turn","session_id":"'"$sid"'"}'; }
+    error_result() { printf '%s\\n' '{"type":"result","subtype":"error_during_execution","is_error":true,"result":"Failed.","stop_reason":"end_turn","session_id":"'"$sid"'"}'; }
     while read -r line; do
       log "$line"
       case "$line" in *'"type":"user"'*) break;; esac
@@ -54,6 +55,9 @@ struct CloseTabTests {
         say one; step a
         printf '%s\\n' '{"type":"assistant","message":{"id":"m-ls","type":"message","role":"assistant","model":"m","content":[{"type":"tool_use","id":"toolu_1","name":"Bash","input":{"command":"ls"}}],"stop_reason":null},"parent_tool_use_id":null,"session_id":"'"$sid"'"}'
         printf '%s\\n' '{"type":"control_request","request_id":"req-1","request":{"subtype":"can_use_tool","tool_name":"Bash","input":{"command":"ls"},"tool_use_id":"toolu_1"}}';;
+      *go-error*) say failed; error_result;;
+      *go-question*) say "Should I push this commit?"; result;;
+      *go-wait*) say one; step c; result;;
       *go-idle*) result;;
     esac
     while read -r line; do log "$line"; done
@@ -476,5 +480,70 @@ struct CloseTabTests {
     #expect(project.closeAsk(for: row) == .unsentDraft)
     // The draft given up, the turn is still asked about.
     #expect(project.closeAsk(for: row, draftConfirmed: true) == .stopsTurn)
+  }
+
+  /// A shortcut with Auto-close closes the tab when the turn completes cleanly, selecting a
+  /// neighbor tab if one is open.
+  @Test func autoCloseClosesTabOnCleanTurnEnd() async throws {
+    defer { cleanUp() }
+    let app = app()
+    let project = window(on: app)
+    defer { project.stopAll() }
+    let keeper = project.newSession(agent: .claude)
+    let live = await start("go-stream-end", in: project)
+    let row = try #require(project.sessions.first { $0.session === live })
+    project.select(row)
+    row.closesAfterTurn = true
+    #expect(await eventually { says(live, "one") })
+    try step("a")
+    try step("b")
+    #expect(await eventually { !project.sessions.contains { $0.id == row.id } })
+    #expect(project.selectedID == keeper.id)
+    #expect(!row.closesAfterTurn)
+    #expect(await eventually { await app.held().isEmpty })
+  }
+
+  /// Auto-close leaves the tab open when the turn fails, ends with a question, has an unsent
+  /// draft, or receives another prompt before finishing.
+  @Test func autoCloseStaysOpenWhenTurnFailsAsksHasDraftOrAnotherPrompt() async throws {
+    defer { cleanUp() }
+    let app = app()
+    let project = window(on: app)
+    defer { project.stopAll() }
+
+    let failed = await start("go-error", in: project)
+    let failedRow = try #require(project.sessions.first { $0.session === failed })
+    failedRow.closesAfterTurn = true
+    #expect(await eventually { failed.transcript.turnEnd == .failed })
+    #expect(project.sessions.contains { $0.id == failedRow.id })
+    #expect(!failedRow.closesAfterTurn)
+
+    let asked = await start("go-question", in: project)
+    let askedRow = try #require(project.sessions.first { $0.session === asked })
+    askedRow.closesAfterTurn = true
+    #expect(await eventually { asked.transcript.turnEnd == .completed })
+    #expect(project.sessions.contains { $0.id == askedRow.id })
+    #expect(!askedRow.closesAfterTurn)
+
+    let drafted = await start("go-stream-end", in: project)
+    let draftedRow = try #require(project.sessions.first { $0.session === drafted })
+    draftedRow.closesAfterTurn = true
+    #expect(await eventually { says(drafted, "one") })
+    draftedRow.draft = "one more thing"
+    try step("a")
+    try step("b")
+    #expect(await eventually { drafted.transcript.turnEnd == .completed })
+    #expect(project.sessions.contains { $0.id == draftedRow.id })
+    #expect(!draftedRow.closesAfterTurn)
+
+    let followUp = await start("go-wait", in: project)
+    let followUpRow = try #require(project.sessions.first { $0.session === followUp })
+    #expect(await eventually { says(followUp, "one") })
+    followUpRow.closesAfterTurn = true
+    followUp.send("another prompt")
+    #expect(!followUpRow.closesAfterTurn)
+    try step("c")
+    #expect(await eventually { followUp.transcript.turnEnd == .completed })
+    #expect(project.sessions.contains { $0.id == followUpRow.id })
   }
 }

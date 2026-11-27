@@ -76,6 +76,44 @@ struct SettingsPaneTests {
     #expect(other.name == "work")
     #expect(other.environment([:])["CLAUDE_CONFIG_DIR"] == home + ".claude-work")
   }
+
+  @Test @MainActor func composerShortcutDecodesWithoutAutoCloseAndRoundTrips() throws {
+    let legacy = Data(
+      #"[{"id":"11111111-1111-1111-1111-111111111111","label":"Commit","isEnabled":true,"kind":"skill","skill":"commit-task","prompt":""}]"#
+        .utf8)
+    let decoded = ComposerShortcut.read(legacy)
+    #expect(decoded.count == 1)
+    #expect(decoded[0].label == "Commit")
+    #expect(decoded[0].skill == "commit-task")
+    #expect(decoded[0].icon.isEmpty)
+    #expect(decoded[0].iconName == nil)
+    #expect(!decoded[0].autoSend)
+    #expect(!decoded[0].autoClose)
+
+    let saved = ComposerShortcut(
+      label: "", icon: "checkmark.circle", isEnabled: true, kind: .skill, skill: "commit-task",
+      autoSend: true, autoClose: true)
+    let encoded = try JSONEncoder().encode([saved])
+    let roundTripped = ComposerShortcut.read(encoded)
+    #expect(roundTripped.count == 1)
+    #expect(roundTripped[0].iconName == "checkmark.circle")
+    #expect(roundTripped[0].hasTrigger)
+    #expect(roundTripped[0].displayTitle == "/commit-task")
+    #expect(roundTripped[0].autoSend)
+    #expect(roundTripped[0].autoClose)
+
+    let invalidIcon = ComposerShortcut(icon: "not.a.real.symbol.name")
+    #expect(invalidIcon.iconName == nil)
+    #expect(!invalidIcon.hasTrigger)
+  }
+
+  @Test @MainActor func everyShortcutPresetIconExists() {
+    for preset in ComposerShortcutsPane.presetIcons {
+      #expect(
+        NSImage(systemSymbolName: preset.symbol, accessibilityDescription: nil) != nil,
+        "\(preset.name): \(preset.symbol)")
+    }
+  }
 }
 
 /// Settings › Runner (remote sessions spec §2, §3), its model over a defaults suite of each
