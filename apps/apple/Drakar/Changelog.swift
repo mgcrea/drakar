@@ -212,7 +212,95 @@ nonisolated enum Changelog {
   /// literal, and this one is releases of sections of entries of strings — the
   /// exact shape that turns into a multi-second type-check with no diagnostic.
   // swift-format-ignore
-  static let releases: [Release] = [v1_4_0, v1_3_0, v1_2_0, v1_1_0, v1_0_0]
+  static let releases: [Release] = [v1_5_0, v1_4_0, v1_3_0, v1_2_0, v1_1_0]
+
+  // swift-format-ignore
+  private static let v1_5_0: Release = Release(
+    version: "1.5.0",
+    date: "2026-11-27",
+    sections: [
+      Section(
+        name: "Added",
+        lead: [],
+        entries: [
+          Entry(
+            ordinal: 0,
+            headline: "Antigravity and Grok Build agents.",
+            body: [
+              "Run Antigravity (`agy` over ACP) and Grok Build (`grok agent stdio`) sessions alongside Claude Code and Codex, with model selection, reasoning effort, permissions, session history, and MCP server support.",
+            ]),
+          Entry(
+            ordinal: 1,
+            headline: "Toolbar agent switcher and live provider limits.",
+            body: [
+              "Click the toolbar's account button to switch a folder's agent between Claude Code accounts, Codex, Grok Build, and Antigravity, with live 5h/7d usage meters for Codex, Antigravity model pools, and Grok allowances.",
+            ]),
+          Entry(
+            ordinal: 2,
+            headline: "Settings › Models.",
+            body: [
+              "Configure executables, accounts, default models, effort, and permission modes per provider in one pane.",
+            ]),
+          Entry(
+            ordinal: 3,
+            headline: "Git pane in the project sidebar.",
+            body: [
+              "A collapsible Git section above Files lists modified, staged, and untracked files on the current branch and opens any file on click.",
+            ]),
+          Entry(
+            ordinal: 4,
+            headline: "Trailing `+` button on the tab strip.",
+            body: [
+              "Start a new session right beside the last tab, Option-click for the alternate agent, or right-click to pick any provider.",
+            ]),
+          Entry(
+            ordinal: 5,
+            headline: "Open window sessions in the sidebar.",
+            body: [
+              "The project sidebar's This Window section mirrors the window's open tabs across every agent.",
+            ]),
+          Entry(
+            ordinal: 6,
+            headline: "Start idle sessions from the footer.",
+            body: [
+              "Click `Not started` in the session status bar to launch or restart an idle session.",
+            ]),
+        ]),
+      Section(
+        name: "Changed",
+        lead: [],
+        entries: [
+          Entry(
+            ordinal: 7,
+            headline: "⌘T opens a new session.",
+            body: [
+              "New Session moves to ⌘T (replacing ⌘N), while File › New Project Tab moves to ⇧⌘T.",
+            ]),
+          Entry(
+            ordinal: 8,
+            headline: "Agent-specific working indicators.",
+            body: [
+              "The working spinner's animation, colour, and rotating verbs adapt to Claude Code, Codex, Antigravity, and Grok.",
+            ]),
+        ]),
+      Section(
+        name: "Fixed",
+        lead: [],
+        entries: [
+          Entry(
+            ordinal: 9,
+            headline: "Shift-Return in the composer.",
+            body: [
+              "⇧↩ inserts a newline instead of submitting the prompt.",
+            ]),
+          Entry(
+            ordinal: 10,
+            headline: "Single-verb working indicators.",
+            body: [
+              "Indicators with a single verb no longer repeat a random pick while rotating.",
+            ]),
+        ]),
+    ])
 
   // swift-format-ignore
   private static let v1_4_0: Release = Release(
@@ -434,96 +522,6 @@ nonisolated enum Changelog {
             headline: nil,
             body: [
               "A rewind overtaken by a turn that starts under it says so, rather than reporting a failure.",
-            ]),
-        ]),
-    ])
-
-  // swift-format-ignore
-  private static let v1_0_0: Release = Release(
-    version: "1.0.0",
-    date: "2026-10-30",
-    sections: [
-      Section(
-        name: "Added",
-        lead: [],
-        entries: [
-          Entry(
-            ordinal: 0,
-            headline: "Claude Code's conversation, natively.",
-            body: [
-              "Drakar runs the `claude` you installed over its stream-json protocol, the way the VS Code extension does, and shows the conversation, the tool calls, the permission prompts and the diffs in a native window.",
-            ]),
-          Entry(
-            ordinal: 1,
-            headline: "Codex as a second agent.",
-            body: [
-              "A session can run Codex instead, through its `app-server`.",
-            ]),
-          Entry(
-            ordinal: 2,
-            headline: "Which `claude`, and which account.",
-            body: [
-              "Settings › General picks the `claude` that runs when more than one is installed, and the account (`CLAUDE_CONFIG_DIR`) a new session starts under. The footer warns when the CLI is outside the versions Drakar was tested with, since the protocol it speaks is undocumented.",
-            ]),
-          Entry(
-            ordinal: 3,
-            headline: "The editor for `claude` in a terminal.",
-            body: [
-              "While Drakar runs, a `claude --ide` started in a folder Drakar has open (or connected with `/ide`) sends every edit to Drakar's Review Changes window, and the file is written only if you accept it there. Settings › General picks the folders.",
-            ]),
-          Entry(
-            ordinal: 4,
-            headline: "An editor beside the conversation.",
-            body: [
-              "A session window shows its folder's files in the sidebar and opens them as tabs, with line numbers and colours, saved with ⌘S, found by name with ⌘P and searched with ⇧⌘F. A tab the agent changes reloads; if you edited it too, Drakar asks which version to keep, and it asks before a window with unsaved tabs closes.",
-            ]),
-          Entry(
-            ordinal: 5,
-            headline: "Your selection goes with the prompt.",
-            body: [
-              "What you select, or the file you have open, goes with your next prompt, as in the VS Code extension, and with a terminal `claude --ide`'s too. ⌥K pins a selection so the next one can be added beside it.",
-            ]),
-          Entry(
-            ordinal: 6,
-            headline: "Sessions that outlive the app.",
-            body: [
-              "A small helper holds the `claude` and `codex` processes, so a quit, a crash or an update leaves them working, and the next launch attaches again and replays what they did meanwhile.",
-            ]),
-          Entry(
-            ordinal: 7,
-            headline: "Many sessions, one window.",
-            body: [
-              "The sidebar sorts what needs you first; ⌥⌘↑ and ⌥⌘↓ move between sessions, and Next After Replying shows the next one waiting. Mark several with ⌘-click and send them one prompt, or run a skill in a session per subfolder, a few at a time.",
-            ]),
-          Entry(
-            ordinal: 8,
-            headline: "Answered where they are asked.",
-            body: [
-              "Permission prompts, the agent's questions and an MCP server's questions are answered in their card in the transcript; a yes-or-no question also from the toolbar, with ⌥⌘Y or ⌥⌘N.",
-            ]),
-          Entry(
-            ordinal: 9,
-            headline: "Tasks and subagents.",
-            body: [
-              "A subagent's card shows its whole conversation. A running task can be stopped, sent to the background, and its output read.",
-            ]),
-          Entry(
-            ordinal: 10,
-            headline: "Sessions run elsewhere.",
-            body: [
-              "A session a terminal or VS Code runs shows its state in the sidebar, and can be moved into the window. A folder's sessions can move to another account.",
-            ]),
-          Entry(
-            ordinal: 11,
-            headline: "A Skills window.",
-            body: [
-              "Both agents' skills, commands and plugins in one list, installed from a git address or a folder, shared between projects, and deleted without leaving dangling links.",
-            ]),
-          Entry(
-            ordinal: 12,
-            headline: "Updates, when you ask for them.",
-            body: [
-              "Drakar checks for updates only once you said yes. Settings › What's New keeps each release's notes, with a count on its row while some are unread.",
             ]),
         ]),
     ])

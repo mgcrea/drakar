@@ -4,9 +4,33 @@ Notable changes to this repository. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and every published artifact follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
-Releases are tagged `app-v<version>` the way the sibling repos are, `app-v1.4.0` being the newest.
+Releases are tagged `app-v<version>` the way the sibling repos are, `app-v1.5.0` being the newest.
 The GitHub release notes, the Sparkle update dialog and the app's What's New pane are all rendered
 from this file, which is the curated summary. `### Internal` sections are left out of all three.
+
+## [1.5.0] - 2026-11-27
+
+**Antigravity, Grok, and a Git pane.** Run Antigravity and Grok Build sessions beside Claude Code and Codex, switch agents with live provider limits from the toolbar, and browse changed files in the sidebar.
+
+### Added
+
+- **Antigravity and Grok Build agents.** Run Antigravity (`agy` over ACP) and Grok Build (`grok agent stdio`) sessions alongside Claude Code and Codex, with model selection, reasoning effort, permissions, session history, and MCP server support.
+- **Toolbar agent switcher and live provider limits.** Click the toolbar's account button to switch a folder's agent between Claude Code accounts, Codex, Grok Build, and Antigravity, with live 5h/7d usage meters for Codex, Antigravity model pools, and Grok allowances.
+- **Settings › Models.** Configure executables, accounts, default models, effort, and permission modes per provider in one pane.
+- **Git pane in the project sidebar.** A collapsible Git section above Files lists modified, staged, and untracked files on the current branch and opens any file on click.
+- **Trailing `+` button on the tab strip.** Start a new session right beside the last tab, Option-click for the alternate agent, or right-click to pick any provider.
+- **Open window sessions in the sidebar.** The project sidebar's This Window section mirrors the window's open tabs across every agent.
+- **Start idle sessions from the footer.** Click `Not started` in the session status bar to launch or restart an idle session.
+
+### Changed
+
+- **⌘T opens a new session.** New Session moves to ⌘T (replacing ⌘N), while File › New Project Tab moves to ⇧⌘T.
+- **Agent-specific working indicators.** The working spinner's animation, colour, and rotating verbs adapt to Claude Code, Codex, Antigravity, and Grok.
+
+### Fixed
+
+- **Shift-Return in the composer.** ⇧↩ inserts a newline instead of submitting the prompt.
+- **Single-verb working indicators.** Indicators with a single verb no longer repeat a random pick while rotating.
 
 ## [1.4.0] - 2026-11-07
 
