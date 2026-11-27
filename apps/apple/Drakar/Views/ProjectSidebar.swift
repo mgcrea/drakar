@@ -28,25 +28,35 @@ struct ProjectSidebar: View {
   }
 }
 
-/// The project's sessions this window does not hold as tabs: those live elsewhere, and those
-/// ended. A row opens in the window's preview tab. Elsewhere keeps the order its summaries
-/// come in unless the window sorts it (`SessionOrder`), when a row moves as soon as its state
-/// does: what wants the person rises. A skill running in each subfolder shows its progress
-/// on top.
+/// The project's sessions: those open in this window, those live elsewhere, and those ended.
+/// Open rows mirror the tab strip so every agent's sessions appear in one vertical list; rows
+/// under Elsewhere and Ended open in the window's preview tab. This Window and Elsewhere keep
+/// their order unless the window sorts them (`SessionOrder`), when a row moves as soon as its
+/// state does: what wants the person rises. A skill running in each subfolder shows its
+/// progress on top.
 struct SessionListView: View {
   let project: Project
   @Binding var isCollapsed: Bool
-  /// The default agent, observed so the New Session button's labels follow Settings.
+  /// Read only to redraw the account badges when a pick or the Settings default changes.
+  @AppStorage(PreferenceKey.accountForFolder) private var picks = ""
+  @AppStorage(PreferenceKey.newSessionAccount) private var settingsAccount = ""
+  /// The default agent, observed so the New Session button's labels follow Settings and the
+  /// folder's toolbar pick.
   @AppStorage(PreferenceKey.defaultAgent) private var defaultAgentRaw = AgentKind.claude.rawValue
-  private var defaultAgent: AgentKind { AgentKind(rawValue: defaultAgentRaw) ?? .claude }
-  /// The list keeps ↑ and ↓ while they move through its rows, each opened in the preview
-  /// tab; a click hands the keys to the composer.
+  @AppStorage(PreferenceKey.agentForFolder) private var agentPicks = ""
+  private var defaultAgent: AgentKind {
+    let _ = (defaultAgentRaw, agentPicks)
+    return ClaudeChoice.agent(forNewSessionIn: project.folder)
+  }
+  /// The list keeps ↑ and ↓ while they move through its rows; a click hands the keys to the
+  /// composer.
   @FocusState private var isFocused: Bool
   private var monitor: SessionMonitor { .shared }
 
   private var groups: ProjectGroups { project.listedGroups }
 
   var body: some View {
+    let _ = (picks, settingsAccount)
     VStack(spacing: 0) {
       header
       if !isCollapsed { list }
@@ -117,12 +127,33 @@ struct SessionListView: View {
   }
 
   private var list: some View {
+    let held = project.listedHeld
     let groups = groups
     return List {
-      if !project.fanOuts.isEmpty {
-        Section {
+      if !project.fanOuts.isEmpty || !held.isEmpty {
+        Section("This Window") {
           ForEach(project.fanOuts) { batch in
             FanOutBanner(batch: batch) { project.cancelFanOut(batch) }
+          }
+          ForEach(held) { item in
+            OpenSessionRow(
+              item: item,
+              windowAccount: project.runner == nil
+                ? AccountStore.shared.windowAccount(for: project.folder)
+                : nil,
+              subfolder: ProjectPath.child(
+                of: item.session.folder.path(percentEncoded: false),
+                below: project.folder.path(percentEncoded: false))
+            )
+            .pressableRow(
+              isSelected: item.id == project.selectedID,
+              isMarked: project.marked.contains(item.id)
+            ) {
+              let click = SessionTabStrip.click(NSEvent.modifierFlags)
+              project.click(item, click)
+            }
+            .contextMenu { SessionMenu(item: item, project: project) }
+            .accessibilityIdentifier("sessions.attached.\(item.sessionID ?? item.id.uuidString)")
           }
         }
       }
@@ -164,6 +195,7 @@ struct SessionListView: View {
     }
     .listStyle(.sidebar)
     // A row that moves slides to its place, where the eye can follow it.
+    .animation(.snappy, value: held.map(\.id))
     .animation(.snappy, value: groups.elsewhere.map(\.sessionID))
     .focusable()
     .focused($isFocused)
@@ -175,6 +207,16 @@ struct SessionListView: View {
     }
     .onKeyPress(.downArrow) { project.stepSidebar(1) ? .handled : .ignored }
     .onKeyPress(.upArrow) { project.stepSidebar(-1) ? .handled : .ignored }
+    .onKeyPress(.escape) {
+      guard !project.marked.isEmpty else { return .ignored }
+      project.clearMarks()
+      return .handled
+    }
+    .onKeyPress(characters: ["a"]) { press in
+      guard press.modifiers == .command else { return .ignored }
+      project.markAll()
+      return .handled
+    }
     .accessibilityIdentifier("sessions")
   }
 
@@ -246,6 +288,90 @@ struct SessionListView: View {
       NSPasteboard.general.clearContents()
       NSPasteboard.general.setString(sessionID, forType: .string)
     }
+  }
+}
+
+/// One session open in this window: its state, title, agent glyph (for non-Claude agents),
+/// detail line, and context gauge. Reads only `session.status` so streaming tokens never
+/// redraw the sidebar.
+struct OpenSessionRow: View {
+  let item: ProjectSession
+  /// The account new sessions in this window start under; none in a runner's window.
+  let windowAccount: ClaudeAccount?
+  /// The project's subfolder it runs in, when not the project's own.
+  var subfolder: String? = nil
+
+  var body: some View {
+    HStack(alignment: .firstTextBaseline, spacing: 7) {
+      StateDot(state: state)
+      VStack(alignment: .leading, spacing: 2) {
+        HStack(spacing: 4) {
+          if let symbol = item.session.agent.sidebarSymbol {
+            Image(systemName: symbol)
+              .font(.caption)
+              .foregroundStyle(.secondary)
+              .help(item.session.agent.name)
+              .accessibilityLabel(item.session.agent.name)
+              .accessibilityIdentifier("sessions.agent.\(item.session.agent.rawValue)")
+          }
+          Text(item.displayTitle)
+            .lineLimit(1)
+            .fontWeight(item.isUnread ? .semibold : .regular)
+          if item.isUnread {
+            Circle().fill(.blue).frame(width: 5, height: 5).accessibilityLabel("Unread")
+          }
+          if let other = otherAccount {
+            Text(AccountStore.shared.profile(for: other).name)
+              .font(.caption2)
+              .padding(.horizontal, 5)
+              .padding(.vertical, 1)
+              .background(Capsule().fill(.quaternary))
+              .help("Runs under the account in \(ContentView.abbreviated(other.directory))")
+          }
+        }
+        if let detail {
+          Text(detail).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+        }
+      }
+      Spacer(minLength: 4)
+      if let gauge = item.gauge(
+        accountModel: item.session.resuming.flatMap {
+          SessionMonitor.shared.accountModel(for: $0.account)
+        })
+      {
+        ContextGaugeView(gauge: gauge)
+      }
+    }
+    .accessibilityElement(children: .combine)
+  }
+
+  private var state: RowState { RowState(item) }
+
+  /// The session's account when it is not the window's. None for a runner's: every one there
+  /// runs under the runner shell's own (Ruling 11).
+  private var otherAccount: ClaudeAccount? {
+    guard item.session.features.showsAccount, !item.session.isOnRunner,
+      let account = item.session.effectiveAccount, account.key != windowAccount?.key
+    else { return nil }
+    return account
+  }
+
+  private var detail: String? {
+    var parts: [String] = []
+    if let lead = item.wants ?? item.stopReason { parts.append(lead) }
+    if let when = item.lastActivity {
+      parts.append(when.formatted(.relative(presentation: .named)))
+    }
+    if let subfolder { parts.append(subfolder) }
+    if let worktreeName { parts.append(worktreeName) }
+    return parts.isEmpty ? nil : parts.joined(separator: " · ")
+  }
+
+  /// The worktree's folder name, for a session running below the project root.
+  private var worktreeName: String? {
+    let path = item.session.folder.path(percentEncoded: false)
+    guard let range = path.range(of: "/.claude/worktrees/") else { return nil }
+    return String(path[range.upperBound...].prefix { $0 != "/" })
   }
 }
 

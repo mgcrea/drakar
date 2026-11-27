@@ -623,6 +623,16 @@ final class Project {
 
   @ObservationIgnored private var keptGroups: (key: GroupsKey, groups: ProjectGroups)?
 
+  /// The window's own rows as the sidebar lists them: in tab order by default, or sorted by
+  /// `sessionOrder` when chosen in the sidebar menu.
+  var listedHeld: [ProjectSession] {
+    sessionOrder.sorted(held) { item in
+      SessionOrder.Key(
+        state: RowState(item), activity: item.lastActivity,
+        folder: item.session.folder.path(percentEncoded: false))
+    }
+  }
+
   /// `groups`, Elsewhere as the sidebar lists it.
   var listedGroups: ProjectGroups {
     var groups = groups
@@ -1622,33 +1632,49 @@ final class Project {
       target, watching: showing, focusingComposer: focusingComposer, showing: showing)
   }
 
-  /// The sidebar's ↑ and ↓: the row `offset` rows from the one the preview tab shows (else
-  /// the first row), in the sidebar's order, Elsewhere's as sorted then Ended's while it is
-  /// expanded, opened as a click opens it. So it lands in the preview, which the next one
-  /// replaces, and the keys stay in the list; a tab closed at work is taken back as a tab.
-  /// Not a row another Drakar window holds as a tab: opened, it brings that window forward
-  /// and leaves the preview where it was, so the next key would land on it again. Stops at
-  /// the ends: false when there is no row to go to. The tabs are `step`'s.
+  /// The sidebar's ↑ and ↓: the row `offset` rows from the selected one (else the first row),
+  /// in the sidebar's order — This Window as sorted, Elsewhere as sorted, then Ended while
+  /// expanded — opened as a click opens it, with the keys kept in the list. A held row shows
+  /// its tab; Elsewhere and Ended land in the preview, which the next one replaces (a tab
+  /// closed at work is taken back as a tab). Not a row another Drakar window holds as a tab:
+  /// opened, it brings that window forward and leaves the selection where it was. Stops at
+  /// the ends: false when there is no row to go to.
   @discardableResult func stepSidebar(_ offset: Int) -> Bool {
+    enum Row {
+      case held(ProjectSession)
+      case elsewhere(SessionSummary)
+      case ended(SessionSummary)
+    }
     let groups = listedGroups
     let elsewhere = groups.elsewhere.filter { OpenSessions.shared.locate($0.sessionID) == nil }
     let rows =
-      elsewhere.map { (summary: $0, ended: false) }
-      + (showsEnded ? listedEnded(groups).map { (summary: $0, ended: true) } : [])
+      listedHeld.map(Row.held)
+      + elsewhere.map(Row.elsewhere)
+      + (showsEnded ? listedEnded(groups).map(Row.ended) : [])
     guard !rows.isEmpty else { return false }
-    let shown = tabs.first(where: \.isWatching)?.sessionID
+    let selected = self.selected
+    let current = rows.firstIndex { row in
+      switch row {
+      case .held(let item):
+        selected?.isWatching == false && selected?.id == item.id
+      case .elsewhere(let summary), .ended(let summary):
+        selected?.isWatching == true && selected?.sessionID == summary.sessionID
+      }
+    }
     let index: Int
-    if let current = rows.firstIndex(where: { $0.summary.sessionID == shown }) {
+    if let current {
       index = current + offset
       guard rows.indices.contains(index) else { return false }
     } else {
       index = 0
     }
-    let row = rows[index]
-    if row.ended {
-      openEnded(row.summary, focusingComposer: false)
-    } else {
-      openElsewhere(row.summary, focusingComposer: false)
+    switch rows[index] {
+    case .held(let item):
+      showTab(item, focusingComposer: false)
+    case .elsewhere(let summary):
+      openElsewhere(summary, focusingComposer: false)
+    case .ended(let summary):
+      openEnded(summary, focusingComposer: false)
     }
     return true
   }

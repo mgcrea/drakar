@@ -140,14 +140,16 @@ struct SessionStepTests {
     project.tabs.filter(\.isWatching).map(\.sessionID)
   }
 
-  /// The sidebar's ↓ opens its first row in the preview tab, then the next in its place,
-  /// the keys staying in the list; it stops at the ends, and ↑ goes back.
+  /// The sidebar's ↓ walks from This Window's rows into Ended in the preview tab, then the
+  /// next in its place, the keys staying in the list; it stops at the ends, and ↑ goes back
+  /// into This Window.
   @Test func theSidebarsArrowKeysGoThroughItsRowsInThePreview() async throws {
     let project = try project()
     let a = project.newSession()
     try await ended(["e1", "e2"], in: project)
     project.showsEnded = true
     let rows = project.listedEnded(project.groups).map(\.sessionID)
+    #expect(!project.stepSidebar(-1))
     #expect(project.stepSidebar(1))
     #expect(preview(in: project) == [rows[0]])
     #expect(project.selected?.sessionID == rows[0])
@@ -160,6 +162,8 @@ struct SessionStepTests {
     #expect(preview(in: project) == [rows[1]])
     #expect(project.stepSidebar(-1))
     #expect(preview(in: project) == [rows[0]])
+    #expect(project.stepSidebar(-1))
+    #expect(project.selectedID == a.id)
     #expect(!project.stepSidebar(-1))
   }
 
@@ -167,7 +171,7 @@ struct SessionStepTests {
   /// rather than bringing that window forward and landing on the same row again.
   @Test func theSidebarsArrowKeysGoPastASessionAnotherWindowHolds() async throws {
     let project = try project()
-    _ = project.newSession()
+    let a = project.newSession()
     try await ended(["e1", "e2", "e3"], in: project)
     let rows = project.listedEnded(project.groups)
     let other = Project(folder: project.folder)
@@ -185,23 +189,28 @@ struct SessionStepTests {
     #expect(preview(in: project) == [ended[1]])
     #expect(!project.stepSidebar(1))
     #expect(project.stepSidebar(-1))
-    #expect(!project.stepSidebar(-1))
     #expect(preview(in: project) == [ended[0]])
+    #expect(project.stepSidebar(-1))
+    #expect(project.selectedID == a.id)
+    #expect(!project.stepSidebar(-1))
   }
 
-  /// With no row to go to, the sidebar's keys leave the tabs as they are: a folded Ended
-  /// has none.
-  @Test func theSidebarsArrowKeysLeaveTheTabsAlone() async throws {
+  /// The sidebar's keys walk This Window's rows and stop at the ends when Ended is folded.
+  @Test func theSidebarsArrowKeysWalkThisWindowAndStopWhenEndedIsFolded() async throws {
     let project = try project()
     let a = project.newSession()
-    _ = project.newSession()
+    let b = project.newSession(agent: .agy)
     project.select(a)
-    #expect(!project.stepSidebar(1))
-    #expect(!project.stepSidebar(-1))
     try await ended(["e1"], in: project)
     project.showsEnded = false
+    #expect(!project.stepSidebar(-1))
+    #expect(project.stepSidebar(1))
+    #expect(project.selectedID == b.id)
+    #expect(!project.focusesComposer)
     #expect(!project.stepSidebar(1))
-    #expect(project.selectedID == a.id)
+    #expect(project.selectedID == b.id)
     #expect(project.tabs.count == 2)
+    #expect(project.stepSidebar(-1))
+    #expect(project.selectedID == a.id)
   }
 }

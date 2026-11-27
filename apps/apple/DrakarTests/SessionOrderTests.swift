@@ -102,4 +102,28 @@ struct SessionOrderTests {
     let stored = try JSONDecoder().decode(StoredProject.self, from: old)
     #expect(stored.sessionOrder == nil)
   }
+
+  /// `listedHeld` includes every agent's open tabs (Claude, Codex, Antigravity), excludes a
+  /// watched preview, and follows `sessionOrder`.
+  @Test func listedHeldIncludesAllAgentsAndRespectsOrder() throws {
+    let folder = FileManager.default.temporaryDirectory.appending(
+      path: "drakar-listed-held-\(UUID().uuidString)", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    let project = Project(folder: folder)
+    let claude = project.newSession(agent: .claude)
+    let agy = project.newSession(agent: .agy)
+    let codex = project.newSession(agent: .codex)
+    #expect(project.listedHeld.map(\.id) == [claude.id, agy.id, codex.id])
+
+    // Folder order sorts by each session's subfolder A–Z.
+    let zFolder = folder.appending(path: "z-sub", directoryHint: .isDirectory)
+    let aFolder = folder.appending(path: "a-sub", directoryHint: .isDirectory)
+    let zSession = project.newSession(agent: .agy, folder: zFolder)
+    let aSession = project.newSession(agent: .agy, folder: aFolder)
+    project.sessionOrder = .folder
+    let ids = project.listedHeld.map(\.id)
+    let aIndex = try #require(ids.firstIndex(of: aSession.id))
+    let zIndex = try #require(ids.firstIndex(of: zSession.id))
+    #expect(aIndex < zIndex)
+  }
 }
