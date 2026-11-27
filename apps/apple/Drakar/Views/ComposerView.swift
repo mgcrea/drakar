@@ -1,8 +1,8 @@
 import DrakarKit
 import SwiftUI
 
-/// Where the prompt is written. Return sends, Option-Return starts a new line. While a turn
-/// runs, Stop ends it, and what is typed is queued: sent now, taken when the CLI can.
+/// Where the prompt is written. Return sends. Shift-Return and Option-Return start a new line.
+/// While a turn runs, Stop ends it, and what is typed is queued: sent now, taken when the CLI can.
 ///
 /// A `/` at the start opens the commands it lists, narrowed as the name is typed: ↑ and ↓
 /// move, Return or Tab writes the name in, Esc closes the list until the draft changes.
@@ -453,8 +453,11 @@ private struct AttachmentChip: View {
   }
 }
 
-/// While the composer has the keys, ⌘V with something to attach on the clipboard attaches
-/// it instead of reaching the text field, which would paste nothing or the files' names.
+/// While the composer has the keys, two keys are caught before the field editor sees them.
+/// ⌘V with something to attach on the clipboard attaches it instead of reaching the text
+/// field, which would paste nothing or the files' names. Shift-Return starts a new line:
+/// Return submits, and the field editor would submit for Shift-Return too. Option-Return
+/// already starts a line and is left alone.
 /// The monitor hears every window's keys: it acts only in its own, while that window is key
 /// and a text field in it is being edited, which a sheet or another window never is.
 @MainActor final class PasteMonitor {
@@ -462,12 +465,34 @@ private struct AttachmentChip: View {
   weak var window: NSWindow?
   private var monitor: Any?
 
+  /// Return, and Enter on the keypad. Both send; with Shift they start a line.
+  static let returnKey: UInt16 = 0x24
+  static let keypadEnter: UInt16 = 0x4C
+
+  /// Shift-Return and Shift-Enter, and not when another modifier is held. Caps Lock is
+  /// ignored: it is on or off without being part of the shortcut. Option-Return is not
+  /// this; the field editor already turns that into a line.
+  static func insertsNewline(_ event: NSEvent) -> Bool {
+    let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask).subtracting(
+      .capsLock)
+    guard flags == .shift else { return false }
+    return event.keyCode == returnKey || event.keyCode == keypadEnter
+  }
+
   func install(_ attach: @escaping ([AttachmentSource]) -> Void) {
     remove()
     monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
       guard let self, self.isActive, let window = self.window, event.window === window,
-        window.isKeyWindow, (window.firstResponder as? NSTextView)?.isFieldEditor == true,
-        event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
+        window.isKeyWindow, let editor = window.firstResponder as? NSTextView,
+        editor.isFieldEditor
+      else { return event }
+      if Self.insertsNewline(event) {
+        // `insertNewline:` would end editing and submit. The field editor only inserts
+        // a line for this, which is what Option-Return already calls.
+        editor.insertNewlineIgnoringFieldEditor(nil)
+        return nil
+      }
+      guard event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
         event.charactersIgnoringModifiers == "v",
         let sources = AttachmentIntake.sources(in: .general)
       else { return event }
