@@ -40,6 +40,7 @@ struct ComposerView: View {
   var commands: [SkillEntry] = []
   /// A command picked in the menu, for the caller to write into the draft.
   var pickCommand: (SkillEntry) -> Void = { _ in }
+  var loadCommands: () -> Void = {}
   /// The images and files going with the next prompt, shown as chips above the field.
   var attachments: [Attachment] = []
   /// Why the last things offered were not all attached.
@@ -49,6 +50,9 @@ struct ComposerView: View {
   var attach: ([AttachmentSource]) -> Void = { _ in }
   /// Several sessions are marked: what the prompt goes to, and how to unmark them.
   var broadcast: BroadcastChip? = nil
+
+  @AppStorage(PreferenceKey.composerShortcuts) private var shortcutsData = Data()
+  @AppStorage(PreferenceKey.favoriteComposerShortcut) private var favoriteShortcutID = ""
 
   @State private var leavesContextOut = false
   /// The menu's row under the keyboard.
@@ -148,7 +152,13 @@ struct ComposerView: View {
     .onChange(of: isFocused) { _, focused in if focused { self.focused() } }
     // A new selection is attached again, whatever happened to the last one.
     .onChange(of: context) { leavesContextOut = false }
-    .onChange(of: text) { highlighted = 0 }
+    .onChange(of: text) {
+      highlighted = 0
+      if menuClosedOn != text { menuClosedOn = nil }
+    }
+    .onChange(of: needsShortcutCommands, initial: true) { _, needsCommands in
+      if needsCommands { loadCommands() }
+    }
     // ⌘V with files or a screenshot on the clipboard attaches them; text pastes as usual.
     .background(WindowReader { pasteMonitor.window = $0 })
     .onAppear { pasteMonitor.install(attach) }
@@ -235,6 +245,7 @@ struct ComposerView: View {
         .foregroundStyle(.secondary)
         .help("Attach images or files (or paste, or drop them on the session)")
         .accessibilityIdentifier("composer.attach")
+      shortcutControls
       if let pills { pills.model }
       Spacer(minLength: 8)
       if let pills { pills.mode }
@@ -243,6 +254,67 @@ struct ComposerView: View {
     .padding(.leading, 6)
     .padding(.trailing, 6)
     .padding(.vertical, 6)
+  }
+
+  private var shortcuts: [ComposerShortcut] {
+    ComposerShortcut.read(shortcutsData).filter { $0.isEnabled && !$0.title.isEmpty }
+  }
+
+  private var needsShortcutCommands: Bool {
+    broadcast == nil && shortcuts.contains { $0.kind == .skill && !$0.skillName.isEmpty }
+  }
+
+  private var canInsertShortcut: Bool {
+    canSend && !isRunning && text.isEmpty && attachments.isEmpty
+  }
+
+  private func command(for shortcut: ComposerShortcut) -> SkillEntry? {
+    guard broadcast == nil else { return nil }
+    return commands.first { $0.name == shortcut.skillName }
+  }
+
+  @ViewBuilder private var shortcutControls: some View {
+    let available = shortcuts.filter { shortcut in
+      switch shortcut.kind {
+      case .skill: command(for: shortcut) != nil
+      case .prompt: !shortcut.prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+      }
+    }
+    let favorite = available.first { $0.id.uuidString == favoriteShortcutID }
+    let menuShortcuts = available.filter { $0.id != favorite?.id }
+    if !menuShortcuts.isEmpty {
+      Menu {
+        ForEach(menuShortcuts) { shortcut in
+          Button(shortcut.title) { insert(shortcut) }
+        }
+      } label: {
+        Label("Composer Shortcuts", systemImage: "bolt")
+          .labelStyle(.iconOnly)
+      }
+      .menuStyle(.borderlessButton)
+      .fixedSize()
+      .help("Composer Shortcuts")
+      .disabled(!canInsertShortcut)
+    }
+    if let favorite {
+      Button(favorite.title) { insert(favorite) }
+        .buttonStyle(.borderless)
+        .lineLimit(1)
+        .disabled(!canInsertShortcut)
+    }
+  }
+
+  private func insert(_ shortcut: ComposerShortcut) {
+    guard canInsertShortcut else { return }
+    switch shortcut.kind {
+    case .skill:
+      guard let command = command(for: shortcut) else { return }
+      choose(command)
+    case .prompt:
+      text = shortcut.prompt
+      menuClosedOn = text
+    }
+    isFocused = true
   }
 
   @ViewBuilder private var button: some View {

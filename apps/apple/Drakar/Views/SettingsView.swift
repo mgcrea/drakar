@@ -6,7 +6,7 @@ import SwiftUI
 
 /// The panes, in three sections, as Cupertino and Armada draw them.
 ///
-/// The first is how sessions behave: General, Models, Transcript, Terminal, Theme, Attention, then
+/// The first is how sessions behave: General, Models, Composer Shortcuts, Transcript, Terminal, Theme, Attention, then
 /// Runner, which says where they may run, and MCP Server, which says what an agent on this Mac
 /// may do with them.
 ///
@@ -22,6 +22,7 @@ import SwiftUI
 enum SettingsPane: String, SupportKitSettings.SettingsPane {
   case general
   case models
+  case composerShortcuts
   case transcript
   case terminal
   case theme
@@ -37,6 +38,7 @@ enum SettingsPane: String, SupportKitSettings.SettingsPane {
     switch self {
     case .general: "General"
     case .models: "Models"
+    case .composerShortcuts: "Composer Shortcuts"
     case .transcript: "Transcript"
     case .terminal: "Terminal"
     case .theme: "Theme"
@@ -54,6 +56,7 @@ enum SettingsPane: String, SupportKitSettings.SettingsPane {
     switch self {
     case .general: "gearshape"
     case .models: "cpu"
+    case .composerShortcuts: "bolt"
     case .transcript: "text.bubble"
     case .terminal: "terminal"
     case .theme: "paintpalette"
@@ -69,7 +72,8 @@ enum SettingsPane: String, SupportKitSettings.SettingsPane {
 
   var group: SettingsPaneGroup {
     switch self {
-    case .general, .models, .transcript, .terminal, .theme, .attention, .runner, .mcp:
+    case .general, .models, .composerShortcuts, .transcript, .terminal, .theme, .attention, .runner,
+      .mcp:
       .configuration
     case .whatsNew, .updates, .about: .information
     case .licence: .entitlement
@@ -96,6 +100,8 @@ extension SettingsPaneGroup {
 /// The defaults keys, named the way every other key in the fleet is: the slug, then
 /// the setting.
 enum PreferenceKey {
+  static let composerShortcuts = "drakar.composerShortcuts"
+  static let favoriteComposerShortcut = "drakar.favoriteComposerShortcut"
   /// The agent New Session starts (`AgentKind`'s raw value); empty for Claude Code.
   static let defaultAgent = "drakar.defaultAgent"
   /// Which folders Drakar offers itself as the editor for, to `claude` run in a terminal.
@@ -443,6 +449,7 @@ struct SettingsView: View {
       switch pane {
       case .general: GeneralPane()
       case .models: ModelsSettingsPane()
+      case .composerShortcuts: ComposerShortcutsPane()
       case .transcript: TranscriptPane()
       case .terminal: TerminalSettingsPane()
       case .theme: ThemePane()

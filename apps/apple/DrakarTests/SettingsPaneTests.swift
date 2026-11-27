@@ -22,7 +22,8 @@ struct SettingsPaneTests {
   @Test func keepsPaneIdentifiersStable() {
     #expect(
       SettingsPane.allCases.map(\.rawValue) == [
-        "general", "models", "transcript", "terminal", "theme", "attention", "runner", "mcp",
+        "general", "models", "composerShortcuts", "transcript", "terminal", "theme", "attention",
+        "runner", "mcp",
         "whatsNew",
         "updates", "about", "licence",
       ])
@@ -32,7 +33,8 @@ struct SettingsPaneTests {
   /// alone. This fails the day a pane lands without a section of its own picked.
   @Test func drawsThreeSections() {
     let groups: [(Drakar.SettingsPane, SettingsPaneGroup)] = [
-      (.general, .configuration), (.models, .configuration), (.transcript, .configuration),
+      (.general, .configuration), (.models, .configuration), (.composerShortcuts, .configuration),
+      (.transcript, .configuration),
       (.terminal, .configuration), (.theme, .configuration), (.attention, .configuration),
       (.runner, .configuration),
       (.mcp, .configuration), (.whatsNew, .information), (.updates, .information),

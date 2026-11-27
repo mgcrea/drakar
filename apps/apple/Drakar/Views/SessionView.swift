@@ -185,6 +185,7 @@ struct SessionView: View {
                   command.takesArguments
                   ? SkillPrefill(text: text, hint: command.argumentHint) : nil
               },
+              loadCommands: { project.loadSlashCommands(for: session) },
               attachments: item.attachments, attachmentNote: item.attachmentNote,
               removeAttachment: { attachment in
                 item.attachments.removeAll { $0.id == attachment.id }
