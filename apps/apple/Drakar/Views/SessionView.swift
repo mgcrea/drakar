@@ -205,7 +205,8 @@ struct SessionView: View {
           item: item,
           windowAccount: session.isOnRunner
             ? nil : AccountStore.shared.windowAccount(for: project.folder),
-          elsewhere: session.isReadOnly ? elsewhere : nil)
+          elsewhere: session.isReadOnly ? elsewhere : nil,
+          start: { project.start(item) })
       }
       // What scrolls under fades out above the card, and is gone by the footer's line.
       .background {
@@ -640,6 +641,8 @@ private struct SessionFooter: View {
   let windowAccount: ClaudeAccount?
   /// Set for a session another process runs: its state comes from there.
   let elsewhere: (status: ElsewhereStatus, host: String)?
+  let start: () -> Void
+  @State private var isStartHovered = false
 
   private var session: AgentSession { item.session }
 
@@ -708,6 +711,9 @@ private struct SessionFooter: View {
     .foregroundStyle(.secondary)
     .padding(.horizontal, 12)
     .padding(.vertical, 6)
+    .onChange(of: session.phase) { _, phase in
+      if phase != .idle { isStartHovered = false }
+    }
   }
 
   /// The session's account, or for one not started yet the account it will start under;
@@ -771,7 +777,23 @@ private struct SessionFooter: View {
   @ViewBuilder private var ownStatus: some View {
     switch session.phase {
     case .idle:
-      Label("Not started", systemImage: "circle.dotted")
+      if session.canSend {
+        Button(action: start) {
+          Label("Not started", systemImage: "circle.dotted")
+            .foregroundStyle(isStartHovered ? .primary : .secondary)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { isStartHovered = $0 }
+        .help(
+          session.resuming != nil
+            ? String(localized: "Click to restart the session.")
+            : String(localized: "Click to start the session.")
+        )
+        .accessibilityIdentifier("session.start")
+      } else {
+        Label("Not started", systemImage: "circle.dotted")
+      }
     case .starting:
       Label("Starting…", systemImage: "circle.dotted")
     case .ready where session.status.isRunning:

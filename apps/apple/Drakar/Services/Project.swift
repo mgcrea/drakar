@@ -1396,6 +1396,16 @@ final class Project {
     takeOver(item)
   }
 
+  /// Starts an idle session's process without sending a prompt yet: clicking "Not started"
+  /// on a resumed session lets it initialize and report its skills before the first message.
+  func start(_ item: ProjectSession) {
+    let session = item.session
+    guard session.phase == .idle, session.canSend else { return }
+    takeOver(item)
+    item.focusRequest += 1
+    Task { await session.spawn() }
+  }
+
   /// The window's tabs in order: its own rows and the preview. The strip lists these, and
   /// the window keeps its own rows in this order between launches.
   var tabs: [ProjectSession] { sessions }

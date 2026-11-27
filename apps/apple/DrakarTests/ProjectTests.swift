@@ -1073,4 +1073,41 @@ struct ProjectTests {
     let local = Project(folder: folder).newSession()
     #expect(local.session.rename(to: "Pineapple"))
   }
+
+  /// Starting an idle resumed session promotes a preview tab, focuses the composer, and spawns
+  /// its process so skills from `initialize` populate without waiting for a prompt.
+  @Test func startingAnIdleResumedSessionSpawnsAndLoadsSkills() async throws {
+    try Data(
+      #"{"type":"user","cwd":"/w","message":{"role":"user","content":"hi"}}"#
+        .appending("\n").utf8
+    ).write(to: folder.appending(path: "a.jsonl"))
+    let reply =
+      #"{"type":"control_response","response":{"subtype":"success","request_id":"init-1","response":{"commands":[{"name":"deploy","description":"Ship it","argumentHint":""}]}}}"#
+    let replying = try standIn("replying-claude", "read line\necho '\(reply)'\ncat > /dev/null")
+
+    let project = Project(folder: folder)
+    project.executableOverride = replying
+    defer { project.stopAll() }
+    let account = AccountStore.shared.windowAccount(for: folder)
+    let resumed = ResumeTarget(
+      sessionID: "a", cwd: folder.path(percentEncoded: false),
+      file: folder.appending(path: "a.jsonl").path(percentEncoded: false),
+      accountDirectory: account.directory.path(percentEncoded: false),
+      accountIsDefault: account.isDefault)
+    let preview = project.attach(resumed, watching: true)
+
+    #expect(preview.isWatching)
+    #expect(preview.session.phase == .idle)
+    let beforeFocus = preview.focusRequest
+
+    project.start(preview)
+
+    #expect(!preview.isWatching)
+    #expect(preview.focusRequest == beforeFocus + 1)
+    for _ in 0..<50 where project.slashCommands(for: preview.session).isEmpty {
+      try await Task.sleep(for: .milliseconds(50))
+    }
+    #expect(preview.session.phase == .ready)
+    #expect(project.slashCommands(for: preview.session).map(\.name) == ["deploy"])
+  }
 }
