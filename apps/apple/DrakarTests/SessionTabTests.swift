@@ -145,11 +145,47 @@ struct SessionTabTests {
     #expect(project.tabs.map(\.id) == [b.id, c.id, a.id])
   }
 
-  /// The tabs share the strip down to their narrowest, then the strip scrolls.
+  /// The tabs share the strip (leaving room for the + button) down to their narrowest, then
+  /// the strip scrolls while the + button stays pinned at the trailing edge.
   @Test func tabsShrinkToTheirNarrowest() {
     #expect(SessionTabStrip.tabWidth(in: 1000, count: 2) == 220)
     #expect(SessionTabStrip.tabWidth(in: 600, count: 4) < 150)
     #expect(SessionTabStrip.tabWidth(in: 600, count: 4) > 120)
     #expect(SessionTabStrip.tabWidth(in: 600, count: 20) == 120)
+
+    // With room to spare, the scroll view hugs the tabs so + sits right beside the last tab.
+    let twoTabs = SessionTabStrip.scrollWidth(in: 1000, count: 2)
+    #expect(twoTabs == 220 * 2 + SessionTabStrip.spacing)
+
+    // Shrinking to fit: tabs + spacing + + button + insets fill the strip exactly.
+    let fourWidth = SessionTabStrip.tabWidth(in: 600, count: 4)
+    let fourScroll = SessionTabStrip.scrollWidth(in: 600, count: 4)
+    #expect(fourScroll == fourWidth * 4 + SessionTabStrip.spacing * 3)
+    #expect(
+      fourScroll + SessionTabStrip.spacing + SessionTabStrip.newButtonWidth
+        + SessionTabStrip.inset * 2 == 600)
+
+    // Overflowing: scroll view clamps to the available room so + stays visible on the right.
+    let overflowScroll = SessionTabStrip.scrollWidth(in: 600, count: 20)
+    #expect(
+      overflowScroll
+        == 600 - SessionTabStrip.inset * 2 - SessionTabStrip.spacing
+        - SessionTabStrip.newButtonWidth)
+    #expect(SessionTabStrip.cellWidth(in: overflowScroll, count: 20) == 120)
+  }
+
+  /// Clicking the strip's + button opens the new session after the last tab and selects it,
+  /// even when an earlier tab is currently shown.
+  @Test func newSessionButtonAppendsAfterLastTab() {
+    let project = Project(folder: folder)
+    let a = project.newSession()
+    let b = project.newSession()
+    let c = project.newSession()
+    project.select(a)
+
+    SessionTabStrip.newSession(in: project)
+    #expect(project.tabs.count == 4)
+    #expect(project.tabs.prefix(3).map(\.id) == [a.id, b.id, c.id])
+    #expect(project.selectedID == project.tabs.last?.id)
   }
 }

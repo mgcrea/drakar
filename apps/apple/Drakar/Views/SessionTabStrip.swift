@@ -32,10 +32,11 @@ struct SessionTabStrip: View {
   let project: Project
   @FocusState private var isFocused: Bool
 
-  static let spacing: CGFloat = 2
-  static let inset: CGFloat = 6
-  static let minWidth: CGFloat = 120
-  static let maxWidth: CGFloat = 220
+  nonisolated static let spacing: CGFloat = 2
+  nonisolated static let inset: CGFloat = 6
+  nonisolated static let minWidth: CGFloat = 120
+  nonisolated static let maxWidth: CGFloat = 220
+  nonisolated static let newButtonWidth: CGFloat = 24
 
   var body: some View {
     // None over an empty window: "No session" alone, as before tabs.
@@ -50,29 +51,33 @@ struct SessionTabStrip: View {
   private var strip: some View {
     let tabs = project.tabs
     let count = tabs.count
-    return ScrollViewReader { proxy in
-      ScrollView(.horizontal) {
-        HStack(spacing: Self.spacing) {
-          ForEach(tabs) { item in
-            SessionTabCell(
-              item: item, project: project, isSelected: item.id == project.selectedID,
-              isMarked: project.marked.contains(item.id)
-            )
-            .containerRelativeFrame(.horizontal) { length, _ in
-              Self.tabWidth(in: length, count: count)
+    return TabStripLayout(count: count) {
+      ScrollViewReader { proxy in
+        ScrollView(.horizontal) {
+          HStack(spacing: Self.spacing) {
+            ForEach(tabs) { item in
+              SessionTabCell(
+                item: item, project: project, isSelected: item.id == project.selectedID,
+                isMarked: project.marked.contains(item.id)
+              )
+              .containerRelativeFrame(.horizontal) { length, _ in
+                Self.cellWidth(in: length, count: count)
+              }
+              .id(item.id)
             }
-            .id(item.id)
           }
+          .padding(.vertical, 3)
         }
-        .padding(.horizontal, Self.inset)
-        .padding(.vertical, 3)
+        .scrollIndicators(.never)
+        .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
+        .onChange(of: project.selectedID, initial: true) { _, id in
+          guard let id else { return }
+          withAnimation(.snappy(duration: 0.2)) { proxy.scrollTo(id) }
+        }
       }
-      .scrollIndicators(.never)
-      .onChange(of: project.selectedID, initial: true) { _, id in
-        guard let id else { return }
-        withAnimation(.snappy(duration: 0.2)) { proxy.scrollTo(id) }
-      }
+      NewSessionTabButton(project: project)
     }
+    .contentShape(Rectangle())
     // Dropped past the last tab: the tab goes to the end.
     .dropDestination(for: String.self) { ids, _ in Self.drop(ids, onto: nil, in: project) }
     .focusable()
@@ -104,12 +109,37 @@ struct SessionTabStrip: View {
     project.step(offset, wrapping: false, focusingComposer: false) ? .handled : .ignored
   }
 
-  /// Each tab's width: the strip shared out among the tabs, down to `minWidth`, past which
-  /// the strip scrolls; never wider than `maxWidth`.
-  static func tabWidth(in length: CGFloat, count: Int) -> CGFloat {
+  /// Each tab's width: the strip shared out among the tabs (leaving room for the trailing +
+  /// button), down to `minWidth`, past which the strip scrolls; never wider than `maxWidth`.
+  nonisolated static func tabWidth(in length: CGFloat, count: Int) -> CGFloat {
+    let available = length - inset * 2 - spacing - newButtonWidth
+    return cellWidth(in: available, count: count)
+  }
+
+  /// Each tab's width inside the tabs' scroll view of width `length` (no outer insets or +
+  /// button).
+  nonisolated static func cellWidth(in length: CGFloat, count: Int) -> CGFloat {
     let count = max(count, 1)
-    let gaps = spacing * CGFloat(count - 1) + inset * 2
+    let gaps = spacing * CGFloat(count - 1)
     return min(maxWidth, max(minWidth, (length - gaps) / CGFloat(count)))
+  }
+
+  /// The tabs' scroll view width inside a strip of width `length`: exactly the tabs' total width
+  /// while they fit so the + button sits right beside the last tab, clamped to the available room
+  /// once they overflow so the + button stays pinned at the trailing edge.
+  nonisolated static func scrollWidth(
+    in length: CGFloat, count: Int, buttonWidth: CGFloat = newButtonWidth
+  ) -> CGFloat {
+    let tabs = max(count, 1)
+    let gaps = spacing * CGFloat(tabs - 1)
+    let available = max(0, length - inset * 2 - spacing - buttonWidth)
+    let tab = cellWidth(in: available, count: tabs)
+    return min(available, tab * CGFloat(tabs) + gaps)
+  }
+
+  /// Opens a new session after the last tab, where the strip's + button sits.
+  static func newSession(in project: Project, agent: AgentKind? = nil) {
+    project.newSession(agent: agent, at: project.tabs.count)
   }
 
   /// A tab dragged onto `target` takes its place, whichever side it came from; onto none,
@@ -133,6 +163,102 @@ struct SessionTabStrip: View {
     if flags.contains(.command) { return .toggle }
     if flags.contains(.shift) { return .extend }
     return .plain
+  }
+}
+
+/// Places the tabs' scroll view and the trailing + button on one line: the scroll view hugs the
+/// tabs while they fit (so + sits right next to the last tab), and clamps to the available room
+/// once they overflow (so + stays pinned at the trailing edge).
+private struct TabStripLayout: Layout {
+  let count: Int
+
+  func sizeThatFits(
+    proposal: ProposedViewSize, subviews: Subviews, cache: inout ()
+  ) -> CGSize {
+    guard subviews.count == 2 else { return .zero }
+    let button = subviews[1].sizeThatFits(.unspecified)
+    let scrollWidth = scrollWidth(for: proposal.width, buttonWidth: button.width)
+    let scroll = subviews[0].sizeThatFits(ProposedViewSize(width: scrollWidth, height: nil))
+    let width =
+      proposal.width
+      ?? (SessionTabStrip.inset * 2 + scrollWidth + SessionTabStrip.spacing + button.width)
+    return CGSize(width: width, height: max(scroll.height, button.height + 6))
+  }
+
+  func placeSubviews(
+    in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()
+  ) {
+    guard subviews.count == 2 else { return }
+    let button = subviews[1].sizeThatFits(.unspecified)
+    let scrollWidth = scrollWidth(for: bounds.width, buttonWidth: button.width)
+    let scrollX = bounds.minX + SessionTabStrip.inset
+    subviews[0].place(
+      at: CGPoint(x: scrollX, y: bounds.midY), anchor: .leading,
+      proposal: ProposedViewSize(width: scrollWidth, height: bounds.height))
+    subviews[1].place(
+      at: CGPoint(x: scrollX + scrollWidth + SessionTabStrip.spacing, y: bounds.midY),
+      anchor: .leading, proposal: ProposedViewSize(button))
+  }
+
+  private func scrollWidth(for totalWidth: CGFloat?, buttonWidth: CGFloat) -> CGFloat {
+    guard let totalWidth else {
+      let tabs = max(count, 1)
+      return SessionTabStrip.maxWidth * CGFloat(tabs)
+        + SessionTabStrip.spacing * CGFloat(tabs - 1)
+    }
+    return SessionTabStrip.scrollWidth(in: totalWidth, count: count, buttonWidth: buttonWidth)
+  }
+}
+
+/// The + button beside the last session tab: starts a new session there, with ⌥-click for the
+/// alternate agent and a right-click menu to pick any agent, matching the sidebar's button.
+private struct NewSessionTabButton: View {
+  let project: Project
+  @AppStorage(PreferenceKey.defaultAgent) private var defaultAgentRaw = AgentKind.claude.rawValue
+  @AppStorage(PreferenceKey.agentForFolder) private var agentPicks = ""
+  @State private var isHovered = false
+
+  private var defaultAgent: AgentKind {
+    let _ = (defaultAgentRaw, agentPicks)
+    return ClaudeChoice.agent(forNewSessionIn: project.folder)
+  }
+
+  var body: some View {
+    Button {
+      let other = project.runner == nil && NSEvent.modifierFlags.contains(.option)
+      SessionTabStrip.newSession(in: project, agent: other ? defaultAgent.other : nil)
+    } label: {
+      Image(systemName: "plus")
+        .font(.system(size: 12, weight: .medium))
+        .foregroundStyle(isHovered ? .primary : .secondary)
+        .frame(width: SessionTabStrip.newButtonWidth, height: 24)
+        .background(
+          RoundedRectangle(cornerRadius: SessionTab.radius)
+            .fill(isHovered ? AnyShapeStyle(.quinary) : AnyShapeStyle(.clear))
+        )
+        .contentShape(RoundedRectangle(cornerRadius: SessionTab.radius))
+    }
+    .buttonStyle(.plain)
+    .onHover { isHovered = $0 }
+    .help(helpText)
+    .contextMenu {
+      if project.runner == nil {
+        ForEach(AgentKind.allCases, id: \.self) { agent in
+          Button("New \(agent.name) Session") {
+            SessionTabStrip.newSession(in: project, agent: agent)
+          }
+        }
+      }
+    }
+    .accessibilityLabel("New Session")
+    .accessibilityIdentifier("sessions.tabs.new")
+  }
+
+  private var helpText: String {
+    guard project.runner == nil else { return String(localized: "New session (⌘T)") }
+    return String(
+      localized:
+        "New \(defaultAgent.name) session (⌘T); ⌥-click for \(defaultAgent.other.name) (⌃⌘N)")
   }
 }
 
@@ -227,8 +353,8 @@ struct SessionTab: View, Equatable {
   var body: some View {
     HStack(spacing: 5) {
       mark.frame(width: 10)
-      if agent == .codex {
-        Image(systemName: "terminal")
+      if let symbol = agent.sidebarSymbol {
+        Image(systemName: symbol)
           .font(.caption)
           .foregroundStyle(.secondary)
           .help(agent.name)
