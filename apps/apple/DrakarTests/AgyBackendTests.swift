@@ -136,10 +136,11 @@ struct AgyBackendTests {
       configuration: .init(
         executable: URL(filePath: "/bin/sh"), arguments: ["-c", server], environment: [:],
         currentDirectory: URL(filePath: "/tmp")))
-    #expect(events.contains { event in
-      guard case .prompt(let prompt, _) = event else { return false }
-      return prompt.text == "saved prompt"
-    })
+    #expect(
+      events.contains { event in
+        guard case .prompt(let prompt, _) = event else { return false }
+        return prompt.text == "saved prompt"
+      })
   }
 
   @Test func antigravityAndGrokHaveDefaultModelsOfTheirOwn() {

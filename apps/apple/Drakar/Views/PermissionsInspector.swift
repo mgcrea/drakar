@@ -134,7 +134,8 @@ private struct PermissionsDetails: View {
         "No Permission Rules", systemImage: "lock.shield",
         description: Text("Codex sessions have no permission rules."))
     case .grok:
-      ContentUnavailableView("Grok Permission Rules", systemImage: "lock.shield",
+      ContentUnavailableView(
+        "Grok Permission Rules", systemImage: "lock.shield",
         description: Text("Manage Grok’s rules in its CLI configuration."))
     case .agy:
       ContentUnavailableView(

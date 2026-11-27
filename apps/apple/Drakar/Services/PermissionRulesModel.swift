@@ -81,7 +81,8 @@ final class PermissionRulesModel {
         edit: { _ in .refused(editsOnRunner(runner)) })
     }
     return Source(
-      key: item.id, isCodex: session.agent == .codex, isAgy: session.agent == .agy, isGrok: session.agent == .grok, isLive: isLive,
+      key: item.id, isCodex: session.agent == .codex, isAgy: session.agent == .agy,
+      isGrok: session.agent == .grok, isLive: isLive,
       list: {
         if isLive { return await session.listPermissionRules() }
         return await PermissionRulesProbe.run(

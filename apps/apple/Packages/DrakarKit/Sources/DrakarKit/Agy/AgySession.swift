@@ -276,7 +276,9 @@ public struct AgySession: Sendable {
     switch call {
     case .initialize:
       isInitialized = true
-      agentVersion = result["agentInfo"]?["version"]?.stringValue ?? result["_meta"]?["agentVersion"]?.stringValue
+      agentVersion =
+        result["agentInfo"]?["version"]?.stringValue
+        ?? result["_meta"]?["agentVersion"]?.stringValue
       if !beforeSession.isEmpty, !isOpeningSession { step.writes.append(openSession()) }
 
     case .openSession:
@@ -294,7 +296,8 @@ public struct AgySession: Sendable {
         step.signals.append(.models(snap.models))
       }
 
-      let adoptedMode: PermissionMode = isGrok ? .ask : (explicitMode ? mode : (snap.currentMode ?? mode))
+      let adoptedMode: PermissionMode =
+        isGrok ? .ask : (explicitMode ? mode : (snap.currentMode ?? mode))
       mode = adoptedMode
       let activeModel = model ?? snap.currentModel
       let activeEffort = effort ?? snap.currentEffort
@@ -325,7 +328,8 @@ public struct AgySession: Sendable {
         let (_, msg) = calls.make(
           "session/set_config_option",
           .object([
-            "sessionId": .string(sid), "configId": .string(isGrok ? "reasoning_effort" : "thought_level"),
+            "sessionId": .string(sid),
+            "configId": .string(isGrok ? "reasoning_effort" : "thought_level"),
             "value": .string(pickedEffort),
           ]),
           for: .initialConfig)
@@ -412,7 +416,9 @@ public struct AgySession: Sendable {
       || lower.contains("unauthorized")
     {
       beforeSession = []
-      step.signals.append(.unusable(isGrok ? "Run grok in a terminal to sign in, then send again." : Self.notSignedIn))
+      step.signals.append(
+        .unusable(isGrok ? "Run grok in a terminal to sign in, then send again." : Self.notSignedIn)
+      )
       return
     }
     let waiting = beforeSession

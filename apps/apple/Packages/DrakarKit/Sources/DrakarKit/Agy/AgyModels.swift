@@ -34,7 +34,9 @@ public enum AgyModels {
     let availableIDs = Set(available.compactMap { $0["modelId"]?.stringValue })
 
     let modelConfig = configOptions.first { $0["id"]?.stringValue == "model" }
-    let thoughtConfig = configOptions.first { $0["category"]?.stringValue == "thought_level" || $0["id"]?.stringValue == "thought_level" }
+    let thoughtConfig = configOptions.first {
+      $0["category"]?.stringValue == "thought_level" || $0["id"]?.stringValue == "thought_level"
+    }
     let modeConfig = configOptions.first { $0["id"]?.stringValue == "mode" }
 
     let currentModel =
@@ -89,7 +91,9 @@ public enum AgyModels {
     let knownEfforts = Dictionary(
       existing.map { ($0.value, $0.effortLevels) }, uniquingKeysWith: { first, _ in first })
     let modelConfig = configOptions.first { $0["id"]?.stringValue == "model" }
-    let thoughtConfig = configOptions.first { $0["category"]?.stringValue == "thought_level" || $0["id"]?.stringValue == "thought_level" }
+    let thoughtConfig = configOptions.first {
+      $0["category"]?.stringValue == "thought_level" || $0["id"]?.stringValue == "thought_level"
+    }
     let modeConfig = configOptions.first { $0["id"]?.stringValue == "mode" }
 
     let currentModel = modelConfig?["currentValue"]?.stringValue

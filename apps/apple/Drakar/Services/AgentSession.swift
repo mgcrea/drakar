@@ -903,7 +903,9 @@ final class AgentSession {
 
   private func readHistory() async {
     if let resuming, resuming.agentKind == .codex { return await readCodexHistory(resuming) }
-    if let resuming, [.agy, .grok].contains(resuming.agentKind) { return await readAgyHistory(resuming) }
+    if let resuming, [.agy, .grok].contains(resuming.agentKind) {
+      return await readAgyHistory(resuming)
+    }
     guard let file = resuming?.transcriptFile else {
       isLoadingHistory = false
       return
@@ -1026,7 +1028,9 @@ final class AgentSession {
     let environment = await Self.environment.value
     var loaded: [AgentEvent] = []
     var problem: String?
-    if let executable = executableOverride ?? AgyLaunch.locate(path: environment["PATH"], binary: agent.rawValue) {
+    if let executable = executableOverride
+      ?? AgyLaunch.locate(path: environment["PATH"], binary: agent.rawValue)
+    {
       do {
         loaded = try await AgyHistory.events(
           sessionID: target.sessionID, cwd: folder.path(percentEncoded: false),

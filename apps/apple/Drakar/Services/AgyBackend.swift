@@ -14,10 +14,16 @@ final class AgyBackend: AgentBackend {
   private var session: AgySession?
   private var folder: URL?
 
-  var notFoundMessage: String { agent == .grok ? String(localized: "Grok Build was not found. Install the grok CLI, then send again.") : AgyLaunch.notFound }
+  var notFoundMessage: String {
+    agent == .grok
+      ? String(localized: "Grok Build was not found. Install the grok CLI, then send again.")
+      : AgyLaunch.notFound
+  }
 
   func launch(_ start: AgentStart) -> AgentLaunch {
-    let executable = start.executableOverride ?? AgyLaunch.locate(path: start.environment["PATH"], binary: agent.rawValue)
+    let executable =
+      start.executableOverride
+      ?? AgyLaunch.locate(path: start.environment["PATH"], binary: agent.rawValue)
     folder = start.folder
     session = AgySession(
       cwd: start.folder.path(percentEncoded: false),

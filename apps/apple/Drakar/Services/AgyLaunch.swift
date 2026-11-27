@@ -27,11 +27,14 @@ enum AgyLaunch {
     return folders.lazy.map { URL(filePath: $0).appending(path: binary) }.first(where: isExecutable)
   }
 
-  static func configuration(executable: URL, environment: [String: String], folder: URL, agent: AgentKind = .agy)
+  static func configuration(
+    executable: URL, environment: [String: String], folder: URL, agent: AgentKind = .agy
+  )
     -> AgentProcess.Configuration
   {
     .init(
-      executable: executable, arguments: agent == .grok ? ["agent", "stdio"] : ["acp"], environment: environment,
+      executable: executable, arguments: agent == .grok ? ["agent", "stdio"] : ["acp"],
+      environment: environment,
       currentDirectory: folder)
   }
 

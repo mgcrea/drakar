@@ -98,7 +98,9 @@ struct WorkingIndicator: View {
         frames: codexFrames, frameInterval: 0.08, foreground: AnyShapeStyle(codexEmerald),
         verbs: codexVerbs)
     case .grok:
-      Style(frames: codexFrames, frameInterval: 0.08, foreground: AnyShapeStyle(Color.primary), verbs: ["Working"])
+      Style(
+        frames: codexFrames, frameInterval: 0.08, foreground: AnyShapeStyle(Color.primary),
+        verbs: ["Working"])
     case .agy:
       // A four-point sparkle pulsing in Antigravity's blue-to-violet gradient.
       Style(

@@ -276,7 +276,8 @@ private struct AccountPicker: View {
     .task {
       let environment = await AgentSession.environment.value
       codexPath = CodexLaunch.locate(path: environment["PATH"])?.path(percentEncoded: false)
-      grokPath = AgyLaunch.locate(path: environment["PATH"], binary: "grok")?.path(percentEncoded: false)
+      grokPath = AgyLaunch.locate(path: environment["PATH"], binary: "grok")?.path(
+        percentEncoded: false)
       agyPath = AgyLaunch.locate(path: environment["PATH"])?.path(percentEncoded: false)
     }
   }
