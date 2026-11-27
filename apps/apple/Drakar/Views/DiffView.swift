@@ -10,12 +10,7 @@ struct FileChangeView: View {
 
   /// Inside the session's folder, the path from there; elsewhere, from home.
   private var displayedPath: String {
-    if let folder = sessionFolder {
-      let base = folder.path(percentEncoded: false)
-      let prefix = base.hasSuffix("/") ? base : base + "/"
-      if change.path.hasPrefix(prefix) { return String(change.path.dropFirst(prefix.count)) }
-    }
-    return ContentView.abbreviated(URL(filePath: change.path))
+    ContentView.abbreviated(change.path, relativeTo: sessionFolder)
   }
 
   var body: some View {
@@ -34,8 +29,7 @@ struct FileChangeView: View {
             .lineLimit(1)
         }
         Spacer()
-        Text("+\(change.addedCount)").foregroundStyle(.green)
-        Text("−\(change.removedCount)").foregroundStyle(.red)
+        DiffCountsView(added: change.addedCount, removed: change.removedCount)
         if let openInEditor {
           Button("Open", systemImage: "arrow.up.forward.square") {
             openInEditor(URL(filePath: change.path))
@@ -50,6 +44,22 @@ struct FileChangeView: View {
         DiffLinesView(lines: lines)
       }
     }
+  }
+}
+
+/// Added and removed line counts (`+N −M`), shared between a collapsed tool card and its diff.
+struct DiffCountsView: View {
+  let added: Int
+  let removed: Int
+
+  var body: some View {
+    HStack(spacing: 6) {
+      Text(verbatim: "+\(added)").foregroundStyle(.green)
+      Text(verbatim: "\u{2212}\(removed)").foregroundStyle(.red)
+    }
+    .font(.callout.monospacedDigit())
+    .fixedSize()
+    .accessibilityElement(children: .combine)
   }
 }
 

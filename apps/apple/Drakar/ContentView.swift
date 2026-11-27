@@ -431,6 +431,30 @@ struct ContentView: View {
     return path.hasPrefix(home) ? "~/" + path.dropFirst(home.count) : path
   }
 
+  /// Inside `folder`, the path from there; elsewhere, from home.
+  static func abbreviated(_ path: String, relativeTo folder: URL?) -> String {
+    if let folder {
+      let base = ProjectPath.normalize(folder)
+      let prefix = base == "/" ? "/" : base + "/"
+      if path.hasPrefix(prefix) { return String(path.dropFirst(prefix.count)) }
+    }
+    guard path.hasPrefix("/") else { return path }
+    return abbreviated(URL(filePath: path))
+  }
+
+  /// Replaces embedded `folder` or home path prefixes in a summary line.
+  static func abbreviatingPaths(in text: String, relativeTo folder: URL?) -> String {
+    var result = text
+    if let folder {
+      let base = ProjectPath.normalize(folder)
+      let prefix = base == "/" ? "/" : base + "/"
+      result = result.replacingOccurrences(of: prefix, with: "")
+    }
+    let home = FileManager.default.homeDirectoryForCurrentUser.path(percentEncoded: false)
+    let homePrefix = home.hasSuffix("/") ? home : home + "/"
+    return result.replacingOccurrences(of: homePrefix, with: "~/")
+  }
+
   /// `make run ARGS='-drakar.debugFolder <path> -drakar.debugPrompt <text>'` opens a
   /// project with a new session and sends it a first prompt with no clicks.
   /// `-drakar.debugResume <session id>` attaches one from the index instead.

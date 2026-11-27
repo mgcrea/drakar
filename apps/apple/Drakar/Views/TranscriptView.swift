@@ -450,14 +450,22 @@ struct ToolCallView: View {
     }
   }
 
+  private var fileChanges: [FileChange] {
+    guard case .fileChange(_, let edits) = call.kind else { return [] }
+    return FileChange.each(edits: edits)
+  }
+
   var body: some View {
     let offer = TaskOffer.of(call: call, task: task, controls: controls)
+    let changes = fileChanges
+    let diffCounts = Self.diffCounts(for: changes)
+    let readRange = Self.readRange(for: call)
     VStack(alignment: .leading, spacing: 6) {
       DisclosureGroup(isExpanded: $isExpanded) {
         VStack(alignment: .leading, spacing: 8) {
           // After the fact a Write's previous content is gone, so it shows as all added.
-          if case .fileChange(_, let edits) = call.kind, !FileChange.each(edits: edits).isEmpty {
-            ForEach(FileChange.each(edits: edits), id: \.path) { change in
+          if !changes.isEmpty {
+            ForEach(changes, id: \.path) { change in
               FileChangeView(change: change)
             }
           } else if case .shell = call.kind, !call.summary.isEmpty {
@@ -493,8 +501,24 @@ struct ToolCallView: View {
                   .help(summary)
               }
             }
-            if offer.stop, let taskID = task?.taskID {
+            let showDiffCounts = !isExpanded && diffCounts != nil
+            let showReadRange = readRange != nil
+            let showStop = offer.stop && task?.taskID != nil
+            if showDiffCounts || showReadRange || showStop {
               Spacer(minLength: 8)
+            }
+            if !isExpanded, let diffCounts {
+              DiffCountsView(added: diffCounts.added, removed: diffCounts.removed)
+                .accessibilityIdentifier("tool.\(call.id).diffCounts")
+            }
+            if let readRange {
+              Text(verbatim: readRange)
+                .font(.callout.monospacedDigit())
+                .foregroundStyle(.secondary)
+                .fixedSize()
+                .accessibilityIdentifier("tool.\(call.id).readRange")
+            }
+            if offer.stop, let taskID = task?.taskID {
               StopTaskButton(taskID: taskID)
             }
           }
@@ -521,7 +545,7 @@ struct ToolCallView: View {
     .background(.background.secondary, in: RoundedRectangle(cornerRadius: 8))
     .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(.separator))
     .contextMenu {
-      if let path = call.input["file_path"]?.stringValue, let openInEditor {
+      if let path = filePath, let openInEditor {
         Button("Open in Editor") { openInEditor(URL(filePath: path)) }
       }
     }
@@ -534,14 +558,83 @@ struct ToolCallView: View {
 
   @Environment(\.sessionFolder) private var sessionFolder
 
+  private var filePath: String? { Self.filePath(for: call) }
+
+  /// The file or folder path this call acts on, across Claude, Codex, and Antigravity shapes.
+  static func filePath(for call: Transcript.ToolCall) -> String? {
+    switch call.kind {
+    case .read(let path), .fileChange(let path, _):
+      return path.isEmpty ? nil : path
+    default:
+      for key in [
+        "file_path", "Path", "AbsolutePath", "DirectoryPath", "File", "TargetFile",
+        "notebook_path", "path",
+      ] {
+        if let value = call.input[key]?.stringValue, !value.isEmpty {
+          return value
+        }
+      }
+      if case .other = call.kind, call.summary.hasPrefix("/") {
+        return call.summary
+      }
+      return nil
+    }
+  }
+
   /// A file inside the session's folder by its path from there, as the extension shows it.
+  static func displayedSummary(for call: Transcript.ToolCall, in folder: URL?) -> String {
+    if let path = filePath(for: call), path == call.summary {
+      return ContentView.abbreviated(path, relativeTo: folder)
+    }
+    if case .web = call.kind {
+      return call.summary
+    }
+    return ContentView.abbreviatingPaths(in: call.summary, relativeTo: folder)
+  }
+
   private var displayedSummary: String {
-    guard call.input["file_path"]?.stringValue == call.summary, let folder = sessionFolder
-    else { return call.summary }
-    let base = folder.path(percentEncoded: false)
-    let prefix = base.hasSuffix("/") ? base : base + "/"
-    return call.summary.hasPrefix(prefix)
-      ? String(call.summary.dropFirst(prefix.count)) : call.summary
+    Self.displayedSummary(for: call, in: sessionFolder)
+  }
+
+  static func diffCounts(for changes: [FileChange]) -> (added: Int, removed: Int)? {
+    guard !changes.isEmpty else { return nil }
+    return (
+      changes.reduce(0) { $0 + $1.addedCount },
+      changes.reduce(0) { $0 + $1.removedCount }
+    )
+  }
+
+  /// Line range for a `Read` call (`L1–150`, `L45–`, `L10`), across Antigravity and Claude keys.
+  static func readRange(for call: Transcript.ToolCall) -> String? {
+    let isRead = if case .read = call.kind { true } else { call.name == "Read" }
+    guard isRead else { return nil }
+    func positiveInt(_ keys: String...) -> Int? {
+      for key in keys {
+        if let value = call.input[key]?.intValue, value > 0 { return value }
+      }
+      return nil
+    }
+    if let start = positiveInt("StartLine", "start_line", "startLine") {
+      if let end = positiveInt("EndLine", "end_line", "endLine"), end >= start {
+        return start == end ? "L\(start)" : "L\(start)\u{2013}\(end)"
+      }
+      return "L\(start)\u{2013}"
+    }
+    if let end = positiveInt("EndLine", "end_line", "endLine") {
+      return end == 1 ? "L1" : "L1\u{2013}\(end)"
+    }
+    if let offset = call.input["offset"]?.intValue {
+      let start = max(1, offset)
+      if let limit = positiveInt("limit") {
+        let end = start + limit - 1
+        return start == end ? "L\(start)" : "L\(start)\u{2013}\(end)"
+      }
+      return "L\(start)\u{2013}"
+    }
+    if let limit = positiveInt("limit") {
+      return limit == 1 ? "L1" : "L1\u{2013}\(limit)"
+    }
+    return nil
   }
 }
 
