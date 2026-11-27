@@ -325,6 +325,10 @@ final class AgentSession {
   /// Those its process found there: where a replay cuts the thread's history
   /// (`HistoryMark.codexTurns`), the rest being in the process's log.
   @ObservationIgnored private(set) var codexTurnsBeforeProcess = 0
+  /// The turns Antigravity's session holds, as `throughTurns` counts them.
+  @ObservationIgnored private var agyTurns = 0
+  /// Those its process found there (`HistoryMark.agyTurns`).
+  @ObservationIgnored private(set) var agyTurnsBeforeProcess = 0
   @ObservationIgnored private var events: Task<Void, Never>?
   @ObservationIgnored private var historyLoad: Task<Void, Never>?
   /// True from the start for a session with a transcript, until its history is read.
@@ -514,7 +518,7 @@ final class AgentSession {
     heldElsewhere = held.id
     isOutOfReach = true
     isReadOnly = true
-    if agent == .codex {
+    if agent != .claude {
       historyLoad = Task { await self.readHistory(meta.history, at: .now) }
       await historyLoad?.value
       transcript.apply(.note(.init(text: Self.runsInAnotherWindow)))
@@ -767,16 +771,21 @@ final class AgentSession {
   /// The mode the next start passes: this session's pick, else Settings' default for its
   /// agent; Bypass only while Settings allows it.
   var startingMode: PermissionMode? {
-    let fallback = agent == .codex ? ClaudeChoice.codexDefaultMode : ClaudeChoice.defaultMode
+    let fallback: PermissionMode? =
+      switch agent {
+      case .claude: ClaudeChoice.defaultMode
+      case .codex: ClaudeChoice.codexDefaultMode
+      case .grok: nil
+      case .agy: ClaudeChoice.agyDefaultMode
+      }
     let mode = modePick ?? (isProcessRunning ? nil : fallback)
     return mode == .bypass && !ClaudeChoice.allowsBypass ? nil : mode
   }
 
-  /// The model picked for the session: its own, else (before a start) Settings' default;
-  /// nil for Claude Code's.
+  /// The model picked for the session: its own, else (before a start) Settings' default for
+  /// its agent; nil for the agent's own default.
   var pickedModel: String? {
-    modelPick
-      ?? (isProcessRunning || !features.usesSettingsDefaults ? nil : ClaudeChoice.defaultModel)
+    modelPick ?? (isProcessRunning ? nil : ClaudeChoice.defaultModel(for: agent))
   }
 
   /// The effort the pill shows: the session's pick, else what the process applies, else
@@ -894,6 +903,7 @@ final class AgentSession {
 
   private func readHistory() async {
     if let resuming, resuming.agentKind == .codex { return await readCodexHistory(resuming) }
+    if let resuming, [.agy, .grok].contains(resuming.agentKind) { return await readAgyHistory(resuming) }
     guard let file = resuming?.transcriptFile else {
       isLoadingHistory = false
       return
@@ -916,6 +926,14 @@ final class AgentSession {
         isLoadingHistory = false
       }
       codexTurns = count
+    case .agyTurns(let count), .grokTurns(let count):
+      agyTurnsBeforeProcess = count
+      if count > 0, let resuming, [.agy, .grok].contains(resuming.agentKind) {
+        await readAgyHistory(resuming, throughTurns: count)
+      } else {
+        isLoadingHistory = false
+      }
+      agyTurns = count
     case .none:
       isLoadingHistory = false
     }
@@ -991,6 +1009,46 @@ final class AgentSession {
           .init(
             text: String(localized: "Codex's history of this session could not be read: \(problem)")
           )))
+    }
+    self.transcript = transcript
+    hasLoadedHistory = true
+    for prompt in promptsDuringLoad {
+      self.transcript.addPrompt(
+        prompt.text, context: prompt.context, attachments: prompt.attachments, uuid: prompt.uuid)
+    }
+    promptsDuringLoad = []
+  }
+
+  /// An Antigravity session's history, from a short-lived `agy acp` via `session/load`,
+  /// through its `count`th turn when one is given. Unreadable, the session opens empty with a
+  /// note and still resumes on the next prompt.
+  private func readAgyHistory(_ target: ResumeTarget, throughTurns count: Int? = nil) async {
+    let environment = await Self.environment.value
+    var loaded: [AgentEvent] = []
+    var problem: String?
+    if let executable = executableOverride ?? AgyLaunch.locate(path: environment["PATH"], binary: agent.rawValue) {
+      do {
+        loaded = try await AgyHistory.events(
+          sessionID: target.sessionID, cwd: folder.path(percentEncoded: false),
+          configuration: AgyLaunch.configuration(
+            executable: executable, environment: environment, folder: folder, agent: agent))
+      } catch {
+        problem = error.localizedDescription
+      }
+    } else {
+      problem = backend.notFoundMessage
+    }
+    isLoadingHistory = false
+    if let count { loaded = loaded.throughTurns(count) }
+    agyTurns = loaded.turnsEnded
+    var transcript = Transcript()
+    for event in loaded { transcript.apply(event) }
+    if let problem {
+      transcript.apply(
+        .note(
+          .init(
+            text: String(
+              localized: "\(agent.name)'s history of this session could not be read: \(problem)"))))
     }
     self.transcript = transcript
     hasLoadedHistory = true
@@ -1326,6 +1384,8 @@ final class AgentSession {
     // A runner's session starts new: everything is in the log.
     if isOnRunner { return .none }
     if agent == .codex { return .codexTurns(codexTurns) }
+    if agent == .grok { return .grokTurns(agyTurns) }
+    if agent == .agy { return .agyTurns(agyTurns) }
     guard let resuming, resuming.agentKind == .claude else { return .none }
     let file = resuming.transcriptFile
     let size =
@@ -1988,6 +2048,7 @@ final class AgentSession {
     // listed this row's own process as another app's, and nothing else would read it again.
     if isHosted, !isReplaying, sessionID != known { SessionMonitor.shared.hostedChanged() }
     if agent == .codex { codexTurns += output.events.turnsEnded }
+    if agent == .agy || agent == .grok { agyTurns += output.events.turnsEnded }
     if unsentName != nil { sendUnsentName() }
     if !isReplaying, transcript.waitingCount > waiting { onPermissionRequested?() }
     permissionsMayHaveChanged(from: waiting)
@@ -2000,6 +2061,8 @@ final class AgentSession {
       }
     }
     if turnEnded {
+      if agent == .agy, !isOnRunner, !isReplaying { accountStore.probeAgyIfNeeded() }
+      if agent == .grok, !isOnRunner, !isReplaying { accountStore.probeGrokIfNeeded() }
       if !features.picksApplyAtOnce { pillNote = nil }
       if savedTarget == nil { savedTarget = locateTarget() }
       // A compaction's turns are not announced while it goes on, nor at all when idle: the
@@ -2139,11 +2202,22 @@ final class AgentSession {
       } else if let account {
         accountStore.record(info, for: account, at: time)
       }
+    case .codexRateLimit(let codexUsage):
+      if isOnRunner {
+        usage = codexUsage.usage.merged(usage)
+      } else {
+        accountStore.recordCodex(codexUsage)
+      }
     case .models(let models):
       if isOnRunner {
         self.models = models
       } else if agent == .codex {
         catalog.recordCodex(models)
+      } else if agent == .agy {
+        catalog.recordAgy(models)
+      } else if agent == .grok {
+        self.models = models
+        catalog.recordGrok(models)
       } else if let account {
         catalog.record(models, for: account)
       }

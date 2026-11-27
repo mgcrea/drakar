@@ -88,6 +88,41 @@ struct SessionPicksTests {
       #expect(ClaudeChoice.defaultEffort == nil)
     }
   }
+
+  @Test func readsPerAgentDefaultModels() {
+    scoped {
+      #expect(ClaudeChoice.defaultModel(for: .claude) == nil)
+      #expect(ClaudeChoice.defaultModel(for: .codex) == nil)
+      #expect(ClaudeChoice.defaultModel(for: .agy) == nil)
+      #expect(ClaudeChoice.defaultModel(for: .grok) == nil)
+
+      ClaudeChoice.defaults.set("sonnet", forKey: PreferenceKey.defaultModel)
+      ClaudeChoice.defaults.set("gpt-6.2-astra", forKey: PreferenceKey.codexDefaultModel)
+      ClaudeChoice.defaults.set("gemini-4-hydrogen", forKey: PreferenceKey.agyDefaultModel)
+      ClaudeChoice.defaults.set("grok-4.7-build-fast", forKey: PreferenceKey.grokDefaultModel)
+
+      #expect(ClaudeChoice.defaultModel(for: .claude) == "sonnet")
+      #expect(ClaudeChoice.defaultModel(for: .codex) == "gpt-6.2-astra")
+      #expect(ClaudeChoice.defaultModel(for: .agy) == "gemini-4-hydrogen")
+      #expect(ClaudeChoice.defaultModel(for: .grok) == "grok-4.7-build-fast")
+
+      ClaudeChoice.defaults.set("", forKey: PreferenceKey.agyDefaultModel)
+      #expect(ClaudeChoice.defaultModel(for: .agy) == nil)
+    }
+  }
+
+  @Test func changingAnAgentsDefaultModelRedrawsWhatReadsIt() {
+    scoped {
+      let redrawn = PickFlag()
+      withObservationTracking {
+        _ = ClaudeChoice.defaultModel(for: .agy)
+      } onChange: {
+        redrawn.value = true
+      }
+      ClaudeChoice.defaults.set("gemini-4-hydrogen", forKey: PreferenceKey.agyDefaultModel)
+      #expect(redrawn.value)
+    }
+  }
 }
 
 /// Set from an observation callback, which may not capture a variable.

@@ -162,7 +162,11 @@ private struct InspectorCommand: View {
 private struct SessionCommands: View {
   @FocusedValue(\.project) private var project
   @AppStorage(PreferenceKey.defaultAgent) private var defaultAgentRaw = AgentKind.claude.rawValue
-  private var otherAgent: AgentKind { (AgentKind(rawValue: defaultAgentRaw) ?? .claude).other }
+  private var defaultAgent: AgentKind { AgentKind(rawValue: defaultAgentRaw) ?? .claude }
+  private var otherAgent: AgentKind { defaultAgent.other }
+  private var extraAgents: [AgentKind] {
+    AgentKind.allCases.filter { $0 != defaultAgent && $0 != otherAgent }
+  }
 
   var body: some View {
     Button("New Session") { project?.newSession() }
@@ -174,6 +178,12 @@ private struct SessionCommands: View {
     .keyboardShortcut("n", modifiers: [.command, .control])
     // A runner's sessions are Claude Code's alone.
     .disabled(project == nil || project?.runner != nil)
+    ForEach(extraAgents, id: \.self) { agent in
+      Button("New \(agent.name) Session") {
+        project?.newSession(agent: agent)
+      }
+      .disabled(project == nil || project?.runner != nil)
+    }
     ForkSessionCommand(project: project)
     OpenPlanCommand(project: project)
     Button("Run Skill in Subfolders…") { project?.fanOutRequest = FanOutRequest() }

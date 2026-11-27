@@ -15,6 +15,8 @@ final class PermissionRulesModel {
     /// The session's id: showing the same one again reads nothing.
     var key: AnyHashable
     var isCodex: Bool
+    var isAgy: Bool = false
+    var isGrok: Bool = false
     /// `list` asks the session's own process, which has its session approvals too, and
     /// reads an edited settings file a moment after it is written.
     var isLive: Bool
@@ -24,7 +26,7 @@ final class PermissionRulesModel {
   }
 
   enum Listing: Equatable {
-    case idle, loading, codex
+    case idle, loading, codex, agy, grok
     case listed(PermissionRulesState, live: Bool)
     /// The CLI's refusal, or why there was no reply.
     case failed(String)
@@ -79,7 +81,7 @@ final class PermissionRulesModel {
         edit: { _ in .refused(editsOnRunner(runner)) })
     }
     return Source(
-      key: item.id, isCodex: session.agent == .codex, isLive: isLive,
+      key: item.id, isCodex: session.agent == .codex, isAgy: session.agent == .agy, isGrok: session.agent == .grok, isLive: isLive,
       list: {
         if isLive { return await session.listPermissionRules() }
         return await PermissionRulesProbe.run(
@@ -182,6 +184,11 @@ final class PermissionRulesModel {
     guard !source.isCodex else {
       generation += 1
       listing = .codex
+      return
+    }
+    guard !source.isAgy && !source.isGrok else {
+      generation += 1
+      listing = source.isGrok ? .grok : .agy
       return
     }
     if case .listed = listing {} else { listing = .loading }

@@ -73,6 +73,22 @@ struct CodexSessionsTests {
     }
   }
 
+  @Test func codexHasADefaultModelOfItsOwn() {
+    ClaudeChoice.$testSuite.withValue("codex-sessions-\(UUID())") {
+      ClaudeChoice.defaults.set("claude-opus-5-5", forKey: PreferenceKey.defaultModel)
+      ClaudeChoice.defaults.set("gpt-6.2-astra", forKey: PreferenceKey.codexDefaultModel)
+      let codex = AgentSession(folder: folder, agent: .codex)
+      let claude = AgentSession(folder: folder, agent: .claude)
+      let agy = AgentSession(folder: folder, agent: .agy)
+      #expect(codex.pickedModel == "gpt-6.2-astra")
+      #expect(claude.pickedModel == "claude-opus-5-5")
+      #expect(agy.pickedModel == nil)
+      codex.setModel("gpt-6.1-sol")
+      #expect(codex.pickedModel == "gpt-6.1-sol")
+      #expect(ClaudeChoice.codexDefaultModel == "gpt-6.2-astra")
+    }
+  }
+
   @Test func codexHasADefaultModeOfItsOwn() {
     ClaudeChoice.$testSuite.withValue("codex-sessions-\(UUID())") {
       ClaudeChoice.defaults.set("plan", forKey: PreferenceKey.defaultMode)

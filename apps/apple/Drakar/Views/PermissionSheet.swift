@@ -128,6 +128,8 @@ struct PermissionSheet: View {
       return request.toolName == "Shell"
         ? String(localized: "Allow, and don't ask again for this command")
         : String(localized: "Allow, and don't ask again for these files")
+    case .agyOption(_, let name):
+      return name.isEmpty ? String(localized: "Always allow") : name
     case .other(let type):
       return String(localized: "Allow (\(type)) \(scope)")
     }

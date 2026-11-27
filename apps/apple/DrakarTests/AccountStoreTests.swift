@@ -28,9 +28,15 @@ struct AccountStoreTests {
       [.modificationDate: modified], ofItemAtPath: account.configFile.path(percentEncoded: false))
   }
 
-  private func store() async -> AccountStore {
+  private func store(
+    codexHome: URL? = nil, probeAgy: (() async -> AgyUsage?)? = nil
+  ) async -> AccountStore {
     let account = self.account
-    let store = AccountStore(discover: { (accounts: [account], shell: account) })
+    let home = codexHome ?? root.appending(path: ".codex", directoryHint: .isDirectory)
+    let store = AccountStore(
+      discover: { (accounts: [account], shell: account) },
+      discoverCodexHome: { home },
+      probeAgy: probeAgy ?? { nil })
     await store.start()
     store.stopPolling()
     return store
@@ -150,5 +156,118 @@ struct AccountStoreTests {
       store.pick(other, for: folder)
       #expect(ClaudeChoice.pickedAccount(for: folder)?.key == other.key)
     }
+  }
+
+  @Test func readsCodexRolloutAndMergesLiveReading() async throws {
+    defer { try? FileManager.default.removeItem(at: root) }
+    let codexHome = root.appending(path: ".codex", directoryHint: .isDirectory)
+    let parts = Calendar.current.dateComponents([.year, .month, .day], from: .now)
+    let dayDir = codexHome.appending(
+      path: String(
+        format: "sessions/%04d/%02d/%02d", parts.year ?? 2026, parts.month ?? 1, parts.day ?? 1),
+      directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: dayDir, withIntermediateDirectories: true)
+    let rollout = dayDir.appending(path: "rollout-2026-11-27T10-00-00-abc.jsonl")
+    let olderTimestamp = Date(timeIntervalSince1970: 1_795_000_000)
+    try Data(
+      #"{"timestamp":"2026-11-19T00:00:00Z","type":"event_msg","payload":{"type":"token_count","rate_limits":{"plan_type":"plus","primary":{"used_percent":25.0,"window_minutes":300,"resets_at":4070908800},"secondary":{"used_percent":41.0,"window_minutes":10080,"resets_at":4070999999}}}}"#
+        .utf8
+    ).write(to: rollout)
+
+    let store = await store(codexHome: codexHome)
+    #expect(store.codexUsage?.plan == "Plus")
+    #expect(store.codexUsage?.usage.fiveHour?.percent == 25)
+    #expect(store.codexUsage?.usage.sevenDay?.percent == 41)
+    #expect(store.codexUsage?.usage.source == .sessionLog)
+
+    // A newer live reading from codex app-server beats the rollout.
+    let live = CodexUsage(
+      usage: AccountUsage(
+        fiveHour: UsageWindow(percent: 62, resetsAt: nil),
+        sevenDay: UsageWindow(percent: 45, resetsAt: nil),
+        readAt: olderTimestamp.addingTimeInterval(3600 * 24 * 30), source: .live),
+      plan: "Pro")
+    store.recordCodex(live)
+    #expect(store.codexUsage?.plan == "Pro")
+    #expect(store.codexUsage?.usage.fiveHour?.percent == 62)
+    #expect(store.codexUsage?.usage.source == .live)
+  }
+
+  @Test func probesAntigravityThrottlesAndKeepsLastOnFailure() async throws {
+    defer { try? FileManager.default.removeItem(at: root) }
+    var probeCalls = 0
+    var nextResult: AgyUsage? = AgyUsage(
+      buckets: [
+        AgyUsage.Bucket(id: "gemini-5h", window: UsageWindow(percent: 33, resetsAt: nil)),
+        AgyUsage.Bucket(id: "3p-5h", window: UsageWindow(percent: 12, resetsAt: nil)),
+      ],
+      plan: "Google AI Pro",
+      readAt: Date(timeIntervalSince1970: 1000))
+
+    let store = AccountStore(
+      discover: { (accounts: [self.account], shell: self.account) },
+      discoverCodexHome: { self.root.appending(path: ".codex", directoryHint: .isDirectory) },
+      probeAgy: {
+        probeCalls += 1
+        return nextResult
+      })
+    await store.start()
+    // Wait for the initial start() probe task to settle before stopping polling.
+    await store.probeAgyIfNeeded()?.value
+    store.stopPolling()
+
+    #expect(probeCalls == 1)
+    #expect(store.agyUsage?.plan == "Google AI Pro")
+    #expect(store.agyUsage?.peakWindow(.fiveHour)?.percent == 33)
+
+    // Within the 20s throttle window, a second non-forced call does nothing.
+    let throttled = store.probeAgyIfNeeded(now: Date.now)
+    #expect(throttled == nil)
+    #expect(probeCalls == 1)
+
+    // Past the throttle window, a failing probe (nil) keeps the previous usage.
+    nextResult = nil
+    await store.probeAgyIfNeeded(now: Date.now.addingTimeInterval(30))?.value
+    #expect(probeCalls == 2)
+    #expect(store.agyUsage?.plan == "Google AI Pro")
+    #expect(store.agyUsage?.peakWindow(.fiveHour)?.percent == 33)
+  }
+
+  @Test func probesGrokThrottlesAndKeepsLastOnFailure() async throws {
+    defer { try? FileManager.default.removeItem(at: root) }
+    var probeCalls = 0
+    var nextResult: GrokUsage? = GrokUsage(
+      window: UsageWindow(percent: 18, resetsAt: nil),
+      periodName: "weekly",
+      plan: "X Premium",
+      readAt: Date(timeIntervalSince1970: 1000))
+
+    let store = AccountStore(
+      discover: { (accounts: [self.account], shell: self.account) },
+      discoverCodexHome: { self.root.appending(path: ".codex", directoryHint: .isDirectory) },
+      discoverGrokHome: { self.root.appending(path: ".grok", directoryHint: .isDirectory) },
+      probeGrok: {
+        probeCalls += 1
+        return nextResult
+      })
+    await store.start()
+    await store.probeGrokIfNeeded()?.value
+    store.stopPolling()
+
+    #expect(probeCalls == 1)
+    #expect(store.grokUsage?.plan == "X Premium")
+    #expect(store.grokUsage?.window.percent == 18)
+
+    // Within the 20s throttle window, a second non-forced call does nothing.
+    let throttled = store.probeGrokIfNeeded(now: Date.now)
+    #expect(throttled == nil)
+    #expect(probeCalls == 1)
+
+    // Past the throttle window, a failing probe (nil) keeps the previous usage.
+    nextResult = nil
+    await store.probeGrokIfNeeded(now: Date.now.addingTimeInterval(30))?.value
+    #expect(probeCalls == 2)
+    #expect(store.grokUsage?.plan == "X Premium")
+    #expect(store.grokUsage?.window.percent == 18)
   }
 }

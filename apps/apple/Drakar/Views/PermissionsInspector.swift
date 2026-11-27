@@ -75,7 +75,7 @@ private struct PermissionsDetails: View {
 
   var body: some View {
     VStack(spacing: 0) {
-      if model.listing != .codex {
+      if model.listing != .codex, model.listing != .agy, model.listing != .grok {
         header
         Divider()
       }
@@ -133,6 +133,13 @@ private struct PermissionsDetails: View {
       ContentUnavailableView(
         "No Permission Rules", systemImage: "lock.shield",
         description: Text("Codex sessions have no permission rules."))
+    case .grok:
+      ContentUnavailableView("Grok Permission Rules", systemImage: "lock.shield",
+        description: Text("Manage Grok’s rules in its CLI configuration."))
+    case .agy:
+      ContentUnavailableView(
+        "No Permission Rules", systemImage: "lock.shield",
+        description: Text("Antigravity sessions have no permission rules."))
     case .failed(let reason):
       ContentUnavailableView {
         Label("Couldn't Read the Rules", systemImage: "exclamationmark.triangle")

@@ -143,4 +143,29 @@ struct CodexBackendTests {
     let again = try JSONDecoder().decode(ResumeTarget.self, from: JSONEncoder().encode(codex))
     #expect(again.agentKind == .codex)
   }
+
+  @Test func rateLimitUpdatesReachTheSession() throws {
+    let backend = CodexBackend()
+    _ = backend.launch(start())
+    let process = try process()
+    defer { process.terminate() }
+    try backend.started(process, then: nil)
+    let now = Date(timeIntervalSince1970: 1_791_300_000)
+    let output = backend.receive(
+      try line(
+        #"""
+        {"method":"account/rateLimits/updated","params":{"rateLimits":{
+          "planType":"pro",
+          "primary":{"usedPercent":22,"windowDurationMins":300,"resetsAt":1791317294},
+          "secondary":{"usedPercent":63,"windowDurationMins":10080,"resetsAt":1791792475}}}}
+        """#),
+      from: process, at: now)
+    guard case .codexRateLimit(let usage)? = output.signals.first else {
+      Issue.record("expected codexRateLimit signal, got \(output.signals)")
+      return
+    }
+    #expect(usage.plan == "Pro")
+    #expect(usage.usage.fiveHour?.percent == 22)
+    #expect(usage.usage.sevenDay?.percent == 63)
+  }
 }

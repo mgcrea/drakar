@@ -152,19 +152,22 @@ extension AgentKind {
           #""method":"turn/completed""#, #""method":"item/commandExecution/requestApproval""#,
           #""method":"item/fileChange/requestApproval""#,
         ]
+      case .agy, .grok:
+        [#""stopReason":"#, #""method":"session/request_permission""#]
       }
     return markers.map { Data($0.utf8) }
   }
 
   /// What a line the CLI writes holds when its turn ends, for the session host to end a
   /// process whose tab was closed at work (`HostedProcess.endWhen`): Claude Code's `result`,
-  /// Codex's `turn/completed`. Never the ask markers of `pauses`: a turn waiting on the person
-  /// is still at work, and ending it there would lose the turn.
+  /// Codex's `turn/completed`, Antigravity's `stopReason`. Never the ask markers of `pauses`:
+  /// a turn waiting on the person is still at work, and ending it there would lose the turn.
   var turnEnds: [Data] {
     let marker =
       switch self {
       case .claude: #""type":"result""#
       case .codex: #""method":"turn/completed""#
+      case .agy, .grok: #""stopReason":"#
       }
     return [Data(marker.utf8)]
   }

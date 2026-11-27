@@ -100,27 +100,43 @@ private struct SkillsPane: View {
   @State private var lastRun: SkillClick?
 
   private var capabilities: Capabilities { project.capabilities }
-  /// Codex's list while a Codex session is shown; nil for Claude Code's.
+  /// Codex's list while a Codex session is shown; nil otherwise.
   private var codex: CodexSkills? {
     project.skillsAgent == .codex ? project.codexSkills(for: project.selected?.session) : nil
+  }
+  /// Antigravity's list while an Antigravity session is shown; nil otherwise.
+  private var agy: AgySkills? {
+    project.skillsAgent == .agy ? project.agySkills(for: project.selected?.session) : nil
   }
 
   var body: some View {
     let codex = codex
-    let all: [SkillEntry]? = if let codex { codex.skills } else { capabilities.lists.skills }
+    let agy = agy
+    let all: [SkillEntry]? =
+      if let codex {
+        codex.skills
+      } else if let agy {
+        agy.skills
+      } else {
+        capabilities.lists.skills
+      }
     let reading =
       if let codex {
         PaneReading(
           isLoading: codex.isLoading, problem: codex.problem, agent: .codex,
           refresh: { codex.refresh(force: true) })
+      } else if let agy {
+        PaneReading(
+          isLoading: agy.isLoading, problem: agy.problem, agent: .agy,
+          refresh: { agy.refresh() })
       } else {
         PaneReading(
           isLoading: capabilities.isLoading, problem: capabilities.skillsProblem,
           diagnostics: capabilities.diagnostics, agent: .claude,
           refresh: { capabilities.refresh() })
       }
-    // Codex's list marks nothing new.
-    let marks = codex == nil ? project.capabilityMarks.skills : []
+    // Only Claude Code's list marks new skills.
+    let marks = codex == nil && agy == nil ? project.capabilityMarks.skills : []
     let shown = (all ?? []).filter { $0.matches(filter) }
     VStack(spacing: 0) {
       PaneHeader(
@@ -159,8 +175,9 @@ private struct SkillsPane: View {
         }
       }
     }
-    // Claude Code's lists are read with the window; Codex's once shown.
+    // Claude Code's lists are read with the window; Codex's and Antigravity's once shown.
     .task(id: codex.map(ObjectIdentifier.init)) { codex?.loadIfNeeded() }
+    .task(id: agy.map(ObjectIdentifier.init)) { agy?.loadIfNeeded() }
   }
 
   /// What a skill's row says while the licence gate refuses work, which a click on it would

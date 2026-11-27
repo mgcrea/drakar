@@ -207,6 +207,9 @@ private struct SessionDetails: View {
     if session.agent == .codex {
       return String(localized: "Codex does not say what fills its context.")
     }
+    if session.agent == .agy || session.agent == .grok {
+      return String(localized: "\(session.agent.name) does not say what fills its context.")
+    }
     if session.isReadOnly {
       return String(
         localized: "Another process runs this session; only Drakar's own sessions report this.")

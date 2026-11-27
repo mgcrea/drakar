@@ -318,7 +318,7 @@ struct SessionView: View {
     if session.heldElsewhere != nil, let owner = session.belongsTo {
       return String(localized: "Belongs to \(owner). Its transcript follows here.")
     }
-    return session.heldElsewhere != nil && session.agent == .codex
+    return session.heldElsewhere != nil && session.agent != .claude
       ? AgentSession.runsInAnotherWindow
       : String(localized: "Live in \(host). Its transcript follows here.")
   }
@@ -600,10 +600,11 @@ private struct VersionLabel: View {
 
   var body: some View {
     let path = executable.map { ContentView.abbreviated($0) } ?? ""
-    if agent == .codex {
-      Text("Codex \(version)").help(path)
-    } else {
-      claudeBody(path: path)
+    switch agent {
+    case .codex: Text("Codex \(version)").help(path)
+    case .grok: Text("Grok \(version)").help(path)
+    case .agy: Text("Antigravity \(version)").help(path)
+    case .claude: claudeBody(path: path)
     }
   }
 

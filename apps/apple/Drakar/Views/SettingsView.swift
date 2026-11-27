@@ -6,9 +6,9 @@ import SwiftUI
 
 /// The panes, in three sections, as Cupertino and Armada draw them.
 ///
-/// The first is how sessions behave: General, Transcript, Theme, Attention, then Runner, which
-/// says where they may run, and MCP Server, which says what an agent on this Mac may do with
-/// them.
+/// The first is how sessions behave: General, Models, Transcript, Theme, Attention, then
+/// Runner, which says where they may run, and MCP Server, which says what an agent on this Mac
+/// may do with them.
 ///
 /// The second is the fleet's information section: What's New and Updates are the version pair
 /// (what this build changed, and is there a newer one), and About answers which build this is.
@@ -21,6 +21,7 @@ import SwiftUI
 /// tune something.
 enum SettingsPane: String, SupportKitSettings.SettingsPane {
   case general
+  case models
   case transcript
   case theme
   case attention
@@ -34,6 +35,7 @@ enum SettingsPane: String, SupportKitSettings.SettingsPane {
   var title: LocalizedStringKey {
     switch self {
     case .general: "General"
+    case .models: "Models"
     case .transcript: "Transcript"
     case .theme: "Theme"
     case .attention: "Attention"
@@ -49,6 +51,7 @@ enum SettingsPane: String, SupportKitSettings.SettingsPane {
   var systemImage: String {
     switch self {
     case .general: "gearshape"
+    case .models: "cpu"
     case .transcript: "text.bubble"
     case .theme: "paintpalette"
     case .attention: "bell.badge"
@@ -63,7 +66,7 @@ enum SettingsPane: String, SupportKitSettings.SettingsPane {
 
   var group: SettingsPaneGroup {
     switch self {
-    case .general, .transcript, .theme, .attention, .runner, .mcp: .configuration
+    case .general, .models, .transcript, .theme, .attention, .runner, .mcp: .configuration
     case .whatsNew, .updates, .about: .information
     case .licence: .entitlement
     }
@@ -100,6 +103,9 @@ enum PreferenceKey {
   /// Folder path → account directory, as a JSON object: the account a folder's new sessions
   /// start under. A string so a view can observe it with `@AppStorage`.
   static let accountForFolder = "drakar.accountForFolder"
+  /// Folder path → agent raw value, as a JSON object: the agent a folder's new sessions start
+  /// under. A string so a view can observe it with `@AppStorage`.
+  static let agentForFolder = "drakar.agentForFolder"
   /// Whether a session that finishes its turn while Drakar is in the background says so.
   static let notifiesTurnEnds = "drakar.notifiesTurnEnds"
   /// Whether a turn that ends on a question or an offer marks its row.
@@ -111,6 +117,12 @@ enum PreferenceKey {
   /// The model new sessions start with (a `value` of `initialize`'s `models`); empty for
   /// Claude Code's default.
   static let defaultModel = "drakar.defaultModel"
+  /// The model new Codex sessions start with; empty for Codex's own (`config.toml`).
+  static let codexDefaultModel = "drakar.codexDefaultModel"
+  /// The model new Antigravity sessions start with; empty for Antigravity's default.
+  static let agyDefaultModel = "drakar.agyDefaultModel"
+  /// The model new Grok sessions start with; empty for Grok's default.
+  static let grokDefaultModel = "drakar.grokDefaultModel"
   /// Whether the model menus list older pinned models (Opus 4.8) beside the current ones; off
   /// unless turned on.
   static let showsLegacyModels = "drakar.showsLegacyModels"
@@ -120,6 +132,9 @@ enum PreferenceKey {
   /// The permission mode new Codex sessions start with (`PermissionMode`'s raw value); empty
   /// for Ask before edits.
   static let codexDefaultMode = "drakar.codexDefaultMode"
+  /// The permission mode new Antigravity sessions start with (`PermissionMode`'s raw value);
+  /// empty for Antigravity's default.
+  static let agyDefaultMode = "drakar.agyDefaultMode"
   /// The effort new sessions start with (`low` … `max`); empty for Claude Code's default.
   static let defaultEffort = "drakar.defaultEffort"
   /// The accent colour, as `RRGGBBAA` hex; absent for the catalog's.
@@ -195,10 +210,57 @@ enum ClaudeChoice {
     return stored(PreferenceKey.defaultAgent).flatMap(AgentKind.init(rawValue:)) ?? .claude
   }
 
+  /// The agent picked for `folder` in the toolbar; nil when the folder follows Settings.
+  static func pickedAgent(for folder: URL) -> AgentKind? {
+    _ = AttentionDefaults.shared.revision
+    return agentPicks[folderKey(folder)].flatMap(AgentKind.init(rawValue:))
+  }
+
+  /// The agent a new session in `folder` starts under: the folder's pick, else Settings'.
+  static func agent(forNewSessionIn folder: URL) -> AgentKind {
+    pickedAgent(for: folder) ?? defaultAgent
+  }
+
+  static func pick(_ agent: AgentKind, for folder: URL) {
+    var picks = agentPicks
+    picks[folderKey(folder)] = agent.rawValue
+    let data = (try? JSONEncoder().encode(picks)) ?? Data("{}".utf8)
+    defaults.set(String(decoding: data, as: UTF8.self), forKey: PreferenceKey.agentForFolder)
+  }
+
   /// The model new sessions start with, from Settings; nil for Claude Code's default.
   static var defaultModel: String? {
     _ = AttentionDefaults.shared.revision
     return stored(PreferenceKey.defaultModel)
+  }
+
+  /// The model new Codex sessions start with, from Settings; nil for Codex's own.
+  static var codexDefaultModel: String? {
+    _ = AttentionDefaults.shared.revision
+    return stored(PreferenceKey.codexDefaultModel)
+  }
+
+  /// The model new Antigravity sessions start with, from Settings; nil for Antigravity's
+  /// default.
+  static var agyDefaultModel: String? {
+    _ = AttentionDefaults.shared.revision
+    return stored(PreferenceKey.agyDefaultModel)
+  }
+
+  /// The model new Grok sessions start with, from Settings; nil for Grok's default.
+  static var grokDefaultModel: String? {
+    _ = AttentionDefaults.shared.revision
+    return stored(PreferenceKey.grokDefaultModel)
+  }
+
+  /// The model new `agent` sessions start with, from Settings; nil for the agent's own.
+  static func defaultModel(for agent: AgentKind) -> String? {
+    switch agent {
+    case .claude: defaultModel
+    case .codex: codexDefaultModel
+    case .agy: agyDefaultModel
+    case .grok: grokDefaultModel
+    }
   }
 
   /// An idle session compacts before its prompt cache expires. On by default.
@@ -239,6 +301,16 @@ enum ClaudeChoice {
     }
   }
 
+  /// The mode new Antigravity sessions start with, from Settings: one Antigravity offers,
+  /// Bypass only while Settings allows it; nil for Antigravity's default.
+  static var agyDefaultMode: PermissionMode? {
+    _ = AttentionDefaults.shared.revision
+    let mode = stored(PreferenceKey.agyDefaultMode).flatMap(PermissionMode.init(rawValue:))
+    return mode.flatMap {
+      AgyPolicy.offeredModes(allowsBypass: allowsBypass).contains($0) ? $0 : nil
+    }
+  }
+
   /// The effort new sessions start with, from Settings; nil for Claude Code's
   /// (`settings.json`'s `effortLevel`, else the model's own).
   static var defaultEffort: String? {
@@ -248,6 +320,13 @@ enum ClaudeChoice {
 
   private static var picks: [String: String] {
     guard let text = stored(PreferenceKey.accountForFolder),
+      let picks = try? JSONDecoder().decode([String: String].self, from: Data(text.utf8))
+    else { return [:] }
+    return picks
+  }
+
+  private static var agentPicks: [String: String] {
+    guard let text = stored(PreferenceKey.agentForFolder),
       let picks = try? JSONDecoder().decode([String: String].self, from: Data(text.utf8))
     else { return [:] }
     return picks
@@ -355,6 +434,7 @@ struct SettingsView: View {
     SettingsScaffold(selection: Support.settings) { pane in
       switch pane {
       case .general: GeneralPane()
+      case .models: ModelsSettingsPane()
       case .transcript: TranscriptPane()
       case .theme: ThemePane()
       case .attention: AttentionPane()
@@ -376,11 +456,9 @@ struct SettingsView: View {
 struct GeneralPane: View {
   @AppStorage(PreferenceKey.editorScope) private var editorScope = EditorScope.openFolders
   @AppStorage(PreferenceKey.defaultAgent) private var defaultAgent = AgentKind.claude.rawValue
-  @AppStorage(PreferenceKey.codexDefaultMode) private var codexDefaultMode = ""
   @AppStorage(PreferenceKey.allowsBypass) private var allowsBypass = true
   @AppStorage(PreferenceKey.editorLeads) private var editorLeads = false
   @AppStorage(PreferenceKey.keepsAwake) private var keepsAwake = true
-  @State private var codexPath: String?
 
   var body: some View {
     Form {
@@ -391,26 +469,16 @@ struct GeneralPane: View {
           }
         }
         .accessibilityIdentifier("settings.defaultAgent")
-        LabeledContent("Codex") {
-          Text(
-            codexPath.map { ContentView.abbreviated(URL(filePath: $0)) }
-              ?? String(localized: "Not found: brew install --cask codex"))
-        }
-        Picker("Mode for new Codex sessions", selection: $codexDefaultMode) {
-          ForEach(CodexPolicy.offeredModes(allowsBypass: allowsBypass), id: \.self) { mode in
-            Text(mode.title).tag(mode == .ask ? "" : mode.rawValue)
-          }
-          if codexDefaultMode == PermissionMode.bypass.rawValue, !allowsBypass {
-            Text("Bypass permissions, not allowed").tag(codexDefaultMode)
-          }
-        }
-        .accessibilityIdentifier("settings.codexDefaultMode")
       } footer: {
-        Text("⌥-click New Session, or press ⌃⌘N, to start the other one.")
+        Text("Right-click New Session to pick any agent, or ⌥-click / ⌃⌘N for the alternate one.")
       }
-      .task {
-        let environment = await AgentSession.environment.value
-        codexPath = CodexLaunch.locate(path: environment["PATH"])?.path(percentEncoded: false)
+      Section {
+        Toggle("Allow Bypass permissions", isOn: $allowsBypass)
+          .accessibilityIdentifier("settings.allowsBypass")
+      } footer: {
+        Text(
+          "Lets sessions switch to Bypass permissions in the composer and offers Bypass as a default mode."
+        )
       }
       Section {
         Picker("Files open", selection: $editorLeads) {
@@ -431,7 +499,6 @@ struct GeneralPane: View {
           "From a prompt to the end of its turn, even after you close its window or quit Drakar, but not while it waits for you. The display still sleeps, and a laptop closed on battery sleeps anyway."
         )
       }
-      ClaudeSection()
       CompactionSection()
       CommandLineSection()
       Section {
@@ -674,201 +741,6 @@ private struct CommandLineSection: View {
     installed = CommandLineTool.isInstalled(script: script, in: directory)
     // Linked by hand counts as linked once: a launch never puts back one removed since.
     if installed { UserDefaults.standard.set(true, forKey: PreferenceKey.commandLinked) }
-  }
-}
-
-/// Which `claude` runs, and under which account a new session starts.
-private struct ClaudeSection: View {
-  @AppStorage(PreferenceKey.claudePath) private var claudePath = ""
-  @AppStorage(PreferenceKey.newSessionAccount) private var accountPath = ""
-  @AppStorage(PreferenceKey.allowsBypass) private var allowsBypass = true
-  @AppStorage(PreferenceKey.defaultModel) private var defaultModel = ""
-  @AppStorage(PreferenceKey.defaultMode) private var defaultMode = ""
-  @AppStorage(PreferenceKey.defaultEffort) private var defaultEffort = ""
-  @AppStorage(PreferenceKey.showsLegacyModels) private var showsLegacyModels = false
-  /// The login shell's `CLAUDE_CONFIG_DIR`, for the account whose models are listed.
-  @State private var shellDirectory: String?
-  @State private var installs: [Install] = []
-  @State private var accounts: [ClaudeAccount] = []
-  /// The account the login shell selects, for the first choice's label.
-  @State private var shellAccount = "default"
-  @State private var isLoaded = false
-
-  struct Install {
-    var url: URL
-    var version: ClaudeVersion?
-    var path: String { url.path(percentEncoded: false) }
-  }
-
-  var body: some View {
-    Section {
-      Picker("Claude Code", selection: $claudePath) {
-        Text(installs.first.map { "Automatic: \(label($0))" } ?? "Automatic").tag("")
-        ForEach(installs, id: \.path) { install in
-          Text(label(install)).tag(install.path)
-        }
-        if !claudePath.isEmpty, !installs.contains(where: { $0.path == claudePath }) {
-          Text(isLoaded ? "\(abbreviated(claudePath)), not found" : abbreviated(claudePath))
-            .tag(claudePath)
-        }
-      }
-      .accessibilityIdentifier("settings.claudePath")
-      if let version = running?.version, let drift = version.drift {
-        Label(warning(version, drift), systemImage: "exclamationmark.triangle.fill")
-          .foregroundStyle(.orange)
-      }
-      Picker("Account for new sessions", selection: $accountPath) {
-        Text("As the shell sets it: \(shellAccount)").tag("")
-        ForEach(accounts, id: \.self) { account in
-          Text("\(account.name), in \(abbreviated(account.directory.path(percentEncoded: false)))")
-            .tag(account.directory.path(percentEncoded: false))
-        }
-        if !accountPath.isEmpty,
-          !accounts.contains(where: { $0.directory.path(percentEncoded: false) == accountPath })
-        {
-          Text(isLoaded ? "\(abbreviated(accountPath)), not found" : abbreviated(accountPath))
-            .tag(accountPath)
-        }
-      }
-      .accessibilityIdentifier("settings.newSessionAccount")
-      Picker("Model for new sessions", selection: $defaultModel) {
-        Text("Claude Code's default").tag("")
-        let models = modelAccount.flatMap { ModelCatalog.shared.models(for: $0) }
-        // "Default (recommended)" is the first choice already.
-        ForEach(
-          ClaudeChoice.offered(models ?? [], keeping: defaultModel).filter {
-            $0.value != "default"
-          }
-        ) { option in
-          Text(option.displayName).tag(option.value)
-        }
-        if !defaultModel.isEmpty, models?.contains(where: { $0.value == defaultModel }) != true {
-          Text(models == nil ? defaultModel : "\(defaultModel), not offered").tag(defaultModel)
-        }
-      }
-      .accessibilityIdentifier("settings.defaultModel")
-      .task(id: modelAccount?.key) {
-        if let modelAccount {
-          ModelCatalog.shared.load(
-            folder: FileManager.default.homeDirectoryForCurrentUser, account: modelAccount)
-        }
-      }
-      Toggle("Offer older models", isOn: $showsLegacyModels)
-        .accessibilityIdentifier("settings.showsLegacyModels")
-      Text(
-        "Pinned versions such as Opus 4.8, below the current Opus, Sonnet, Fable and Haiku. A session already on one keeps it in its menu."
-      )
-      .font(.caption)
-      .foregroundStyle(.secondary)
-      Picker("Effort for new sessions", selection: $defaultEffort) {
-        Text("Claude Code's default").tag("")
-        ForEach(["low", "medium", "high", "xhigh", "max"], id: \.self) { level in
-          Text(EffortLevel.title(of: level)).tag(level)
-        }
-      }
-      .accessibilityIdentifier("settings.defaultEffort")
-      Text(
-        "Claude Code's default is the effortLevel in its settings.json, else the model's own. A model without effort, such as Haiku, ignores it."
-      )
-      .font(.caption)
-      .foregroundStyle(.secondary)
-      Picker("Mode for new sessions", selection: $defaultMode) {
-        Text("Claude Code's default").tag("")
-        ForEach(PermissionMode.allCases.filter { $0 != .bypass || allowsBypass }, id: \.self) {
-          mode in
-          Text(mode.title).tag(mode.rawValue)
-        }
-        if defaultMode == PermissionMode.bypass.rawValue, !allowsBypass {
-          Text("Bypass permissions, not allowed").tag(defaultMode)
-        }
-      }
-      .accessibilityIdentifier("settings.defaultMode")
-      Text("Auto falls back to Ask before edits on a model without it.")
-        .font(.caption)
-        .foregroundStyle(.secondary)
-      Toggle("Allow Bypass permissions", isOn: $allowsBypass)
-        .accessibilityIdentifier("settings.allowsBypass")
-      Text(
-        "Sessions start with --allow-dangerously-skip-permissions, so Bypass can be picked in the composer."
-      )
-      .font(.caption)
-      .foregroundStyle(.secondary)
-    } header: {
-      Text("Claude Code")
-    } footer: {
-      Text(
-        "Automatic runs the first `claude` on your shell’s PATH, as a terminal would. A resumed session always runs under the account that wrote it. Both apply to sessions started from now on."
-      )
-    }
-    .task { await load() }
-  }
-
-  /// The account new sessions take, whose models the model picker lists: Settings', else the
-  /// shell's once it is read.
-  private var modelAccount: ClaudeAccount? {
-    if !accountPath.isEmpty { return ClaudeChoice.account(at: accountPath) }
-    guard isLoaded else { return nil }
-    return ClaudeChoice.account(
-      at: shellDirectory
-        ?? FileManager.default.homeDirectoryForCurrentUser.appending(path: ".claude")
-        .path(percentEncoded: false))
-  }
-
-  /// The install sessions will run: the one picked while it is there, else the first.
-  private var running: Install? {
-    installs.first { $0.path == claudePath } ?? (claudePath.isEmpty ? installs.first : nil)
-  }
-
-  private func label(_ install: Install) -> String {
-    let path = abbreviated(install.path)
-    return install.version.map { "\(path), \($0)" } ?? path
-  }
-
-  private func warning(_ version: ClaudeVersion, _ drift: ClaudeVersion.Drift) -> String {
-    let tested = ClaudeVersion.tested
-    return switch drift {
-    case .older:
-      String(
-        localized:
-          "\(version.description) is older than the versions Drakar was tested with (\(tested.lowerBound.description) to \(tested.upperBound.description)): it may not understand everything Drakar sends."
-      )
-    case .newer:
-      String(
-        localized:
-          "\(version.description) is newer than the versions Drakar was tested with (\(tested.lowerBound.description) to \(tested.upperBound.description)): some of what it says may not show."
-      )
-    }
-  }
-
-  private func abbreviated(_ path: String) -> String {
-    ContentView.abbreviated(URL(filePath: path))
-  }
-
-  private func load() async {
-    let environment = await AgentSession.environment.value
-    let urls = await Task.detached { ClaudeLocator.installed(path: environment["PATH"]) }.value
-    // Each asked at once: an npm install takes a while to answer.
-    installs = await withTaskGroup(of: (Int, Install).self) { group in
-      for (index, url) in urls.enumerated() {
-        group.addTask {
-          (
-            index,
-            Install(url: url, version: await ClaudeVersion.read(of: url, environment: environment))
-          )
-        }
-      }
-      var found: [(Int, Install)] = []
-      for await item in group { found.append(item) }
-      return found.sorted { $0.0 < $1.0 }.map(\.1)
-    }
-    let shellDirectory = environment["CLAUDE_CONFIG_DIR"]
-    accounts = await Task.detached {
-      ClaudeAccount.discover(
-        extra: shellDirectory.map { [URL(filePath: $0, directoryHint: .isDirectory)] } ?? [])
-    }.value
-    shellAccount = shellDirectory.map { ClaudeChoice.account(at: $0).name } ?? "default"
-    self.shellDirectory = shellDirectory
-    isLoaded = true
   }
 }
 

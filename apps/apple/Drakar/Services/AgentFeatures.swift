@@ -4,7 +4,7 @@ import Foundation
 /// Which agent a session runs. Stored with a session's target, so a window reopens each of
 /// its sessions with its own agent; a target stored before Codex arrived is Claude Code's.
 enum AgentKind: String, Codable, CaseIterable {
-  case claude, codex
+  case claude, codex, agy, grok
 
   /// The agent ⌥-click and ⌃⌘N start.
   var other: AgentKind { self == .claude ? .codex : .claude }
@@ -14,6 +14,8 @@ enum AgentKind: String, Codable, CaseIterable {
     switch self {
     case .claude: String(localized: "Claude Code")
     case .codex: String(localized: "Codex")
+    case .grok: String(localized: "Grok")
+    case .agy: String(localized: "Antigravity")
     }
   }
 
@@ -22,12 +24,37 @@ enum AgentKind: String, Codable, CaseIterable {
     switch self {
     case .claude: String(localized: "Claude")
     case .codex: String(localized: "Codex")
+    case .grok: String(localized: "Grok")
+    case .agy: String(localized: "Antigravity")
     }
   }
 
-  var features: AgentFeatures { self == .claude ? .claude : .codex }
+  var sidebarSymbol: String? {
+    switch self {
+    case .claude: nil
+    case .codex: "terminal"
+    case .agy: "sparkles"
+    case .grok: "bolt"
+    }
+  }
 
-  func makeBackend() -> AgentBackend { self == .claude ? ClaudeBackend() : CodexBackend() }
+  var features: AgentFeatures {
+    switch self {
+    case .claude: .claude
+    case .codex: .codex
+    case .grok: .grok
+    case .agy: .agy
+    }
+  }
+
+  func makeBackend() -> AgentBackend {
+    switch self {
+    case .claude: ClaudeBackend()
+    case .codex: CodexBackend()
+    case .grok: AgyBackend(agent: .grok)
+    case .agy: AgyBackend()
+    }
+  }
 }
 
 /// What an agent's sessions can do beyond a conversation. The views ask this, never which
@@ -47,8 +74,8 @@ struct AgentFeatures: Equatable {
   var showsAccount: Bool
   var showsPromptCache: Bool
   var acceptsPDF: Bool
-  /// Settings' model and effort for new sessions apply: they are Claude Code's. Each agent
-  /// has its own default mode.
+  /// Settings' effort for new sessions applies: it is Claude Code's. Each agent has its own
+  /// default mode and model.
   var usesSettingsDefaults: Bool
   /// A mode, model or effort pick reaches a running process at once; Codex's wait for the
   /// next turn.
@@ -68,4 +95,14 @@ struct AgentFeatures: Equatable {
     agent: .codex, cancelsQueued: false, slashCommands: true, forks: false, moves: false,
     showsAccount: false, showsPromptCache: false, acceptsPDF: false,
     usesSettingsDefaults: false, picksApplyAtOnce: false, controlsTasks: false)
+
+  static let grok = AgentFeatures(
+    agent: .grok, cancelsQueued: true, slashCommands: false, forks: false, moves: false,
+    showsAccount: false, showsPromptCache: false, acceptsPDF: false,
+    usesSettingsDefaults: false, picksApplyAtOnce: true, controlsTasks: false)
+
+  static let agy = AgentFeatures(
+    agent: .agy, cancelsQueued: true, slashCommands: true, forks: false, moves: false,
+    showsAccount: false, showsPromptCache: false, acceptsPDF: false,
+    usesSettingsDefaults: false, picksApplyAtOnce: true, controlsTasks: false)
 }

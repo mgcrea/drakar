@@ -65,6 +65,7 @@ final class CodexBackend: AgentBackend {
       case .modeAdopted(let mode): output.signals.append(.modeAdopted(mode))
       case .unusable(let message): output.signals.append(.unusable(message))
       case .skillsChanged: output.signals.append(.skillsChanged)
+      case .rateLimit(let usage): output.signals.append(.codexRateLimit(usage))
       case .thread(_, let path, let home):
         threadPath = path
         codexHome = home

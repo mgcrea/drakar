@@ -37,11 +37,15 @@ struct SessionMeta: Codable, Equatable {
   /// before tabs still decodes.
   var closedAtWork: Bool?
 
-  /// The meta says it only through what it resumes and the history it marks: a Codex
-  /// session's is always counted in turns, a new thread's as 0.
+  /// The meta says it only through what it resumes and the history it marks: a Codex or
+  /// Antigravity session's is always counted in turns, a new one's as 0.
   var agent: AgentKind {
-    if case .codexTurns = history { return .codex }
-    return start.resuming?.agentKind ?? .claude
+    switch history {
+    case .codexTurns: .codex
+    case .grokTurns: .grok
+    case .agyTurns: .agy
+    case .none, .claudeFile: start.resuming?.agentKind ?? .claude
+    }
   }
 
   /// Whether an app may attach to the process on its own, at a launch or on `released`
@@ -71,4 +75,7 @@ enum HistoryMark: Codable, Equatable {
   /// The number of turns Codex's thread held (`AgentSession.codexTurnsBeforeProcess`):
   /// always a Codex session's mark, for it also says the agent.
   case codexTurns(Int)
+  /// The number of turns Antigravity's session held before the process started.
+  case agyTurns(Int)
+  case grokTurns(Int)
 }

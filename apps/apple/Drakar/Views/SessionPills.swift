@@ -15,12 +15,16 @@ struct SessionPills {
 
   private var catalog: ModelCatalog { .shared }
 
-  /// The list the session's pills offer: Codex's own, a runner session's own, else the
-  /// account's.
+  /// The list the session's pills offer: Codex's or Antigravity's own, a runner session's own,
+  /// else the account's.
   static func models(for session: AgentSession, account: ClaudeAccount?) -> [ModelOption]? {
     if session.isOnRunner { return session.models }
-    if session.agent == .codex { return ModelCatalog.shared.codexModels }
-    return account.flatMap { ModelCatalog.shared.models(for: $0) }
+    switch session.agent {
+    case .codex: return ModelCatalog.shared.codexModels
+    case .grok: return session.models ?? ModelCatalog.shared.grokModels
+    case .agy: return ModelCatalog.shared.agyModels
+    case .claude: return account.flatMap { ModelCatalog.shared.models(for: $0) }
+    }
   }
 
   /// The model, its effort when it takes one, and why the last change was refused if it was
@@ -46,10 +50,11 @@ struct SessionPills {
     .onAppear {
       // A runner session's list comes from its process alone: no probe of this Mac's.
       if session.isOnRunner { return }
-      if session.agent == .codex {
-        catalog.loadCodex()
-      } else if let account {
-        catalog.load(folder: folder, account: account)
+      switch session.agent {
+      case .codex: catalog.loadCodex()
+      case .grok: catalog.loadGrok()
+      case .agy: catalog.loadAgy()
+      case .claude: if let account { catalog.load(folder: folder, account: account) }
       }
     }
   }
@@ -135,6 +140,8 @@ struct SessionPills {
 
   private var loadingText: String {
     if session.agent == .codex { return String(localized: "Loading Codex's models…") }
+    if session.agent == .grok { return String(localized: "Loading Grok's models…") }
+    if session.agent == .agy { return String(localized: "Loading Antigravity's models…") }
     // A runner session's list is its process's: none of this Mac's store's for the path.
     guard !session.isOnRunner, let account else {
       return String(localized: "Its models are listed once it starts.")
@@ -151,11 +158,15 @@ struct SessionPills {
     return models.map { ClaudeChoice.offered($0, keeping: option(for: session, in: $0)?.value) }
   }
 
-  /// Codex's own list. Claude Code's: Ask, Edit and Plan always; Auto for a model that says
-  /// it takes it, unless settings turn it off; Bypass while allowed.
+  /// Codex's and Antigravity's own lists. Claude Code's: Ask, Edit and Plan always; Auto for
+  /// a model that says it takes it, unless settings turn it off; Bypass while allowed.
   static func offeredModes(_ session: AgentSession, models: [ModelOption]?) -> [PermissionMode] {
     if session.agent == .codex {
       return CodexPolicy.offeredModes(allowsBypass: session.offersBypass)
+    }
+    if session.agent == .grok { return [.ask] }
+    if session.agent == .agy {
+      return AgyPolicy.offeredModes(allowsBypass: session.offersBypass)
     }
     return PermissionMode.allCases.filter { mode in
       switch mode {
@@ -202,6 +213,14 @@ struct SessionPills {
     if session.agent == .codex {
       return option(for: session, in: models)?.displayName ?? session.pickedModel
         ?? session.status.session?.model ?? String(localized: "Codex's default")
+    }
+    if session.agent == .grok {
+      return option(for: session, in: models)?.displayName ?? session.pickedModel
+        ?? session.runningModel ?? String(localized: "Grok’s default")
+    }
+    if session.agent == .agy {
+      return option(for: session, in: models)?.displayName ?? session.pickedModel
+        ?? session.runningModel ?? String(localized: "Antigravity's default")
     }
     // What the process says it runs, once it said so after its start or a switch; and
     // Claude Code's default is whatever `settings.json` makes it: name what runs.

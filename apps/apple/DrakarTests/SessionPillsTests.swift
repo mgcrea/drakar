@@ -71,6 +71,40 @@ struct SessionPillsTests {
     }
   }
 
+  @Test func labelsNonClaudeDefaultModels() {
+    scoped {
+      ClaudeChoice.defaults.set("gemini-4-hydrogen", forKey: PreferenceKey.agyDefaultModel)
+      ClaudeChoice.defaults.set("gpt-6.2-astra", forKey: PreferenceKey.codexDefaultModel)
+      ClaudeChoice.defaults.set("grok-4.7-build-fast", forKey: PreferenceKey.grokDefaultModel)
+
+      let agy = AgentSession(folder: folder, agent: .agy)
+      let agyModels = [
+        ModelOption(
+          value: "gemini-4-neon", resolvedModel: "gemini-4-neon", displayName: "Gemini 4 Neon"),
+        ModelOption(
+          value: "gemini-4-hydrogen", resolvedModel: "gemini-4-hydrogen",
+          displayName: "Gemini 4 Hydrogen"),
+      ]
+      #expect(SessionPills.modelLabel(for: agy, in: agyModels) == "Gemini 4 Hydrogen")
+      #expect(SessionPills.modelLabel(for: agy, in: nil) == "gemini-4-hydrogen")
+
+      let codex = AgentSession(folder: folder, agent: .codex)
+      let codexModels = [
+        ModelOption(
+          value: "gpt-6.2-astra", resolvedModel: "gpt-6.2-astra", displayName: "GPT-6.2-Astra")
+      ]
+      #expect(SessionPills.modelLabel(for: codex, in: codexModels) == "GPT-6.2-Astra")
+
+      let grok = AgentSession(folder: folder, agent: .grok)
+      let grokModels = [
+        ModelOption(
+          value: "grok-4.7-build-fast", resolvedModel: "grok-4.7-build-fast",
+          displayName: "Grok 4.7 Fast")
+      ]
+      #expect(SessionPills.modelLabel(for: grok, in: grokModels) == "Grok 4.7 Fast")
+    }
+  }
+
   /// "Default" picked, `settings.json` saying Sonnet: the label is what runs.
   @Test func labelsWhatRunsWhenTheDefaultIsPicked() async throws {
     try await scoped {

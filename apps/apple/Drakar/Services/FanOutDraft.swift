@@ -27,6 +27,7 @@ final class FanOutDraft {
   /// The project the skill was listed for, which may not be the parent.
   @ObservationIgnored private let source: URL?
   @ObservationIgnored private let codexSkills: (URL) -> CodexSkills
+  @ObservationIgnored private let agySkills: (URL) -> AgySkills
   /// Where Claude Code would not find the skill, read with the folders.
   private var claudeMissing: Set<URL> = []
   /// The ticks the person set; the others follow whether the skill reaches the folder.
@@ -35,7 +36,8 @@ final class FanOutDraft {
   init(
     skill: SkillEntry, agent: AgentKind, parent: URL, account: ClaudeAccount,
     source: URL? = nil,
-    codexSkills: @escaping (URL) -> CodexSkills = { CodexSkillStore.shared.skills(for: $0) }
+    codexSkills: @escaping (URL) -> CodexSkills = { CodexSkillStore.shared.skills(for: $0) },
+    agySkills: @escaping (URL) -> AgySkills = { AgySkillStore.shared.skills(for: $0) }
   ) {
     self.skill = skill
     self.agent = agent
@@ -43,6 +45,7 @@ final class FanOutDraft {
     self.account = account
     self.source = source
     self.codexSkills = codexSkills
+    self.agySkills = agySkills
     read()
   }
 
@@ -61,6 +64,10 @@ final class FanOutDraft {
     case .codex:
       guard let skills = codexSkills(folder.url).skills else { return true }
       return skills.contains { $0.name == skill.name }
+    case .grok: return false
+    case .agy:
+      guard let skills = agySkills(folder.url).skills else { return true }
+      return skills.contains { $0.name == skill.name }
     }
   }
 
@@ -76,7 +83,12 @@ final class FanOutDraft {
 
   /// Codex could not say which folders hold the skill: every one is taken to.
   var reachUnchecked: Bool {
-    agent == .codex && shown.contains { codexSkills($0.url).problem != nil }
+    switch agent {
+    case .claude: false
+    case .codex: shown.contains { codexSkills($0.url).problem != nil }
+    case .grok: false
+    case .agy: shown.contains { agySkills($0.url).problem != nil }
+    }
   }
 
   /// The modes the agent takes, as the composer offers them.
@@ -84,6 +96,8 @@ final class FanOutDraft {
     switch agent {
     case .claude: PermissionMode.allCases.filter { $0 != .bypass || ClaudeChoice.allowsBypass }
     case .codex: CodexPolicy.offeredModes(allowsBypass: ClaudeChoice.allowsBypass)
+    case .grok: [.ask]
+    case .agy: AgyPolicy.offeredModes(allowsBypass: ClaudeChoice.allowsBypass)
     }
   }
 
@@ -102,6 +116,7 @@ final class FanOutDraft {
     switch agent {
     case .claude: readClaudeReach()
     case .codex: askCodex()
+    case .agy, .grok: break
     }
   }
 

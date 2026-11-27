@@ -18,7 +18,8 @@ struct KeepAwakeTests {
     let files = try FileManager.default.contentsOfDirectory(atPath: folder.path)
       .filter { $0.hasSuffix(".jsonl") }
     return try files.flatMap { name in
-      let agent: AgentKind = name.hasPrefix("codex-") ? .codex : .claude
+      let agent: AgentKind =
+        name.hasPrefix("codex-") ? .codex : name.hasPrefix("agy-") ? .agy : .claude
       let text = try String(contentsOf: folder.appending(path: name), encoding: .utf8)
       return text.split(separator: "\n").map { (agent, String($0)) }
     }
@@ -44,6 +45,9 @@ struct KeepAwakeTests {
             "turn/completed", "item/commandExecution/requestApproval",
             "item/fileChange/requestApproval",
           ].contains(json["method"] as? String)
+        case .agy, .grok:
+          json["method"] as? String == "session/request_permission"
+            || (json["result"] as? [String: Any])?["stopReason"] != nil
         }
       let marked = agent.pauses.contains { Data(line.utf8).range(of: $0) != nil }
       #expect(marked == stopsWork, "\(line.prefix(120))")
@@ -51,6 +55,7 @@ struct KeepAwakeTests {
     }
     #expect(stops[.claude, default: 0] > 0)
     #expect(stops[.codex, default: 0] > 0)
+    #expect(stops[.agy, default: 0] > 0)
   }
 
   @Test func theAssertionSaysHowManySessionsWork() {

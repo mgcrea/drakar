@@ -122,6 +122,7 @@ enum SessionSignal: Equatable {
   case settingsApplied(effort: String?, model: String?, autoModeDisabled: Bool)
   case contextReported(ContextUsageReply)
   case rateLimit(JSONValue)
+  case codexRateLimit(CodexUsage)
   /// A mode, model or effort change was answered: `refusal` nil when it took.
   case changeAnswered(requestID: String, refusal: String?)
   /// A queued prompt moved: taken, cancelled, dropped, or only acknowledged.
