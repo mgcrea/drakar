@@ -396,9 +396,8 @@ appcast: ## Sign the stapled zip and write a one-item appcast
 # Deliberately NOT dependent on `bundle`: re-signing would invalidate the stapled ticket
 # this exists to install.
 #
-# DIVERGES from armada, which quits the running app here. Drakar is never quit by a make
-# target: quitting it ends the owner's live sessions mid-turn (the rule that also keeps
-# `make run` and `make quit` out of every release step). So this refuses while any Drakar
+# DIVERGES from armada, which quits the running app here. The distribution installer
+# refuses while any Drakar
 # is running, and the person quits it when no turn is in flight. A running DrakarHost is
 # fine: the session host keeps running from its open inode across a bundle replacement and
 # the new app attaches (docs/session-host.md). Only the release bundle id is accepted at
@@ -423,6 +422,39 @@ install-release: ## Install the notarized Release build into /Applications (refu
 	@spctl -a -t exec "$(INSTALLED)" >/dev/null 2>&1 \
 		&& echo "  installed $(INSTALLED) — Gatekeeper accepts it" \
 		|| echo "  installed $(INSTALLED) — NOT accepted by Gatekeeper; it will not run on another Mac"
+
+install-local: bundle ## Build, sign, replace /Applications/Drakar.app, and relaunch locally
+	@set -eu; \
+	installed="$(INSTALLED)"; \
+	if [ -e "$$installed" ] || [ -L "$$installed" ]; then \
+		id=$$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$$installed/Contents/Info.plist" 2>/dev/null || :); \
+		if [ "$$id" != "$(BUNDLE_ID)" ] || [ -L "$$installed" ]; then \
+			echo "Refusing to replace $$installed (bundle identifier: '$$id')." >&2; exit 1; \
+		fi; \
+	fi; \
+	stage=$$(mktemp -d "$$(dirname "$$installed")/.Drakar-install.XXXXXX"); \
+	trap 'if [ ! -e "$$stage/previous.app" ]; then rm -rf "$$stage"; else echo "Previous app saved at $$stage/previous.app" >&2; fi' EXIT; \
+	ditto "$(RELEASE_APP)" "$$stage/Drakar.app"; \
+	codesign --verify --deep --strict "$$stage/Drakar.app"; \
+	if [ -d "$$installed" ]; then \
+		osascript -e 'on run argv' \
+			-e 'tell application (item 1 of argv) to if running then quit' \
+			-e 'end run' "$$installed"; \
+		for attempt in $$(seq 30); do \
+			if ! pgrep -f "^$$installed/Contents/MacOS/Drakar( |$$)" >/dev/null; then break; fi; \
+			sleep 1; \
+		done; \
+		if pgrep -f "^$$installed/Contents/MacOS/Drakar( |$$)" >/dev/null; then \
+			echo "Drakar is still running. Finish quitting it and retry." >&2; exit 1; \
+		fi; \
+		mv "$$installed" "$$stage/previous.app"; \
+	fi; \
+	if ! mv "$$stage/Drakar.app" "$$installed"; then \
+		if [ -d "$$stage/previous.app" ]; then mv "$$stage/previous.app" "$$installed"; fi; \
+		exit 1; \
+	fi; \
+	open "$$installed"; \
+	rm -rf "$$stage/previous.app"
 
 # Sparkle stores its signing keys in the login keychain under https://sparkle-project.org,
 # one item per account. Bastion, cupertino and armada share the default item; Drakar has
@@ -489,7 +521,7 @@ sparkle-key-shred: ## Overwrite and remove an exported sparkle_key.pem
 		echo "  sparkle_key.pem overwritten and removed — the keychain copy is untouched"; \
 	fi
 
-.PHONY: bundle sign notarize build-release checksum appcast install-release sparkle-keys \
+.PHONY: bundle sign notarize build-release checksum appcast install-release install-local sparkle-keys \
 	sparkle-key-shred
 
 # ── Licence ───────────────────────────────────────────────────────────────────
