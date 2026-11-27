@@ -5,6 +5,11 @@ struct GitPane: View {
   let workspace: Workspace
   @Binding var isCollapsed: Bool
 
+  private struct RefreshID: Equatable {
+    let folder: URL
+    let isCollapsed: Bool
+  }
+
   var body: some View {
     VStack(spacing: 0) {
       PaneHeader(
@@ -13,17 +18,33 @@ struct GitPane: View {
         isCollapsed: $isCollapsed,
         help: isCollapsed ? String(localized: "Show Git") : String(localized: "Hide Git"),
         identifier: "git.header"
-      ) {}
+      ) {
+        if isCollapsed, case .repository(let repository) = workspace.gitStatus,
+          !repository.changes.isEmpty
+        {
+          let count = Set(repository.changes.map(\.path)).count
+          Text(count, format: .number)
+            .font(.caption.monospacedDigit())
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 5)
+            .background(Capsule().fill(.quaternary))
+            .fixedSize()
+            .help("Changed files")
+            .accessibilityLabel("Changed files")
+            .accessibilityValue(count.formatted())
+            .accessibilityIdentifier("git.changedFiles")
+        }
+      }
       if !isCollapsed {
         contents
-          .task(id: workspace.folder) {
-            repeat {
-              await workspace.refreshGitStatus()
-              guard !Task.isCancelled else { return }
-              try? await Task.sleep(for: .seconds(3))
-            } while !Task.isCancelled
-          }
           .accessibilityIdentifier("git")
+      }
+    }
+    .task(id: RefreshID(folder: workspace.folder, isCollapsed: isCollapsed)) {
+      let interval: Duration = isCollapsed ? .seconds(10) : .seconds(3)
+      while !Task.isCancelled {
+        await workspace.refreshGitStatus()
+        try? await Task.sleep(for: interval)
       }
     }
   }
