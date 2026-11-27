@@ -198,17 +198,6 @@ struct ContentView: View {
       ToolbarItem(placement: .primaryAction) {
         ForkToolbarButton(project: project)
       }
-      ToolbarItem(placement: .primaryAction) {
-        Button {
-          terminalShown.toggle()
-        } label: {
-          Label("Terminal", systemImage: "terminal")
-            .foregroundStyle(terminalShown ? Theme.accent : Color.primary)
-        }
-        .help(terminalShown ? "Hide Terminal" : "Show Terminal")
-        .accessibilityAddTraits(terminalShown ? .isSelected : [])
-        .accessibilityIdentifier("window.terminal")
-      }
     }
     // A runner's window hands its sessions over; a local one only on the runner's own
     // Drakar, for a session a Mac started there or owns. No empty slot in any other.
@@ -233,6 +222,19 @@ struct ContentView: View {
         AccountToolbarItem(folder: project.folder) { agent in
           project.switchUnstartedAgent(to: agent)
         }
+      }
+    }
+    if project.runner == nil {
+      ToolbarItem(placement: .primaryAction) {
+        Button {
+          terminalShown.toggle()
+        } label: {
+          Label("Terminal", systemImage: "terminal")
+            .foregroundStyle(terminalShown ? Theme.accent : Color.primary)
+        }
+        .help(terminalShown ? "Hide Terminal" : "Show Terminal")
+        .accessibilityAddTraits(terminalShown ? .isSelected : [])
+        .accessibilityIdentifier("window.terminal")
       }
     }
     ToolbarItem(placement: .primaryAction) {
