@@ -2,13 +2,13 @@ import AppKit
 import DrakarKit
 import SwiftUI
 
-/// The project's sessions over its files, the split and which panes are folded away kept
-/// per window. A new window starts with the files folded to the foot: sessions are what it
-/// is for.
+/// The project's sessions over Git and Files, with split sizes and collapse state per window.
 struct ProjectSidebar: View {
   let project: Project
   @SceneStorage("drakar.sessionsFraction") private var fraction = 0.38
   @SceneStorage("drakar.sessionsCollapsed") private var sessionsCollapsed = false
+  @SceneStorage("drakar.gitFraction") private var gitFraction = 0.45
+  @SceneStorage("drakar.gitCollapsed") private var gitCollapsed = true
   @SceneStorage("drakar.filesCollapsed") private var filesCollapsed = true
 
   var body: some View {
@@ -17,11 +17,26 @@ struct ProjectSidebar: View {
       SessionListView(project: project, isCollapsed: $sessionsCollapsed)
     } else {
       VerticalSplit(
-        fraction: $fraction, collapsesTop: sessionsCollapsed, collapsesBottom: filesCollapsed
+        fraction: $fraction, collapsesTop: sessionsCollapsed,
+        collapsesBottom: gitCollapsed && filesCollapsed
       ) {
         SessionListView(project: project, isCollapsed: $sessionsCollapsed)
       } bottom: {
-        FileTreeView(workspace: project.workspace, isCollapsed: $filesCollapsed)
+        if gitCollapsed && filesCollapsed {
+          VStack(spacing: 0) {
+            GitPane(workspace: project.workspace, isCollapsed: $gitCollapsed)
+            Divider()
+            FileTreeView(workspace: project.workspace, isCollapsed: $filesCollapsed)
+          }
+        } else {
+          VerticalSplit(
+            fraction: $gitFraction, collapsesTop: gitCollapsed, collapsesBottom: filesCollapsed
+          ) {
+            GitPane(workspace: project.workspace, isCollapsed: $gitCollapsed)
+          } bottom: {
+            FileTreeView(workspace: project.workspace, isCollapsed: $filesCollapsed)
+          }
+        }
       }
       .focusedSceneValue(\.filesCollapsed, $filesCollapsed)
     }

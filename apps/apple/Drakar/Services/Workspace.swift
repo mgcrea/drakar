@@ -24,6 +24,9 @@ final class Workspace {
   private(set) var selection: EditorSelection?
   /// Why the last file could not be opened or saved.
   var problem: String?
+  /// The repository status shown in the sidebar's Git pane, kept across collapses.
+  private(set) var gitStatus: GitStatus.Result?
+  @ObservationIgnored private var consecutiveGitUnavailable = 0
   var isQuickOpenShown = false
   /// The pane that last took the keys, kept with the window. A pane taking them is the
   /// sidebar's list no longer having them.
@@ -98,7 +101,7 @@ final class Workspace {
   @discardableResult
   func open(_ url: URL, select range: Range<Int>? = nil) -> EditorDocument? {
     guard runner == nil else { return nil }
-    let path = FileTree.normalized(url.absoluteURL.standardized.path(percentEncoded: false))
+    let path = workspacePath(for: url)
     let document: EditorDocument
     if let existing = documents.first(where: { $0.path == path }) {
       document = existing
@@ -249,11 +252,44 @@ final class Workspace {
 
   // MARK: - The disk
 
+  /// Maps a symlink-resolved path inside the folder back onto `tree.root`, matching how
+  /// `FileTree` and `EditorDocument` store paths (e.g. `/private/tmp/...` -> `/tmp/...`).
+  func workspacePath(for url: URL) -> String {
+    workspacePath(
+      forPath: FileTree.normalized(url.absoluteURL.standardized.path(percentEncoded: false)))
+  }
+
+  private func workspacePath(forPath path: String) -> String {
+    if path == resolvedRoot { return tree.root }
+    if path.hasPrefix(resolvedRoot + "/") {
+      return tree.root + path.dropFirst(resolvedRoot.count)
+    }
+    return path
+  }
+
+  func refreshGitStatus(using reader: (URL) async -> GitStatus.Result = GitStatus.read) async {
+    guard runner == nil else {
+      gitStatus = .noRepository
+      return
+    }
+    let result = await reader(folder)
+    guard !Task.isCancelled else { return }
+    switch result {
+    case .unavailable:
+      consecutiveGitUnavailable += 1
+      // Keep the last known repository status across a single transient failure.
+      if case .repository = gitStatus, consecutiveGitUnavailable < 2 { return }
+      gitStatus = .unavailable
+    case .repository, .noRepository:
+      consecutiveGitUnavailable = 0
+      gitStatus = result
+    }
+  }
+
   private func filesChanged(_ resolvedPaths: [String]) {
     // Back to the path the tree uses: FSEvents resolves `/tmp` to `/private/tmp`.
-    let paths = resolvedPaths.map { path in
-      path.hasPrefix(resolvedRoot) ? tree.root + path.dropFirst(resolvedRoot.count) : path
-    }.map(FileTree.normalized).filter(tree.isRelevant)
+    let paths = resolvedPaths.map { workspacePath(forPath: FileTree.normalized($0)) }
+      .filter(tree.isRelevant)
     guard !paths.isEmpty else { return }
     if Self.touchesCapabilities(paths, root: tree.root) { onCapabilityFilesChanged?() }
     if Self.touchesCodexSkills(paths, root: tree.root) { onCodexSkillFilesChanged?() }
