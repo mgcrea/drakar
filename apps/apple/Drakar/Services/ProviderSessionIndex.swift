@@ -25,12 +25,13 @@ nonisolated enum ProviderSessionIndex {
       return (version, file)
     }
     guard let database = databases.max(by: { $0.0 < $1.0 })?.1 else { return [] }
-    return read(
-      database,
-      """
-      SELECT id, cwd, rollout_path, title, updated_at
+    let threads = """
       FROM threads WHERE archived = 0 AND source NOT LIKE '%"subagent"%'
       """
+    return read(
+      database,
+      "SELECT id, cwd, rollout_path, coalesce(nullif(trim(name), ''), title), updated_at \(threads)",
+      fallbackSQL: "SELECT id, cwd, rollout_path, title, updated_at \(threads)"
     ) { row in
       let id = column(row, 0)
       let cwd = column(row, 1)
@@ -189,7 +190,8 @@ nonisolated enum ProviderSessionIndex {
   }
 
   private static func read(
-    _ file: URL, _ sql: String, row: (OpaquePointer) -> SessionSummary?
+    _ file: URL, _ sql: String, fallbackSQL: String? = nil,
+    row: (OpaquePointer) -> SessionSummary?
   ) -> [SessionSummary] {
     guard FileManager.default.fileExists(atPath: file.path) else { return [] }
     var database: OpaquePointer?
@@ -202,9 +204,12 @@ nonisolated enum ProviderSessionIndex {
     guard result == SQLITE_OK else { return [] }
     sqlite3_busy_timeout(database, 250)
     var statement: OpaquePointer?
-    guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK,
-      let statement
-    else { return [] }
+    if sqlite3_prepare_v2(database, sql, -1, &statement, nil) != SQLITE_OK,
+      let fallbackSQL
+    {
+      sqlite3_prepare_v2(database, fallbackSQL, -1, &statement, nil)
+    }
+    guard let statement else { return [] }
     defer { sqlite3_finalize(statement) }
     var summaries: [SessionSummary] = []
     var step = sqlite3_step(statement)

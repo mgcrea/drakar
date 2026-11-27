@@ -13,6 +13,12 @@ final class CodexBackend: AgentBackend {
   /// The session's folder: the skills a prompt can name are its own.
   private var folder: URL?
 
+  private var titleSelection = ""
+  private var titleConfiguration: AgentProcess.Configuration?
+  private var titlePrompt: String?
+  private var titleModel: String?
+  private var titleTask: Task<Void, Never>?
+
   var notFoundMessage: String { CodexLaunch.notFound }
 
   func launch(_ start: AgentStart) -> AgentLaunch {
@@ -23,18 +29,27 @@ final class CodexBackend: AgentBackend {
       cwd: start.folder.path(percentEncoded: false), resuming: start.resuming?.sessionID,
       mode: start.mode ?? .ask, model: start.model == "default" ? nil : start.model,
       effort: start.effort, version: CodexLaunch.appVersion, name: start.name)
-    return AgentLaunch(
-      configuration: executable.map {
-        CodexLaunch.configuration(
-          executable: $0, environment: start.environment, folder: start.folder)
-      },
-      executable: executable, account: nil)
+    let configuration = executable.map {
+      CodexLaunch.configuration(
+        executable: $0, environment: start.environment, folder: start.folder)
+    }
+    titleTask?.cancel()
+    titlePrompt = nil
+    titleModel = start.model == "default" ? nil : start.model
+    titleSelection = ClaudeChoice.defaults.string(forKey: PreferenceKey.codexTitleModel) ?? ""
+    titleConfiguration =
+      start.resuming == nil && start.name == nil && start.runner == nil && !titleSelection.isEmpty
+      ? configuration : nil
+    return AgentLaunch(configuration: configuration, executable: executable, account: nil)
   }
 
   func started(_ process: any ProcessTransport, then first: AgentCommand?) throws {
     guard var session else { return }
     var writes = session.start().writes
-    if let first, let command = self.command(first) { writes += session.send(command).writes }
+    if let first, let command = self.command(first) {
+      captureTitlePrompt(from: first)
+      writes += session.send(command).writes
+    }
     self.session = session
     for line in writes { try process.send(line) }
   }
@@ -42,8 +57,13 @@ final class CodexBackend: AgentBackend {
   @discardableResult func send(_ command: AgentCommand, to process: any ProcessTransport) throws
     -> String?
   {
-    guard var session, let command = self.command(command) else { return nil }
-    let step = session.send(command)
+    guard var session, let wireCommand = self.command(command) else { return nil }
+    switch command {
+    case .rename: cancelTitle()
+    case .setModel(let model): titleModel = model == "default" ? nil : model
+    default: captureTitlePrompt(from: command)
+    }
+    let step = session.send(wireCommand)
     self.session = session
     for line in step.writes { try process.send(line) }
     // Picks take with the next turn and are never refused: nothing to wait for.
@@ -58,6 +78,9 @@ final class CodexBackend: AgentBackend {
     self.session = session
     // Not `write`: an answer that cannot be written must not mark the session failed.
     for line in step.writes { try? process.send(line) }
+    if step.events.contains(where: { if case .title = $0 { true } else { false } }) {
+      cancelTitle()
+    }
     var output = BackendOutput(events: step.events)
     for signal in step.signals {
       switch signal {
@@ -69,6 +92,7 @@ final class CodexBackend: AgentBackend {
       case .thread(_, let path, let home):
         threadPath = path
         codexHome = home
+        generateTitle(using: process)
       }
     }
     // A queued prompt taken, steered in or dropped: the session may owe the window its turn end.
@@ -76,6 +100,39 @@ final class CodexBackend: AgentBackend {
       output.signals.append(.queueChanged)
     }
     return output
+  }
+
+  private func captureTitlePrompt(from command: AgentCommand) {
+    guard titleConfiguration != nil, titlePrompt == nil, case .prompt(let text, _, _, _) = command
+    else { return }
+    titlePrompt = text
+  }
+
+  private func cancelTitle() {
+    titleConfiguration = nil
+    titlePrompt = nil
+    titleTask?.cancel()
+  }
+
+  private func generateTitle(using process: any ProcessTransport) {
+    guard let configuration = titleConfiguration else { return }
+    titleConfiguration = nil
+    guard let prompt = titlePrompt, !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    else { return }
+    titlePrompt = nil
+    let selection = titleSelection
+    let model = titleModel
+    titleTask = Task { [weak self, weak process] in
+      guard
+        let title = try? await CodexTitle.generate(
+          for: prompt, selection: selection, sessionModel: model, configuration: configuration),
+        !Task.isCancelled, let self, let process, process.isRunning
+      else { return }
+      guard var session = self.session else { return }
+      let step = session.send(.rename(title))
+      self.session = session
+      for line in step.writes { try? process.send(line) }
+    }
   }
 
   /// The thread is its own target: no disk search.

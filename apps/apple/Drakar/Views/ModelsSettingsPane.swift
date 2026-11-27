@@ -4,6 +4,7 @@ import SwiftUI
 /// Settings › Models: per-provider executables, accounts, default models, effort and
 /// permission modes for new sessions, grouped by provider.
 struct ModelsSettingsPane: View {
+  @AppStorage(PreferenceKey.codexTitleModel) private var codexTitleModel = ""
   @AppStorage(PreferenceKey.codexDefaultModel) private var codexDefaultModel = ""
   @AppStorage(PreferenceKey.codexDefaultMode) private var codexDefaultMode = ""
   @AppStorage(PreferenceKey.agyDefaultModel) private var agyDefaultModel = ""
@@ -27,6 +28,23 @@ struct ModelsSettingsPane: View {
         models: ModelCatalog.shared.codexModels,
         modelIdentifier: "settings.codexDefaultModel"
       ) {
+        Picker("Session title model", selection: $codexTitleModel) {
+          Text("Off").tag("")
+          Text("Automatic").tag(CodexTitle.automatic)
+          ForEach(ModelCatalog.shared.codexModels ?? []) { model in
+            Text(model.displayName).tag(model.value)
+          }
+          if !codexTitleModel.isEmpty, codexTitleModel != CodexTitle.automatic,
+            ModelCatalog.shared.codexModels?.contains(where: { $0.value == codexTitleModel })
+              != true
+          {
+            Text(codexTitleModel).tag(codexTitleModel)
+          }
+        }
+        .accessibilityIdentifier("settings.codexTitleModel")
+        Text("Uses one extra Codex request to title each new session.")
+          .font(.caption)
+          .foregroundStyle(.secondary)
         DefaultModePicker(
           defaultLabel: nil,
           emptyTagMode: .ask,

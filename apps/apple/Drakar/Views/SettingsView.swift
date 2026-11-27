@@ -125,6 +125,7 @@ enum PreferenceKey {
   /// Claude Code's default.
   static let defaultModel = "drakar.defaultModel"
   /// The model new Codex sessions start with; empty for Codex's own (`config.toml`).
+  static let codexTitleModel = "drakar.codexTitleModel"
   static let codexDefaultModel = "drakar.codexDefaultModel"
   /// The model new Antigravity sessions start with; empty for Antigravity's default.
   static let agyDefaultModel = "drakar.agyDefaultModel"
