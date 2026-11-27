@@ -6,7 +6,7 @@ import SwiftUI
 
 /// The panes, in three sections, as Cupertino and Armada draw them.
 ///
-/// The first is how sessions behave: General, Models, Transcript, Theme, Attention, then
+/// The first is how sessions behave: General, Models, Transcript, Terminal, Theme, Attention, then
 /// Runner, which says where they may run, and MCP Server, which says what an agent on this Mac
 /// may do with them.
 ///
@@ -23,6 +23,7 @@ enum SettingsPane: String, SupportKitSettings.SettingsPane {
   case general
   case models
   case transcript
+  case terminal
   case theme
   case attention
   case runner
@@ -37,6 +38,7 @@ enum SettingsPane: String, SupportKitSettings.SettingsPane {
     case .general: "General"
     case .models: "Models"
     case .transcript: "Transcript"
+    case .terminal: "Terminal"
     case .theme: "Theme"
     case .attention: "Attention"
     case .runner: "Runner"
@@ -53,6 +55,7 @@ enum SettingsPane: String, SupportKitSettings.SettingsPane {
     case .general: "gearshape"
     case .models: "cpu"
     case .transcript: "text.bubble"
+    case .terminal: "terminal"
     case .theme: "paintpalette"
     case .attention: "bell.badge"
     case .runner: "desktopcomputer.and.macbook"
@@ -66,7 +69,8 @@ enum SettingsPane: String, SupportKitSettings.SettingsPane {
 
   var group: SettingsPaneGroup {
     switch self {
-    case .general, .models, .transcript, .theme, .attention, .runner, .mcp: .configuration
+    case .general, .models, .transcript, .terminal, .theme, .attention, .runner, .mcp:
+      .configuration
     case .whatsNew, .updates, .about: .information
     case .licence: .entitlement
     }
@@ -112,6 +116,9 @@ enum PreferenceKey {
   static let recognisesAsks = "drakar.recognisesAsks"
   /// Whether the last prompt stays pinned over the transcript even while it is in view.
   static let pinsLastPrompt = "drakar.pinsLastPrompt"
+  static let terminalFontSize = "drakar.terminalFontSize"
+  static let terminalScrollback = "drakar.terminalScrollback"
+  static let terminalBell = "drakar.terminalBell"
   /// Whether sessions start able to switch to Bypass permissions; on unless turned off.
   static let allowsBypass = "drakar.allowsBypass"
   /// The model new sessions start with (a `value` of `initialize`'s `models`); empty for
@@ -436,6 +443,7 @@ struct SettingsView: View {
       case .general: GeneralPane()
       case .models: ModelsSettingsPane()
       case .transcript: TranscriptPane()
+      case .terminal: TerminalSettingsPane()
       case .theme: ThemePane()
       case .attention: AttentionPane()
       case .runner: RunnerSettingsPane()

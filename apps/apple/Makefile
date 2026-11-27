@@ -12,6 +12,9 @@ MCP = Packages/DrakarMCP
 SCHEME      ?= Drakar
 APP_NAME    ?= Drakar
 DESTINATION ?= platform=macOS
+# SwiftTerm's pinned build plugin generates version and terminfo data. Headless
+# xcodebuild cannot accept Xcode's interactive plugin trust prompt.
+XCODE_PLUGIN_FLAGS = -skipPackagePluginValidation
 
 .DEFAULT_GOAL := help
 
@@ -70,7 +73,7 @@ $(SPARKLE_STAMP):
 # ── Build ─────────────────────────────────────────────────────────────────────
 
 build: sparkle ## Build the app in Debug
-	xcodebuild build -project $(PROJECT) -scheme $(SCHEME) \
+	xcodebuild build $(XCODE_PLUGIN_FLAGS) -project $(PROJECT) -scheme $(SCHEME) \
 		-configuration Debug -destination '$(DESTINATION)' -derivedDataPath $(DERIVED_DATA)
 
 # XCARGS reaches xcodebuild as extra build settings. The root's `bundle` switches signing off
@@ -79,7 +82,7 @@ build: sparkle ## Build the app in Debug
 XCARGS ?=
 
 build-release: sparkle ## Build the app in Release (the root's build-release is the signed, shippable one)
-	xcodebuild build -project $(PROJECT) -scheme $(SCHEME) \
+	xcodebuild build $(XCODE_PLUGIN_FLAGS) -project $(PROJECT) -scheme $(SCHEME) \
 		-configuration Release -destination '$(DESTINATION)' -derivedDataPath $(DERIVED_DATA) \
 		$(XCARGS)
 
@@ -112,7 +115,7 @@ hosted-windows-check: ## Fail on a hosted test that would draw on screen
 # green while skipping them -- so `test-all` invokes each half explicitly. A suite that
 # silently stops running is worse than one that fails.
 test-app: sparkle hosted-windows-check ## Run the app target's tests
-	xcodebuild test -project $(PROJECT) -scheme $(SCHEME) -destination 'platform=macOS' \
+	xcodebuild test $(XCODE_PLUGIN_FLAGS) -project $(PROJECT) -scheme $(SCHEME) -destination 'platform=macOS' \
 		-derivedDataPath $(DERIVED_DATA)
 
 test-all: test test-app ## Every suite
@@ -128,7 +131,7 @@ profile: ## Time-profile the running Drakar's main thread (SECONDS_PROFILED=30)
 # The streaming benchmark, optimised as the app ships but testable, in a build folder of its
 # own so it never rewrites the Release app that may be running. It prints BENCH lines.
 bench: sparkle ## Main-thread cost of a session streaming on screen (prints BENCH figures)
-	TEST_RUNNER_DRAKAR_BENCH=1 xcodebuild test -project $(PROJECT) -scheme $(SCHEME) \
+	TEST_RUNNER_DRAKAR_BENCH=1 xcodebuild test $(XCODE_PLUGIN_FLAGS) -project $(PROJECT) -scheme $(SCHEME) \
 		-configuration Release ENABLE_TESTABILITY=YES -destination '$(DESTINATION)' \
 		-derivedDataPath $(DERIVED_DATA)/bench -only-testing:DrakarTests/SessionStreamingBench \
 		| grep -E 'BENCH|error:|failed|TEST (SUCCEEDED|FAILED)'

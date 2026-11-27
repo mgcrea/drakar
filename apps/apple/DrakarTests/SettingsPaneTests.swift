@@ -22,7 +22,8 @@ struct SettingsPaneTests {
   @Test func keepsPaneIdentifiersStable() {
     #expect(
       SettingsPane.allCases.map(\.rawValue) == [
-        "general", "models", "transcript", "theme", "attention", "runner", "mcp", "whatsNew",
+        "general", "models", "transcript", "terminal", "theme", "attention", "runner", "mcp",
+        "whatsNew",
         "updates", "about", "licence",
       ])
   }
@@ -32,7 +33,8 @@ struct SettingsPaneTests {
   @Test func drawsThreeSections() {
     let groups: [(Drakar.SettingsPane, SettingsPaneGroup)] = [
       (.general, .configuration), (.models, .configuration), (.transcript, .configuration),
-      (.theme, .configuration), (.attention, .configuration), (.runner, .configuration),
+      (.terminal, .configuration), (.theme, .configuration), (.attention, .configuration),
+      (.runner, .configuration),
       (.mcp, .configuration), (.whatsNew, .information), (.updates, .information),
       (.about, .information), (.licence, .entitlement),
     ]

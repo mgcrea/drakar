@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		A510ED304D6F4B14A1000001 /* SwiftTerm in Frameworks */ = {isa = PBXBuildFile; productRef = A510ED304D6F4B14A1000002 /* SwiftTerm */; };
 		3E80B7BA135636AC4B745378 /* DrakarKit in Frameworks */ = {isa = PBXBuildFile; productRef = 809EA92470DEDB18D477D24C /* DrakarKit */; };
 		F1C9B657C93050E3F977D0BD /* SupportKit in Frameworks */ = {isa = PBXBuildFile; productRef = C279DA30D7E3D3646465C3FF /* SupportKit */; };
 		64C74DC5A1E47ABDC1D6D619 /* SupportKitUI in Frameworks */ = {isa = PBXBuildFile; productRef = 24E6378434F4CE00BE121D77 /* SupportKitUI */; };
@@ -112,6 +113,7 @@
 				3E7A506480F5BC25237028C0 /* MCPKitUI in Frameworks */,
 				739DEE3A3F4D4AFC4E5CC2CD /* MCPKitWiring in Frameworks */,
 				6B92CDB6218E9F51660781CA /* Sparkle.framework in Frameworks */,
+				A510ED304D6F4B14A1000001 /* SwiftTerm in Frameworks */,
 				F1696363A8ABFC2D1B25C480 /* SupportKitTestHost in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -193,6 +195,7 @@
 			);
 			name = Drakar;
 			packageProductDependencies = (
+				A510ED304D6F4B14A1000002 /* SwiftTerm */,
 				809EA92470DEDB18D477D24C /* DrakarKit */,
 				C279DA30D7E3D3646465C3FF /* SupportKit */,
 				24E6378434F4CE00BE121D77 /* SupportKitUI */,
@@ -292,6 +295,7 @@
 			mainGroup = 8F6B5E293D525187AFFACE48;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
+				A510ED304D6F4B14A1000003 /* XCRemoteSwiftPackageReference "SwiftTerm" */,
 				BF91AAA2345F1653B274ABF8 /* XCLocalSwiftPackageReference "Packages/DrakarKit" */,
 				DDA411622527A1114A78C853 /* XCRemoteSwiftPackageReference "swift-support-kit" */,
 				E7FA8B692D030A1310CC916A /* XCLocalSwiftPackageReference "Packages/DrakarMCP" */,
@@ -725,9 +729,22 @@
 				minimumVersion = 1.6.1;
 			};
 		};
+		A510ED304D6F4B14A1000003 /* XCRemoteSwiftPackageReference "SwiftTerm" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/migueldeicaza/SwiftTerm.git";
+			requirement = {
+				kind = exactVersion;
+				version = 1.99.4;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		A510ED304D6F4B14A1000002 /* SwiftTerm */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A510ED304D6F4B14A1000003 /* XCRemoteSwiftPackageReference "SwiftTerm" */;
+			productName = SwiftTerm;
+		};
 		809EA92470DEDB18D477D24C /* DrakarKit */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = DrakarKit;

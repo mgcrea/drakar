@@ -491,6 +491,7 @@ extension FocusedValues {
   @Entry var filesCollapsed: Binding<Bool>?
   /// Whether the focused window shows its inspector, for View › Show Inspector.
   @Entry var inspectorShown: Binding<Bool>?
+  @Entry var terminalShown: Binding<Bool>?
   /// Closes the focused window's project and shows home there, for File › Close Project.
   @Entry var closeProject: (() -> Void)?
 }

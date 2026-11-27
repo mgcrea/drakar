@@ -40,6 +40,7 @@ struct DrakarApp: App {
       CommandGroup(after: .sidebar) {
         FilesCommand()
         InspectorCommand()
+        TerminalCommand()
         EditorSideCommand()
       }
       // ⌘P, as in VS Code and Zed: Drakar prints nothing.
@@ -155,6 +156,18 @@ private struct InspectorCommand: View {
     }
     .keyboardShortcut("0", modifiers: [.command, .option])
     .disabled(inspectorShown == nil)
+  }
+}
+
+private struct TerminalCommand: View {
+  @FocusedBinding(\.terminalShown) private var terminalShown
+
+  var body: some View {
+    Button(terminalShown == true ? "Hide Terminal" : "Show Terminal") {
+      terminalShown?.toggle()
+    }
+    .keyboardShortcut("`", modifiers: .control)
+    .disabled(terminalShown == nil)
   }
 }
 

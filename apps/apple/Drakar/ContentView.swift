@@ -7,6 +7,8 @@ import SwiftUI
 struct ContentView: View {
   @Binding var route: WindowRoute?
   @State private var project: Project?
+  @State private var terminalShown = false
+  @State private var terminal = ProjectTerminal()
   /// Names this window to `OpenSessions`.
   @State private var windowID = UUID()
   @Environment(\.appearsActive) private var appearsActive
@@ -45,6 +47,7 @@ struct ContentView: View {
     .onDisappear {
       // The window is gone: its sessions at work carry on in the session host, for the
       // project's next window; the others stop.
+      terminal.stop()
       project?.stopAll(handingOver: true)
       OpenSessions.shared.unregister(window: windowID)
     }
@@ -60,15 +63,23 @@ struct ContentView: View {
         // The split view's own edge is half a point to aim at.
         .background(ColumnSash(edge: .trailing))
     } detail: {
-      SplitPanes(
-        fraction: $editorFraction, showsSide: !workspace.documents.isEmpty,
-        edge: editorLeads ? .leading : .trailing
-      ) {
-        EditorView(workspace: workspace)
-      } main: {
-        VStack(spacing: 0) {
-          SessionTabStrip(project: project)
-          SelectedSessionPane(project: project)
+      VSplitView {
+        SplitPanes(
+          fraction: $editorFraction, showsSide: !workspace.documents.isEmpty,
+          edge: editorLeads ? .leading : .trailing
+        ) {
+          EditorView(workspace: workspace)
+        } main: {
+          VStack(spacing: 0) {
+            SessionTabStrip(project: project)
+            SelectedSessionPane(project: project)
+          }
+        }
+        if terminalShown, project.runner == nil {
+          ProjectTerminalPane(terminal: terminal, folder: project.folder) {
+            terminalShown = false
+          }
+          .frame(minHeight: 120, idealHeight: 220)
         }
       }
     }
@@ -85,6 +96,12 @@ struct ContentView: View {
       if project.runner == nil { project.capabilities.loadIfNeeded() }
     }
     .focusedSceneValue(\.inspectorShown, $inspectorShown)
+    .focusedSceneValue(\.terminalShown, project.runner == nil ? $terminalShown : nil)
+    .background {
+      if project.runner == nil {
+        TerminalShortcut { terminalShown.toggle() }
+      }
+    }
     // The window's closing, not this view's disappearing, stops the sessions: the editor
     // appearing with the first open file must not take the running ones with it.
     .background(WindowReader { window in found(window, for: project) })
@@ -154,6 +171,14 @@ struct ContentView: View {
     if project.runner == nil {
       ToolbarItem(placement: .primaryAction) {
         ForkToolbarButton(project: project)
+      }
+      ToolbarItem(placement: .primaryAction) {
+        Toggle(isOn: $terminalShown) {
+          Label("Terminal", systemImage: "terminal")
+        }
+        .toggleStyle(.button)
+        .help(terminalShown ? "Hide Terminal" : "Show Terminal")
+        .accessibilityIdentifier("window.terminal")
       }
     }
     // A runner's window hands its sessions over; a local one only on the runner's own
@@ -244,6 +269,7 @@ struct ContentView: View {
         (try? JSONDecoder().decode(StoredProject.self, from: Data(storedProject.utf8)))
         ?? ProjectMemory.stored(for: folder, runner: runner)
       let project = Project(folder: folder, runner: runner, restoring: stored)
+      resetTerminal()
       self.project = project
       OpenSessions.shared.register(project, window: windowID)
       // What the session host kept of the window's sessions since the last launch.
@@ -299,7 +325,13 @@ struct ContentView: View {
     }
   }
 
+  private func resetTerminal() {
+    terminalShown = false
+    terminal.stop()
+  }
+
   private func leaveProject() {
+    resetTerminal()
     project?.stopAll(handingOver: true)
     project?.workspace.window?.isDocumentEdited = false
     OpenSessions.shared.unregister(window: windowID)
