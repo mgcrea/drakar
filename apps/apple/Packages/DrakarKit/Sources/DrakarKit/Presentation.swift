@@ -54,6 +54,8 @@ public struct PermissionSuggestion: Sendable, Equatable, Identifiable {
     case setMode(String)
     /// One of Codex's own approval decisions (`acceptForSession`), passed back as the answer.
     case codexDecision(String)
+    /// One of Antigravity ACP's `allow_always` options, passed back by its `optionId`.
+    case agyOption(id: String, name: String)
     case other(String)
   }
 
@@ -83,6 +85,9 @@ public struct PermissionSuggestion: Sendable, Equatable, Identifiable {
       kind = .setMode(raw["mode"]?.stringValue ?? "")
     case "codexDecision":
       kind = .codexDecision(raw["decision"]?.stringValue ?? "")
+    case "agyOption":
+      kind = .agyOption(
+        id: raw["optionId"]?.stringValue ?? "", name: raw["name"]?.stringValue ?? "")
     default:
       kind = .other(type)
     }
