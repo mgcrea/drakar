@@ -132,23 +132,30 @@ struct TranscriptView: View {
     // its first lines and a jump to the prompt stop short of it; up only while the prompt is
     // away, it covers what is under it, so coming and going does not shift the transcript.
     .contentMargins(.top, pinsLastPrompt ? LastPromptBar.room : 0, for: .scrollContent)
+    // Visibility comes from scroll layout. Animate only the overlays so their changes
+    // don't also animate the scroll view's layout and feed back into visibility.
     .overlay(alignment: .top) {
-      if let prompt = pinsLastPrompt ? transcript.lastPrompt : offScreenPrompt {
-        bar(for: prompt).transition(.opacity)
-      }
-    }
-    .animation(.easeOut(duration: 0.15), value: offScreenPrompt?.id)
-    .overlay(alignment: .bottomTrailing) {
-      if showsFollowButton {
-        FollowButton(isRunning: transcript.isRunning, hasUnseenOutput: hasUnseenOutput) {
-          isFollowing = true
-          position.scrollTo(edge: .bottom)
+      let prompt = pinsLastPrompt ? transcript.lastPrompt : offScreenPrompt
+      ZStack {
+        if let prompt {
+          bar(for: prompt).transition(.opacity)
         }
-        .padding(12)
-        .transition(.opacity)
       }
+      .animation(.easeOut(duration: 0.15), value: prompt?.id)
     }
-    .animation(.easeOut(duration: 0.15), value: showsFollowButton)
+    .overlay(alignment: .bottomTrailing) {
+      ZStack {
+        if showsFollowButton {
+          FollowButton(isRunning: transcript.isRunning, hasUnseenOutput: hasUnseenOutput) {
+            isFollowing = true
+            position.scrollTo(edge: .bottom)
+          }
+          .padding(12)
+          .transition(.opacity)
+        }
+      }
+      .animation(.easeOut(duration: 0.15), value: showsFollowButton)
+    }
   }
 
   /// Not following and not at the bottom either: paused at the bottom, there is nothing to
