@@ -203,6 +203,27 @@ struct SessionIndexTests {
     #expect(sessions[0].displayTitle == "ship it")
     #expect(sessions[0].account.name == "work")
   }
+
+  @Test func fallsBackToFirstUserPromptWhenTranscriptHasNoTitleOrLastPrompt() throws {
+    let home = FileManager.default.temporaryDirectory.appending(path: "drakar-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: home) }
+    let file = home.appending(path: ".claude/projects/-p-one/ccc.jsonl")
+    try FileManager.default.createDirectory(
+      at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+    let lines = [
+      #"{"type":"file-history-snapshot","messageId":"m0"}"#,
+      #"{"type":"user","isMeta":true,"cwd":"/p/one","message":{"role":"user","content":"ignored meta"}}"#,
+      #"{"type":"user","isSidechain":true,"cwd":"/p/one","message":{"role":"user","content":"ignored sidechain"}}"#,
+      #"{"type":"user","cwd":"/p/one","message":{"role":"user","content":[{"type":"text","text":"<system-reminder>hidden</system-reminder>"},{"type":"text","text":"Fix login redirect"}]}}"#,
+      #"{"type":"user","cwd":"/p/one","message":{"role":"user","content":"Second prompt"}}"#,
+    ]
+    try (lines.joined(separator: "\n") + "\n").write(to: file, atomically: true, encoding: .utf8)
+    let account = ClaudeAccount.discover(home: home)[0]
+    let summary = try #require(SessionIndex.summary(of: file, account: account))
+    #expect(summary.title == nil)
+    #expect(summary.lastPrompt == "Fix login redirect")
+    #expect(summary.displayTitle == "Fix login redirect")
+  }
 }
 
 @Suite("Knowing which sessions are open")

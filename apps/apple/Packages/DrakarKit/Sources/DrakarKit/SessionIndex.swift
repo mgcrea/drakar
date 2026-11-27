@@ -235,7 +235,9 @@ public enum SessionIndex {
     summary.title =
       lastValue(of: "customTitle", inLineOfType: "custom-title", in: data)
       ?? lastValue(of: "aiTitle", inLineOfType: "ai-title", in: data)
-    summary.lastPrompt = lastValue(of: "lastPrompt", inLineOfType: "last-prompt", in: data)
+    summary.lastPrompt =
+      lastValue(of: "lastPrompt", inLineOfType: "last-prompt", in: data)
+      ?? firstPrompt(in: data)
     // Where it started, which the transcript's folder is named after, not where the agent
     // last worked: a worktree it moved into can be gone by the time it is resumed.
     summary.cwd = firstValue(of: "cwd", in: data)
@@ -287,6 +289,33 @@ public enum SessionIndex {
         return value
       }
       start = lineEnd
+    }
+    return nil
+  }
+
+  /// The first non-meta, main-thread user prompt in a transcript that wrote no `last-prompt`.
+  static func firstPrompt(in data: Data) -> String? {
+    let marker = Data("\"user\"".utf8)
+    var start = data.startIndex
+    while start < data.endIndex {
+      let lineEnd = data[start...].firstIndex(of: 0x0A) ?? data.endIndex
+      let line = data[start..<lineEnd]
+      start = lineEnd < data.endIndex ? data.index(after: lineEnd) : data.endIndex
+      guard line.range(of: marker) != nil,
+        let json = try? JSONValue.parse(line),
+        json["type"]?.stringValue == "user",
+        json["isSidechain"]?.boolValue != true,
+        json["isMeta"]?.boolValue != true,
+        json["isCompactSummary"]?.boolValue != true,
+        case .user(let user)? = try? StreamMessage(json: json)
+      else { continue }
+      let parts = user.content.compactMap { block -> String? in
+        guard case .text(let text) = block, case .prompt(let part) = UserText.classify(text) else {
+          return nil
+        }
+        return part
+      }
+      if !parts.isEmpty { return parts.joined(separator: "\n\n") }
     }
     return nil
   }
