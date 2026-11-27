@@ -29,15 +29,6 @@ enum AgentKind: String, Codable, CaseIterable {
     }
   }
 
-  var iconSymbol: String? {
-    switch self {
-    case .claude: nil
-    case .codex: "terminal"
-    case .agy: "sparkles"
-    case .grok: "bolt"
-    }
-  }
-
   var features: AgentFeatures {
     switch self {
     case .claude: .claude

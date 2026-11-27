@@ -51,7 +51,7 @@ struct AccountToolbarItem: View {
         switch activeAgent {
         case .claude:
           HStack(spacing: 6) {
-            Image(systemName: "person.crop.circle")
+            AgentIcon(agent: .claude)
             Text(store.profile(for: account).name)
             UsageMeters(usage: store.usage(for: account), now: context.date, compact: true)
           }
@@ -288,6 +288,7 @@ private struct AccountPicker: View {
       HStack {
         Image(systemName: "checkmark")
           .opacity(activeAgent == .claude && account.key == current.key ? 1 : 0)
+        AgentIcon(agent: .claude).foregroundStyle(.secondary)
         Text([profile.name, profile.plan].compactMap { $0 }.joined(separator: " · "))
           .fontWeight(.medium)
         Spacer()

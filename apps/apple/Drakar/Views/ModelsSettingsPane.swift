@@ -19,7 +19,7 @@ struct ModelsSettingsPane: View {
     Form {
       ClaudeSection()
       ProviderSection(
-        header: "Codex",
+        agent: .codex,
         path: codexPath,
         notFound: "Not found: brew install --cask codex",
         defaultModelLabel: "Codex's default",
@@ -36,7 +36,7 @@ struct ModelsSettingsPane: View {
           identifier: "settings.codexDefaultMode")
       }
       ProviderSection(
-        header: "Antigravity",
+        agent: .agy,
         path: agyPath,
         notFound: "Not found: install agy",
         defaultModelLabel: "Antigravity's default",
@@ -53,7 +53,7 @@ struct ModelsSettingsPane: View {
           identifier: "settings.agyDefaultMode")
       }
       ProviderSection(
-        header: "Grok",
+        agent: .grok,
         path: grokPath,
         notFound: "Not found: install grok",
         defaultModelLabel: "Grok's default",
@@ -174,7 +174,7 @@ private struct ClaudeSection: View {
         .font(.caption)
         .foregroundStyle(.secondary)
     } header: {
-      Text("Claude Code")
+      ProviderHeader(agent: .claude)
     } footer: {
       Text(
         "Automatic runs the first `claude` on your shell’s PATH, as a terminal would. A resumed session always runs under the account that wrote it. Both apply to sessions started from now on."
@@ -263,7 +263,7 @@ private struct ClaudeSection: View {
 
 /// Shared grouped section for non-Claude providers (Codex, Antigravity, Grok).
 private struct ProviderSection<Extra: View>: View {
-  let header: LocalizedStringKey
+  let agent: AgentKind
   let path: String?
   let notFound: LocalizedStringKey
   let defaultModelLabel: LocalizedStringKey
@@ -288,7 +288,18 @@ private struct ProviderSection<Extra: View>: View {
         identifier: modelIdentifier)
       extra()
     } header: {
-      Text(header)
+      ProviderHeader(agent: agent)
+    }
+  }
+}
+
+private struct ProviderHeader: View {
+  let agent: AgentKind
+
+  var body: some View {
+    HStack(spacing: 6) {
+      AgentAppIcon(agent: agent)
+      Text(agent.name)
     }
   }
 }

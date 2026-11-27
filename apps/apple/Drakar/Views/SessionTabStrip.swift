@@ -353,13 +353,11 @@ struct SessionTab: View, Equatable {
   var body: some View {
     HStack(spacing: 5) {
       mark.frame(width: 10)
-      if agent.iconSymbol != nil {
-        AgentIcon(agent: agent)
-          .font(.caption)
-          .foregroundStyle(.secondary)
-          .help(agent.name)
-          .accessibilityLabel(agent.name)
-      }
+      AgentIcon(agent: agent)
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .help(agent.name)
+        .accessibilityLabel(agent.name)
       Text(title)
         .lineLimit(1)
         .truncationMode(.middle)
