@@ -228,7 +228,7 @@ public struct AgySession: Sendable {
       if isSessionReady, let sid = sessionID {
         let (id, msg) = calls.make(
           "session/set_mode",
-          .object(["sessionId": .string(sid), "modeId": .string(AgyPolicy.modeID(newMode))]),
+          .object(["sessionId": .string(sid), "modeId": .string(modeID(newMode))]),
           for: .setMode(newMode))
         step.writes.append(msg)
         step.requestID = id
@@ -347,8 +347,7 @@ public struct AgySession: Sendable {
         step.signals.append(.models(snap.models))
       }
 
-      let adoptedMode: PermissionMode =
-        isGrok ? .ask : (explicitMode ? mode : (snap.currentMode ?? mode))
+      let adoptedMode: PermissionMode = explicitMode ? mode : (snap.currentMode ?? mode)
       mode = adoptedMode
       let activeModel = model ?? snap.currentModel
       let activeEffort = effort ?? snap.currentEffort
@@ -386,10 +385,10 @@ public struct AgySession: Sendable {
           for: .initialConfig)
         step.writes.append(msg)
       }
-      if explicitMode, AgyPolicy.modeID(adoptedMode) != snap.currentMode.map(AgyPolicy.modeID) {
+      if explicitMode, modeID(adoptedMode) != snap.currentMode.map(modeID) {
         let (_, msg) = calls.make(
           "session/set_mode",
-          .object(["sessionId": .string(sid), "modeId": .string(AgyPolicy.modeID(adoptedMode))]),
+          .object(["sessionId": .string(sid), "modeId": .string(modeID(adoptedMode))]),
           for: .initialConfig)
         step.writes.append(msg)
       }
@@ -494,8 +493,8 @@ public struct AgySession: Sendable {
     case "config_option_update":
       applyConfigOptions(update["configOptions"]?.arrayValue, into: &step)
     case "current_mode_update":
-      if !isGrok, let raw = update["currentModeId"]?.stringValue,
-        let parsed = AgyPolicy.permissionMode(from: raw),
+      if let raw = update["currentModeId"]?.stringValue,
+        let parsed = permissionMode(from: raw),
         mode != .bypass
       {
         mode = parsed
@@ -516,10 +515,18 @@ public struct AgySession: Sendable {
     if snap.currentModel != nil || snap.currentEffort != nil {
       step.signals.append(.settingsApplied(effort: snap.currentEffort, model: snap.currentModel))
     }
-    if !isGrok, let currentMode = snap.currentMode, mode != .bypass {
+    if let currentMode = snap.currentMode, mode != .bypass {
       mode = currentMode
       step.signals.append(.modeAdopted(currentMode.rawValue))
     }
+  }
+
+  private func modeID(_ mode: PermissionMode) -> String {
+    isGrok ? GrokPolicy.modeID(mode) : AgyPolicy.modeID(mode)
+  }
+
+  private func permissionMode(from raw: String) -> PermissionMode? {
+    isGrok ? GrokPolicy.permissionMode(from: raw) : AgyPolicy.permissionMode(from: raw)
   }
 
   private mutating func drainNextQueued(into step: inout Step) {

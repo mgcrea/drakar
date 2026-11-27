@@ -445,4 +445,58 @@ struct AgySessionTests {
         )
       ])
   }
+
+  @Test func grokStartsInPlanOrBypassAndUsesDefaultOnWireForBypass() throws {
+    var plan = AgySession(
+      cwd: "/p", resuming: nil, mode: .plan, model: nil, effort: nil, version: "1.4.0",
+      isGrok: true)
+    let planStart = plan.start()
+    _ = plan.send(.prompt(input: input("Plan"), uuid: "u-1"))
+    let planInit = try answer(&plan, planStart.writes[0], initResult)
+    let planNew = try answer(
+      &plan, planInit.writes[0], #"{"sessionId":"grok-1","configOptions":[]}"#)
+    #expect(
+      planNew.writes.map { $0["method"]?.stringValue } == ["session/set_mode", "session/prompt"])
+    #expect(planNew.writes[0]["params"]?["modeId"] == .string("plan"))
+    #expect(planNew.signals.contains(.modeAdopted("plan")))
+
+    // Switching from plan to bypass sends "default" on Grok's wire and auto-approves requests.
+    let toBypass = plan.send(.setMode(.bypass))
+    #expect(toBypass.writes[0]["method"] == .string("session/set_mode"))
+    #expect(toBypass.writes[0]["params"]?["modeId"] == .string("default"))
+    _ = try answer(&plan, toBypass.writes[0], #"{}"#)
+
+    let permReq = try json(
+      #"""
+      {
+        "jsonrpc": "2.0",
+        "id": "21",
+        "method": "session/request_permission",
+        "params": {
+          "sessionId": "grok-1",
+          "toolCall": {"toolCallId": "call_g1", "name": "run_command", "kind": "execute"},
+          "options": [{"optionId": "allow", "name": "Allow", "kind": "allow_once"}]
+        }
+      }
+      """#)
+    let autoAllowed = plan.receive(permReq, at: .now)
+    #expect(autoAllowed.events.isEmpty)
+    #expect(
+      autoAllowed.writes == [AgyRPC.answer(.string("21"), result: AgyPolicy.selected("allow"))])
+
+    // Server mode update is ignored while Bypass holds, and adopted otherwise.
+    let ignoredUpdate = plan.receive(
+      try json(
+        #"{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"grok-1","update":{"sessionUpdate":"current_mode_update","currentModeId":"default"}}}"#
+      ), at: .now)
+    #expect(ignoredUpdate.signals.isEmpty)
+
+    let toAsk = plan.send(.setMode(.ask))
+    _ = try answer(&plan, toAsk.writes[0], #"{}"#)
+    let planUpdate = plan.receive(
+      try json(
+        #"{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"grok-1","update":{"sessionUpdate":"current_mode_update","currentModeId":"plan"}}}"#
+      ), at: .now)
+    #expect(planUpdate.signals == [.modeAdopted("plan")])
+  }
 }
