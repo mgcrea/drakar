@@ -113,6 +113,16 @@ struct AccountUsageTests {
       fiveHour: nil, sevenDay: nil, readAt: Date(timeIntervalSince1970: 0), source: .cache)
     #expect(!usage.isStale(at: Date(timeIntervalSince1970: 600)))
     #expect(usage.isStale(at: Date(timeIntervalSince1970: 601)))
+
+    let probed = AccountUsage(
+      fiveHour: nil, sevenDay: nil, readAt: Date(timeIntervalSince1970: 0), source: .probe)
+    #expect(!probed.isStale(at: Date(timeIntervalSince1970: 600)))
+    #expect(probed.isStale(at: Date(timeIntervalSince1970: 601)))
+
+    // A Codex session log reading ages by window rollover, never by clock staleness.
+    let sessionLog = AccountUsage(
+      fiveHour: nil, sevenDay: nil, readAt: Date(timeIntervalSince1970: 0), source: .sessionLog)
+    #expect(!sessionLog.isStale(at: Date(timeIntervalSince1970: 36_000)))
   }
 
   @Test func clampsPercentages() throws {

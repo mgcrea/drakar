@@ -40,10 +40,15 @@ public struct UsageWindow: Sendable, Equatable {
 /// An account's plan windows, from whichever source read them last.
 public struct AccountUsage: Sendable, Equatable {
   public enum Source: Sendable, Equatable {
-    /// A `rate_limit_event` from a running session.
+    /// A `rate_limit_event` or `account/rateLimits/updated` from a running session.
     case live
     /// `cachedUsageUtilization` in the account's `.claude.json`.
     case cache
+    /// A `token_count` event inside a Codex rollout log. Ages by window rollover rather than
+    /// by clock staleness: nothing refreshes it between turns.
+    case sessionLog
+    /// A direct CLI probe (such as Antigravity's `statusLine` payload).
+    case probe
   }
 
   public var fiveHour: UsageWindow?
@@ -90,14 +95,16 @@ public struct AccountUsage: Sendable, Equatable {
     return other
   }
 
-  /// Read more than ten minutes before `now`.
+  /// Read more than ten minutes before `now`. A Codex `sessionLog` figure stays true until
+  /// its window rolls over (`UsageWindow.current(at:)`), so it is never dimmed for age.
   public func isStale(at now: Date) -> Bool {
-    now.timeIntervalSince(readAt) > 600
+    guard source != .sessionLog else { return false }
+    return now.timeIntervalSince(readAt) > 600
   }
 
   private static func cacheWindow(_ json: JSONValue?) -> UsageWindow? {
     guard let value = json?["utilization"]?.numberValue else { return nil }
-    let resets = json?["resets_at"]?.stringValue.flatMap(date(iso:))
+    let resets = json?["resets_at"]?.stringValue.flatMap(parseISO8601)
     return UsageWindow(percent: Int(value.rounded()), resetsAt: resets)
   }
 
@@ -108,11 +115,12 @@ public struct AccountUsage: Sendable, Equatable {
       percent: Int((value * 100).rounded()), resetsAt: resets, isRejected: rejected)
   }
 
-  /// The CLI writes six fractional digits, which `ISO8601DateFormatter` refuses: the
-  /// fraction is dropped, a reset time needs no better than the second.
-  private static func date(iso text: String) -> Date? {
-    let trimmed = text.replacingOccurrences(
-      of: #"\.\d+"#, with: "", options: .regularExpression)
-    return ISO8601DateFormatter().date(from: trimmed)
+  /// Parses an ISO-8601 timestamp with or without fractional seconds (one to nine digits,
+  /// `Z` or numeric offset). `Date.ISO8601FormatStyle` is `Sendable` under Swift 6.
+  public static func parseISO8601(_ text: String) -> Date? {
+    (try? isoWithFractional.parse(text)) ?? (try? isoPlain.parse(text))
   }
+
+  private static let isoWithFractional = Date.ISO8601FormatStyle(includingFractionalSeconds: true)
+  private static let isoPlain = Date.ISO8601FormatStyle()
 }

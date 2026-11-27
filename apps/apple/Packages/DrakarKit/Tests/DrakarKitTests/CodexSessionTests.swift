@@ -60,7 +60,8 @@ struct CodexSessionTests {
       start.writes[0]["params"]?["capabilities"]?["optOutNotificationMethods"]
         == .array([.string("mcpServer/startupStatus/updated")]))
     let (_, step) = initialized()
-    #expect(methods(step) == ["initialized", "account/read", "model/list"])
+    #expect(
+      methods(step) == ["initialized", "account/read", "model/list", "account/rateLimits/read"])
   }
 
   @Test func aFirstPromptOpensTheThreadThenStartsATurn() throws {
@@ -96,7 +97,9 @@ struct CodexSessionTests {
     let start = session.start()
     #expect(session.send(.prompt(input: input("one"), uuid: "p-1")).writes.isEmpty)
     let step = answer(&session, start.writes[0], "{}")
-    #expect(methods(step) == ["initialized", "account/read", "model/list", "thread/start"])
+    #expect(
+      methods(step)
+        == ["initialized", "account/read", "model/list", "account/rateLimits/read", "thread/start"])
   }
 
   @Test func aResumePassesItsSettingsAgain() throws {
@@ -656,5 +659,63 @@ struct CodexSessionTests {
     let running = answer(
       &session, try write("turn/start", in: started), #"{"turn":{"id":"turn-1"}}"#)
     #expect(try write("turn/interrupt", in: running)["params"]?["turnId"] == .string("turn-1"))
+  }
+
+  @Test func rateLimitUpdateNotificationEmitsSignal() throws {
+    var session = try running()
+    let now = Date(timeIntervalSince1970: 1_791_300_000)
+    let step = session.receive(
+      json(
+        #"""
+        {"method":"account/rateLimits/updated","params":{"rateLimits":{
+          "limitId":"codex","planType":"plus",
+          "primary":{"usedPercent":15,"windowDurationMins":300,"resetsAt":1791317294},
+          "secondary":{"usedPercent":40,"windowDurationMins":10080,"resetsAt":1791792475}}}}
+        """#),
+      at: now)
+    guard case .rateLimit(let codex)? = step.signals.first else {
+      Issue.record("expected rateLimit signal, got \(step.signals)")
+      return
+    }
+    #expect(codex.plan == "Plus")
+    #expect(codex.usage.fiveHour?.percent == 15)
+    #expect(codex.usage.sevenDay?.percent == 40)
+    #expect(codex.usage.readAt == now)
+    #expect(codex.usage.source == .live)
+  }
+
+  @Test func initializeReadsRateLimitsAndUsageLimitFailureRefreshesThem() throws {
+    var session = CodexSession(
+      cwd: "/p", resuming: nil, mode: .ask, model: nil, effort: nil, version: "1.0")
+    let start = session.start()
+    let initStep = answer(&session, start.writes[0], #"{"codexHome":"/home/.codex"}"#)
+    let readCall = try write("account/rateLimits/read", in: initStep)
+    let readStep = answer(
+      &session, readCall,
+      #"""
+      {"ordinaryUsageAllowed":false,"rateLimits":{
+        "limitId":"codex","planType":"plus","rateLimitReachedType":"rate_limit_reached",
+        "primary":{"usedPercent":100,"windowDurationMins":300,"resetsAt":1795798786},
+        "secondary":{"usedPercent":16,"windowDurationMins":10080,"resetsAt":1796385586}}}
+      """#)
+    guard case .rateLimit(let initial)? = readStep.signals.first else {
+      Issue.record("expected rateLimit signal, got \(readStep.signals)")
+      return
+    }
+    #expect(initial.usage.fiveHour?.percent == 100)
+    #expect(initial.usage.fiveHour?.isRejected == true)
+    #expect(initial.usage.sevenDay?.isRejected == false)
+
+    // When a turn fails with usageLimitExceeded, CodexSession refreshes rate limits.
+    var runningSession = try running()
+    let failed = runningSession.receive(
+      json(
+        #"""
+        {"method":"turn/completed","params":{"threadId":"t-1","turn":{
+          "id":"turn-1","status":"failed",
+          "error":{"message":"You’ve hit your usage limit.","codexErrorInfo":"usageLimitExceeded"}}}}
+        """#),
+      at: nil)
+    #expect(methods(failed) == ["account/rateLimits/read"])
   }
 }

@@ -35,6 +35,8 @@ public struct CodexSession: Sendable {
     case unusable(String)
     /// Codex's skills changed (`skills/changed`): a list read before is stale.
     case skillsChanged
+    /// Live plan limits from `account/rateLimits/updated`.
+    case rateLimit(CodexUsage)
   }
 
   public struct Step: Sendable, Equatable {
@@ -66,7 +68,7 @@ public struct CodexSession: Sendable {
   public static let noThread = String(localized: "Codex opened no thread. Send again.")
 
   private enum Call: Sendable {
-    case initialize, account, models, thread, turnStart
+    case initialize, account, models, rateLimits, thread, turnStart
     case steer(uuid: String, input: JSONValue, turn: String)
     case other
   }
@@ -232,12 +234,19 @@ public struct CodexSession: Sendable {
       {
         return step
       }
-      let endsTurn = notified(method, params: params, into: &step)
+      let endsTurn = notified(method, params: params, at: time, into: &step)
       step.events += translator.translate(message, at: time)
       if endsTurn {
+        let turnResult = params["turn"] ?? .null
+        let status = turnResult["status"]?.stringValue
+        let errorInfo = turnResult["error"]?["codexErrorInfo"]?.stringValue
+        if status == "failed",
+          errorInfo == "usageLimitExceeded" || errorInfo == "usage_limit_exceeded"
+        {
+          step.writes.append(calls.make("account/rateLimits/read", .object([:]), for: .rateLimits))
+        }
         // A completed turn leaves in-flight steers to their own answers; one that was cut
         // short took them down with it, unless Esc cut it: they start the next turn.
-        let status = params["turn"]?["status"]?.stringValue
         var again = held
         if status == "interrupted" || status == "failed" {
           if keepsQueued {
@@ -273,6 +282,7 @@ public struct CodexSession: Sendable {
         CodexRPC.notification("initialized"),
         calls.make("account/read", .object([:]), for: .account),
         calls.make("model/list", .object([:]), for: .models),
+        calls.make("account/rateLimits/read", .object([:]), for: .rateLimits),
       ]
       if !beforeThread.isEmpty, !isOpeningThread { step.writes.append(openThread()) }
     case .account:
@@ -283,6 +293,12 @@ public struct CodexSession: Sendable {
       }
     case .models:
       step.signals.append(.models(CodexModels.list(result)))
+    case .rateLimits:
+      if let limits = result["rateLimits"],
+        let usage = CodexUsage(appServer: limits, at: .now)
+      {
+        step.signals.append(.rateLimit(usage))
+      }
     case .thread:
       let thread = result["thread"] ?? .null
       guard let id = thread["id"]?.stringValue else {
@@ -341,7 +357,7 @@ public struct CodexSession: Sendable {
       } else {
         step.events.append(.queue(id: uuid, .dropped(agent: "Codex")))
       }
-    case .account, .models, .other:
+    case .account, .models, .rateLimits, .other:
       break
     }
   }
@@ -364,9 +380,9 @@ public struct CodexSession: Sendable {
   }
 
   /// The session's bookkeeping for a notification; true when it ended the running turn.
-  private mutating func notified(_ method: String, params: JSONValue, into step: inout Step)
-    -> Bool
-  {
+  private mutating func notified(
+    _ method: String, params: JSONValue, at time: Date?, into step: inout Step
+  ) -> Bool {
     switch method {
     case "turn/started":
       if let id = params["turn"]?["id"]?.stringValue { turnStarted(id, into: &step) }
@@ -382,6 +398,12 @@ public struct CodexSession: Sendable {
       }
     case "skills/changed":
       step.signals.append(.skillsChanged)
+    case "account/rateLimits/updated":
+      if let limits = params["rateLimits"],
+        let usage = CodexUsage(appServer: limits, at: time ?? .now)
+      {
+        step.signals.append(.rateLimit(usage))
+      }
     case "serverRequest/resolved":
       if let id = CodexRPC.ID(params["requestId"]) { approvals[id.text] = nil }
     case "item/started":
