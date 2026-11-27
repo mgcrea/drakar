@@ -4,24 +4,24 @@
     <line id="Baseline-S" x1="263" x2="3036" y1="696" y2="696"/>
     <line id="Capline-S" x1="263" x2="3036" y1="625.541" y2="625.541"/>
     <line id="left-margin-Regular-S" x1="1408" x2="1408" y1="596" y2="726"/>
-    <line id="right-margin-Regular-S" x1="1479.40" x2="1479.40" y1="596" y2="726"/>
+    <line id="right-margin-Regular-S" x1="1497.25" x2="1497.25" y1="596" y2="726"/>
     <line id="Baseline-M" x1="263" x2="3036" y1="1126" y2="1126"/>
     <line id="Capline-M" x1="263" x2="3036" y1="1055.541" y2="1055.541"/>
     <line id="left-margin-Regular-M" x1="1408" x2="1408" y1="1026" y2="1156"/>
-    <line id="right-margin-Regular-M" x1="1492.00" x2="1492.00" y1="1026" y2="1156"/>
+    <line id="right-margin-Regular-M" x1="1513.00" x2="1513.00" y1="1026" y2="1156"/>
     <line id="Baseline-L" x1="263" x2="3036" y1="1556" y2="1556"/>
     <line id="Capline-L" x1="263" x2="3036" y1="1485.541" y2="1485.541"/>
     <line id="left-margin-Regular-L" x1="1408" x2="1408" y1="1456" y2="1586"/>
-    <line id="right-margin-Regular-L" x1="1504.60" x2="1504.60" y1="1456" y2="1586"/>
+    <line id="right-margin-Regular-L" x1="1528.75" x2="1528.75" y1="1456" y2="1586"/>
   </g>
   <g id="Symbols">
-    <g id="Regular-S" transform="matrix(0.85 0 0 0.85 1408 696)">
+    <g id="Regular-S" transform="matrix(1.0625 0 0 1.0625 1408 703.438)">
       <path d="M57-63C40-72 20-66 10-51C0-35 7-15 24-6L30-13C16-19 10-34 18-47C25-59 39-63 50-57ZM67-53L60-46C67-36 64-23 56-16C50-11 42-10 35-12L29-4C41 1 54-2 63-10C76-21 78-39 67-53ZM10 0L74-69H82L22 0Z"/>
     </g>
-    <g id="Regular-M" transform="matrix(1 0 0 1 1408 1126)">
+    <g id="Regular-M" transform="matrix(1.25 0 0 1.25 1408 1134.75)">
       <path d="M57-63C40-72 20-66 10-51C0-35 7-15 24-6L30-13C16-19 10-34 18-47C25-59 39-63 50-57ZM67-53L60-46C67-36 64-23 56-16C50-11 42-10 35-12L29-4C41 1 54-2 63-10C76-21 78-39 67-53ZM10 0L74-69H82L22 0Z"/>
     </g>
-    <g id="Regular-L" transform="matrix(1.15 0 0 1.15 1408 1556)">
+    <g id="Regular-L" transform="matrix(1.4375 0 0 1.4375 1408 1566.06)">
       <path d="M57-63C40-72 20-66 10-51C0-35 7-15 24-6L30-13C16-19 10-34 18-47C25-59 39-63 50-57ZM67-53L60-46C67-36 64-23 56-16C50-11 42-10 35-12L29-4C41 1 54-2 63-10C76-21 78-39 67-53ZM10 0L74-69H82L22 0Z"/>
     </g>
   </g>

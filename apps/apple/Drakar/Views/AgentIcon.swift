@@ -3,10 +3,21 @@ import SwiftUI
 
 struct AgentIcon: View {
   let agent: AgentKind
+  @ScaledMetric(relativeTo: .caption) private var artworkSize = 18.0
 
   var body: some View {
-    Image("agent-\(agent.rawValue)")
-      .symbolRenderingMode(.monochrome)
+    let image = Image("agent-\(agent.rawValue)")
+    switch agent {
+    case .claude, .agy:
+      // Both source assets have transparent padding around the mark.
+      image
+        .renderingMode(.template)
+        .resizable()
+        .scaledToFit()
+        .frame(width: artworkSize, height: artworkSize)
+    case .codex, .grok:
+      image.symbolRenderingMode(.monochrome)
+    }
   }
 }
 
