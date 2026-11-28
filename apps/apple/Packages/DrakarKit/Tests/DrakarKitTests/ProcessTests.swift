@@ -257,15 +257,15 @@ struct AgentProcessTests {
   }
 }
 
-@Suite("Claude Code versions")
-struct ClaudeVersionTests {
+@Suite("CLI version reads")
+struct CLIVersionTests {
 
   @Test func readsBothSpellings() throws {
-    #expect(ClaudeVersion("2.1.288")?.description == "2.1.288")
-    #expect(ClaudeVersion("2.1.222 (Claude Code)\n")?.description == "2.1.222")
-    #expect(ClaudeVersion("") == nil)
-    #expect(ClaudeVersion("claude: command not found") == nil)
-    #expect(ClaudeVersion("2..1") == nil)
+    #expect(CLIVersion("2.1.288")?.description == "2.1.288")
+    #expect(CLIVersion("2.1.222 (Claude Code)\n")?.description == "2.1.222")
+    #expect(CLIVersion("") == nil)
+    #expect(CLIVersion("claude: command not found") == nil)
+    #expect(CLIVersion("2..1") == nil)
   }
 
   @Test func asksTheBinary() async throws {
@@ -276,13 +276,13 @@ struct ClaudeVersionTests {
     let fake = folder.appending(path: "claude")
     try Data("#!/bin/sh\necho \"9.8.7 (Claude Code)\"\n".utf8).write(to: fake)
     try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: fake.path)
-    #expect(await ClaudeVersion.read(of: fake, environment: [:])?.description == "9.8.7")
+    #expect(await CLIVersion.read(of: fake, environment: [:])?.description == "9.8.7")
 
     let silent = folder.appending(path: "silent")
     try Data("#!/bin/sh\nsleep 5\n".utf8).write(to: silent)
     try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: silent.path)
     #expect(
-      await ClaudeVersion.read(of: silent, environment: [:], timeout: .milliseconds(200)) == nil)
+      await CLIVersion.read(of: silent, environment: [:], timeout: .milliseconds(200)) == nil)
   }
 
   /// More hung binaries at once than the pool has threads: each read used to hold one while it
@@ -297,10 +297,10 @@ struct ClaudeVersionTests {
     try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: hung.path)
     let count = ProcessInfo.processInfo.activeProcessorCount * 2
     let started = ContinuousClock.now
-    let versions = await withTaskGroup(of: ClaudeVersion?.self) { group in
+    let versions = await withTaskGroup(of: CLIVersion?.self) { group in
       for _ in 0..<count {
         group.addTask {
-          await ClaudeVersion.read(of: hung, environment: [:], timeout: .milliseconds(200))
+          await CLIVersion.read(of: hung, environment: [:], timeout: .milliseconds(200))
         }
       }
       return await group.reduce(into: []) { $0.append($1) }

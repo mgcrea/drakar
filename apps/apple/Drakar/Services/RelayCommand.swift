@@ -177,7 +177,7 @@ nonisolated enum RelayCommand {
     let claude = await withTaskGroup(of: (Int, ClaudeCandidate).self) { group in
       for (index, url) in installs.enumerated() {
         group.addTask {
-          let version = await ClaudeVersion.read(
+          let version = await CLIVersion.read(
             of: url, environment: environment, timeout: versionLimit)
           return (
             index,

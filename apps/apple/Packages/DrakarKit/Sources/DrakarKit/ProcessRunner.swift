@@ -7,7 +7,7 @@ import Foundation
 /// own and the end is awaited through the termination handler. `waitUntilExit` and
 /// `readDataToEndOfFile` in a detached task each held a pool thread instead: on CI's three
 /// cores a few process tests at once took every thread, including the one the timeout needed,
-/// and the 1.0.0 release run hung for three hours (`ClaudeVersionTests.asksTheBinary`, seen in
+/// and the 1.0.0 release run hung for three hours (`CLIVersionTests.asksTheBinary`, seen in
 /// about 3 of 80 local runs since 2026-10-04 too).
 public enum ProcessRunner {
   public struct Output: Sendable {
@@ -16,6 +16,13 @@ public enum ProcessRunner {
     public var errors: Data
     /// Stopped by the timeout.
     public var timedOut: Bool
+
+    public init(status: Int32, output: Data, errors: Data, timedOut: Bool) {
+      self.status = status
+      self.output = output
+      self.errors = errors
+      self.timedOut = timedOut
+    }
   }
 
   /// How long a stopped process has to end before it is killed.

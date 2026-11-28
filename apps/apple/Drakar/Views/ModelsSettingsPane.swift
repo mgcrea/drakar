@@ -1,8 +1,8 @@
 import DrakarKit
 import SwiftUI
 
-/// Settings › Models: per-provider executables, accounts, default models, effort and
-/// permission modes for new sessions, grouped by provider.
+/// Settings › Models: per-provider executables and their versions and updates, accounts,
+/// default models, effort and permission modes for new sessions, grouped by provider.
 struct ModelsSettingsPane: View {
   @AppStorage(PreferenceKey.codexTitleModel) private var codexTitleModel = ""
   @AppStorage(PreferenceKey.codexDefaultModel) private var codexDefaultModel = ""
@@ -122,7 +122,7 @@ private struct ClaudeSection: View {
 
   struct Install {
     var url: URL
-    var version: ClaudeVersion?
+    var version: CLIVersion?
     var path: String { url.path(percentEncoded: false) }
   }
 
@@ -139,6 +139,20 @@ private struct ClaudeSection: View {
         }
       }
       .accessibilityIdentifier("settings.claudePath")
+      VersionRow(
+        agent: .claude, executable: effectiveInstall,
+        claudeDirectory: accountPath.isEmpty
+          ? nil : URL(filePath: accountPath, directoryHint: .isDirectory)
+      )
+      .onChange(of: effectiveInstall.map { CLIUpdates.shared.status(of: $0).installed }) {
+        _, new in
+        // An update replaced the binary: the Command picker's versions are stale.
+        guard let new, let url = effectiveInstall,
+          let listed = installs.first(where: { $0.path == url.path(percentEncoded: false) }),
+          listed.version != new
+        else { return }
+        Task { await load() }
+      }
       Picker("Account for new sessions", selection: $accountPath) {
         Text("As the shell sets it: \(shellAccount)").tag("")
         ForEach(accounts, id: \.self) { account in
@@ -204,6 +218,15 @@ private struct ClaudeSection: View {
     .task { await load() }
   }
 
+  /// The install new sessions run: Settings' choice, else the first on the PATH.
+  private var effectiveInstall: URL? {
+    if !claudePath.isEmpty {
+      guard !isLoaded || installs.contains(where: { $0.path == claudePath }) else { return nil }
+      return URL(filePath: claudePath)
+    }
+    return installs.first?.url
+  }
+
   /// The account new sessions take, whose models the model picker lists: Settings', else the
   /// shell's once it is read.
   private var modelAccount: ClaudeAccount? {
@@ -242,7 +265,7 @@ private struct ClaudeSection: View {
         group.addTask {
           (
             index,
-            Install(url: url, version: await ClaudeVersion.read(of: url, environment: environment))
+            Install(url: url, version: await CLIVersion.read(of: url, environment: environment))
           )
         }
       }
@@ -281,6 +304,7 @@ private struct ProviderSection<Extra: View>: View {
           Text(notFound)
         }
       }
+      VersionRow(agent: agent, executable: path.map { URL(filePath: $0) })
       AgentModelPicker(
         defaultLabel: defaultModelLabel,
         selection: $modelSelection,
@@ -290,6 +314,99 @@ private struct ProviderSection<Extra: View>: View {
     } header: {
       ProviderHeader(agent: agent)
     }
+  }
+}
+
+/// The installed version beside the newest published, with the CLI's own `update` one click
+/// away. Checks when shown, at most once per `CLIUpdates.freshness`.
+private struct VersionRow: View {
+  let agent: AgentKind
+  let executable: URL?
+  var claudeDirectory: URL?
+
+  private var updates: CLIUpdates { .shared }
+
+  var body: some View {
+    if let executable {
+      let status = updates.status(of: executable)
+      LabeledContent("Version") {
+        HStack(spacing: 8) {
+          if status.isUpdating {
+            ProgressView().controlSize(.small)
+            Text("Updating\(status.latest.map { " to \($0.description)" } ?? "")…")
+          } else {
+            Group {
+              if let installed = status.installed {
+                Text(installed.description)
+              } else {
+                Text(status.hasRead ? "Unknown" : "…")
+              }
+            }
+            .monospacedDigit()
+            detail(status)
+            actions(status, executable: executable)
+          }
+        }
+      }
+      .accessibilityIdentifier("settings.\(agent.rawValue)Version")
+      .task(
+        id:
+          "\(executable.path(percentEncoded: false))|\(claudeDirectory?.path(percentEncoded: false) ?? "")"
+      ) {
+        updates.check(agent: agent, executable: executable, claudeDirectory: claudeDirectory)
+      }
+      if let message = status.message {
+        Text(LocalizedStringKey(message))
+          .font(.caption)
+          .foregroundStyle(.secondary)
+          .textSelection(.enabled)
+      }
+    }
+  }
+
+  @ViewBuilder private func detail(_ status: CLIUpdates.Status) -> some View {
+    if status.isChecking {
+      ProgressView().controlSize(.mini)
+    } else if status.isUpdateAvailable, let latest = status.latest {
+      Text("\(latest.description) available")
+        .foregroundStyle(.tint)
+    } else if status.checkFailed {
+      Text("Couldn’t check")
+        .foregroundStyle(.secondary)
+        .help(
+          "The newest version could not be read. Update still runs `\(command)`, which checks for itself."
+        )
+    } else if status.latest != nil {
+      Text("Up to date")
+        .foregroundStyle(.secondary)
+    }
+  }
+
+  @ViewBuilder private func actions(_ status: CLIUpdates.Status, executable: URL) -> some View {
+    if status.isUpdateAvailable || (status.checkFailed && !status.isChecking) {
+      Button("Update") {
+        updates.update(agent: agent, executable: executable, claudeDirectory: claudeDirectory)
+      }
+      .controlSize(.small)
+      .help("Runs `\(command)`. Sessions already running keep the version they started with.")
+      .accessibilityIdentifier("settings.\(agent.rawValue)Update")
+    }
+    if !status.isChecking {
+      Button {
+        updates.check(
+          agent: agent, executable: executable, claudeDirectory: claudeDirectory, force: true)
+      } label: {
+        Image(systemName: "arrow.clockwise")
+      }
+      .buttonStyle(.borderless)
+      .help("Check for Updates")
+      .accessibilityLabel("Check for Updates")
+      .accessibilityIdentifier("settings.\(agent.rawValue)CheckUpdates")
+    }
+  }
+
+  private var command: String {
+    "\(executable?.lastPathComponent ?? agent.rawValue) update"
   }
 }
 
