@@ -32,8 +32,10 @@ final class SessionMonitor {
   @ObservationIgnored private var archiveDefaults: UserDefaults?
   private static let archivePreference = "drakar.archivedSessions"
 
-  func setArchived(_ summary: SessionSummary, to value: Bool) {
-    if value { archived.insert(summary.archiveKey) } else { archived.remove(summary.archiveKey) }
+  /// Archives or unarchives each of `summaries`, saved once for them all.
+  func setArchived(_ summaries: some Sequence<SessionSummary>, to value: Bool) {
+    let keys = summaries.map(\.archiveKey)
+    if value { archived.formUnion(keys) } else { archived.subtract(keys) }
     archiveDefaults?.set(archived.sorted(), forKey: Self.archivePreference)
   }
 

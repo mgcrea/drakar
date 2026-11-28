@@ -523,6 +523,12 @@ final class Project {
   private(set) var lastBroadcast: BroadcastResult?
   /// The last row clicked without ⇧: where a ⇧-click's range starts.
   @ObservationIgnored private var markAnchor: ProjectSession.ID?
+  /// Ended or Archived rows marked with ⌘- or ⇧-click, by `SessionSummary.id`, all in
+  /// `markedSection`: what Archive or Unarchive N Sessions acts on. Never beside `marked`.
+  private(set) var markedSummaries: Set<SessionSummary.ID> = []
+  private(set) var markedSection: SummarySection = .ended
+  /// The last summary row clicked without ⇧: where a ⇧-click's range starts.
+  @ObservationIgnored private var summaryAnchor: SessionSummary.ID?
   /// The lists the inspector shows: this folder's under the window's account.
   private(set) var capabilities: Capabilities
   /// What the lists brought since the inspector was last seen.
@@ -1186,6 +1192,7 @@ final class Project {
   /// neither does anything.
   func click(_ item: ProjectSession, _ kind: RowClick) {
     lastBroadcast = nil
+    markedSummaries = []
     switch kind {
     case .plain:
       marked = []
@@ -1215,12 +1222,106 @@ final class Project {
 
   func markAll() {
     lastBroadcast = nil
+    markedSummaries = []
     marked = Set(held.map(\.id))
   }
 
+  /// Takes the marks off every row, tabs and summaries alike.
   func clearMarks() {
     lastBroadcast = nil
     marked = []
+    markedSummaries = []
+  }
+
+  /// Whether a row is marked where it can be seen, of the window's own or of Ended or
+  /// Archived.
+  var hasMarks: Bool { !marked.isEmpty || !markedSummaryRows.isEmpty }
+
+  /// The sidebar's sections of ended sessions, whose rows can be marked to archive or
+  /// unarchive together.
+  enum SummarySection {
+    case ended, archived
+  }
+
+  /// The rows of `section` as the sidebar lists them; none while it is folded, where no row
+  /// can be seen to be marked.
+  func rows(of section: SummarySection) -> [SessionSummary] {
+    switch section {
+    case .ended: showsEnded ? listedEnded(listedGroups) : []
+    case .archived: showsArchived ? archivedEnded : []
+    }
+  }
+
+  /// Whether `summary`'s row in `section` shows as marked.
+  func isMarked(_ summary: SessionSummary, in section: SummarySection) -> Bool {
+    markedSection == section && markedSummaries.contains(summary.id)
+  }
+
+  /// A ⌘- or ⇧-click on a row of Ended or Archived, as on a tab (`click(_:_:)`) but never
+  /// opening it: ⌘ marks or unmarks the row, the preview's row marked with the first when it
+  /// is one of the same section; ⇧ marks the rows from the last clicked to this one. The
+  /// marks stay in one section, and take those off the window's own rows, whose marks are
+  /// where the composer sends. A plain click only clears the summaries' marks, the tabs'
+  /// staying as an Elsewhere row's click leaves them: the caller opens the row.
+  func click(_ summary: SessionSummary, in section: SummarySection, _ kind: RowClick) {
+    if kind != .plain {
+      lastBroadcast = nil
+      marked = []
+    }
+    if markedSection != section {
+      markedSummaries = []
+      markedSection = section
+      summaryAnchor = nil
+    }
+    let rows = rows(of: section).map(\.id)
+    switch kind {
+    case .plain:
+      markedSummaries = []
+      summaryAnchor = summary.id
+    case .toggle:
+      if markedSummaries.isEmpty, let shown = shownSummaryID, shown != summary.id,
+        rows.contains(shown)
+      {
+        markedSummaries = [shown]
+      }
+      if markedSummaries.remove(summary.id) == nil { markedSummaries.insert(summary.id) }
+      summaryAnchor = summary.id
+    case .extend:
+      guard let end = rows.firstIndex(of: summary.id) else { return }
+      let start =
+        summaryAnchor.flatMap { rows.firstIndex(of: $0) }
+        ?? shownSummaryID.flatMap { rows.firstIndex(of: $0) } ?? end
+      markedSummaries.formUnion(rows[min(start, end)...max(start, end)])
+    }
+  }
+
+  /// The id of the summary the preview shows, when it shows one.
+  private var shownSummaryID: SessionSummary.ID? {
+    guard let selected, selected.isWatching, let id = selected.sessionID else { return nil }
+    return rows(of: markedSection).first { $0.sessionID == id }?.id
+  }
+
+  /// The marked rows still listed, in the sidebar's order.
+  var markedSummaryRows: [SessionSummary] {
+    guard !markedSummaries.isEmpty else { return [] }
+    return rows(of: markedSection).filter { markedSummaries.contains($0.id) }
+  }
+
+  /// Archives the marked rows of Ended, or unarchives those of Archived, and clears the
+  /// marks. False when no row is marked.
+  @discardableResult func archiveMarked() -> Bool {
+    let rows = markedSummaryRows
+    guard !rows.isEmpty else { return false }
+    monitor.setArchived(rows, to: markedSection == .ended)
+    markedSummaries = []
+    summaryAnchor = nil
+    return true
+  }
+
+  /// Archives every ended row, those past the first 20 too.
+  func archiveAllEnded() {
+    monitor.setArchived(listedGroups.ended, to: true)
+    if markedSection == .ended { markedSummaries = [] }
   }
 
   /// The marked rows still held, in the tabs' order.

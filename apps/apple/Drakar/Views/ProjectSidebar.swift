@@ -144,6 +144,8 @@ struct SessionListView: View {
   private var list: some View {
     let held = project.listedHeld
     let groups = groups
+    // Once a pass, not once a marked row: each row's menu asks whether it is one of several.
+    let markedRows = project.markedSummaryRows
     return List {
       if !project.fanOuts.isEmpty || !held.isEmpty {
         Section("This Window") {
@@ -191,7 +193,7 @@ struct SessionListView: View {
       if !groups.ended.isEmpty {
         Section(isExpanded: Bindable(project).showsEnded) {
           ForEach(project.listedEnded(groups)) { summary in
-            endedRow(summary)
+            endedRow(summary, in: .ended, markedRows: markedRows)
           }
           if groups.ended.count > 20, !project.showsAllEnded {
             Button("Show All \(groups.ended.count)") { project.showsAllEnded = true }
@@ -199,12 +201,15 @@ struct SessionListView: View {
           }
         } header: {
           Text("Ended (\(groups.ended.count))")
+            .contextMenu {
+              Button("Archive All Ended") { project.archiveAllEnded() }
+            }
         }
       }
       let archived = project.archivedEnded
       if !archived.isEmpty {
         Section(isExpanded: Bindable(project).showsArchived) {
-          ForEach(archived) { summary in endedRow(summary, archived: true) }
+          ForEach(archived) { summary in endedRow(summary, in: .archived, markedRows: markedRows) }
         } header: {
           Text("Archived (\(archived.count))")
         }
@@ -225,9 +230,15 @@ struct SessionListView: View {
     .onKeyPress(.downArrow) { project.stepSidebar(1) ? .handled : .ignored }
     .onKeyPress(.upArrow) { project.stepSidebar(-1) ? .handled : .ignored }
     .onKeyPress(.escape) {
-      guard !project.marked.isEmpty else { return .ignored }
+      guard project.hasMarks else { return .ignored }
       project.clearMarks()
       return .handled
+    }
+    // ⌘⌫ archives the marked rows of Ended, or unarchives those of Archived.
+    // ⌫ arrives as U+007F, which `.delete` (U+0008) may not match.
+    .onKeyPress(keys: [.delete, KeyEquivalent("\u{7F}")]) { press in
+      guard press.modifiers.subtracting(.capsLock) == .command else { return .ignored }
+      return project.archiveMarked() ? .handled : .ignored
     }
     .onKeyPress(characters: ["a"]) { press in
       guard press.modifiers == .command else { return .ignored }
@@ -237,14 +248,44 @@ struct SessionListView: View {
     .accessibilityIdentifier("sessions")
   }
 
-  private func endedRow(_ summary: SessionSummary, archived: Bool = false) -> some View {
-    SummaryRow(summary: summary, host: nil, urgency: nil, monitor: monitor)
-      .pressableRow(isSelected: project.isWatched(summary)) {
-        open(summary) { project.openEnded(summary) }
+  /// A row of Ended or Archived: a click opens it in the preview, ⌘- and ⇧-clicks mark it.
+  private func endedRow(
+    _ summary: SessionSummary, in section: Project.SummarySection, markedRows: [SessionSummary]
+  ) -> some View {
+    let archived = section == .archived
+    return SummaryRow(summary: summary, host: nil, urgency: nil, monitor: monitor)
+      .pressableRow(
+        isSelected: project.isWatched(summary),
+        isMarked: project.isMarked(summary, in: section)
+      ) {
+        let click = SessionTabStrip.click(NSEvent.modifierFlags)
+        project.click(summary, in: section, click)
+        if click == .plain { open(summary) { project.openEnded(summary) } }
       }
-      .contextMenu { menu(for: summary, ended: true, archived: archived) }
+      .contextMenu {
+        if project.isMarked(summary, in: section), markedRows.count >= 2 {
+          markedMenu(markedRows, archived: archived)
+        } else {
+          menu(for: summary, ended: true, archived: archived)
+        }
+      }
       .accessibilityAddTraits(.isButton)
       .accessibilityIdentifier("sessions.\(archived ? "archived" : "ended").\(summary.sessionID)")
+  }
+
+  /// What a right-click on one of several marked rows of Ended or Archived does to them all.
+  @ViewBuilder private func markedMenu(_ rows: [SessionSummary], archived: Bool) -> some View {
+    Button(archived ? "Unarchive \(rows.count) Sessions" : "Archive \(rows.count) Sessions") {
+      project.archiveMarked()
+    }
+    .keyboardShortcut(.delete, modifiers: .command)
+    Button("Unmark All") { project.clearMarks() }
+    Divider()
+    Button("Copy \(rows.count) Session IDs") {
+      NSPasteboard.general.clearContents()
+      NSPasteboard.general.setString(
+        rows.map(\.sessionID).joined(separator: "\n"), forType: .string)
+    }
   }
 
   /// A row opened in the window's preview tab; the second click of a double click keeps it
@@ -306,9 +347,9 @@ struct SessionListView: View {
     }
     if ended {
       if archived {
-        Button("Unarchive") { monitor.setArchived(summary, to: false) }
+        Button("Unarchive") { monitor.setArchived([summary], to: false) }
       } else {
-        Button("Archive") { monitor.setArchived(summary, to: true) }
+        Button("Archive") { monitor.setArchived([summary], to: true) }
       }
     }
     if summary.agentKind.features.moves {

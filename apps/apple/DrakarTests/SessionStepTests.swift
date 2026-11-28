@@ -171,7 +171,7 @@ struct SessionStepTests {
     let project = try project()
     try await ended(["e1", "e2"], in: project)
     let summary = try #require(project.groups.ended.first)
-    project.monitor.setArchived(summary, to: true)
+    project.monitor.setArchived([summary], to: true)
 
     #expect(project.listedGroups.ended.count == 1)
     #expect(project.archivedEnded == [summary])
@@ -180,7 +180,7 @@ struct SessionStepTests {
     #expect(project.stepSidebar(1))
     #expect(project.selected?.sessionID == summary.sessionID)
 
-    project.monitor.setArchived(summary, to: false)
+    project.monitor.setArchived([summary], to: false)
     #expect(project.listedGroups.ended.count == 2)
     #expect(project.archivedEnded.isEmpty)
   }
