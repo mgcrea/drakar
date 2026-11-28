@@ -39,6 +39,7 @@ struct ContentView: View {
     .toolbar { toolbar }
     .background(WindowLevel(floats: keepsOnTop))
     .background(WindowReader { WindowTabs.adopt($0) })
+    .background(ProjectTabAccessory(project: project))
     .onAppear { WindowTabs.openWindow = openWindow }
     // The folder's name over its path, as the Files pane writes it. The path is shortened
     // because the title bar does not truncate: a long subtitle widened the detail column
