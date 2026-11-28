@@ -7,13 +7,11 @@ import Testing
 struct TranscriptHandoverTests {
   @Test func emptyOrNoticeOnlyTranscriptProducesNil() {
     var transcript = Transcript()
-    #expect(
-      TranscriptHandover.prompt(from: transcript, from: "Claude Code", to: "Codex") == nil)
+    #expect(TranscriptHandover(from: transcript, from: "Claude Code", to: "Codex") == nil)
 
     transcript.noteColdCache(at: .distantPast)
     transcript.addNotice("Some note")
-    #expect(
-      TranscriptHandover.prompt(from: transcript, from: "Claude Code", to: "Codex") == nil)
+    #expect(TranscriptHandover(from: transcript, from: "Claude Code", to: "Codex") == nil)
   }
 
   @Test func formatsPromptsAssistantToolCallsAndOmitsThinkingAndSubagents() {
@@ -44,16 +42,19 @@ struct TranscriptHandoverTests {
         .init(id: "sub-1", parent: "tool-1", kind: .text("Subagent internal text"))))
     transcript.noteColdCache(at: .distantPast)
 
-    let prompt = TranscriptHandover.prompt(
-      from: transcript, title: "Login fix", from: "Claude Code", to: "Codex")
-    let text = try! #require(prompt)
-    #expect(text.contains("Claude Code to Codex"))
-    #expect(text.contains("Title: Login fix"))
-    #expect(text.contains("### User"))
+    let handover = try! #require(
+      TranscriptHandover(from: transcript, title: "Login fix", from: "Claude Code", to: "Codex"))
+    #expect(handover.prompt.contains("moved here from Claude Code"))
+    #expect(handover.prompt.contains("handover.md"))
+    #expect(!handover.prompt.contains("Fix the login bug"))
+    let text = handover.document
+    #expect(text.hasPrefix("# Login fix\n"))
+    #expect(text.contains("held with Claude Code, moved to Codex"))
+    #expect(text.contains("## User"))
     #expect(text.contains("Context: Auth.swift:10-20"))
     #expect(text.contains("Attachments: trace.log"))
     #expect(text.contains("Fix the login bug"))
-    #expect(text.contains("### Assistant\nChecking Auth.swift first."))
+    #expect(text.contains("## Assistant\n\nChecking Auth.swift first."))
     #expect(text.contains("- [Tool] Read: Auth.swift -> ok (500 chars)"))
     #expect(!text.contains("Internal chain of thought"))
     #expect(!text.contains("Subagent internal text"))
@@ -72,11 +73,46 @@ struct TranscriptHandoverTests {
     }
     transcript.addPrompt("Final follow-up question", running: false)
 
-    let prompt = TranscriptHandover.prompt(
-      from: transcript, from: "Codex", to: "Claude Code", maxCharacters: 450)
-    let text = try! #require(prompt)
+    let handover = try! #require(
+      TranscriptHandover(from: transcript, from: "Codex", to: "Claude Code", maxCharacters: 450))
+    let text = handover.document
+    #expect(text.hasPrefix("# Session handover\n"))
     #expect(text.contains("Initial task: build the parser"))
     #expect(text.contains("Final follow-up question"))
     #expect(text.contains("earlier entries omitted"))
+  }
+
+  @Test func documentGoesAsATextAttachment() throws {
+    let attachment = try Attachment.text("# Notes\n\nHello", name: TranscriptHandover.documentName)
+    #expect(attachment.kind == .text)
+    #expect(attachment.preview.name == "handover.md")
+    #expect(attachment.block["source"]?["data"]?.stringValue == "# Notes\n\nHello")
+    #expect(throws: AttachmentError.self) { try Attachment.text("", name: "empty.md") }
+  }
+
+  @Test func aSessionMovedTwiceHandsOverEveryPart() throws {
+    var first = Transcript()
+    first.addPrompt("Plan the migration", running: false)
+    first.apply(.itemCompleted(.init(id: "a1", parent: nil, kind: .text("Three steps."))))
+    var second = Transcript()
+    second.addPrompt(
+      "This conversation moved here from Claude Code.",
+      attachments: [AttachmentPreview(kind: .text, name: "handover.md", thumbnail: nil)],
+      running: false)
+    second.apply(.itemCompleted(.init(id: "b1", parent: nil, kind: .text("Got it."))))
+    second.addPrompt("Do step two", running: false)
+
+    let handover = try #require(
+      TranscriptHandover(
+        from: second, earlier: [(provider: "Claude Code", transcript: first)],
+        from: "Codex", to: "Grok"))
+    let text = handover.document
+    #expect(text.contains("held with Claude Code, then Codex, moved to Grok"))
+    #expect(text.contains("Plan the migration"))
+    #expect(text.contains("_Moved from Claude Code to Codex._"))
+    #expect(text.contains("Do step two"))
+    // The first move's own prompt is not handed over again.
+    #expect(!text.contains("This conversation moved here from Claude Code."))
+    #expect(handover.prompt.contains("moved here from Codex"))
   }
 }

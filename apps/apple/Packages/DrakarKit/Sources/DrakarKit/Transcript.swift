@@ -307,7 +307,9 @@ public struct Transcript: Sendable, Equatable {
     upsert(Entry(id: Self.coldCacheNoteID, kind: .notice(note)))
   }
 
-  static let coldCacheNoteID = "notice#prompt-cache"
+  /// The id of `noteColdCache`'s note, which speaks of the next message: a history shown as
+  /// ended leaves it out.
+  public static let coldCacheNoteID = "notice#prompt-cache"
 
   /// A prompt sent while a turn runs: shown apart until the CLI picks it up.
   public mutating func queue(_ prompt: QueuedPrompt) {

@@ -95,6 +95,13 @@ public struct Attachment: Codable, Sendable, Equatable, Identifiable {
     guard type?.conforms(to: .text) == true || isText(data) else { throw .unsupported(name) }
     guard data.count <= maxTextBytes else { throw .tooLarge(name) }
     guard let text = String(data: data, encoding: .utf8) else { throw .unsupported(name) }
+    return try self.text(text, name: name)
+  }
+
+  /// Text Drakar wrote itself, sent as a text file named `name` would be.
+  public static func text(_ text: String, name: String) throws(AttachmentError) -> Attachment {
+    guard !text.isEmpty else { throw .empty(name) }
+    guard text.utf8.count <= maxTextBytes else { throw .tooLarge(name) }
     return Attachment(
       block: .object([
         "type": .string("document"), "title": .string(name),

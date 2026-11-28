@@ -1,40 +1,59 @@
 import Foundation
 
-/// Serializes a session's `Transcript` into a structured handoff prompt so another provider
-/// can continue the conversation with context.
-public enum TranscriptHandover {
-  /// Default character cap for the serialized transcript body so long sessions fit safely
-  /// within any provider's context window.
-  public static let defaultMaxCharacters = 40_000
+/// What a session moving to another provider sends there first: its transcript as a
+/// Markdown document, attached to a short prompt, so the new session's own transcript shows
+/// a file chip rather than the whole conversation pasted in.
+public struct TranscriptHandover: Sendable, Equatable {
+  /// The name the document is attached under.
+  public static let documentName = "handover.md"
+  /// Caps the document so a long session's handover costs a bounded part of the new
+  /// provider's context; the opening entry and the most recent ones are kept.
+  public static let defaultMaxCharacters = 100_000
 
-  /// Formats `transcript` into a handoff prompt from `sourceProvider` to `targetProvider`.
-  /// Returns `nil` when `transcript` has no conversational entries (no prompt, text, or tool
-  /// call on the main thread).
-  public static func prompt(
+  /// The prompt sent with the document.
+  public let prompt: String
+  /// The transcript so far, as Markdown.
+  public let document: String
+
+  /// The handover of `transcript` from `sourceProvider` to `targetProvider`, or `nil` when it
+  /// has no conversational entries (no prompt, text, or tool call on the main thread).
+  /// `earlier` are the conversations `transcript` itself continues, oldest first, each with
+  /// the provider that held it: a session moved twice hands over all of it.
+  public init?(
     from transcript: Transcript,
+    earlier: [(provider: String, transcript: Transcript)] = [],
     title: String? = nil,
     from sourceProvider: String,
     to targetProvider: String,
     maxCharacters: Int = defaultMaxCharacters
-  ) -> String? {
-    let blocks = formattedBlocks(from: transcript)
+  ) {
+    let parts = earlier + [(provider: sourceProvider, transcript: transcript)]
+    var blocks: [Block] = []
+    var providers: [String] = []
+    for part in parts {
+      let partBlocks = Self.formattedBlocks(from: part.transcript)
+      guard !partBlocks.isEmpty else { continue }
+      if let previous = providers.last {
+        blocks.append(
+          Block(text: "_Moved from \(previous) to \(part.provider)._", isCompactLine: false))
+      }
+      if providers.last != part.provider { providers.append(part.provider) }
+      blocks += partBlocks
+    }
     guard !blocks.isEmpty else { return nil }
 
-    let body = fittedBody(blocks, maxCharacters: max(maxCharacters, 200))
-    var header = ["This conversation is moving from \(sourceProvider) to \(targetProvider)."]
-    if let title = title?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty {
-      header.append("Title: \(title)")
-    }
-    header.append(
-      "Continue from the transcript below. Reply briefly confirming you have the context and are ready to proceed (or answer any unanswered question at the end)."
-    )
-
-    return """
-      \(header.joined(separator: "\n"))
-
-      ---
-      \(body)
-      ---
+    let body = Self.fittedBody(blocks, maxCharacters: max(maxCharacters, 200))
+    let title = title?.trimmingCharacters(in: .whitespacesAndNewlines)
+    let heldWith = providers.joined(separator: ", then ")
+    let header = [
+      "# \(title.flatMap { $0.isEmpty ? nil : $0 } ?? "Session handover")", "",
+      "Transcript of a conversation held with \(heldWith), moved to \(targetProvider).",
+    ]
+    document = header.joined(separator: "\n") + "\n\n" + body + "\n"
+    prompt = """
+      This conversation moved here from \(sourceProvider). The attached \(Self.documentName) \
+      holds its transcript so far. Read it and continue from where it ends: reply briefly that \
+      you have the context, or answer the question it ends on if that is still open.
       """
   }
 
@@ -60,8 +79,11 @@ public enum TranscriptHandover {
       switch entry.kind {
       case .thinking:
         continue
+      case .prompt where entry.attachments.contains { $0.name == documentName }:
+        // A handover's own prompt: what it handed over is already here.
+        continue
       case .prompt(let text):
-        var lines = ["### User"]
+        var lines = ["## User"]
         if let context = entry.context, !context.isEmpty {
           lines.append("Context: \(context)")
         }
@@ -77,7 +99,7 @@ public enum TranscriptHandover {
       case .text(let text):
         let body = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !body.isEmpty else { continue }
-        blocks.append(Block(text: "### Assistant\n\(body)", isCompactLine: false))
+        blocks.append(Block(text: "## Assistant\n\n\(body)", isCompactLine: false))
       case .tool(let call):
         blocks.append(Block(text: formatTool(call), isCompactLine: true))
       case .notice(let text):
