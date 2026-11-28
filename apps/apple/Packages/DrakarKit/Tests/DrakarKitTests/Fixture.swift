@@ -31,8 +31,9 @@ enum Fixture: String {
   case contextUsage = "context-usage"
   /// A hundred closing texts of real turns (Task 0 of the session-questions plan, 2026-10-04),
   /// trimmed to their last three paragraphs and scrubbed, each labelled `question`, `offer`
-  /// or null with the sentence a row should show. Lines are `{"text", "kind", "shows"}`,
-  /// not stream messages.
+  /// or null with the sentence a row should show. The last four, from one session on
+  /// 2026-11-28, are go-aheads asked without a question mark that the rules missed. Lines
+  /// are `{"text", "kind", "shows"}`, not stream messages.
   case closingEndings = "closing-endings"
   /// What a `claude` with no prompt answers to `initialize` and `mcp_status` (2.1.288,
   /// 2026-10-04, the skills inspector's spike): a few commands, the CLI's own among them,

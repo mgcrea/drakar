@@ -16,6 +16,9 @@ extension Transcript {
     public var pendingElicitations: [PendingElicitation] = []
     /// What the newest turn ended on; nil while it runs and while anything waits.
     public var closingText: ClosingText?
+    /// What earlier turns since the newest prompt ended on, newest first, while the newest
+    /// turn is over and nothing waits: a background task started the turns after them.
+    public var earlierClosingTexts: [ClosingText] = []
     public var pauses = 0
     /// The newest main-thread request's tokens and model, for the context gauge.
     public var contextUsage: TokenUsage?
@@ -58,6 +61,9 @@ extension Transcript {
     status.pendingPermissions = pendingPermissions
     status.pendingElicitations = pendingElicitations
     status.closingText = closingText
+    if turnEnd == .completed, !isRunning, !isWaitingOnPerson {
+      status.earlierClosingTexts = earlierClosingTexts.reversed()
+    }
     status.pauses = pauses
     status.contextUsage = contextUsage
     status.contextModelID = contextModelID

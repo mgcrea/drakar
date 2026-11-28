@@ -100,11 +100,17 @@ public enum AgentEvent: Sendable, Equatable {
     public var text: String
     public var isFailure: Bool
     public var parent: String?
+    /// A background task's report, which starts a turn the person did not: what the turn
+    /// before it asked still waits for them.
+    public var isBackgroundTask: Bool
 
-    public init(text: String, isFailure: Bool = false, parent: String? = nil) {
+    public init(
+      text: String, isFailure: Bool = false, parent: String? = nil, isBackgroundTask: Bool = false
+    ) {
       self.text = text
       self.isFailure = isFailure
       self.parent = parent
+      self.isBackgroundTask = isBackgroundTask
     }
   }
 

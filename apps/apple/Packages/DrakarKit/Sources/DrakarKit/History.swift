@@ -25,7 +25,7 @@ enum UserText: Equatable {
     if text.isEmpty { return .hidden }
     if let label = EditorSelection.label(context: text) { return .context(label) }
     if contextTags.contains(where: text.hasPrefix) { return .hidden }
-    if text.hasPrefix("<task-notification>") {
+    if isTaskNotification(text) {
       let summary = element("summary", in: text) ?? element("status", in: text) ?? "finished"
       return .notice(String(localized: "Background task: \(summary)"))
     }
@@ -41,6 +41,11 @@ enum UserText: Equatable {
       return .notice(String(text.dropFirst().dropLast()))
     }
     return .prompt(text)
+  }
+
+  /// A background task's report: the CLI starts a turn with it that the person did not.
+  static func isTaskNotification(_ raw: String) -> Bool {
+    raw.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("<task-notification>")
   }
 
   /// The text between `<name>` and `</name>`, trimmed; nil if absent or empty.

@@ -223,21 +223,48 @@ struct ContextUsageTests {
 
   @Test func theTailKnowsTheTextATurnEndedOn() {
     #expect(
-      tail(endedOnAQuestion).closingText
+      tail(endedOnAQuestion).closingTexts.first
         == ClosingText(messageID: "m1", text: "Built.\n\nWant me to commit it?"))
+  }
+
+  private let report =
+    #"{"type":"user","message":{"role":"user","content":"<task-notification>\n<summary>CI passed</summary>\n</task-notification>"}}"#
+
+  /// A background task's report starts a turn the person did not: the turn before it is
+  /// read too, past the new turn's tools.
+  @Test func theTailReadsPastABackgroundTasksTurn() {
+    let lines =
+      endedOnAQuestion + [
+        report,
+        #"{"type":"assistant","message":{"id":"m2","stop_reason":"tool_use","content":[{"type":"tool_use","id":"t1","name":"Bash","input":{}}]}}"#,
+        #"{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","content":"ok"}]}}"#,
+        #"{"type":"assistant","message":{"id":"m3","stop_reason":"end_turn","content":[{"type":"text","text":"CI passed."}]}}"#,
+      ]
+    #expect(tail(lines).closingTexts.map(\.messageID) == ["m3", "m1"])
+    // The report's turn has only begun: the ask before it is the newest.
+    #expect(tail(endedOnAQuestion + [report]).closingTexts.map(\.messageID) == ["m1"])
+  }
+
+  /// The person's prompt that started the turn before ends the read.
+  @Test func theTailStopsAtThePersonsPrompt() {
+    let lines =
+      [
+        #"{"type":"assistant","message":{"id":"m0","stop_reason":"end_turn","content":[{"type":"text","text":"Shall I?"}]}}"#
+      ] + endedOnAQuestion
+    #expect(tail(lines).closingTexts.map(\.messageID) == ["m1"])
   }
 
   @Test func aPromptAfterTheEndTakesItAway() {
     let answered =
       endedOnAQuestion + [#"{"type":"user","message":{"role":"user","content":"yes"}}"#]
-    #expect(tail(answered).closingText == nil)
+    #expect(tail(answered).closingTexts.first == nil)
   }
 
   @Test func aTurnThatCalledAToolHasNone() {
     #expect(
       tail([
         #"{"type":"assistant","message":{"id":"m","stop_reason":"tool_use","content":[{"type":"text","text":"Should I?"}]}}"#
-      ]).closingText == nil)
+      ]).closingTexts.first == nil)
   }
 
   /// "You've hit your session limit" is the CLI talking, not the model asking.
@@ -245,7 +272,7 @@ struct ContextUsageTests {
     #expect(
       tail([
         #"{"type":"assistant","message":{"id":"m","model":"<synthetic>","stop_reason":"end_turn","content":[{"type":"text","text":"Limit reached. Upgrade?"}]}}"#
-      ]).closingText == nil)
+      ]).closingTexts.first == nil)
   }
 
   @Test func aSubagentsEndIsNotTheSessions() {
@@ -253,7 +280,7 @@ struct ContextUsageTests {
       endedOnAQuestion + [
         #"{"type":"assistant","isSidechain":true,"message":{"id":"s","stop_reason":"end_turn","content":[{"type":"text","text":"Done."}]}}"#
       ]
-    #expect(tail(lines).closingText?.messageID == "m1")
+    #expect(tail(lines).closingTexts.first?.messageID == "m1")
   }
 
   @Test func aSummaryCarriesTheAsk() throws {

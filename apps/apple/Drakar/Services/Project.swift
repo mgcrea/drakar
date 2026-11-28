@@ -160,9 +160,9 @@ final class ProjectSession: Identifiable {
   var earlier: [EarlierPart] = []
   /// The session id `earlier` was last linked under (`Project.linkEarlier`).
   @ObservationIgnored var earlierLinkedID: String?
-  /// `ClosingAsk.detect` of the newest closing text, kept until the text changes: a row
+  /// `ClosingAsk.detect` of the closing texts read last, kept until a text changes: a row
   /// asks on every draw, and a reply can be long.
-  @ObservationIgnored private var detected: (key: String, ask: ClosingAsk?)?
+  @ObservationIgnored private var detected: [String: ClosingAsk?] = [:]
 
   init(session: AgentSession) {
     self.session = session
@@ -263,10 +263,15 @@ final class ProjectSession: Identifiable {
     // has no history to read, and the summary of its file lags the live turn.
     if !session.status.hasEntries, let preview {
       found = preview.closingMessageID.flatMap { id in preview.closingAsk.map { (id, $0) } }
-    } else if let closing = session.status.closingText {
-      found = detect(closing).map { (closing.messageID, $0) }
     } else {
-      found = nil
+      // The newest ask since the person last wrote: a turn a background task started does
+      // not answer what the turn before it asked.
+      let status = session.status
+      let closings = (status.closingText.map { [$0] } ?? []) + status.earlierClosingTexts
+      found =
+        closings.lazy.compactMap { closing in
+          self.detect(closing).map { (closing.messageID, $0) }
+        }.first
     }
     guard let found, found.messageID != dismissedAsk else { return nil }
     return found
@@ -274,9 +279,10 @@ final class ProjectSession: Identifiable {
 
   private func detect(_ closing: ClosingText) -> ClosingAsk? {
     let key = "\(closing.messageID)#\(closing.text.utf8.count)"
-    if let detected, detected.key == key { return detected.ask }
+    if let cached = detected[key] { return cached }
     let ask = ClosingAsk.detect(closing.text)
-    detected = (key, ask)
+    if detected.count > Transcript.maxEarlierClosingTexts * 2 { detected.removeAll() }
+    detected[key] = ask
     return ask
   }
 

@@ -188,6 +188,12 @@ public struct Transcript: Sendable, Equatable {
     return ClosingText(messageID: messageID, text: text)
   }
 
+  /// What turns before the newest ended on, since the newest prompt, oldest first: a
+  /// background task's report starts a turn the person did not, and what the turn before
+  /// it asked still waits for them. At most `maxEarlierClosingTexts`.
+  public private(set) var earlierClosingTexts: [ClosingText] = []
+  public static let maxEarlierClosingTexts = 4
+
   /// A block's entry is keyed `<message id>#<block index>`.
   static func messageID(ofEntry id: String) -> String {
     String(id[..<(id.lastIndex(of: "#") ?? id.endIndex)])
@@ -274,6 +280,7 @@ public struct Transcript: Sendable, Equatable {
     lastPromptID = id
     isRunning = running
     turnEnd = nil
+    earlierClosingTexts.removeAll()
   }
 
   /// A note of the client's in the conversation, as the CLI's bracketed ones read.
@@ -451,6 +458,13 @@ public struct Transcript: Sendable, Equatable {
       call.result = result
       entries[index].kind = .tool(call)
     case .note(let note):
+      // Read before the note lands, which would end the scan for it.
+      if note.isBackgroundTask, note.parent == nil, let closing = closingText,
+        earlierClosingTexts.last?.messageID != closing.messageID
+      {
+        earlierClosingTexts.append(closing)
+        earlierClosingTexts = Array(earlierClosingTexts.suffix(Self.maxEarlierClosingTexts))
+      }
       addNote(note.isFailure ? .failure(note.text) : .notice(note.text), parent: note.parent)
     case .permissionRequested(let pending):
       pauses += 1

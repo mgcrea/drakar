@@ -44,8 +44,12 @@ public struct ClosingAsk: Codable, Sendable, Hashable {
     "ready to proceed", "go ahead with", "which one do you", "which option do you",
     "which approach do you",
   ]
-  /// The person is asked to act, anywhere in a sentence, folded.
-  public static let requests = ["tell me when", ", tell me,", "waiting on your go-ahead"]
+  /// The person is asked to act, anywhere in a sentence, folded. A go-ahead asked for
+  /// without a question ("If you're good with that, I'll start on step 1.") waits as surely.
+  public static let requests = [
+    "tell me when", ", tell me,", "your go-ahead", "needs your ok", "if you're good with",
+    "if that works for you", "once you confirm",
+  ]
   /// Sign-offs: never a question, even with a question mark.
   public static let signOffs = ["let me know if", "feel free to", "happy to"]
   /// Offers without asking, anywhere in a sentence, folded.

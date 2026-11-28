@@ -148,6 +148,31 @@ struct TranscriptTests {
       transcript.closingText == ClosingText(messageID: "m1", text: "Built. Want me to commit it?"))
   }
 
+  /// A background task's report starts a turn the person did not: what the turn before it
+  /// asked still waits, until the person writes.
+  @Test func aBackgroundTasksTurnKeepsTheAskBeforeIt() throws {
+    var transcript = ClaudeFeed()
+    transcript.addPrompt("Build it")
+    transcript.apply(try message(asking))
+    transcript.apply(try message(succeeded))
+    transcript.apply(
+      try message(
+        #"{"type":"user","message":{"role":"user","content":"<task-notification>\n<summary>CI passed</summary>\n</task-notification>"}}"#
+      ))
+    transcript.apply(
+      try message(
+        #"{"type":"assistant","message":{"id":"m2","content":[{"type":"text","text":"CI passed."}]}}"#
+      ))
+    transcript.apply(
+      try message(#"{"type":"result","subtype":"success","is_error":false,"result":"CI passed."}"#))
+    let earlier = ClosingText(messageID: "m1", text: "Built. Want me to commit it?")
+    #expect(transcript.closingText == ClosingText(messageID: "m2", text: "CI passed."))
+    #expect(transcript.earlierClosingTexts == [earlier])
+    #expect(transcript.status.earlierClosingTexts == [earlier])
+    transcript.addPrompt("yes")
+    #expect(transcript.earlierClosingTexts.isEmpty)
+  }
+
   @Test func theCapturedTurnEndsOnItsText() throws {
     let closing = try #require(try transcript(.turnWithTool).closingText)
     #expect(closing.text == "Amiral.")

@@ -149,31 +149,72 @@ public struct TranscriptTail: Sendable {
     return []
   }
 
-  /// The text the newest main-thread turn ended on, when its last message ended the turn
-  /// (`end_turn`) and nothing was sent after it: what a row whose history is not read
-  /// shows its ask from. Every block of a message is its own line, newest first here.
-  public var closingText: ClosingText? {
-    var messageID: String?
+  /// What the turns since the person last wrote ended on, newest first: the newest turn's
+  /// text when its last message ended it (`end_turn`) and nothing was sent after it, then
+  /// the turns before each one a background task's report started, which the person did
+  /// not, so that what those asked still shows. What a row whose history is not read shows
+  /// its ask from. Every block of a message is its own line, newest first here.
+  public var closingTexts: [ClosingText] {
+    enum Place {
+      /// No main-thread line read yet.
+      case newest
+      /// Reading the blocks of the message that ended a turn.
+      case reading(String)
+      /// Inside a turn, before its end: nothing here closed it.
+      case inTurn
+      /// Just before a background task's report: the next message ended the turn before.
+      case beforeReport
+    }
+    var found: [ClosingText] = []
+    var place = Place.newest
     var parts: [String] = []
+    func close() {
+      if case .reading(let id) = place, let text = Self.closing(id, parts) { found.append(text) }
+      parts = []
+      place = .inTurn
+    }
     for line in newestFirst {
-      guard let json = try? JSONValue.parse(line), json["isSidechain"]?.boolValue != true
+      guard found.count < Transcript.maxEarlierClosingTexts + 1,
+        let json = try? JSONValue.parse(line), json["isSidechain"]?.boolValue != true
       else { continue }
       switch json["type"]?.stringValue {
       case "user":
         if json["isMeta"]?.boolValue == true { continue }
-        // Newer than any assistant line: the person answered, or interrupted.
-        guard messageID != nil else { return nil }
-        return Self.closing(messageID, parts)
+        switch Self.userLine(json) {
+        case .hidden: continue
+        case .toolResult:
+          if case .newest = place { return [] }
+          close()
+        case .report:
+          close()
+          place = .beforeReport
+        case .person:
+          // Newer than any assistant line: the person answered, or interrupted.
+          close()
+          return found
+        }
       case "assistant":
         guard let message = json["message"], let id = message["id"]?.stringValue else {
           continue
         }
-        if let messageID, id != messageID { return Self.closing(messageID, parts) }
-        if messageID == nil {
-          guard message["stop_reason"]?.stringValue == "end_turn",
-            message["model"]?.stringValue != Self.syntheticModel
-          else { return nil }
-          messageID = id
+        let endsTurn =
+          message["stop_reason"]?.stringValue == "end_turn"
+          && message["model"]?.stringValue != Self.syntheticModel
+        switch place {
+        case .reading(let reading) where reading == id: break
+        case .reading:
+          close()
+          continue
+        case .newest:
+          guard endsTurn else { return [] }
+          place = .reading(id)
+        case .beforeReport:
+          guard endsTurn else {
+            place = .inTurn
+            continue
+          }
+          place = .reading(id)
+        case .inTurn: continue
         }
         for block in (message["content"]?.arrayValue ?? []).reversed()
         where block["type"]?.stringValue == "text" {
@@ -182,7 +223,32 @@ public struct TranscriptTail: Sendable {
       default: continue
       }
     }
-    return Self.closing(messageID, parts)
+    close()
+    return found
+  }
+
+  private enum UserLine { case person, report, toolResult, hidden }
+
+  /// Who a main-thread user line is from: the person (a prompt, a command, an interrupt),
+  /// a background task's report, the tools, or nobody the conversation shows.
+  private static func userLine(_ json: JSONValue) -> UserLine {
+    let content = json["message"]?["content"]
+    var texts: [String] = []
+    var hasToolResult = false
+    if let text = content?.stringValue {
+      texts = [text]
+    } else {
+      for block in content?.arrayValue ?? [] {
+        switch block["type"]?.stringValue {
+        case "text": block["text"]?.stringValue.map { texts.append($0) }
+        case "tool_result": hasToolResult = true
+        default: break
+        }
+      }
+    }
+    if texts.contains(where: UserText.isTaskNotification) { return .report }
+    if texts.contains(where: { UserText.classify($0) != .hidden }) { return .person }
+    return hasToolResult ? .toolResult : .hidden
   }
 
   private static func closing(_ messageID: String?, _ parts: [String]) -> ClosingText? {

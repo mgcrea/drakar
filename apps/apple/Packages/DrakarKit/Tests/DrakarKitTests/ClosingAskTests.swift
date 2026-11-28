@@ -36,6 +36,23 @@ struct ClosingAskTests {
         == question("Tell me when it's saved."))
   }
 
+  /// A go-ahead asked for without a question mark waits for the person all the same.
+  @Test func aGoAheadAskedForIsAQuestion() {
+    #expect(
+      ClosingAsk.detect("Step 2 is the big change. I'll wait for your go-ahead before starting it.")
+        == question("I'll wait for your go-ahead before starting it."))
+    #expect(
+      ClosingAsk.detect(
+        "**My call that needs your OK:** moving it.\n\nIf you're good with that, I'll start on step 1."
+      ) == question("If you're good with that, I'll start on step 1."))
+    #expect(
+      ClosingAsk.detect("The branch is ready. I'll merge it once you confirm.")
+        == question("I'll merge it once you confirm."))
+    #expect(
+      ClosingAsk.detect("Fixed. Let me know if that works for you.")
+        == offer("Let me know if that works for you."))
+  }
+
   @Test func aStatementIsNothing() {
     #expect(ClosingAsk.detect("All 146 tests pass. Committed as 2add3ce.") == nil)
   }

@@ -169,7 +169,11 @@ public struct ClaudeTranslator: Sendable {
         update.prompt = prompt
         events.append(.agentTask(callID: user.parentToolUseID!, update))
       case .prompt(let note), .notice(let note):
-        events.append(.note(.init(text: note, parent: user.parentToolUseID)))
+        events.append(
+          .note(
+            .init(
+              text: note, parent: user.parentToolUseID,
+              isBackgroundTask: UserText.isTaskNotification(text))))
       case .context, .hidden: break
       }
     }
@@ -257,7 +261,11 @@ extension ClaudeTranslator {
         switch UserText.classify(text) {
         case .prompt(let part): prompt.append(part)
         case .notice(let note):
-          events.append(.note(.init(text: note, parent: user.parentToolUseID)))
+          events.append(
+            .note(
+              .init(
+                text: note, parent: user.parentToolUseID,
+                isBackgroundTask: UserText.isTaskNotification(text))))
         case .context(let label): context.append(label)
         case .hidden: break
         }

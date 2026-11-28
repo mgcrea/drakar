@@ -119,6 +119,23 @@ struct HistoryTests {
     #expect(transcript.closingText?.text == "Built. Want me to commit it?")
   }
 
+  /// A background task's report starts a turn the person did not: the ask before it stands.
+  @Test func historyKeepsTheAskBeforeABackgroundTasksTurn() {
+    let lines = [
+      #"{"type":"user","message":{"role":"user","content":"Build it"}}"#,
+      #"{"type":"assistant","message":{"id":"m1","stop_reason":"end_turn","content":[{"type":"thinking","thinking":""}]}}"#,
+      #"{"type":"assistant","message":{"id":"m1","stop_reason":"end_turn","content":[{"type":"text","text":"Want me to start it once CI is green?"}]}}"#,
+      #"{"type":"user","message":{"role":"user","content":"<task-notification>\n<summary>CI passed</summary>\n</task-notification>"}}"#,
+      #"{"type":"assistant","message":{"id":"m2","stop_reason":"end_turn","content":[{"type":"text","text":"CI passed."}]}}"#,
+    ]
+    let transcript = history(lines)
+    #expect(transcript.closingText?.messageID == "m2")
+    #expect(transcript.earlierClosingTexts.map(\.messageID) == ["m1"])
+    #expect(
+      history(lines + [#"{"type":"user","message":{"role":"user","content":"go"}}"#])
+        .earlierClosingTexts.isEmpty)
+  }
+
   @Test func historyWithoutAStopReasonDoesNotGuess() {
     let transcript = history([
       #"{"type":"user","message":{"role":"user","content":"Build it"}}"#,

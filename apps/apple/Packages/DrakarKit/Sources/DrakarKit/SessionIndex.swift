@@ -246,9 +246,12 @@ public enum SessionIndex {
     summary.modelID = tail.newestModelID
     summary.awaitsToolResult = tail.isAwaitingToolResult
     summary.pendingQuestion = tail.pendingUserQuestion
-    if let closing = tail.closingText, let ask = ClosingAsk.detect(closing.text) {
+    // The newest ask since the person last wrote, past turns a background task started.
+    for closing in tail.closingTexts {
+      guard let ask = ClosingAsk.detect(closing.text) else { continue }
       summary.closingAsk = ask
       summary.closingMessageID = closing.messageID
+      break
     }
     return summary
   }
