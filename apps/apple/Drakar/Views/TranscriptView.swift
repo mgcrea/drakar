@@ -372,12 +372,20 @@ struct EntryView: View, Equatable {
               .background(.quaternary.opacity(0.6), in: RoundedRectangle(cornerRadius: 8))
           }
         }
+        // Beside the bubble, not on it: a prompt is often one line, and a corner button
+        // would cover it. The rewind arrow, when there is one, sits further along.
+        .copyOnHover(CopyText.of(text), placement: .beside, identifier: "copy.prompt")
         // A subagent's prompt is not one of the session's own: nothing to fork or rewind to.
         .rewindMenu(
           entryID: entry.id, messageID: entry.parentToolUseID == nil ? entry.messageID : nil,
           text: text)
       case .text(let text):
+        // Beside the reply, on hover. The extension calls this "Copy response" and keeps
+        // the icon off the words: a corner button would cover a one-line reply.
         MarkdownView(text: text)
+          .copyOnHover(
+            CopyText.of(text), placement: .beside, label: "Copy response",
+            identifier: "copy.response")
       case .thinking(let text):
         ThinkingView(
           text: text, isThinking: entry.thinkingSince != nil, duration: entry.thinkingDuration)
@@ -706,48 +714,115 @@ struct CodeBlock: View {
   }
 }
 
+/// Where a hover copy button sits. The extension hides every one of these until the pointer
+/// is over the thing it copies.
+enum CopyPlacement {
+  /// The top-trailing corner of a block, over a chip so it stays readable on the text.
+  case corner
+  /// The bottom edge, beside the text. A corner would cover a one-line turn.
+  case beside
+}
+
+/// Blank text is not worth a button. The words copied are the original, not the trimmed ones.
+enum CopyText {
+  static func of(_ text: String) -> String? {
+    text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : text
+  }
+}
+
 extension View {
-  /// A copy button in the top-trailing corner, out of sight until the pointer is over the
-  /// view, as in the extension. Nil text leaves the view as it is.
-  func copyOnHover(_ text: String?) -> some View {
-    modifier(CopyOnHover(text: text))
+  /// A copy button out of sight until the pointer is over the view, as in the extension.
+  /// Nil text leaves the view as it is.
+  func copyOnHover(
+    _ text: String?, placement: CopyPlacement = .corner, label: String = "Copy",
+    identifier: String = "copy"
+  ) -> some View {
+    modifier(CopyOnHover(text: text, placement: placement, label: label, identifier: identifier))
   }
 }
 
 private struct CopyOnHover: ViewModifier {
   let text: String?
+  var placement: CopyPlacement = .corner
+  var label = "Copy"
+  var identifier = "copy"
 
   @State private var isHovering = false
-  @State private var didCopy = false
 
-  func body(content: Content) -> some View {
-    content
-      .overlay(alignment: .topTrailing) {
-        if let text { button(copying: text) }
+  @ViewBuilder func body(content: Content) -> some View {
+    switch placement {
+    case .corner:
+      content
+        .overlay(alignment: .topTrailing) {
+          if let text { CopyIconButton(text: text, label: label, isHovering: isHovering) }
+        }
+        .onHover { isHovering = $0 }
+    case .beside:
+      if let text {
+        HStack(alignment: .bottom, spacing: 6) {
+          content
+          CopyIconButton(
+            text: text, label: label, isHovering: isHovering, showsChrome: false,
+            identifier: identifier
+          )
+          .padding(.bottom, 4)
+        }
+        .onHover { isHovering = $0 }
+      } else {
+        content
       }
-      .onHover { isHovering = $0 }
+    }
   }
+}
 
-  private func button(copying text: String) -> some View {
+/// The extension's copy icon: `doc.on.doc` until it lands, then a check for a moment.
+/// In the accessibility tree all along, as the rewind arrow is, whether or not it is on screen.
+private struct CopyIconButton: View {
+  let text: String
+  var label: String
+  var isHovering: Bool
+  /// A filled chip. Corner buttons sit on the text they copy; a bare icon would get lost in it.
+  var showsChrome = true
+  var identifier = "copy"
+
+  @State private var didCopy = false
+  @FocusState private var isFocused: Bool
+
+  private var isShown: Bool { isHovering || didCopy || isFocused }
+
+  var body: some View {
     Button {
       NSPasteboard.general.clearContents()
       NSPasteboard.general.setString(text, forType: .string)
       didCopy = true
     } label: {
       Image(systemName: didCopy ? "checkmark" : "doc.on.doc")
-        .font(.caption)
+        .font(showsChrome ? .caption : .callout)
         .foregroundStyle(.secondary)
         .frame(width: 22, height: 22)
-        .background(.background.secondary, in: RoundedRectangle(cornerRadius: 4))
-        .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(.separator))
+        .background {
+          if showsChrome {
+            RoundedRectangle(cornerRadius: 4).fill(.background.secondary)
+          }
+        }
+        .overlay {
+          if showsChrome {
+            RoundedRectangle(cornerRadius: 4).strokeBorder(.separator)
+          }
+        }
         .contentTransition(.symbolEffect(.replace))
     }
     .buttonStyle(.plain)
-    .help("Copy")
-    .accessibilityLabel("Copy")
-    .padding(4)
-    .opacity(isHovering || didCopy ? 1 : 0)
-    .animation(.easeOut(duration: 0.15), value: isHovering)
+    .focused($isFocused)
+    .help(label)
+    .accessibilityLabel(label)
+    .accessibilityIdentifier(identifier)
+    .padding(showsChrome ? 4 : 0)
+    .opacity(isShown ? 1 : 0)
+    // Opacity would otherwise drop it from the tree. It has to stay findable before the
+    // pointer is over it, as the rewind arrow is.
+    .accessibilityHidden(false)
+    .animation(.easeOut(duration: 0.15), value: isShown)
     .task(id: didCopy) {
       guard didCopy else { return }
       try? await Task.sleep(for: .seconds(1.5))
