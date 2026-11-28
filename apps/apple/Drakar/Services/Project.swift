@@ -445,6 +445,9 @@ final class Project {
   /// afresh only when told it changed. Set only when it does, so a click after a click
   /// redraws nothing.
   private(set) var focusesComposer = true
+  /// A tab of the inspector asked for from outside it (the composer's context popover): the
+  /// window shows its inspector, which opens on the tab and clears this.
+  var inspectorRequest: InspectorTab?
   /// The tab switch `select` began, until the deck has drawn its session
   /// (`TabSignposts.switchDrawn`).
   @ObservationIgnored var pendingSwitch: (id: ProjectSession.ID, state: OSSignpostIntervalState)?

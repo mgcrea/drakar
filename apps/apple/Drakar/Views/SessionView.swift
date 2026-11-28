@@ -190,7 +190,15 @@ struct SessionView: View {
                 moveProviderRefusal: project.providerMoveRefusal(for: item),
                 moveProvider: project.offersProviderMove(for: item) && !toMarked
                   ? { agent in Task { await project.moveProvider(item, to: agent) } }
-                  : nil),
+                  : nil,
+                gauge: item.gauge(
+                  accountModel: session.resuming.flatMap {
+                    SessionMonitor.shared.accountModel(for: $0.account)
+                  }),
+                contextActions: ContextPopoverActions(
+                  commands: { project.slashCommands(for: session) },
+                  loadCommands: { project.loadSlashCommands(for: session) },
+                  showDetails: { project.inspectorRequest = .session })),
               cycleMode: { SessionPills.cycle(session, account: account) },
               commands: project.slashCommands(for: session),
               pickCommand: { command in
@@ -642,6 +650,13 @@ private struct SessionFooter: View {
         // The composer's, which a session another process runs has none of.
         if let cache = SessionPills.promptCache(of: session) {
           PromptCacheLabel(cache: cache)
+        }
+        if let gauge = item.gauge(
+          accountModel: session.resuming.flatMap {
+            SessionMonitor.shared.accountModel(for: $0.account)
+          })
+        {
+          ContextUsageLabel(gauge: gauge)
         }
         if let mode = session.status.historyPermissionMode {
           Text(PermissionMode.title(of: mode))

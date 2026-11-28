@@ -59,6 +59,12 @@ struct InspectorView: View {
     .onChange(of: isShown) { was, now in
       if was, !now, tab == .capabilities { project.clearCapabilityMarks() }
     }
+    // After `onAppear`: a tab asked for wins over the marks' own.
+    .onChange(of: project.inspectorRequest, initial: true) { _, request in
+      guard let request else { return }
+      tab = request
+      project.inspectorRequest = nil
+    }
   }
 }
 

@@ -17,6 +17,10 @@ struct SessionPills {
   var canMoveProvider = false
   var moveProviderRefusal: String? = nil
   var moveProvider: ((AgentKind) -> Void)? = nil
+  /// How full the session's context is; nil before any turn reported its tokens.
+  var gauge: ContextGauge? = nil
+  /// What the context pill's popover needs of the window; nil leaves the labels unclickable.
+  var contextActions: ContextPopoverActions? = nil
 
   private var catalog: ModelCatalog { .shared }
 
@@ -38,8 +42,8 @@ struct SessionPills {
     let models = Self.models(for: session, account: account)
     return HStack(spacing: 6) {
       // Left of the model, as the extension has it.
-      if let cache = Self.promptCache(of: session) {
-        PromptCacheLabel(cache: cache).font(.callout).foregroundStyle(.secondary)
+      if Self.promptCache(of: session) != nil || gauge != nil {
+        ContextPill(session: session, gauge: gauge, actions: contextActions)
       }
       modelMenu(models)
       let levels = Self.effortLevels(session, models: models)
@@ -350,6 +354,67 @@ struct PromptCacheLabel: View {
       .accessibilityElement(children: .ignore)
       .accessibilityLabel(state.help ?? "")
       .accessibilityIdentifier("promptCache")
+    }
+  }
+}
+
+/// How full the context is, beside the cache timer and in its spirit: a ring and the share
+/// used, amber from 75 % and red from 90 % as the sidebar gauge has it, and the figures on
+/// hover.
+struct ContextUsageLabel: View {
+  let gauge: ContextGauge
+  /// Where the session compacts itself, when its process said.
+  var compactsAt: Int? = nil
+
+  var body: some View {
+    HStack(spacing: 4) {
+      Ring(fraction: gauge.fraction, tint: tint)
+      Text(gauge.fraction, format: .percent.precision(.fractionLength(0)))
+        .monospacedDigit()
+        .foregroundStyle(gauge.level == .normal ? AnyShapeStyle(.secondary) : AnyShapeStyle(tint))
+    }
+    .help(help)
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel("Context")
+    .accessibilityValue(help)
+    .accessibilityIdentifier("contextUsage")
+  }
+
+  private var tint: Color {
+    switch gauge.level {
+    case .normal: .secondary
+    case .high: .orange
+    case .critical: .red
+    }
+  }
+
+  private var help: String {
+    let used = gauge.used.formatted(.number.notation(.compactName))
+    let limit = gauge.window.limit.formatted(.number.notation(.compactName))
+    var parts = [String(localized: "\(used) of \(limit) tokens of context used.")]
+    if let compactsAt {
+      let at = compactsAt.formatted(.number.notation(.compactName))
+      parts.append(String(localized: "Compacts itself at \(at)."))
+    }
+    parts.append(gauge.window.source.explanation)
+    return parts.joined(separator: " ")
+  }
+
+  /// A track and the used share over it, from twelve o'clock, the size of a callout glyph.
+  private struct Ring: View {
+    let fraction: Double
+    let tint: Color
+
+    var body: some View {
+      ZStack {
+        Circle().stroke(.quaternary, lineWidth: 2)
+        Circle()
+          .trim(from: 0, to: fraction)
+          .stroke(tint, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+          .rotationEffect(.degrees(-90))
+      }
+      .frame(width: 11, height: 11)
+      .animation(.easeOut(duration: 0.2), value: fraction)
     }
   }
 }
