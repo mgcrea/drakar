@@ -120,10 +120,10 @@ struct ContentView: View {
       if project.runner == nil { project.capabilities.loadIfNeeded() }
     }
     .focusedSceneValue(\.inspectorShown, $inspectorShown)
-    .focusedSceneValue(\.terminalShown, project.runner == nil ? $terminalShown : nil)
     .onChange(of: project.inspectorRequest) { _, tab in
       if tab != nil { inspectorShown = true }
     }
+    .focusedSceneValue(\.terminalShown, project.runner == nil ? $terminalShown : nil)
     .onChange(of: terminalShown) {
       if !terminalShown { terminalDragStart = nil }
     }
