@@ -31,6 +31,9 @@ public struct AgyTranslator: Sendable {
   /// Outcomes of `ask_question` prompts answered through `elicitation/create`, preserved so
   /// the subsequent `tool_call_update` (`status: "completed"`, no `rawOutput`) records them.
   private var questionOutcomes: [String: RecordedQuestionOutcome] = [:]
+  /// Whether an `invoke_subagent` call is reported as a task too, for the agent map: live
+  /// only, as Claude Code's tasks are, so a reloaded session lists no agents.
+  private var reportsTasks = true
 
   public init() {}
 
@@ -172,6 +175,7 @@ public struct AgyTranslator: Sendable {
   /// Folds `session/load`'s replayed `session/update` payloads into a finished conversation.
   public static func history(_ updates: [JSONValue]) -> [AgentEvent] {
     var translator = AgyTranslator()
+    translator.reportsTasks = false
     var events: [AgentEvent] = []
     var pendingUserBlocks: [JSONValue] = []
     var hasTurn = false
@@ -310,12 +314,34 @@ public struct AgyTranslator: Sendable {
       // Update input/kind in place if diffs or locations arrived on a `pending` update.
       events.append(.itemCompleted(.init(id: callID, parent: nil, kind: .tool(call))))
     }
+    if reportsTasks, call.kind.isSubagent {
+      events += subagentTask(call, isStart: existing == nil, status: status)
+    }
     if !isTerminal, call.kind == .question,
       let expected = Self.questionFallbackText(for: call.input)
     {
       pendingQuestionFallback = PendingQuestionFallback(callID: callID, expected: expected)
     }
     return events
+  }
+
+  /// An `invoke_subagent` call as the task the agent map lists: started with the call, ended
+  /// with it. ACP says nothing of a subagent's own work, so its card has only the call's.
+  private func subagentTask(_ call: Transcript.ToolCall, isStart: Bool, status: String)
+    -> [AgentEvent]
+  {
+    var update = AgentTaskUpdate()
+    update.isStart = isStart
+    update.isSubagent = true
+    if case .subagent(let description?) = call.kind { update.description = description }
+    switch status {
+    case "completed": update.status = "completed"
+    case "failed": update.status = "failed"
+    default:
+      guard isStart else { return [] }
+      update.status = "running"
+    }
+    return [.agentTask(callID: call.id, update)]
   }
 
   /// The numbered markdown list `agy acp` emits right after `ask_question` so text-only clients

@@ -82,6 +82,8 @@ public enum SystemEvent: Sendable, Equatable {
   case notification(text: String, isError: Bool)
   /// A subagent started, worked, changed status or ended.
   case task(TaskEvent)
+  /// The tasks running in the background now, the whole set (2.1.312).
+  case backgroundTasks([BackgroundTask])
   /// The commands and skills changed mid-session (a plugin or skill reloaded): the new
   /// `commands` list, shaped as `initialize`'s.
   case commandsChanged(JSONValue)
@@ -118,6 +120,8 @@ public enum SystemEvent: Sendable, Equatable {
       guard let server = json["mcp_server_name"]?.stringValue else { return nil }
       self = .elicitationComplete(
         serverName: server, elicitationID: json["elicitation_id"]?.stringValue)
+    case "background_tasks_changed":
+      self = .backgroundTasks((json["tasks"]?.arrayValue ?? []).compactMap(BackgroundTask.init))
     case _ where TaskEvent.Kind(rawValue: subtype) != nil:
       guard let event = TaskEvent(json, subtype: subtype) else { return nil }
       self = .task(event)
@@ -446,6 +450,8 @@ public struct PermissionRequest: Sendable, Equatable {
   public var requiresUserInteraction: Bool
   /// The call it asks about, which is also its transcript entry's id.
   public var toolUseID: String?
+  /// The subagent asking, by its task id; nil on the main thread.
+  public var agentID: String?
   /// What the call does, read once from its name and input.
   public var kind: ToolKind
   /// An `AskUserQuestion` waiting on a choice, not a tool waiting on permission.
@@ -476,6 +482,7 @@ public struct PermissionRequest: Sendable, Equatable {
     blockedPath = request["blocked_path"]?.stringValue
     requiresUserInteraction = request["requires_user_interaction"]?.boolValue ?? false
     toolUseID = request["tool_use_id"]?.stringValue
+    agentID = request["agent_id"]?.stringValue
     kind = ClaudeTools.kind(name: toolName, input: input)
   }
 }

@@ -53,6 +53,8 @@ public struct TaskEvent: Sendable, Equatable {
     var update = AgentTaskUpdate()
     update.isStart = kind == .started
     update.taskID = taskID
+    // Before 2.1.312 only subagents were tasks, and said no type.
+    if kind == .started { update.isSubagent = taskType.map(Self.isSubagentType) ?? true }
     update.taskType = taskType
     update.description = description
     update.isBackgrounded = isBackgrounded
@@ -64,6 +66,36 @@ public struct TaskEvent: Sendable, Equatable {
     update.totalTokens = totalTokens
     update.durationMS = durationMS
     return update
+  }
+
+  /// A type the CLI gives a subagent's task, which the agent map lists as an agent rather
+  /// than as a background task.
+  static func isSubagentType(_ type: String) -> Bool {
+    type == "local_agent" || type == "remote_agent"
+  }
+}
+
+/// A task running in the background as the CLI lists it (`background_tasks_changed`,
+/// 2.1.312): the whole set each time, so a task missing from it has gone.
+public struct BackgroundTask: Sendable, Equatable {
+  public var taskID: String
+  /// `local_bash`, `local_agent`, `local_workflow`…, as the CLI writes it.
+  public var taskType: String?
+  public var description: String?
+  public var isSubagent: Bool
+
+  public init(taskID: String, taskType: String?, description: String?) {
+    self.taskID = taskID
+    self.taskType = taskType
+    self.description = description
+    isSubagent = taskType.map(TaskEvent.isSubagentType) ?? false
+  }
+
+  init?(_ json: JSONValue) {
+    guard let taskID = json["task_id"]?.stringValue else { return nil }
+    self.init(
+      taskID: taskID, taskType: json["task_type"]?.stringValue,
+      description: json["description"]?.stringValue)
   }
 }
 
@@ -121,6 +153,12 @@ public struct AgentTask: Sendable, Equatable {
   /// What it was asked, forwarded from inside it while it runs in the foreground.
   public var prompt: String?
   public var isBackgrounded = false
+  /// A subagent rather than a shell or other task: what the agent map lists as an agent.
+  public var isSubagent = false
+  /// When its start arrived, live; nil for one read from history.
+  public var startedAt: Date?
+  /// When it was first seen ended, live.
+  public var endedAt: Date?
   public var lastToolName: String?
   public var toolUses: Int?
   public var totalTokens: Int?
@@ -155,6 +193,7 @@ public struct AgentTask: Sendable, Equatable {
     taskID = taskID ?? update.taskID
     taskType = taskType ?? update.taskType
     if let isBackgrounded = update.isBackgrounded { self.isBackgrounded = isBackgrounded }
+    if let isSubagent = update.isSubagent { self.isSubagent = isSubagent }
     if let status = update.status { self.status = Status(status) }
     if let summary = update.summary { self.summary = summary }
     if let outputFile = update.outputFile, outputFile.hasPrefix("/") {

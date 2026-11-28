@@ -21,6 +21,8 @@ struct SessionPills {
   var gauge: ContextGauge? = nil
   /// What the context pill's popover needs of the window; nil leaves the labels unclickable.
   var contextActions: ContextPopoverActions? = nil
+  /// Scrolls the transcript to a call and opens its card: what an agent map row does.
+  var revealCall: ((String) -> Void)? = nil
 
   private var catalog: ModelCatalog { .shared }
 
@@ -36,6 +38,13 @@ struct SessionPills {
     }
   }
 
+  /// The agents pill, once the session started a subagent.
+  @ViewBuilder var agents: some View {
+    if session.status.agents.hasAgents {
+      AgentsPill(session: session, reveal: revealCall)
+    }
+  }
+
   /// The model, its effort when it takes one, and why the last change was refused if it was
   /// (in red), or that it takes from the next turn.
   var model: some View {
@@ -45,6 +54,8 @@ struct SessionPills {
       if Self.promptCache(of: session) != nil || gauge != nil {
         ContextPill(session: session, gauge: gauge, actions: contextActions)
       }
+      // Between the context and the model, as the extension has it.
+      agents
       modelMenu(models)
       let levels = Self.effortLevels(session, models: models)
       if !levels.isEmpty { effortMenu(levels) }

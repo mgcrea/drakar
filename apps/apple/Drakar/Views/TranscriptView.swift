@@ -12,6 +12,8 @@ struct TranscriptView: View {
   var agent: AgentKind = .claude
   /// The entry at the top when this session was last shown; nil while following.
   @Binding var anchor: String?
+  /// A call the agent map asked for: scrolled to, its card and the cards holding it opened.
+  var reveal: RevealRequest? = nil
   /// Takes back a prompt queued behind the turn; nil where the agent can't, so no Cancel.
   var cancelQueued: ((QueuedPrompt) -> Void)? = nil
   /// Stops the turn so that the queue goes now; nil where it can't, so no Send now.
@@ -42,6 +44,7 @@ struct TranscriptView: View {
   /// since from a transcript that is merely scrolled up.
   @State private var revisionWhenLeft: Int?
   @State private var thinkingDisclosure = ThinkingDisclosure()
+  @State private var revealed: TranscriptReveal?
 
   /// What the turn is held up by, said instead of a verb.
   private var workingStatus: String? {
@@ -91,6 +94,7 @@ struct TranscriptView: View {
       }
       .scrollTargetLayout()
       .environment(\.thinkingDisclosure, thinkingDisclosure)
+      .environment(\.transcriptReveal, revealed)
       .environment(\.agentName, agent.shortName)
       .padding(16)
       .frame(maxWidth: 820, alignment: .leading)
@@ -128,6 +132,23 @@ struct TranscriptView: View {
         // Output that arrived during the scroll was held back.
         if isFollowing { position.scrollTo(edge: .bottom) }
       }
+    }
+    .onChange(of: reveal) { _, request in
+      guard let request else { return }
+      // The row the transcript lists it in: its own, or the card it sits in when that card is
+      // itself a row (`grouped()`); a call deeper than that is listed as a row of its own.
+      guard let entry = transcript.entry(withID: request.callID) else { return }
+      var calls: Set<String> = [request.callID]
+      var top = request.callID
+      if let parent = entry.parentToolUseID, let card = transcript.entry(withID: parent),
+        card.parentToolUseID == nil, case .tool = card.kind
+      {
+        calls.insert(parent)
+        top = parent
+      }
+      revealed = TranscriptReveal(callIDs: calls, at: request.at)
+      isFollowing = false
+      position.scrollTo(id: top, anchor: .top)
     }
     .onChange(of: transcript.revision) {
       if isFollowing && !isUserScrolling { position.scrollTo(edge: .bottom) }

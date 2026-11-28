@@ -61,6 +61,8 @@ public struct ClaudeTranslator: Sendable {
       if let call = event.toolUseID ?? agentCallByTask[event.taskID] {
         events.append(.agentTask(callID: call, event.update))
       }
+    case .system(.backgroundTasks(let tasks)):
+      events.append(.backgroundTasks(tasks))
     case .assistant(let assistant):
       events += translate(assistant, at: time)
     case .streamEvent(let event, let parent):

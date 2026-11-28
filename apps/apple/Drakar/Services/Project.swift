@@ -112,6 +112,13 @@ final class ProjectSession: Identifiable {
   var focusRequest = 0
   /// Bumped to ask the question card in the transcript for the focus.
   var questionFocusRequest = 0
+  /// A call the agent map asked the transcript to scroll to and open.
+  var revealRequest: RevealRequest?
+
+  func reveal(call: String) {
+    revealRequest = RevealRequest(
+      callID: call, serial: (revealRequest?.serial ?? 0) + 1, at: .now)
+  }
 
   /// Reads `sources` into attachments, off the main thread, and says what could not be.
   func attach(_ sources: [AttachmentSource]) {
@@ -2812,7 +2819,8 @@ final class Project {
         if kind == .claude {
           return SessionIndex.summary(of: URL(filePath: file), account: account)
         }
-        return ProviderSessionIndex.summary(sessionID: id, provider: provider, home: home, file: file)
+        return ProviderSessionIndex.summary(
+          sessionID: id, provider: provider, home: home, file: file)
       }.value
       if let summary {
         item?.preview = summary

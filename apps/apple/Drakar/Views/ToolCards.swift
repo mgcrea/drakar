@@ -40,6 +40,7 @@ struct AgentCallView: View {
   @State private var window: ObjectIdentifier?
   @State private var isWindowVisible = false
   @Environment(\.taskControls) private var controls
+  @Environment(\.transcriptReveal) private var reveal
 
   /// What the file is named by: the task's id while it is reported, its report's after a
   /// reload. Neither, while it runs in a session read from its file: the feed finds it by the
@@ -149,6 +150,9 @@ struct AgentCallView: View {
       }
     }
     .modifier(CardFrame(id: call.id))
+    // Opened by the agent map, also when the lazy stack makes it as the scroll lands.
+    .onChange(of: reveal) { _, reveal in openIfRevealed(reveal) }
+    .onAppear { if reveal?.isFresh == true { openIfRevealed(reveal) } }
     .background(
       WindowReader { found in
         // Not during the update that put the view in its window.
@@ -172,6 +176,11 @@ struct AgentCallView: View {
     ) {
       await follow()
     }
+  }
+
+  private func openIfRevealed(_ reveal: TranscriptReveal?) {
+    guard let reveal, reveal.callIDs.contains(call.id), !isExpanded else { return }
+    withAnimation(.snappy) { isExpanded = true }
   }
 
   /// What starts, restarts or stops following the file: a card closed, a task that ended,

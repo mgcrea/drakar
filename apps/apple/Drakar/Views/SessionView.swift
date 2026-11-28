@@ -28,6 +28,7 @@ struct SessionView: View {
   var body: some View {
     LiveTranscript(
       session: session, earlier: item.earlier, anchor: $item.scrollAnchor,
+      reveal: item.revealRequest,
       cancelQueued: session.features.cancelsQueued ? { session.cancelQueued($0) } : nil,
       // As Esc: not while a server's question waits, whose panel lets the turn go on.
       sendQueuedNow: session.status.isRunning && !session.isReadOnly
@@ -199,7 +200,8 @@ struct SessionView: View {
                 contextActions: ContextPopoverActions(
                   commands: { project.slashCommands(for: session) },
                   loadCommands: { project.loadSlashCommands(for: session) },
-                  showDetails: { project.inspectorRequest = .session })),
+                  showDetails: { project.inspectorRequest = .session }),
+                revealCall: { call in item.reveal(call: call) }),
               cycleMode: { SessionPills.cycle(session, account: account) },
               commands: project.slashCommands(for: session),
               pickCommand: { command in
@@ -798,12 +800,14 @@ private struct LiveTranscript: View {
   let session: AgentSession
   var earlier: [EarlierPart] = []
   @Binding var anchor: String?
+  var reveal: RevealRequest?
   var cancelQueued: ((QueuedPrompt) -> Void)?
   var sendQueuedNow: (() -> Void)?
 
   var body: some View {
     TranscriptView(
       transcript: session.displayedTranscript, agent: session.agent, anchor: $anchor,
-      cancelQueued: cancelQueued, sendQueuedNow: sendQueuedNow, earlier: earlier)
+      reveal: reveal, cancelQueued: cancelQueued, sendQueuedNow: sendQueuedNow,
+      earlier: earlier)
   }
 }

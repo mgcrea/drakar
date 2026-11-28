@@ -353,7 +353,11 @@ Drakar's todo card and strip only show for 4.x models.
   "Running Find all…"), `task_updated` (`task_id` and `patch: {status, end_time}` only), and
   `task_notification` (`status`, `summary`, `usage`, `output_file`). A background agent's
   end also arrives as a `<task-notification>` user text. `background_tasks_changed` lists
-  what runs in the background.
+  what runs in the background, the whole set each time (`task_id`, `task_type`,
+  `description`): Drakar keeps it for the agent map's background tasks, the subagents in it
+  left to the tree. A `can_use_tool` asked from inside a subagent carries `agent_id`, its
+  `task_id`, which is how the extension's agent map says an agent waits on a permission
+  (read from the 2.1.332 webview, not captured).
 - A **fork** (`subagent_type: "fork"`, 2.1.302 and later) behaves differently: see "2.1.308".
 
 ## Task controls (verified 2026-10-28, 2.1.312)

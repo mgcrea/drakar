@@ -210,6 +210,8 @@ public struct Transcript: Sendable, Equatable {
   public private(set) var todos: [Todo]?
   /// Subagents, by the `Agent` call that started each.
   public private(set) var agentTasks: [String: AgentTask] = [:]
+  /// The tasks running in the background, as the agent last listed them.
+  public private(set) var backgroundTasks: [BackgroundTask] = []
   /// A request that failed and is about to be tried again, until anything else arrives.
   public private(set) var retry: APIRetry?
   /// From a `compacting` status until the compaction lands or the turn ends.
@@ -414,7 +416,9 @@ public struct Transcript: Sendable, Equatable {
     // Its subagents went with it; no notification will say so.
     for (call, task) in agentTasks where task.status == .running {
       agentTasks[call]?.status = .ended("session ended")
+      agentTasks[call]?.endedAt = .now
     }
+    backgroundTasks.removeAll()
   }
 
   /// `time` is when the event arrived: what times thinking streamed live and a prompt taken
@@ -446,6 +450,13 @@ public struct Transcript: Sendable, Equatable {
       pendingPermissions.removeAll()
       pendingElicitations.removeAll()
       stopThinking()
+      // Nor still running a task in the foreground, whose closing line may never come (an
+      // ACP subagent cancelled with its turn says nothing more of it).
+      for (call, task) in agentTasks where task.status == .running && !task.isBackgrounded {
+        agentTasks[call]?.status =
+          summary.outcome == .interrupted ? .stopped : .ended("turn ended")
+        agentTasks[call]?.endedAt = time
+      }
     case .itemStarted(let item):
       place(item, replacing: false, at: time)
     case .itemCompleted(let item):
@@ -504,7 +515,14 @@ public struct Transcript: Sendable, Equatable {
     case .todos(let todos):
       self.todos = todos
     case .agentTask(let call, let update):
-      agentTasks[call, default: AgentTask()].apply(update)
+      var task = agentTasks[call] ?? AgentTask()
+      let wasRunning = task.status == .running
+      task.apply(update)
+      if update.isStart, task.startedAt == nil { task.startedAt = time }
+      if wasRunning, task.status != .running { task.endedAt = time }
+      agentTasks[call] = task
+    case .backgroundTasks(let tasks):
+      backgroundTasks = tasks
     case .queue(let id, let change):
       guard let index = queuedPrompts.firstIndex(where: { $0.uuid == id }) else { return }
       let prompt = queuedPrompts.remove(at: index)

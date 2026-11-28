@@ -39,6 +39,8 @@ public enum AgentEvent: Sendable, Equatable {
   case compaction(Compaction)
   case todos([Todo])
   case agentTask(callID: String, AgentTaskUpdate)
+  /// Every task running in the background now, the whole set: one missing from it has gone.
+  case backgroundTasks([BackgroundTask])
   case queue(id: String, QueueChange)
   case title(Title)
   case historyMeta(HistoryMeta)
@@ -234,6 +236,8 @@ public struct AgentTaskUpdate: Sendable, Equatable {
   /// `local_agent`, `local_bash`…, as the CLI writes it.
   public var taskType: String?
   public var description: String?
+  /// A subagent rather than a shell or other task; said by the update that starts it.
+  public var isSubagent: Bool?
   public var isBackgrounded: Bool?
   public var status: String?
   public var summary: String?

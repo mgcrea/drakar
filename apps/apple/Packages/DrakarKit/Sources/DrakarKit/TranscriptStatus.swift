@@ -39,6 +39,8 @@ extension Transcript {
     public var historyEffort: String?
     public var writerVersion: String?
     public var lastTurn: TurnSummary?
+    /// What the toolbar's agents pill shows.
+    public var agents = AgentMap.Summary()
 
     public init() {}
 
@@ -81,6 +83,7 @@ extension Transcript {
     status.historyEffort = historyEffort
     status.writerVersion = writerVersion
     status.lastTurn = lastTurn
+    status.agents = agentSummary
     return status
   }
 }
