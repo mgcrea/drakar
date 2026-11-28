@@ -24,6 +24,18 @@ struct ProjectTerminalTests {
     #expect(try !TerminalShortcut.matches(key("c", code: 0x08, modifiers: .control)))
   }
 
+  @Test func controlBacktickUsesTheFrenchLayoutWhenAvailable() throws {
+    let key = try #require(
+      CGEvent(keyboardEventSource: nil, virtualKey: 0x2A, keyDown: true))
+    key.flags = .maskControl
+    let event = try #require(NSEvent(cgEvent: key))
+    // This key produces backtick on French keyboards and backslash on US keyboards.
+    guard event.characters(byApplyingModifiers: []) == "`" else { return }
+    #expect(TerminalShortcut.matches(event))
+    key.flags = [.maskControl, .maskAlternate]
+    #expect(try !TerminalShortcut.matches(#require(NSEvent(cgEvent: key))))
+  }
+
   @Test func hidingThePaneKeepsTheSameShellInTheProjectFolder() async throws {
     let folder = FileManager.default.temporaryDirectory
       .appendingPathComponent(UUID().uuidString, isDirectory: true)

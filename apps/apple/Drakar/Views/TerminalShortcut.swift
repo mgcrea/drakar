@@ -13,7 +13,9 @@ struct TerminalShortcut: NSViewRepresentable {
   static func matches(_ event: NSEvent) -> Bool {
     let modifiers = event.modifierFlags.intersection([.control, .option, .shift, .command])
     return modifiers == .control
-      && (event.keyCode == UInt16(kVK_ANSI_Grave) || event.charactersIgnoringModifiers == "`")
+      && (event.keyCode == UInt16(kVK_ANSI_Grave) || event.charactersIgnoringModifiers == "`"
+        // Control can leave charactersIgnoringModifiers empty on layouts such as French.
+        || event.characters(byApplyingModifiers: []) == "`")
   }
 
   final class ShortcutView: NSView {
