@@ -56,6 +56,14 @@ public enum IdleCompaction {
 public struct CompactionRun: Sendable, Equatable {
   public static let compact = "/compact"
 
+  /// Whether a prompt is `/compact`, alone or with instructions after it: what an agent
+  /// without the command in its prompt (Codex) is sent another way.
+  public static func isCompact(_ text: String) -> Bool {
+    let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard text.hasPrefix(compact) else { return false }
+    return text.dropFirst(compact.count).first.map(\.isWhitespace) ?? true
+  }
+
   /// Sent before compacting; nil for none.
   public let first: String?
   /// Started by the timer rather than the person, who is likely away.

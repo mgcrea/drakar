@@ -112,6 +112,11 @@ final class AgyBackend: AgentBackend {
 
   private func command(_ command: AgentCommand) -> AgySession.Command? {
     switch command {
+    // Their own command, which they find only at the start of the prompt: no editor context
+    // before it.
+    case .prompt(let text, _, let uuid, _) where CompactionRun.isCompact(text):
+      .compact(
+        input: AgyInput.make(text: text, context: [], attachments: []), uuid: uuid)
     case .prompt(let text, let context, let uuid, let attachments):
       .prompt(
         input: AgyInput.make(text: text, context: context, attachments: attachments), uuid: uuid)

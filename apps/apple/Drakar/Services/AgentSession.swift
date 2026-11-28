@@ -1133,14 +1133,16 @@ final class AgentSession {
     }
   }
 
-  /// The inspector's Compact can go: a Claude Code conversation, between turns.
-  var canCompact: Bool { agent == .claude && canSend && status.hasEntries }
+  /// The inspector's Compact can go: a conversation, between turns. Every agent compacts:
+  /// Claude Code, Antigravity and Grok run `/compact` themselves, and Codex's backend sends
+  /// it as `thread/compact/start`.
+  var canCompact: Bool { canSend && status.hasEntries }
 
-  /// Compacts the conversation, after the command Settings runs first, if any: `/compact`
-  /// once that command's turn ends, unless it stopped to ask the person.
-  func compact() {
+  /// Compacts the conversation, after the command Settings runs first when `runsFirst`:
+  /// `/compact` once that command's turn ends, unless it stopped to ask the person.
+  func compact(runsFirst: Bool = true) {
     guard canCompact else { return }
-    start(CompactionRun(first: ClaudeChoice.compactionFirst, idle: false))
+    start(CompactionRun(first: runsFirst ? ClaudeChoice.compactionFirst : nil, idle: false))
   }
 
   private func start(_ run: CompactionRun) {

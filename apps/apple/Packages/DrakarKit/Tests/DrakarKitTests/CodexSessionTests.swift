@@ -801,4 +801,80 @@ struct CodexSessionTests {
       at: nil)
     #expect(methods(failed) == ["account/rateLimits/read"])
   }
+
+  // MARK: Compaction
+
+  @Test func aCompactBetweenTurnsStartsACompactionNotATurn() throws {
+    var session = try running()
+    _ = session.receive(
+      json(
+        #"{"method":"turn/completed","params":{"threadId":"t-1","turn":{"id":"turn-1","status":"completed"}}}"#
+      ), at: nil)
+    let step = session.send(.compact(uuid: "c-1"))
+    #expect(methods(step) == ["thread/compact/start"])
+    #expect(try write("thread/compact/start", in: step)["params"] == json(#"{"threadId":"t-1"}"#))
+    // Its turn is the session's like any other: a prompt meanwhile waits for its id.
+    #expect(session.send(.prompt(input: input("two"), uuid: "p-2")).writes.isEmpty)
+    let started = session.receive(
+      json(#"{"method":"turn/started","params":{"threadId":"t-1","turn":{"id":"turn-2"}}}"#),
+      at: nil)
+    #expect(methods(started) == ["turn/steer"])
+  }
+
+  @Test func aCompactDuringATurnWaitsForItsEnd() throws {
+    var session = try running()
+    #expect(session.send(.compact(uuid: "c-1")).writes.isEmpty)
+    let ended = session.receive(
+      json(
+        #"{"method":"turn/completed","params":{"threadId":"t-1","turn":{"id":"turn-1","status":"completed"}}}"#
+      ), at: nil)
+    #expect(methods(ended) == ["thread/compact/start"])
+    #expect(ended.events.contains(.queue(id: "c-1", .started)))
+  }
+
+  @Test func stopDropsAWaitingCompactAndEscKeepsIt() throws {
+    var stopped = try running()
+    _ = stopped.send(.compact(uuid: "c-1"))
+    _ = stopped.send(.interrupt)
+    let afterStop = stopped.receive(
+      json(
+        #"{"method":"turn/completed","params":{"threadId":"t-1","turn":{"id":"turn-1","status":"interrupted"}}}"#
+      ), at: nil)
+    #expect(methods(afterStop).isEmpty)
+    #expect(afterStop.events.contains(.queue(id: "c-1", .dropped(agent: "Codex"))))
+
+    var escaped = try running()
+    _ = escaped.send(.compact(uuid: "c-1"))
+    _ = escaped.send(.interruptKeepingQueued)
+    let afterEsc = escaped.receive(
+      json(
+        #"{"method":"turn/completed","params":{"threadId":"t-1","turn":{"id":"turn-1","status":"interrupted"}}}"#
+      ), at: nil)
+    #expect(methods(afterEsc) == ["thread/compact/start"])
+  }
+
+  @Test func aCompactBeforeTheThreadRunsGoesOnceItDoes() throws {
+    var (session, _) = initialized(resuming: "t-1")
+    let opening = session.send(.compact(uuid: "c-1"))
+    let resumed = answer(&session, try write("thread/resume", in: opening), thread)
+    #expect(methods(resumed).contains("thread/compact/start"))
+    #expect(!methods(resumed).contains("turn/start"))
+  }
+
+  @Test func aRefusedCompactEndsAsAFailedTurn() throws {
+    var session = try running()
+    _ = session.receive(
+      json(
+        #"{"method":"turn/completed","params":{"threadId":"t-1","turn":{"id":"turn-1","status":"completed"}}}"#
+      ), at: nil)
+    let step = session.send(.compact(uuid: "c-1"))
+    let refused = fail(&session, try write("thread/compact/start", in: step), "nothing to compact")
+    #expect(
+      refused.events == [
+        .turnEnded(TurnSummary(outcome: .failed, failureText: "nothing to compact"))
+      ]
+    )
+    // The session is free again.
+    #expect(methods(session.send(.prompt(input: input("two"), uuid: "p-2"))) == ["turn/start"])
+  }
 }

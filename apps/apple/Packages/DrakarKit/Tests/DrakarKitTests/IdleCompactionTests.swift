@@ -125,4 +125,12 @@ struct IdleCompactionTests {
     #expect(CompactionRun(first: "  \n", idle: false).prompt == "/compact")
     #expect(CompactionRun(first: " /distill ", idle: false).prompt == "/distill")
   }
+
+  @Test func recognisesCompactAloneOrWithInstructions() {
+    #expect(CompactionRun.isCompact("/compact"))
+    #expect(CompactionRun.isCompact("  /compact\n"))
+    #expect(CompactionRun.isCompact("/compact keep the API notes"))
+    #expect(!CompactionRun.isCompact("/compaction"))
+    #expect(!CompactionRun.isCompact("please /compact"))
+  }
 }

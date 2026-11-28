@@ -10,6 +10,10 @@ import Foundation
 public struct AgySession: Sendable {
   public enum Command: Sendable, Equatable {
     case prompt(input: JSONValue, uuid: String)
+    /// A prompt that is the agent's own `/compact`, which both agents list: sent as typed, and
+    /// shown compacting until its turn ends. Grok says when it compacted; Antigravity says
+    /// nothing, so a turn of it that ends normally is taken as done.
+    case compact(input: JSONValue, uuid: String)
     case answer(requestID: String, decision: PermissionDecision)
     case answerElicitation(requestID: String, answer: ElicitationAnswer)
     /// Stop: cancels the running turn and drops queued prompts.
@@ -71,6 +75,7 @@ public struct AgySession: Sendable {
   private struct Waiting: Sendable {
     var input: JSONValue
     var uuid: String
+    var compacts = false
   }
 
   private struct Approval: Sendable {
@@ -89,6 +94,10 @@ public struct AgySession: Sendable {
   private var isOpeningSession = false
   private var isTurnRunning = false
   private var cancelsWhenStarted = false
+  /// The running turn is a `/compact`.
+  private var isCompacting = false
+  /// The agent said the running `/compact` compacted.
+  private var compactionReported = false
   private var calls = AgyRPC.Calls<Call>()
   private var translator = AgyTranslator()
   private var knownModels: [ModelOption] = []
@@ -133,17 +142,9 @@ public struct AgySession: Sendable {
     var step = Step()
     switch command {
     case .prompt(let input, let uuid):
-      let prompt = Waiting(input: input, uuid: uuid)
-      guard isSessionReady else {
-        beforeSession.append(prompt)
-        if isInitialized, !isOpeningSession { step.writes.append(openSession()) }
-        break
-      }
-      if isTurnRunning {
-        queued.append(prompt)
-      } else {
-        step.writes.append(startPrompt(prompt))
-      }
+      take(Waiting(input: input, uuid: uuid), into: &step)
+    case .compact(let input, let uuid):
+      take(Waiting(input: input, uuid: uuid, compacts: true), into: &step)
 
     case .answer(let requestID, let decision):
       if let prompt = questionPrompts.removeValue(forKey: requestID) {
@@ -267,6 +268,20 @@ public struct AgySession: Sendable {
     return step
   }
 
+  /// A prompt now, behind the running turn, or once the session opens.
+  private mutating func take(_ prompt: Waiting, into step: inout Step) {
+    guard isSessionReady else {
+      beforeSession.append(prompt)
+      if isInitialized, !isOpeningSession { step.writes.append(openSession()) }
+      return
+    }
+    if isTurnRunning {
+      queued.append(prompt)
+    } else {
+      startPrompt(prompt, into: &step)
+    }
+  }
+
   public mutating func receive(_ message: JSONValue, at time: Date?) -> Step {
     var step = Step()
     guard let line = AgyRPC.Line(message) else { return step }
@@ -313,6 +328,12 @@ public struct AgySession: Sendable {
       }
 
     case .notification(let method, let params):
+      if method == "_x.ai/session_notification",
+        params["update"]?["sessionUpdate"] == .string("auto_compact_completed")
+      {
+        grokCompacted(params["update"] ?? .null, into: &step)
+        break
+      }
       guard method == "session/update", let update = params["update"] else { break }
       // Ignore updates for another session if one ever arrives.
       if let sid = params["sessionId"]?.stringValue, let mine = sessionID, sid != mine { break }
@@ -403,7 +424,7 @@ public struct AgySession: Sendable {
         drainNextQueued(into: &step)
         return
       }
-      step.writes.append(startPrompt(first))
+      startPrompt(first, into: &step)
 
     case .prompt:
       isTurnRunning = false
@@ -421,6 +442,7 @@ public struct AgySession: Sendable {
       let failureText =
         stopReason == "refusal"
         ? String(localized: "\(name) refused this request.") : nil
+      endCompaction(completed: outcome == .completed, into: &step)
       step.events.append(.turnEnded(TurnSummary(outcome: outcome, failureText: failureText)))
       drainNextQueued(into: &step)
 
@@ -452,6 +474,7 @@ public struct AgySession: Sendable {
       elicitations.removeAll()
       step.events += translator.finishOpenStream()
       let text = message.isEmpty ? String(localized: "\(name) failed.") : message
+      endCompaction(completed: false, into: &step)
       step.events.append(.turnEnded(TurnSummary(outcome: .failed, failureText: text)))
       drainNextQueued(into: &step)
     case .setMode, .setConfig:
@@ -533,7 +556,7 @@ public struct AgySession: Sendable {
     guard !queued.isEmpty else { return }
     let next = queued.removeFirst()
     step.events.append(.queue(id: next.uuid, .started))
-    step.writes.append(startPrompt(next))
+    startPrompt(next, into: &step)
   }
 
   private mutating func openSession() -> JSONValue {
@@ -559,7 +582,41 @@ public struct AgySession: Sendable {
     return msg
   }
 
-  private mutating func startPrompt(_ prompt: Waiting) -> JSONValue {
+  /// Grok's own word that it compacted (verified 2026-11-28 with `grok agent stdio`):
+  /// `{tokens_before, tokens_after, summary_preview}`, for `/compact` and its own alike.
+  private mutating func grokCompacted(_ update: JSONValue, into step: inout Step) {
+    let trigger = isCompacting ? "manual" : "auto"
+    if isCompacting { compactionReported = true }
+    step.events.append(
+      .compaction(
+        .finished(
+          note: Transcript.compactionNote(
+            trigger: trigger, preTokens: update["tokens_before"]?.intValue),
+          at: nil)))
+  }
+
+  /// A `/compact` turn ended: done when it ended normally, unless the agent said so already.
+  private mutating func endCompaction(completed: Bool, into step: inout Step) {
+    guard isCompacting else { return }
+    isCompacting = false
+    if compactionReported { return }
+    step.events.append(
+      .compaction(
+        completed
+          ? .finished(note: Transcript.compactionNote(trigger: "manual", preTokens: nil), at: nil)
+          : .stopped))
+  }
+
+  private mutating func startPrompt(_ prompt: Waiting, into step: inout Step) {
+    if prompt.compacts {
+      isCompacting = true
+      compactionReported = false
+      step.events.append(.compaction(.started))
+    }
+    step.writes.append(sendPrompt(prompt))
+  }
+
+  private mutating func sendPrompt(_ prompt: Waiting) -> JSONValue {
     isTurnRunning = true
     let (_, msg) = calls.make(
       "session/prompt",

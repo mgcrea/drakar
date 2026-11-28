@@ -13,6 +13,9 @@ public struct CodexSession: Sendable {
   public enum Command: Sendable, Equatable {
     /// `input` as `CodexInput.make` builds it; `uuid` names it in the transcript's queue.
     case prompt(input: JSONValue, uuid: String)
+    /// `/compact`: `thread/compact/start`, a turn of its own. Sent behind a running turn rather
+    /// than steered into it, as a turn cannot take it; `uuid` names it in the queue meanwhile.
+    case compact(uuid: String)
     case answer(requestID: String, decision: PermissionDecision)
     /// Stop: the turn ends, and what was queued behind it with it.
     case interrupt
@@ -68,7 +71,7 @@ public struct CodexSession: Sendable {
   public static let noThread = String(localized: "Codex opened no thread. Send again.")
 
   private enum Call: Sendable {
-    case initialize, account, models, rateLimits, thread, turnStart
+    case initialize, account, models, rateLimits, thread, turnStart, compactStart
     case steer(uuid: String, input: JSONValue, turn: String)
     case other
   }
@@ -93,6 +96,8 @@ public struct CodexSession: Sendable {
   private struct Waiting: Sendable {
     var input: JSONValue
     var uuid: String
+    /// A compaction, which starts a turn of its own and never joins one.
+    var compacts = false
   }
 
   private let cwd: String
@@ -116,6 +121,8 @@ public struct CodexSession: Sendable {
   private var keepsQueued = false
   /// Prompts held back from a turn being interrupted, for the next.
   private var held: [Waiting] = []
+  /// Compactions sent while a turn was starting or running, for once it ends.
+  private var afterTurn: [Waiting] = []
   /// Steered prompts Codex has not echoed yet.
   private var steered: [Waiting] = []
   /// A steer Codex took into the running turn, and nothing the model did since: an interrupt
@@ -160,13 +167,9 @@ public struct CodexSession: Sendable {
     var step = Step()
     switch command {
     case .prompt(let input, let uuid):
-      let prompt = Waiting(input: input, uuid: uuid)
-      guard isThreadReady else {
-        beforeThread.append(prompt)
-        if isInitialized, !isOpeningThread { step.writes.append(openThread()) }
-        break
-      }
-      if let write = place(prompt) { step.writes.append(write) }
+      take(Waiting(input: input, uuid: uuid), into: &step)
+    case .compact(let uuid):
+      take(Waiting(input: .array([]), uuid: uuid, compacts: true), into: &step)
     case .answer(let requestID, let decision):
       if let req = userInputs.removeValue(forKey: requestID) {
         step.writes.append(Self.userInputAnswer(req, decision: decision))
@@ -213,6 +216,16 @@ public struct CodexSession: Sendable {
       if isThreadReady { sendPendingName(into: &step) }
     }
     return step
+  }
+
+  /// A prompt or a compaction: once the thread runs, a turn now, a steer, or a wait.
+  private mutating func take(_ prompt: Waiting, into step: inout Step) {
+    guard isThreadReady else {
+      beforeThread.append(prompt)
+      if isInitialized, !isOpeningThread { step.writes.append(openThread()) }
+      return
+    }
+    if let write = place(prompt) { step.writes.append(write) }
   }
 
   public mutating func receive(_ message: JSONValue, at time: Date?) -> Step {
@@ -283,11 +296,21 @@ public struct CodexSession: Sendable {
           reportedDropped.formUnion(steered.map(\.uuid))
           steered = []
         }
+        // A compaction waits for the turn's end, unless Stop dropped what was queued.
+        if (status == "interrupted" || status == "failed") && !keepsQueued {
+          step.events += afterTurn.map { AgentEvent.queue(id: $0.uuid, .dropped(agent: "Codex")) }
+        } else {
+          again += afterTurn
+        }
+        afterTurn = []
         keepsQueued = false
         steerAwaitsAnswer = false
         held = []
         for prompt in again {
-          if let write = place(prompt) { step.writes.append(write) }
+          guard let write = place(prompt) else { continue }
+          step.writes.append(write)
+          // A compaction is its own turn, which no user message of Codex's says was taken.
+          if prompt.compacts { step.events.append(.queue(id: prompt.uuid, .started)) }
         }
       }
     }
@@ -346,12 +369,13 @@ public struct CodexSession: Sendable {
       }
       let waiting = beforeThread
       beforeThread = []
-      guard let first = waiting.first else { return }
-      step.writes.append(startTurn(first))
-      beforeTurnID += waiting.dropFirst()
+      for prompt in waiting {
+        if let write = place(prompt) { step.writes.append(write) }
+      }
     case .turnStart:
       if let id = result["turn"]?["id"]?.stringValue { turnStarted(id, into: &step) }
-    case .steer, .other:
+    // `{}`: the turn's id comes with `turn/started`.
+    case .compactStart, .steer, .other:
       break
     }
   }
@@ -362,12 +386,15 @@ public struct CodexSession: Sendable {
       step.signals.append(.unusable(message))
     case .thread:
       threadFailed(message, into: &step)
-    case .turnStart:
+    case .turnStart, .compactStart:
       turn = .idle
       interruptsWhenStarted = false
       step.events.append(.turnEnded(TurnSummary(outcome: .failed, failureText: message)))
-      step.events += beforeTurnID.map { AgentEvent.queue(id: $0.uuid, .dropped(agent: "Codex")) }
+      step.events += (beforeTurnID + afterTurn).map {
+        AgentEvent.queue(id: $0.uuid, .dropped(agent: "Codex"))
+      }
       beforeTurnID = []
+      afterTurn = []
     case .steer(let uuid, let input, let steeredTurn):
       steered.removeAll { $0.uuid == uuid }
       if reportedDropped.remove(uuid) != nil { break }
@@ -470,6 +497,15 @@ public struct CodexSession: Sendable {
   /// What to write to run `prompt` now: a turn of its own, a steer into the running turn, or
   /// nothing yet when the turn has no id.
   private mutating func place(_ prompt: Waiting) -> JSONValue? {
+    if prompt.compacts {
+      guard turn == .idle else {
+        afterTurn.append(prompt)
+        return nil
+      }
+      turn = .starting
+      return calls.make(
+        "thread/compact/start", .object(["threadId": .string(threadID ?? "")]), for: .compactStart)
+    }
     switch turn {
     case .idle: return startTurn(prompt)
     case .starting:

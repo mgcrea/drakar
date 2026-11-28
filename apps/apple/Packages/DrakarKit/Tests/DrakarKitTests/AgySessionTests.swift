@@ -499,4 +499,74 @@ struct AgySessionTests {
       ), at: .now)
     #expect(planUpdate.signals == [.modeAdopted("plan")])
   }
+
+  // MARK: Compaction
+
+  /// A session past `session/new`, idle, Grok's or Antigravity's.
+  private func opened(grok: Bool = false) throws -> (AgySession, JSONValue) {
+    var session = AgySession(
+      cwd: "/p", resuming: nil, mode: nil, model: nil, effort: nil, version: "1.4.0",
+      isGrok: grok)
+    let start = session.start()
+    _ = session.send(.prompt(input: input("Hi"), uuid: "u-1"))
+    let afterInit = try answer(&session, start.writes[0], initResult)
+    let afterNew = try answer(&session, afterInit.writes[0], sessionNewResult)
+    let first = try #require(afterNew.writes.last)
+    _ = try answer(&session, first, #"{"stopReason":"end_turn"}"#)
+    return (session, first)
+  }
+
+  @Test func aCompactIsSentAsTypedAndShownCompactingUntilItsTurnEnds() throws {
+    var (session, _) = try opened()
+    let sent = session.send(.compact(input: input("/compact"), uuid: "c-1"))
+    let prompt = try #require(sent.writes.last)
+    #expect(prompt["method"] == .string("session/prompt"))
+    #expect(prompt["params"]?["prompt"] == input("/compact"))
+    #expect(sent.events == [.compaction(.started)])
+    // Antigravity says nothing of it (verified 2026-11-28): a normal end is taken as done.
+    let ended = try answer(&session, prompt, #"{"stopReason":"end_turn"}"#)
+    #expect(
+      ended.events.first == .compaction(.finished(note: "Conversation compacted (manual)", at: nil))
+    )
+  }
+
+  @Test func aCancelledCompactStopsCompactingWithoutANote() throws {
+    var (session, _) = try opened()
+    let prompt = try #require(
+      session.send(.compact(input: input("/compact"), uuid: "c-1")).writes.last)
+    let ended = try answer(&session, prompt, #"{"stopReason":"cancelled"}"#)
+    #expect(ended.events.contains(.compaction(.stopped)))
+    #expect(
+      !ended.events.contains { if case .compaction(.finished) = $0 { true } else { false } })
+  }
+
+  @Test func grokSaysWhenItCompactedOnce() throws {
+    var (session, _) = try opened(grok: true)
+    let prompt = try #require(
+      session.send(.compact(input: input("/compact"), uuid: "c-1")).writes.last)
+    let compacted = session.receive(
+      try json(
+        #"{"jsonrpc":"2.0","method":"_x.ai/session_notification","params":{"sessionId":"agy-sess-1","update":{"sessionUpdate":"auto_compact_completed","tokens_before":24266,"tokens_after":24266,"summary_preview":null}}}"#
+      ), at: .now)
+    #expect(
+      compacted.events == [
+        .compaction(
+          .finished(note: "Conversation compacted (manual, 24K tokens before)", at: nil))
+      ])
+    let ended = try answer(&session, prompt, #"{"stopReason":"end_turn"}"#)
+    #expect(!ended.events.contains { if case .compaction = $0 { true } else { false } })
+  }
+
+  @Test func groksOwnCompactionMidTurnIsShownAsAutomatic() throws {
+    var (session, _) = try opened(grok: true)
+    _ = session.send(.prompt(input: input("Long task"), uuid: "u-2"))
+    let compacted = session.receive(
+      try json(
+        #"{"jsonrpc":"2.0","method":"_x.ai/session_notification","params":{"sessionId":"agy-sess-1","update":{"sessionUpdate":"auto_compact_completed","tokens_before":200000}}}"#
+      ), at: .now)
+    #expect(
+      compacted.events == [
+        .compaction(.finished(note: "Conversation compacted (auto, 200K tokens before)", at: nil))
+      ])
+  }
 }

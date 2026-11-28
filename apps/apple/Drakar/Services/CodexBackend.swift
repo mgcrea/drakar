@@ -151,6 +151,10 @@ final class CodexBackend: AgentBackend {
   /// prompt can name one of the folder's skills, as last listed.
   private func command(_ command: AgentCommand) -> CodexSession.Command? {
     switch command {
+    // Codex runs no slash command typed in a prompt: its own compaction is a method. What
+    // follows `/compact` has nowhere to go.
+    case .prompt(let text, _, let uuid, _) where CompactionRun.isCompact(text):
+      .compact(uuid: uuid)
     case .prompt(let text, let context, let uuid, let attachments):
       .prompt(
         input: CodexInput.make(
