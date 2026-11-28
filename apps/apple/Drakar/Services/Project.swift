@@ -155,6 +155,11 @@ final class ProjectSession: Identifiable {
   /// The message id of the ask the person dismissed: that one stays quiet, the next one
   /// does not.
   var dismissedAsk: String?
+  /// The conversations this one continues, oldest first, when it was moved here from other
+  /// providers: shown above its own transcript, read-only.
+  var earlier: [EarlierPart] = []
+  /// The session id `earlier` was last linked under (`Project.linkEarlier`).
+  @ObservationIgnored var earlierLinkedID: String?
   /// `ClosingAsk.detect` of the newest closing text, kept until the text changes: a row
   /// asks on every draw, and a reply can be long.
   @ObservationIgnored private var detected: (key: String, ask: ClosingAsk?)?
@@ -444,6 +449,8 @@ final class Project {
   @ObservationIgnored private var isWritingForAgent = false
   /// Stands in for the located binary in every session this window makes, in tests.
   @ObservationIgnored var executableOverride: URL?
+  /// Where `ProviderMoveLinks` are kept; tests use their own.
+  @ObservationIgnored var moveLinks: UserDefaults = .standard
   /// Where the sessions this window doesn't hold are listed from; tests give it their own.
   @ObservationIgnored var monitor = SessionMonitor.shared
   /// Where the window's sessions run and come back from: this Mac's host, or a runner
@@ -797,7 +804,7 @@ final class Project {
       isUnstarted(current),
       !current.session.isReadOnly
     else { return }
-    replaceTab(current, with: agent, handoverPrompt: nil)
+    replaceTab(current, with: agent, handover: nil)
   }
 
   /// Whether `item` has not started a conversation or process yet.
@@ -844,14 +851,14 @@ final class Project {
 
   /// Moves `item` in place to `agent`, replacing its tab. For an unstarted session, switches
   /// immediately carrying over any draft and attachments; for a started session, loads its
-  /// transcript if needed, stops its running process if idle, and sends a structured
-  /// transcript handover to the new provider immediately.
+  /// transcript if needed, stops its running process if idle, and sends the new provider a
+  /// short prompt with the transcript attached as `handover.md`.
   @discardableResult func moveProvider(_ item: ProjectSession, to agent: AgentKind) async -> Bool {
     guard canMoveProvider(item), item.session.agent != agent,
       sessions.contains(where: { $0.id == item.id })
     else { return false }
     if isUnstarted(item) {
-      return replaceTab(item, with: agent, handoverPrompt: nil)
+      return replaceTab(item, with: agent, handover: nil, earlier: item.earlier)
     }
     let session = item.session
     session.isMoving = true
@@ -873,16 +880,30 @@ final class Project {
       }
       guard !isStopped, sessions.contains(where: { $0.id == item.id }) else { return false }
     }
+    // What it continues goes along, read first if a relaunch left it unread.
+    await loadEarlier(item)
+    guard !isStopped, sessions.contains(where: { $0.id == item.id }) else { return false }
     let title = item.knownTitle.flatMap(SessionTitle.clean)
-    let handover = TranscriptHandover.prompt(
-      from: session.transcript, title: title, from: session.agent.name, to: agent.name)
-    moved = replaceTab(item, with: agent, handoverPrompt: handover, title: title)
+    let handover = TranscriptHandover(
+      from: session.transcript,
+      earlier: item.earlier.compactMap { part in
+        part.transcript.map { (provider: part.agent.name, transcript: $0) }
+      },
+      title: title, from: session.agent.name, to: agent.name)
+    let earlier =
+      item.earlier
+      + [
+        EarlierPart(
+          agent: session.agent, target: session.transcriptTarget(),
+          transcript: session.transcript)
+      ]
+    moved = replaceTab(item, with: agent, handover: handover, earlier: earlier, title: title)
     return moved
   }
 
   @discardableResult private func replaceTab(
-    _ item: ProjectSession, with agent: AgentKind, handoverPrompt: String?,
-    title: String? = nil
+    _ item: ProjectSession, with agent: AgentKind, handover: TranscriptHandover?,
+    earlier: [EarlierPart] = [], title: String? = nil
   ) -> Bool {
     guard let index = sessions.firstIndex(where: { $0.id == item.id }) else { return false }
     let newSession = AgentSession(folder: item.session.folder, agent: agent)
@@ -893,6 +914,7 @@ final class Project {
       newSession.setMode(mode)
     }
     let replacement = make(newSession)
+    replacement.earlier = earlier
     replacement.draft = item.draft
     replacement.prefill = item.prefill
     if agent.features.acceptsPDF {
@@ -918,10 +940,50 @@ final class Project {
     if wasSelected { select(replacement) }
     fanOutFinished(item)
     Attention.shared.refresh()
-    if let handoverPrompt {
-      replacement.session.send(handoverPrompt)
+    if let handover {
+      // The document as an attachment, so the new transcript shows a chip; inline only if
+      // it could not be one.
+      if let document = try? Attachment.text(
+        handover.document, name: TranscriptHandover.documentName)
+      {
+        replacement.session.send(handover.prompt, attachments: [document])
+      } else {
+        replacement.session.send(handover.prompt + "\n\n" + handover.document)
+      }
     }
     return true
+  }
+
+  /// Remembers what `item` continues under its session id once it has one, or, for a tab
+  /// that holds none yet (a relaunch, a reopen), takes what was remembered under it.
+  func linkEarlier(_ item: ProjectSession) {
+    guard let id = item.sessionID, item.earlierLinkedID != id else { return }
+    item.earlierLinkedID = id
+    if item.earlier.isEmpty {
+      item.earlier = ProviderMoveLinks.earlier(of: id, in: moveLinks).map(EarlierPart.init(target:))
+    } else {
+      ProviderMoveLinks.remember(item.earlier.compactMap(\.target), for: id, in: moveLinks)
+    }
+  }
+
+  /// `linkEarlier`, then the histories of what `item` continues that are not held yet, each
+  /// read as its own session's would be, by a session that never starts.
+  func loadEarlier(_ item: ProjectSession) async {
+    linkEarlier(item)
+    for part in item.earlier where part.transcript == nil && !part.isMissing {
+      guard let target = part.target else { continue }
+      let reader = AgentSession(folder: folder, resuming: target)
+      if let executableOverride { reader.executableOverride = executableOverride }
+      // Read only: no note that the next message goes uncached.
+      reader.isReadOnly = true
+      await reader.loadHistory()
+      guard let index = item.earlier.firstIndex(where: { $0.id == part.id }) else { return }
+      if reader.hasLoadedHistory {
+        item.earlier[index].transcript = reader.transcript
+      } else {
+        item.earlier[index].isMissing = true
+      }
+    }
   }
 
   private static func compatibleMode(from session: AgentSession, to agent: AgentKind)
@@ -2533,6 +2595,8 @@ final class Project {
     session.onTurnEnded = { [weak self, weak item] in
       guard let self, let item else { return }
       self.fanOutFinished(item)
+      // A moved session has its id by the end of its first turn.
+      self.linkEarlier(item)
       if self.autoCloseIfNeeded(item) { return }
       if item.id != self.selectedID { item.isUnread = true }
       self.readRolloutDate(item)

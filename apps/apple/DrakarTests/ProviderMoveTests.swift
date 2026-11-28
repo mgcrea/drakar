@@ -21,6 +21,12 @@ struct ProviderMoveTests {
     try? FileManager.default.removeItem(at: folder)
   }
 
+  private func prompts(of transcript: Transcript?) -> [String] {
+    (transcript?.entries ?? []).compactMap {
+      if case .prompt(let text) = $0.kind { text } else { nil }
+    }
+  }
+
   private func standIn(_ name: String, _ body: String) throws -> URL {
     let script = folder.appending(path: name)
     try Data("#!/bin/sh\n\(body)\n".utf8).write(to: script)
@@ -105,10 +111,17 @@ struct ProviderMoveTests {
       Issue.record("Expected handover prompt")
       return
     }
-    #expect(promptText.contains("Claude Code to Codex"))
-    #expect(promptText.contains("Title: Auth audit"))
-    #expect(promptText.contains("Audit the auth layer"))
-    #expect(promptText.contains("I checked Auth.swift and found two issues."))
+    #expect(promptText.contains("moved here from Claude Code"))
+    #expect(!promptText.contains("Audit the auth layer"))
+    #expect(sent.attachments.map(\.name) == ["handover.md"])
+    #expect(sent.attachments.map(\.kind) == [.text])
+
+    // The Claude Code conversation stays in view above the new one.
+    let earlier = try #require(replacement.earlier.first)
+    #expect(replacement.earlier.count == 1)
+    #expect(earlier.agent == .claude)
+    #expect(earlier.target?.sessionID == "s1")
+    #expect(prompts(of: earlier.transcript) == ["Audit the auth layer"])
   }
 
   @Test func resumedSessionWithoutLoadedHistoryLoadsBeforeHandover() async throws {
@@ -140,7 +153,8 @@ struct ProviderMoveTests {
       Issue.record("Expected handover prompt")
       return
     }
-    #expect(text.contains("Summarize the migration"))
+    #expect(text.contains("moved here from Claude Code"))
+    #expect(sent.attachments.map(\.name) == ["handover.md"])
   }
 
   @Test func refusesWhileRunningReadOnlyOrOnRunner() async throws {
@@ -197,5 +211,62 @@ struct ProviderMoveTests {
     #expect(project.tabs[0].session.agent == .agy)
     #expect(project.marked.contains(project.tabs[0].id))
     #expect(project.marked.contains(b.id))
+  }
+
+  @Test func aRelaunchedMovedSessionReadsWhatItContinues() async throws {
+    defer { cleanUp() }
+    let defaults = try #require(UserDefaults(suiteName: "drakar-provider-move-\(UUID())"))
+    let project = Project(folder: folder)
+    defer { project.stopAll() }
+    project.moveLinks = defaults
+
+    let transcriptFile = folder.appending(path: "old.jsonl")
+    try Data(
+      #"{"type":"user","cwd":"/tmp","message":{"role":"user","content":"Plan the release"}}"#
+        .appending("\n").utf8
+    ).write(to: transcriptFile)
+    let old = ResumeTarget(
+      sessionID: "old", cwd: folder.path(percentEncoded: false),
+      file: transcriptFile.path(percentEncoded: false),
+      accountDirectory: folder.path(percentEncoded: false), accountIsDefault: false)
+    ProviderMoveLinks.remember([old], for: "new", in: defaults)
+
+    let newFile = folder.appending(path: "new.jsonl")
+    try Data(
+      #"{"type":"user","cwd":"/tmp","message":{"role":"user","content":"Carry on"}}"#
+        .appending("\n").utf8
+    ).write(to: newFile)
+    let item = project.attach(
+      ResumeTarget(
+        sessionID: "new", cwd: folder.path(percentEncoded: false),
+        file: newFile.path(percentEncoded: false),
+        accountDirectory: folder.path(percentEncoded: false), accountIsDefault: false))
+    #expect(item.earlier.isEmpty)
+
+    await project.loadEarlier(item)
+    let part = try #require(item.earlier.first)
+    #expect(part.agent == .claude)
+    #expect(prompts(of: part.transcript) == ["Plan the release"])
+    #expect(!part.isMissing)
+    // A history read to be shown says nothing of the next message.
+    #expect(part.transcript?.entries.contains { $0.id == Transcript.coldCacheNoteID } == false)
+  }
+
+  @Test func linksKeepTheNewestAndDropAnEmptyChain() throws {
+    let defaults = try #require(UserDefaults(suiteName: "drakar-provider-move-\(UUID())"))
+    let target = ResumeTarget(
+      sessionID: "a", cwd: "/tmp", file: "/tmp/a.jsonl", accountDirectory: "/tmp",
+      accountIsDefault: true)
+    ProviderMoveLinks.remember([target], for: "b", in: defaults)
+    #expect(ProviderMoveLinks.earlier(of: "b", in: defaults) == [target])
+    ProviderMoveLinks.remember([], for: "b", in: defaults)
+    #expect(ProviderMoveLinks.earlier(of: "b", in: defaults).isEmpty)
+
+    for index in 0...ProviderMoveLinks.limit {
+      ProviderMoveLinks.remember(
+        [target], for: "s\(index)", now: Date(timeIntervalSince1970: Double(index)), in: defaults)
+    }
+    #expect(ProviderMoveLinks.earlier(of: "s0", in: defaults).isEmpty)
+    #expect(ProviderMoveLinks.earlier(of: "s\(ProviderMoveLinks.limit)", in: defaults) == [target])
   }
 }

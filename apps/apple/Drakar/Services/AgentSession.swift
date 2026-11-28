@@ -1534,6 +1534,9 @@ final class AgentSession {
     follower = TranscriptFollower(file: file, from: size)
   }
 
+  /// Where this session's history is read from again, once it has one.
+  func transcriptTarget() -> ResumeTarget? { ownTarget() }
+
   /// The transcript this session writes to, once it has one: never a fork's original.
   private func ownTarget() -> ResumeTarget? {
     if let savedTarget { return savedTarget }

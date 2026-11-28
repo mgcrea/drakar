@@ -16,6 +16,8 @@ struct TranscriptView: View {
   var cancelQueued: ((QueuedPrompt) -> Void)? = nil
   /// Stops the turn so that the queue goes now; nil where it can't, so no Send now.
   var sendQueuedNow: (() -> Void)? = nil
+  /// What this session continues from other providers, oldest first, shown above it.
+  var earlier: [EarlierPart] = []
 
   @State private var position = ScrollPosition(edge: .bottom)
   /// Whether new output scrolls into view. Scrolling up to read stops it; scrolling back
@@ -55,6 +57,10 @@ struct TranscriptView: View {
   var body: some View {
     ScrollView {
       LazyVStack(alignment: .leading, spacing: 14) {
+        ForEach(earlier.indices, id: \.self) { index in
+          let next = index + 1 < earlier.count ? earlier[index + 1].agent : agent
+          earlierRows(earlier[index], movedTo: next)
+        }
         let groups = transcript.grouped()
         let asked = Set(transcript.pendingPermissions.compactMap(\.request.toolUseID))
         ForEach(groups.top) { entry in
@@ -157,6 +163,48 @@ struct TranscriptView: View {
       }
       .animation(.easeOut(duration: 0.15), value: showsFollowButton)
     }
+  }
+
+  /// Another provider's conversation, as it stood when the session moved on: its rows without
+  /// rewind, forks or task controls, which would act on this session, under ids of their own
+  /// so that they never meet this session's.
+  @ViewBuilder private func earlierRows(_ part: EarlierPart, movedTo next: AgentKind) -> some View {
+    let key = "earlier:\(part.id)"
+    Label {
+      Text("With \(part.agent.name)")
+    } icon: {
+      AgentIcon(agent: part.agent)
+    }
+    .font(.caption)
+    .foregroundStyle(.secondary)
+    .id("\(key):start")
+    if let earlier = part.transcript {
+      let groups = earlier.grouped()
+      ForEach(groups.top.filter { $0.id != Transcript.coldCacheNoteID }) { entry in
+        EntryView(entry: entry, children: groups.children[entry.id] ?? [])
+          .equatable()
+          .padding(.top, entry.isPrompt ? 12 : 0)
+          .environment(\.rewindAction, nil)
+          .environment(\.taskControls, nil)
+          .environment(\.askedQuestion, nil)
+          .id("\(key):\(entry.id)")
+      }
+    } else if part.isMissing {
+      Label(
+        "\(part.agent.name)'s history of this conversation could not be read.",
+        systemImage: "exclamationmark.triangle"
+      )
+      .font(.callout)
+      .foregroundStyle(.secondary)
+      .id("\(key):missing")
+    } else {
+      ProgressView()
+        .controlSize(.small)
+        .frame(maxWidth: .infinity)
+        .id("\(key):loading")
+    }
+    MovedDivider(from: part.agent, to: next)
+      .id("\(key):moved")
   }
 
   /// Not following and not at the bottom either: paused at the bottom, there is nothing to
@@ -788,5 +836,33 @@ private struct QueuedPromptView: View {
     }
     .accessibilityElement(children: .contain)
     .accessibilityIdentifier("queued.\(prompt.uuid)")
+  }
+}
+
+/// Where a moved session's earlier conversation ends and the next provider's begins.
+private struct MovedDivider: View {
+  let from: AgentKind
+  let to: AgentKind
+
+  var body: some View {
+    HStack(spacing: 8) {
+      line
+      Label {
+        Text("Moved to \(to.name)")
+      } icon: {
+        AgentIcon(agent: to)
+      }
+      .font(.caption)
+      .foregroundStyle(.secondary)
+      .fixedSize()
+      line
+    }
+    .padding(.vertical, 8)
+    .accessibilityElement(children: .combine)
+    .accessibilityLabel(Text("Moved from \(from.name) to \(to.name)"))
+  }
+
+  private var line: some View {
+    Rectangle().fill(.separator).frame(height: 1)
   }
 }

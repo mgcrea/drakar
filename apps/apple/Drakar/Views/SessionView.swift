@@ -27,7 +27,7 @@ struct SessionView: View {
 
   var body: some View {
     LiveTranscript(
-      session: session, anchor: $item.scrollAnchor,
+      session: session, earlier: item.earlier, anchor: $item.scrollAnchor,
       cancelQueued: session.features.cancelsQueued ? { session.cancelQueued($0) } : nil,
       // As Esc: not while a server's question waits, whose panel lets the turn go on.
       sendQueuedNow: session.status.isRunning && !session.isReadOnly
@@ -53,6 +53,8 @@ struct SessionView: View {
       try? await Task.sleep(for: .milliseconds(150))
       if askedQuestion != nil { item.questionFocusRequest += 1 }
     }
+    // What a moved session continues: remembered once it has an id, read once shown.
+    .task(id: item.sessionID) { await project.loadEarlier(item) }
     .environment(\.askedElicitation, askedElicitation)
     // The same for a server's question, in its call's card or in the composer's place, and
     // again when it moves from one to the other.
@@ -777,6 +779,7 @@ private struct SessionFooter: View {
 /// rebuilt as text streams in.
 private struct LiveTranscript: View {
   let session: AgentSession
+  var earlier: [EarlierPart] = []
   @Binding var anchor: String?
   var cancelQueued: ((QueuedPrompt) -> Void)?
   var sendQueuedNow: (() -> Void)?
@@ -784,6 +787,6 @@ private struct LiveTranscript: View {
   var body: some View {
     TranscriptView(
       transcript: session.displayedTranscript, agent: session.agent, anchor: $anchor,
-      cancelQueued: cancelQueued, sendQueuedNow: sendQueuedNow)
+      cancelQueued: cancelQueued, sendQueuedNow: sendQueuedNow, earlier: earlier)
   }
 }
