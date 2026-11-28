@@ -101,6 +101,7 @@ extension SettingsPaneGroup {
 /// the setting.
 enum PreferenceKey {
   static let composerShortcuts = "drakar.composerShortcuts"
+  /// Shortcuts pinned as their own toolbar buttons: a JSON array of ids, or one bare id.
   static let favoriteComposerShortcut = "drakar.favoriteComposerShortcut"
   /// The agent New Session starts (`AgentKind`'s raw value); empty for Claude Code.
   static let defaultAgent = "drakar.defaultAgent"

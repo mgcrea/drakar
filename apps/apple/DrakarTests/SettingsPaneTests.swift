@@ -114,6 +114,40 @@ struct SettingsPaneTests {
         "\(preset.name): \(preset.symbol)")
     }
   }
+
+  @Test @MainActor func toolbarPinsKeepALegacyIdAndStopAtFour() {
+    let legacy = "11111111-1111-1111-1111-111111111111"
+    #expect(ComposerToolbarPins.ids(in: "") == [])
+    #expect(ComposerToolbarPins.ids(in: "  \(legacy)  ") == [legacy])
+    #expect(ComposerToolbarPins.ids(in: #"["a","a","","b","c"]"#) == ["a", "b", "c"])
+    let crowded = (0..<6).map { "\"id-\($0)\"" }.joined(separator: ",")
+    #expect(
+      ComposerToolbarPins.ids(in: "[\(crowded)]") == ["id-0", "id-1", "id-2", "id-3"])
+    #expect(ComposerToolbarPins.ids(in: "[") == [])
+
+    var stored = legacy
+    #expect(ComposerToolbarPins.ids(in: stored) == [legacy])
+    stored = ComposerToolbarPins.setting(
+      legacy, on: false, among: ComposerToolbarPins.ids(in: stored))
+    #expect(stored == "")
+
+    stored = ""
+    for index in 0..<6 {
+      stored = ComposerToolbarPins.setting(
+        "id-\(index)", on: true, among: ComposerToolbarPins.ids(in: stored))
+    }
+    #expect(ComposerToolbarPins.ids(in: stored) == ["id-0", "id-1", "id-2", "id-3"])
+    stored = ComposerToolbarPins.setting(
+      "id-1", on: false, among: ComposerToolbarPins.ids(in: stored))
+    #expect(ComposerToolbarPins.ids(in: stored) == ["id-0", "id-2", "id-3"])
+    stored = ComposerToolbarPins.setting(
+      "id-0", on: true, among: ComposerToolbarPins.ids(in: stored))
+    #expect(ComposerToolbarPins.ids(in: stored) == ["id-0", "id-2", "id-3"])
+    stored = ComposerToolbarPins.setting(
+      "id-9", on: true, among: ComposerToolbarPins.ids(in: stored))
+    #expect(ComposerToolbarPins.ids(in: stored) == ["id-0", "id-2", "id-3", "id-9"])
+    #expect(ComposerToolbarPins.stored([]) == "")
+  }
 }
 
 /// Settings › Runner (remote sessions spec §2, §3), its model over a defaults suite of each

@@ -53,7 +53,7 @@ struct ComposerView: View {
   var broadcast: BroadcastChip? = nil
 
   @AppStorage(PreferenceKey.composerShortcuts) private var shortcutsData = Data()
-  @AppStorage(PreferenceKey.favoriteComposerShortcut) private var favoriteShortcutID = ""
+  @AppStorage(PreferenceKey.favoriteComposerShortcut) private var toolbarPins = ""
 
   @State private var leavesContextOut = false
   /// The menu's row under the keyboard.
@@ -303,8 +303,10 @@ struct ComposerView: View {
       case .prompt: !shortcut.prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
       }
     }
-    let favorite = available.first { $0.id.uuidString == favoriteShortcutID }
-    let menuShortcuts = available.filter { $0.id != favorite?.id }
+    let pinnedIDs = ComposerToolbarPins.ids(in: toolbarPins)
+    let pinned = pinnedIDs.compactMap { id in available.first { $0.id.uuidString == id } }
+    let shown = Set(pinned.map(\.id))
+    let menuShortcuts = available.filter { !shown.contains($0.id) }
     if !menuShortcuts.isEmpty {
       Menu {
         ForEach(menuShortcuts) { shortcut in
@@ -324,20 +326,24 @@ struct ComposerView: View {
       .accessibilityLabel("Composer Shortcuts")
       .disabled(!canInsertShortcut)
     }
-    if let favorite {
-      Group {
-        if let iconName = favorite.iconName {
-          Button(favorite.displayTitle, systemImage: iconName) { insert(favorite) }
-            .labelStyle(.iconOnly)
-        } else {
-          Button(favorite.displayTitle) { insert(favorite) }
-            .lineLimit(1)
-        }
-      }
-      .buttonStyle(PillButtonStyle())
-      .help(shortcutHelp(favorite))
-      .disabled(!canInsertShortcut)
+    ForEach(pinned) { shortcut in
+      shortcutButton(shortcut)
     }
+  }
+
+  @ViewBuilder private func shortcutButton(_ shortcut: ComposerShortcut) -> some View {
+    Group {
+      if let iconName = shortcut.iconName {
+        Button(shortcut.displayTitle, systemImage: iconName) { insert(shortcut) }
+          .labelStyle(.iconOnly)
+      } else {
+        Button(shortcut.displayTitle) { insert(shortcut) }
+          .lineLimit(1)
+      }
+    }
+    .buttonStyle(PillButtonStyle())
+    .help(shortcutHelp(shortcut))
+    .disabled(!canInsertShortcut)
   }
 
   private func shortcutHelp(_ shortcut: ComposerShortcut) -> String {
