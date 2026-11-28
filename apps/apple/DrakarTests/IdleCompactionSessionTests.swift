@@ -173,4 +173,28 @@ struct IdleCompactionSessionTests {
     try await Task.sleep(for: .milliseconds(300))
     #expect(prompts() == ["hi", "/distill", "actually, one more thing"])
   }
+
+  /// A conversation turned off stays off whatever the default says, and is kept under its ID.
+  @Test func aConversationTurnedOffDoesNotCompact() async throws {
+    let session = try await idleSession()
+    defer { session.stop() }
+    ClaudeChoice.$testSuite.withValue(suite) { session.setCompactsIdle(false) }
+    #expect(!session.compactsIdle)
+    await fire(session, at: try due(session))
+    try await Task.sleep(for: .milliseconds(300))
+    #expect(prompts() == ["hi"])
+    ClaudeChoice.$testSuite.withValue(suite) {
+      #expect(ClaudeChoice.compactsIdle(sessionID: "s-idle") == false)
+      #expect(ClaudeChoice.compactsIdle(sessionID: "another") == nil)
+    }
+  }
+
+  @Test func aConversationTurnedOnCompactsWhenTheDefaultIsOff() async throws {
+    let session = try await idleSession(compacts: false)
+    defer { session.stop() }
+    ClaudeChoice.$testSuite.withValue(suite) { session.setCompactsIdle(true) }
+    await fire(session, at: try due(session))
+    try await waitFor { prompts().count == 2 }
+    #expect(prompts() == ["hi", "/compact"])
+  }
 }

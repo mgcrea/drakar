@@ -164,8 +164,11 @@ enum PreferenceKey {
   /// Whether the Mac stays awake while an agent works (`KeepAwake`); on unless turned off.
   static let keepsAwake = "drakar.keepsAwake"
   /// Whether an idle Claude Code session compacts before its prompt cache expires
-  /// (`IdleCompaction`); on unless turned off.
+  /// (`IdleCompaction`); on unless turned off. The default for conversations: one set by hand
+  /// keeps its own (`compactsIdleByConversation`).
   static let compactsIdle = "drakar.compactsIdle"
+  /// Conversations whose idle compaction was set by hand, by session ID: what each said.
+  static let compactsIdleByConversation = "drakar.compactsIdleByConversation"
   /// The command a compaction Drakar starts sends first (`/distill`); empty for none.
   static let compactionFirst = "drakar.compactionFirst"
 }
@@ -284,6 +287,21 @@ enum ClaudeChoice {
   /// An idle session compacts before its prompt cache expires. On by default.
   static var compactsIdle: Bool {
     defaults.object(forKey: PreferenceKey.compactsIdle) as? Bool ?? true
+  }
+
+  /// What `sessionID`'s idle compaction was set to by hand; nil to follow `compactsIdle`.
+  static func compactsIdle(sessionID: String) -> Bool? {
+    (defaults.dictionary(forKey: PreferenceKey.compactsIdleByConversation) as? [String: Bool])?[
+      sessionID]
+  }
+
+  /// Keeps `sessionID`'s idle compaction as set by hand, whatever the default becomes.
+  static func setCompactsIdle(_ compacts: Bool, sessionID: String) {
+    var picks =
+      defaults.dictionary(forKey: PreferenceKey.compactsIdleByConversation) as? [String: Bool]
+      ?? [:]
+    picks[sessionID] = compacts
+    defaults.set(picks, forKey: PreferenceKey.compactsIdleByConversation)
   }
 
   /// The command a compaction Drakar starts sends first; nil for none.
@@ -686,10 +704,10 @@ private struct CompactionSection: View {
 
   var body: some View {
     Section {
-      Toggle("Compact idle conversations before the prompt cache expires", isOn: $compactsIdle)
+      Toggle("Compact idle conversations by default", isOn: $compactsIdle)
         .accessibilityIdentifier("settings.compactsIdle")
       Text(
-        "Six minutes before an idle session’s hour of cache runs out, once its context holds 200k tokens (CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS sets another floor). Claude Code does this itself in a terminal or VS Code, but not for the sessions Drakar runs."
+        "Six minutes before an idle session’s hour of cache runs out, once its context holds 200k tokens (CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS sets another floor). Claude Code does this itself in a terminal or VS Code, but not for the sessions Drakar runs. Each conversation can change it in the context popover, at the cache timer in the composer."
       )
       .font(.caption)
       .foregroundStyle(.secondary)

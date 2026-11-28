@@ -1213,11 +1213,40 @@ final class AgentSession {
     return true
   }
 
+  /// Idle compaction as set by hand in this conversation, kept here too so the popover
+  /// redraws, and so that a pick made before the session had an ID is saved once it has one.
+  private var idleCompactionPick: Bool?
+  /// The pick is not saved yet: made before the session had an ID.
+  @ObservationIgnored private var idleCompactionPickUnsaved = false
+
+  /// Whether this conversation compacts when idle: as set by hand, else Settings' default.
+  var compactsIdle: Bool {
+    idleCompactionPick ?? sessionID.flatMap { ClaudeChoice.compactsIdle(sessionID: $0) }
+      ?? ClaudeChoice.compactsIdle
+  }
+
+  /// Sets this conversation's idle compaction, kept whatever the default becomes, and sets or
+  /// takes back its timer at once.
+  func setCompactsIdle(_ compacts: Bool) {
+    idleCompactionPick = compacts
+    idleCompactionPickUnsaved = true
+    savesIdleCompactionPick()
+    armIdleCompaction()
+  }
+
+  private func savesIdleCompactionPick() {
+    guard idleCompactionPickUnsaved, let idleCompactionPick, let sessionID else { return }
+    idleCompactionPickUnsaved = false
+    ClaudeChoice.setCompactsIdle(idleCompactionPick, sessionID: sessionID)
+  }
+
   /// Sets the idle compaction's timer for when the session's cache says, or takes it back.
   /// One that went off stays, so the same time is not set again.
   private func armIdleCompaction() {
+    savesIdleCompactionPick()
     let due =
-      agent == .claude && process != nil ? IdleCompaction.due(transcript.promptCache) : nil
+      agent == .claude && process != nil && compactsIdle
+      ? IdleCompaction.due(transcript.promptCache) : nil
     guard due != idleTimer?.due else { return }
     idleTimer?.task.cancel()
     idleTimer = due.map { due in
@@ -1235,7 +1264,7 @@ final class AgentSession {
   /// to. The CLI's own rules (`IdleCompaction`), and nothing waiting on the person.
   func compactIfIdle(at now: Date, floor: Int) {
     let cache = transcript.promptCache
-    guard ClaudeChoice.compactsIdle, agent == .claude, process != nil, phase == .ready,
+    guard compactsIdle, agent == .claude, process != nil, phase == .ready,
       canSend, compaction == nil, !status.isWaitingOnPerson,
       transcript.queuedPrompts.isEmpty, let due = IdleCompaction.due(cache),
       let anchor = cache.anchor,

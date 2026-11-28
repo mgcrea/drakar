@@ -212,6 +212,17 @@ struct ContextPopover: View {
         compactsAt: session.reportedContext?.autoCompactThreshold)
       if session.features.showsPromptCache {
         PromptCacheRow(cache: session.status.promptCache)
+        if !session.isReadOnly {
+          Toggle(
+            "Compact before the cache expires",
+            isOn: Binding(get: { session.compactsIdle }, set: { session.setCompactsIdle($0) })
+          )
+          .toggleStyle(.checkbox)
+          .help(
+            "Six minutes before this conversation’s hour of cache runs out, once its context holds 200k tokens. Settings › General sets the default for conversations."
+          )
+          .accessibilityIdentifier("contextPopover.compactsIdle")
+        }
       }
       HStack {
         Button("Show Details") {
