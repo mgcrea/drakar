@@ -167,6 +167,8 @@ public enum AgentEvent: Sendable, Equatable {
     case permissionMode(String)
     /// Nil when the newest reply names none (a model without effort).
     case effort(String?)
+    /// The conversation's running cost as Claude Code totals it (`cost-state`), in USD.
+    case cost(Double)
   }
 }
 

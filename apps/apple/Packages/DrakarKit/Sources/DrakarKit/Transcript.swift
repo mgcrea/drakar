@@ -149,6 +149,12 @@ public struct Transcript: Sendable, Equatable {
   public private(set) var contextModelID: String?
   /// How the newest turn ended, as its agent summed it up.
   public private(set) var lastTurn: TurnSummary?
+  /// What the conversation has cost so far, in USD at API list prices, when its agent says:
+  /// Claude Code's running total, from its transcript file's `cost-state` and each `result`.
+  public private(set) var costUSD: Double?
+  /// What earlier processes had reached when a later one began its own count from zero.
+  private var costBefore = 0.0
+  private var reportedCost: Double?
   /// The model's context window, when the agent says it.
   public private(set) var contextWindow: Int?
   /// How long the API keeps what the main thread's requests cached.
@@ -441,6 +447,7 @@ public struct Transcript: Sendable, Equatable {
     case .turnEnded(let summary):
       pauses += 1
       lastTurn = summary
+      if let cost = summary.costUSD { report(cost: cost) }
       turnEnd = summary.outcome
       retry = nil
       isRunning = false
@@ -546,11 +553,21 @@ public struct Transcript: Sendable, Equatable {
       historyPermissionMode = mode
     case .historyMeta(.effort(let effort)):
       historyEffort = effort
+    case .historyMeta(.cost(let cost)):
+      report(cost: cost)
     case .promptSuggested(let text):
       let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
       // A guess that comes in after the next turn began is about the one before.
       suggestedPrompt = text.isEmpty || isRunning ? nil : text
     }
+  }
+
+  /// Claude Code's total runs per process, carried over by a resume that restores it. One that
+  /// falls began again from zero (a rewind, an older CLI): what came before still counts.
+  private mutating func report(cost: Double) {
+    if let reportedCost, cost < reportedCost { costBefore += reportedCost }
+    reportedCost = cost
+    costUSD = costBefore + cost
   }
 
   /// Puts an item at its id. A tool call keeps a result that reached it first.

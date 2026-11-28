@@ -148,7 +148,7 @@ struct SessionListView: View {
     let markedRows = project.markedSummaryRows
     return List {
       if !project.fanOuts.isEmpty || !held.isEmpty {
-        Section("This Window") {
+        Section(isExpanded: Bindable(project).showsHeld) {
           ForEach(project.fanOuts) { batch in
             FanOutBanner(batch: batch) { project.cancelFanOut(batch) }
           }
@@ -172,6 +172,10 @@ struct SessionListView: View {
             .contextMenu { SessionMenu(item: item, project: project) }
             .accessibilityIdentifier("sessions.attached.\(item.sessionID ?? item.id.uuidString)")
           }
+        } header: {
+          // The sessions open in this window, as against those running elsewhere or ended.
+          Text(project.showsHeld ? "Open" : "Open (\(held.count))")
+            .padding(.top, 6)
         }
       }
       if !groups.elsewhere.isEmpty {
@@ -442,6 +446,11 @@ struct OpenSessionRow: View {
     }
     if let subfolder { parts.append(subfolder) }
     if let worktreeName { parts.append(worktreeName) }
+    if let cost = item.session.status.costUSD {
+      let amount = cost.formatted(.currency(code: "USD").precision(.fractionLength(2)))
+      let billing = Billing(apiKeySource: item.session.status.session?.apiKeySource)
+      parts.append(billing == .subscription ? "≈ \(amount)" : amount)
+    }
     return parts.isEmpty ? nil : parts.joined(separator: " · ")
   }
 

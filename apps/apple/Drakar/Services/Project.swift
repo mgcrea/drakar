@@ -1973,6 +1973,8 @@ final class Project {
     item.isUnread = false
   }
 
+  /// Whether the sidebar's Open group, the sessions this window holds, is expanded.
+  var showsHeld = true
   /// Whether the sidebar's Ended group is expanded, and lists all its rows rather than the
   /// newest 20.
   var showsEnded = false
@@ -2025,7 +2027,7 @@ final class Project {
     let groups = listedGroups
     let elsewhere = groups.elsewhere.filter { OpenSessions.shared.locate($0.sessionID) == nil }
     let rows =
-      listedHeld.map(Row.held)
+      (showsHeld ? listedHeld.map(Row.held) : [])
       + elsewhere.map(Row.elsewhere)
       + (showsEnded ? listedEnded(groups).map(Row.ended) : [])
       + (showsArchived ? archivedEnded.map(Row.ended) : [])

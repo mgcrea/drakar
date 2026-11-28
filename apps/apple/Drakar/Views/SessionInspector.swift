@@ -155,19 +155,12 @@ private struct SessionDetails: View {
           .help(ContentView.abbreviated(account.directory))
       }
     }
-    if let turn = transcript.lastTurn {
-      if let cost = turn.costUSD {
-        let billing = Billing(apiKeySource: transcript.session?.apiKeySource)
-        let amount = cost.formatted(.currency(code: "USD").precision(.fractionLength(4)))
-        LabeledContent("Last turn cost") {
-          Text(billing == .subscription ? "≈ \(amount)" : amount)
-            .monospacedDigit()
-            .help(
-              billing == .subscription
-                ? "API-equivalent estimate from token counts. Your subscription is not billed per token."
-                : "Billed to your API key")
-        }
+    if let cost = transcript.costUSD {
+      LabeledContent("Cost") {
+        CostText(cost, apiKeySource: transcript.session?.apiKeySource, fractionDigits: 4)
       }
+    }
+    if let turn = transcript.lastTurn {
       if let ms = turn.durationMS {
         LabeledContent(
           "Last turn took",

@@ -15,6 +15,11 @@ fixtures in `DrakarKit`'s tests have a record of where they came from.
 - **None of this is documented as a protocol.** The Agent SDK (TypeScript, Python) wraps
   it, and the extension uses it, so it is stable in practice, but any release can add a
   field or a message type. Decode leniently, keep unknown messages, never crash on one.
+- **The binary carries its own schema text.** Each control request and output message is
+  a zod schema whose `.describe()` text ships in the binary, often saying what the
+  extension's code does not (who may send it, what an older CLI answers):
+  `strings -n 20 "$(readlink -f ~/.local/bin/claude)" | grep -F '<subtype>'` (read on
+  2.1.325 and 2.1.332, 2026-11-28).
 
 ## Spawning
 
@@ -222,6 +227,19 @@ anything, or a new turn, drops it. Drakar does the same (`Transcript.suggestedPr
 
 - 2.1.332 wrote one after each turn of a two-turn session reading a file. 2.1.325 wrote none,
   even with `CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=1`: the line needs a newer CLI.
+- Not after every turn, though: of five fresh one-turn runs of 2.1.332 with the same prompt
+  and no flag of its skip list set, one wrote none. A single run without a line proves
+  nothing; run a few. The check, from an empty folder holding a `calc.py` whose `add`
+  subtracts (each run is one Haiku turn and one suggestion request):
+
+  ```sh
+  ( printf '%s\n' \
+      '{"type":"control_request","request_id":"init-1","request":{"subtype":"initialize","hooks":null,"promptSuggestions":true}}' \
+      '{"type":"user","session_id":"","parent_tool_use_id":null,"message":{"role":"user","content":[{"type":"text","text":"Read calc.py and tell me if add() has a bug. Do not edit anything."}]}}'
+    sleep 60 ) |
+    claude --input-format stream-json --output-format stream-json --verbose --model haiku \
+      --allowedTools Read --no-session-persistence | grep -F '"prompt_suggestion"'
+  ```
 - Whether it guesses at all is the CLI's call: a server-side flag
   (`tengu_chomp_inflection`) unless `CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION` is set, then the
   user's `promptSuggestionEnabled` setting. It skips a turn in plan mode, with a permission
@@ -745,8 +763,12 @@ permission mode. Drakar passes `--thinking-display summarized`: without it think
 blocks arrive with their text withheld; with it they stream as `thinking_delta` text
 (checked on 2.1.288). It passes none of the others yet.
 
-Unsettled: whether `result.total_cost_usd` is the turn's cost or the process's running
-total. Two consecutive turns read 0.00096 then 0.0063, consistent with either.
+`result.total_cost_usd` is the session's running total, not the turn's (settled 2026-11-28,
+2.1.332): one process's three turns read 0.0801, 0.0806, 0.0812 (fixture
+`interrupt-keeps-queue`). The CLI also writes it to the transcript file as `cost-state` lines
+(`totalCostUSD`, with durations and per-model usage) and restores it from them on `--resume`,
+so the total carries over processes. It falls after a rewind's fork, a new session whose count
+starts again; `Transcript.costUSD` adds what came before when it falls.
 
 ## Context usage (measured 2026-10-04, Claude Code 2.1.288)
 

@@ -683,15 +683,8 @@ private struct SessionFooter: View {
       } else if let version = session.status.writerVersion {
         Text("\(session.agent.name) \(version)").help("The version that last wrote this session")
       }
-      if let cost = session.status.lastTurn?.costUSD {
-        let billing = Billing(apiKeySource: session.status.session?.apiKeySource)
-        let amount = cost.formatted(.currency(code: "USD").precision(.fractionLength(4)))
-        Text(billing == .subscription ? "≈ \(amount)" : amount)
-          .monospacedDigit()
-          .help(
-            billing == .subscription
-              ? "API-equivalent estimate from token counts. Your subscription is not billed per token."
-              : "Billed to your API key")
+      if let cost = session.status.costUSD {
+        CostText(cost, apiKeySource: session.status.session?.apiKeySource)
       }
     }
     .font(.caption)

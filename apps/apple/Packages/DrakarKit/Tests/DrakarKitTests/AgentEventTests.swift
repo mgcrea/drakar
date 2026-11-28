@@ -107,4 +107,29 @@ struct AgentEventTests {
     #expect(t.contextUsage == usage)
     #expect(t.contextWindow == 258_400)
   }
+
+  @Test func theCostIsTheConversationsRunningTotal() {
+    var t = Transcript()
+    #expect(t.costUSD == nil)
+    t.apply(.historyMeta(.cost(1.5)))
+    #expect(t.costUSD == 1.5)
+    // A resume carries the total over: the next turn's result goes on from it.
+    t.apply(.turnEnded(TurnSummary(outcome: .completed, costUSD: 1.75)))
+    #expect(t.costUSD == 1.75)
+    // A count that began again from zero keeps what came before.
+    t.apply(.turnEnded(TurnSummary(outcome: .completed, costUSD: 0.25)))
+    #expect(t.costUSD == 2)
+    #expect(t.status.costUSD == 2)
+    // A turn the agent prices nowhere changes nothing.
+    t.apply(.turnEnded(TurnSummary(outcome: .completed)))
+    #expect(t.costUSD == 2)
+  }
+
+  @Test func historyReadsTheCostState() {
+    let lines = [
+      #"{"type":"cost-state","sessionId":"s","totalCostUSD":0.73}"#,
+      #"{"type":"cost-state","sessionId":"s","totalCostUSD":1.6}"#,
+    ].map { Data($0.utf8) }
+    #expect(Transcript.history(lines: lines).costUSD == 1.6)
+  }
 }

@@ -225,7 +225,7 @@ extension ClaudeTranslator {
   }
 
   /// One transcript-file line (`<config>/projects/<encoded cwd>/<session id>.jsonl`).
-  /// Unknown entry types (attachments, snapshots, cost records) say nothing, and nor do
+  /// Unknown entry types (attachments, snapshots) say nothing, and nor do
   /// subagent sidechains unless `includesSidechains`.
   public mutating func history(_ json: JSONValue) -> [AgentEvent] {
     guard includesSidechains || json["isSidechain"]?.boolValue != true else { return [] }
@@ -243,6 +243,8 @@ extension ClaudeTranslator {
       if let title = json["customTitle"]?.stringValue, !title.isEmpty {
         events.append(.title(.custom(title)))
       }
+    case "cost-state":
+      if let cost = json["totalCostUSD"]?.numberValue { events.append(.historyMeta(.cost(cost))) }
     case "assistant":
       events.append(.historyMeta(.effort(json["effort"]?.stringValue)))
       if let message = try? StreamMessage(json: json) { events += translate(message, at: time) }

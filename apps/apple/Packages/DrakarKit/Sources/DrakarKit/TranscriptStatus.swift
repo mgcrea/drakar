@@ -39,6 +39,8 @@ extension Transcript {
     public var historyEffort: String?
     public var writerVersion: String?
     public var lastTurn: TurnSummary?
+    /// What the conversation has cost so far, when its agent says.
+    public var costUSD: Double?
     /// What the toolbar's agents pill shows.
     public var agents = AgentMap.Summary()
 
@@ -83,6 +85,7 @@ extension Transcript {
     status.historyEffort = historyEffort
     status.writerVersion = writerVersion
     status.lastTurn = lastTurn
+    status.costUSD = costUSD
     status.agents = agentSummary
     return status
   }
