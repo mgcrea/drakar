@@ -305,17 +305,20 @@ extension View {
   }
 
   /// A composer toolbar pill's label: a capsule behind the model, only under the pointer for the
-  /// mode and action buttons.
-  func pill(filled: Bool) -> some View {
-    modifier(PillChrome(filled: filled))
+  /// mode and action buttons. `horizontalPadding` is tighter for an icon that sits against
+  /// another icon, where the usual inset reads as a gap.
+  func pill(filled: Bool, horizontalPadding: CGFloat = 8) -> some View {
+    modifier(PillChrome(filled: filled, horizontalPadding: horizontalPadding))
   }
 }
 
 /// A borderless composer toolbar button with the same capsule hover chrome as the unfilled pills.
 struct PillButtonStyle: ButtonStyle {
+  var horizontalPadding: CGFloat = 8
+
   func makeBody(configuration: Configuration) -> some View {
     configuration.label
-      .pill(filled: false)
+      .pill(filled: false, horizontalPadding: horizontalPadding)
       .opacity(configuration.isPressed ? 0.75 : 1)
   }
 }
@@ -353,6 +356,7 @@ struct PromptCacheLabel: View {
 
 private struct PillChrome: ViewModifier {
   let filled: Bool
+  var horizontalPadding: CGFloat = 8
   @Environment(\.isEnabled) private var isEnabled
   @State private var isHovered = false
 
@@ -361,7 +365,7 @@ private struct PillChrome: ViewModifier {
     content
       .font(.callout)
       .foregroundStyle(isEnabled ? (activeHover ? .primary : .secondary) : .tertiary)
-      .padding(.horizontal, 8)
+      .padding(.horizontal, horizontalPadding)
       .padding(.vertical, 4)
       .background(
         Color.secondary.opacity(activeHover ? 0.2 : filled ? 0.12 : 0), in: Capsule()

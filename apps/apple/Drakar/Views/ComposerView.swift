@@ -61,6 +61,7 @@ struct ComposerView: View {
   /// The draft the menu was closed on with Esc; it opens again once the draft changes.
   @State private var menuClosedOn: String?
   @State private var pasteMonitor = PasteMonitor()
+  @State private var shortcutMonitor = ComposerShortcutMonitor()
   @FocusState private var isFocused: Bool
 
   var body: some View {
@@ -177,9 +178,18 @@ struct ComposerView: View {
       if needsCommands { loadCommands() }
     }
     // ⌘V with files or a screenshot on the clipboard attaches them; text pastes as usual.
-    .background(WindowReader { pasteMonitor.window = $0 })
+    .background(WindowReader {
+      pasteMonitor.window = $0
+      shortcutMonitor.window = $0
+    })
+    .background {
+      ShortcutMonitorBinder(monitor: shortcutMonitor) { self.performShortcut($0) }
+    }
     .onAppear { pasteMonitor.install(attach) }
-    .onDisappear { pasteMonitor.remove() }
+    .onDisappear {
+      pasteMonitor.remove()
+      shortcutMonitor.remove()
+    }
     .onChange(of: isFocused, initial: true) { _, focused in pasteMonitor.isActive = focused }
   }
 
@@ -252,9 +262,13 @@ struct ComposerView: View {
     .accessibilityIdentifier("composer.field")
   }
 
+  /// Padding of a shortcut icon. A shortcut that shows its label keeps the wider pill.
+  private static let toolbarIconPadding: CGFloat = 4
+
   /// Attach and the model on the left; the mode and Send on the right, as the extension lays
   /// them out. The extension's + opens a menu whose other entries (an @-mention, the browser)
-  /// Drakar has not got, so this one picks files straight away.
+  /// Drakar has not got, so this one picks files straight away. Shortcuts sit to the right of
+  /// the effort level, which is the last control in the model cluster.
   private var toolbar: some View {
     HStack(spacing: 6) {
       Button("Attach", systemImage: "plus") { attach(AttachmentIntake.choose()) }
@@ -262,11 +276,11 @@ struct ComposerView: View {
         .buttonStyle(PillButtonStyle())
         .help("Attach images or files (or paste, or drop them on the session)")
         .accessibilityIdentifier("composer.attach")
-      shortcutControls
       if let pills {
         pills.provider
         pills.model
       }
+      shortcutControls
       Spacer(minLength: 8)
       if let pills { pills.mode }
       button
@@ -312,14 +326,16 @@ struct ComposerView: View {
         ForEach(menuShortcuts) { shortcut in
           if let iconName = shortcut.iconName {
             Button(shortcut.displayTitle, systemImage: iconName) { insert(shortcut) }
+              .composerKey(shortcut.keyChord)
           } else {
             Button(shortcut.displayTitle) { insert(shortcut) }
+              .composerKey(shortcut.keyChord)
           }
         }
       } label: {
         Label("Composer Shortcuts", systemImage: "bolt")
           .labelStyle(.iconOnly)
-          .pill(filled: false)
+          .pill(filled: false, horizontalPadding: Self.toolbarIconPadding)
       }
       .pillMenu()
       .help("Composer Shortcuts")
@@ -336,33 +352,74 @@ struct ComposerView: View {
       if let iconName = shortcut.iconName {
         Button(shortcut.displayTitle, systemImage: iconName) { insert(shortcut) }
           .labelStyle(.iconOnly)
+          .buttonStyle(PillButtonStyle(horizontalPadding: Self.toolbarIconPadding))
+          .composerKey(shortcut.keyChord)
       } else {
         Button(shortcut.displayTitle) { insert(shortcut) }
           .lineLimit(1)
+          .buttonStyle(PillButtonStyle())
+          .composerKey(shortcut.keyChord)
       }
     }
-    .buttonStyle(PillButtonStyle())
     .help(shortcutHelp(shortcut))
     .disabled(!canInsertShortcut)
   }
 
   private func shortcutHelp(_ shortcut: ComposerShortcut) -> String {
     var notes: [String] = []
+    if let chord = shortcut.keyChord { notes.append(chord.display) }
     if shortcut.autoSend { notes.append(String(localized: "sends immediately")) }
-    if shortcut.autoClose { notes.append(String(localized: "closes tab after turn")) }
+    if let note = shortcut.closeAfterTurn.helpNote { notes.append(note) }
     guard !notes.isEmpty else { return shortcut.displayTitle }
     return "\(shortcut.displayTitle) (\(notes.joined(separator: ", ")))"
   }
 
-  private func insert(_ shortcut: ComposerShortcut) {
+  /// Runs the chord when it belongs to this window and the main menu does not already own it.
+  /// The menu wins, so a recorded ⌘N still opens a session. Returns nil when the event was taken.
+  /// A close mode that follows Shift also takes that chord with Shift added, unless another
+  /// shortcut or the menu already owns the shifted keys.
+  private func performShortcut(_ event: NSEvent) -> NSEvent? {
+    guard canInsertShortcut, !ComposerKeyChord.menuClaims(event, menu: NSApp.mainMenu) else {
+      return event
+    }
+    let shiftHeld = event.modifierFlags.contains(.shift)
+    let shortcut = shortcut(matching: event, allowingExtraShift: false)
+      ?? (shiftHeld ? shortcut(matching: event, allowingExtraShift: true) : nil)
+    guard let shortcut else { return event }
+    insert(shortcut, shiftHeld: shiftHeld)
+    return nil
+  }
+
+  private func shortcut(matching event: NSEvent, allowingExtraShift: Bool) -> ComposerShortcut? {
+    shortcuts.first { shortcut in
+      guard let chord = shortcut.keyChord,
+        chord.matches(event, allowingExtraShift: allowingExtraShift)
+      else { return false }
+      if allowingExtraShift, !shortcut.closeAfterTurn.followsShift { return false }
+      switch shortcut.kind {
+      case .skill: return command(for: shortcut) != nil
+      case .prompt:
+        return !shortcut.prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+      }
+    }
+  }
+
+  private func insert(_ shortcut: ComposerShortcut, shiftHeld: Bool? = nil) {
+    // A chord on the toolbar button is app-wide. A window that is not key ignores it, so
+    // Settings or another project does not run this session's shortcut.
+    guard shortcutMonitor.window == nil || shortcutMonitor.window?.isKeyWindow == true else {
+      return
+    }
     guard canInsertShortcut else { return }
+    let closes = shortcut.closeAfterTurn.closes(
+      whenShiftHeld: shiftHeld ?? NSEvent.modifierFlags.contains(.shift))
     let prompt: String
     switch shortcut.kind {
     case .skill:
       guard let command = command(for: shortcut) else { return }
       guard shortcut.autoSend else {
         choose(command)
-        autoClose = shortcut.autoClose
+        autoClose = closes
         isFocused = true
         return
       }
@@ -372,12 +429,12 @@ struct ComposerView: View {
       guard shortcut.autoSend else {
         text = prompt
         menuClosedOn = text
-        autoClose = shortcut.autoClose
+        autoClose = closes
         isFocused = true
         return
       }
     }
-    autoClose = shortcut.autoClose
+    autoClose = closes
     send(prompt, currentContext)
     text = ""
     isFocused = true
@@ -588,6 +645,56 @@ private struct AttachmentChip: View {
     }
     .padding(3)
     .background(.quaternary.opacity(0.6), in: RoundedRectangle(cornerRadius: 6))
+  }
+}
+
+extension View {
+  /// Shows the chord on the menu item. The key is handled by `ComposerShortcutMonitor`, which
+  /// only runs it in the key window; this is what draws it beside the title.
+  @ViewBuilder fileprivate func composerKey(_ chord: ComposerKeyChord?) -> some View {
+    if let chord, let equivalent = chord.keyEquivalent {
+      keyboardShortcut(equivalent, modifiers: chord.eventModifiers)
+    } else {
+      self
+    }
+  }
+}
+
+/// Puts the latest composer into the monitor on every update. The inputs the chord reads
+/// (`commands`, whether a turn is running) are plain values, so a closure captured once
+/// would keep the first ones.
+private struct ShortcutMonitorBinder: View {
+  let monitor: ComposerShortcutMonitor
+  let perform: (NSEvent) -> NSEvent?
+
+  var body: some View {
+    let _ = monitor.install(perform)
+    Color.clear
+  }
+}
+
+/// The session window's recorded chords. One monitor per composer. A monitor whose window
+/// is not key lets the event through, so the key window's monitor is the one that runs it.
+@MainActor final class ComposerShortcutMonitor {
+  weak var window: NSWindow?
+  private var perform: ((NSEvent) -> NSEvent?)?
+  private var monitor: Any?
+
+  func install(_ perform: @escaping (NSEvent) -> NSEvent?) {
+    self.perform = perform
+    guard monitor == nil else { return }
+    monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+      guard let self, !ComposerShortcutCapture.isRecording, let window = self.window,
+        event.window === window, window.isKeyWindow
+      else { return event }
+      return self.perform?(event) ?? event
+    }
+  }
+
+  func remove() {
+    if let monitor { NSEvent.removeMonitor(monitor) }
+    monitor = nil
+    perform = nil
   }
 }
 

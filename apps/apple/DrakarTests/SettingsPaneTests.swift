@@ -88,11 +88,12 @@ struct SettingsPaneTests {
     #expect(decoded[0].icon.isEmpty)
     #expect(decoded[0].iconName == nil)
     #expect(!decoded[0].autoSend)
-    #expect(!decoded[0].autoClose)
+    #expect(decoded[0].closeAfterTurn == .off)
+    #expect(decoded[0].keyChord == nil)
 
     let saved = ComposerShortcut(
       label: "", icon: "checkmark.circle", isEnabled: true, kind: .skill, skill: "commit-task",
-      autoSend: true, autoClose: true)
+      autoSend: true, closeAfterTurn: .always)
     let encoded = try JSONEncoder().encode([saved])
     let roundTripped = ComposerShortcut.read(encoded)
     #expect(roundTripped.count == 1)
@@ -100,11 +101,44 @@ struct SettingsPaneTests {
     #expect(roundTripped[0].hasTrigger)
     #expect(roundTripped[0].displayTitle == "/commit-task")
     #expect(roundTripped[0].autoSend)
-    #expect(roundTripped[0].autoClose)
+    #expect(roundTripped[0].closeAfterTurn == .always)
+    #expect(roundTripped[0].keyChord == nil)
+
+    let chord = ComposerKeyChord(key: "k", command: true, shift: true)
+    var withChord = saved
+    withChord.keyChord = chord
+    let encodedChord = try JSONEncoder().encode([withChord])
+    let restored = try #require(ComposerShortcut.read(encodedChord).first)
+    #expect(restored.keyChord == chord)
 
     let invalidIcon = ComposerShortcut(icon: "not.a.real.symbol.name")
     #expect(invalidIcon.iconName == nil)
     #expect(!invalidIcon.hasTrigger)
+  }
+
+  /// `autoClose: true` from before the picker is Always. The Shift cases round-trip, and
+  /// they close only on the side of Shift they name.
+  @Test @MainActor func closeAfterTurnReadsTheOldBoolAndFollowsShift() throws {
+    let turnedOn = ComposerShortcut.read(Data(#"[{"autoClose":true}]"#.utf8))
+    #expect(turnedOn.first?.closeAfterTurn == .always)
+    let turnedOff = ComposerShortcut.read(Data(#"[{"autoClose":false}]"#.utf8))
+    #expect(turnedOff.first?.closeAfterTurn == .off)
+
+    let saved = ComposerShortcut(closeAfterTurn: .whenShift)
+    let encoded = try JSONEncoder().encode([saved])
+    #expect(ComposerShortcut.read(encoded).first?.closeAfterTurn == .whenShift)
+
+    let mode = ComposerShortcut.CloseAfterTurn.self
+    #expect(!mode.off.closes(whenShiftHeld: false))
+    #expect(!mode.off.closes(whenShiftHeld: true))
+    #expect(mode.always.closes(whenShiftHeld: false))
+    #expect(mode.always.closes(whenShiftHeld: true))
+    #expect(!mode.whenShift.closes(whenShiftHeld: false))
+    #expect(mode.whenShift.closes(whenShiftHeld: true))
+    #expect(mode.unlessShift.closes(whenShiftHeld: false))
+    #expect(!mode.unlessShift.closes(whenShiftHeld: true))
+    #expect(mode.whenShift.followsShift)
+    #expect(!mode.always.followsShift)
   }
 
   @Test @MainActor func everyShortcutPresetIconExists() {
