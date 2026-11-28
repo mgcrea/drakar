@@ -531,6 +531,25 @@ nonisolated enum Changelog {
   /// `nil` in any tagged build: CI asserts the CHANGELOG's head section is the
   /// tag's version, so there is no `[Unreleased]` left to emit by then. The
   /// pane shows it in debug builds only, where it is true of what is running.
-  static let unreleased: Release? = nil
+  // swift-format-ignore
+  private static let unreleasedRelease: Release = Release(
+    version: "Unreleased",
+    date: "",
+    sections: [
+      Section(
+        name: "Added",
+        lead: [],
+        entries: [
+          Entry(
+            ordinal: 0,
+            headline: "Configure MCP clients from Settings.",
+            body: [
+              "Settings › MCP Server lists Claude Code (a row per account), Codex, Cursor, VS Code and Antigravity CLI, and Configure writes Drakar's address and token into each one's own config, with Remove to take it back out. Configured clients follow a regenerated token or a new port on their own; copying a configuration by hand stays for any other client.",
+            ]),
+        ]),
+    ])
+
+  // swift-format-ignore
+  static let unreleased: Release? = unreleasedRelease
   // </generated:changelog>
 }

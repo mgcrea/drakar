@@ -8,6 +8,16 @@ Releases are tagged `app-v<version>` the way the sibling repos are, `app-v1.5.0`
 The GitHub release notes, the Sparkle update dialog and the app's What's New pane are all rendered
 from this file, which is the curated summary. `### Internal` sections are left out of all three.
 
+## [Unreleased]
+
+### Added
+
+- **Configure MCP clients from Settings.** Settings › MCP Server lists Claude Code (a row per account), Codex, Cursor, VS Code and Antigravity CLI, and Configure writes Drakar's address and token into each one's own config, with Remove to take it back out. Configured clients follow a regenerated token or a new port on their own; copying a configuration by hand stays for any other client.
+
+### Internal
+
+- **swift-mcp-kit 1.9.0.** The client rows are the kit's `MCPClientRow` and `MCPClientWiring`, up from 1.6.1.
+
 ## [1.5.0] - 2026-11-27
 
 **Antigravity, Grok, and a Git pane.** Run Antigravity and Grok Build sessions beside Claude Code and Codex, switch agents with live provider limits from the toolbar, and browse changed files in the sidebar.

@@ -24,7 +24,7 @@ let package = Package(
     .library(name: "DrakarMCP", targets: ["DrakarMCP"])
   ],
   dependencies: [
-    .package(url: "https://github.com/mgcrea/swift-mcp-kit.git", .upToNextMinor(from: "1.6.1")),
+    .package(url: "https://github.com/mgcrea/swift-mcp-kit.git", .upToNextMinor(from: "1.9.0")),
     .package(path: "../DrakarKit"),
   ],
   targets: [

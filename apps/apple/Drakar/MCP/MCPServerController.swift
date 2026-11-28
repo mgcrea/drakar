@@ -3,6 +3,7 @@ import DrakarMCP
 import Foundation
 import MCPKit
 import MCPKitLoopback
+import MCPKitUI
 import MCPKitWiring
 import Observation
 import os
@@ -61,13 +62,18 @@ final class MCPServerController {
   private let writesAllowed = WritesFlag()
 
   /// The token, made on first read. Empty when the keychain refused, which the pane shows.
+  ///
+  /// `tokenError` is written only when it changes. The client rows read the token on every
+  /// draw, and an observed property set to the value it already holds still draws the pane
+  /// again, which would read the token again.
   var token: String {
     do {
       let value = try tokens.current()
-      tokenError = nil
+      if tokenError != nil { tokenError = nil }
       return value
     } catch {
-      tokenError = error.localizedDescription
+      let message = error.localizedDescription
+      if tokenError != message { tokenError = message }
       return ""
     }
   }
@@ -76,6 +82,8 @@ final class MCPServerController {
     do {
       _ = try tokens.regenerate()
       tokenError = nil
+      // Every client configured with the old token stopped working the moment it was replaced.
+      MCPSetup.wiring.rewire()
     } catch {
       tokenError = error.localizedDescription
     }
@@ -131,6 +139,9 @@ final class MCPServerController {
     else { return }
     stop()
     start(port: configuration.port)
+    // A port changed while the server was off leaves every configured client dialling the old
+    // one. A no-op for a config already current.
+    MCPSetup.wiring.rewire()
   }
 
   /// Whether `sync` has to start a listener: unless one is up on `port`. One that failed to

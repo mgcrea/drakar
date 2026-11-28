@@ -1,6 +1,7 @@
 import AppKit
 import MCPKitLoopback
 import MCPKitUI
+import MCPKitWiring
 import SwiftUI
 
 /// Settings › MCP Server: whether an AI agent on this Mac may see Drakar's sessions, steer
@@ -113,12 +114,30 @@ struct MCPSettingsPane: View {
           .fixedSize(horizontal: false, vertical: true)
         }
 
+        clientsSection
+
         if case .running(let boundPort) = mcp.state {
           connection(port: boundPort)
         }
       }
     }
     .formStyle(.grouped)
+  }
+
+  /// A row per client: Configure writes Drakar's address and token into its config, Remove
+  /// takes them out. Shown whether or not the listener is up, since the entry names the port in
+  /// Settings and works as soon as the server starts.
+  private var clientsSection: some View {
+    Section {
+      ForEach(MCPSetup.wiring.clients) { MCPClientRow(client: $0, wiring: MCPSetup.wiring) }
+    } header: {
+      Text("Clients")
+    } footer: {
+      Text(
+        "Configure writes Drakar's address and token into that client's own config file, readable by you alone, and keeps the previous file beside it. Claude Desktop only starts servers it launches itself, so it cannot reach this one."
+      )
+      .fixedSize(horizontal: false, vertical: true)
+    }
   }
 
   @ViewBuilder private func connection(port: Int) -> some View {
@@ -193,10 +212,10 @@ struct MCPSettingsPane: View {
         }
       }
     } header: {
-      Text("Client configuration")
+      Text("Other clients")
     } footer: {
       Text(
-        "Copy takes the real token, masked here or not. It goes into a config file on this Mac. Claude Desktop only starts servers it launches itself, so it cannot reach this one."
+        "For a client not listed above. Copy takes the real token, masked here or not. It goes into a config file on this Mac."
       )
       .fixedSize(horizontal: false, vertical: true)
     }
