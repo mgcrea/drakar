@@ -122,4 +122,70 @@ struct ToolCallViewTests {
       kind: .read(path: "/p/a.swift"))
     #expect(ToolCallView.readRange(for: wholeFile) == nil)
   }
+
+  private func call(
+    _ kind: ToolKind, name: String = "Bash", result: String?, isError: Bool = false
+  ) -> Transcript.ToolCall {
+    Transcript.ToolCall(
+      id: "c1", name: name, input: .object([:]), kind: kind,
+      result: result.map { .init(content: $0, isError: isError) })
+  }
+
+  @Test func aShellCallPreviewsItsFirstLines() {
+    let shell = ToolKind.shell(command: "make")
+    #expect(
+      ToolResultPreview.of(call(shell, result: "\u{1B}[32mok\u{1B}[0m\ntwo"), task: nil)
+        == .output(.init(text: "ok\ntwo", isClipped: false), isError: false))
+    #expect(
+      ToolResultPreview.of(call(shell, result: "1\n2\n3\n4"), task: nil)
+        == .output(.init(text: "1\n2\n3", isClipped: true), isError: false))
+    // An error shows more of itself.
+    let error = (1...10).map(String.init).joined(separator: "\n")
+    #expect(
+      ToolResultPreview.of(call(shell, result: error, isError: true), task: nil)
+        == .output(.init(text: "1\n2\n3\n4\n5\n6\n7\n8", isClipped: true), isError: true))
+    #expect(ToolResultPreview.of(call(shell, result: ""), task: nil) == .empty)
+    #expect(ToolResultPreview.of(call(shell, result: nil), task: nil) == nil)
+  }
+
+  /// Its task's own section reads a backgrounded call's output.
+  @Test func aBackgroundedCallHasNoPreview() {
+    let result =
+      "Command running in background with ID: b1. Output is being written to: /tmp/b1.output"
+    #expect(
+      ToolResultPreview.of(call(.shell(command: "sleep 9"), result: result), task: nil) == nil)
+  }
+
+  @Test func aSearchSaysHowMuchItFound() {
+    #expect(
+      ToolResultPreview.of(
+        call(.search(pattern: "*.swift"), name: "Glob", result: "/a\n/b"), task: nil)
+        == .summary("Found 2 files"))
+    #expect(
+      ToolResultPreview.of(
+        call(.search(pattern: "x"), name: "Grep", result: "a:1\nb:2\nc:3"), task: nil)
+        == .summary("3 lines of output"))
+  }
+
+  @Test func aRefusalShowsOnlyItsReason() {
+    let refused =
+      "The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). "
+    #expect(
+      ToolResultPreview.of(
+        call(
+          .shell(command: "rm"),
+          result: refused + "The user provided the following reason for the rejection: no",
+          isError: true), task: nil)
+        == .refused(reason: "no"))
+    #expect(
+      ToolResultPreview.of(
+        call(.shell(command: "rm"), result: refused + "STOP what you are doing.", isError: true),
+        task: nil) == nil)
+  }
+
+  /// Reads and edits keep their result inside the card, as in the extension.
+  @Test func otherCallsHaveNoPreview() {
+    #expect(
+      ToolResultPreview.of(call(.read(path: "/a"), name: "Read", result: "x"), task: nil) == nil)
+  }
 }

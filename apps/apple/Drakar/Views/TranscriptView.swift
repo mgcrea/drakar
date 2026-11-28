@@ -531,9 +531,11 @@ struct ToolCallView: View {
             CodeBlock(text: call.input.prettyPrinted)
           }
           if let result = call.result {
+            // Without the colour escapes a terminal would have read.
+            let content = ToolOutput.cleaned(result.content)
             CodeBlock(
-              text: result.content.isEmpty ? "(no output)" : result.content,
-              isCopyable: !result.content.isEmpty
+              text: content.isEmpty ? "(no output)" : content,
+              isCopyable: !content.isEmpty
             )
             .foregroundStyle(result.isError ? .red : .primary)
           }
@@ -589,6 +591,12 @@ struct ToolCallView: View {
           }
           if offer.runInBackground { RunInBackgroundLine(toolUseID: call.id) }
           if let taskID = task?.taskID { StopFailureNote(taskID: taskID) }
+        }
+      }
+      // Opened, the card shows the whole result instead.
+      if !isExpanded, let preview = ToolResultPreview.of(call, task: task) {
+        ToolResultPreviewView(preview: preview, callID: call.id) {
+          withAnimation(.snappy) { isExpanded = true }
         }
       }
       if offer.output, let task, let taskID = task.taskID {

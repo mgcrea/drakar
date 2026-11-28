@@ -94,10 +94,8 @@ public struct TaskOutput: Sendable, Equatable {
   }
 
   /// `text` to show: a truncated tail starts on its first whole line, or past the
-  /// replacement characters a cut UTF-8 sequence left; terminal escapes (CSI) and the `\r`
-  /// of each `\r\n` removed.
+  /// replacement characters a cut UTF-8 sequence left; cleaned as `ToolOutput.cleaned` does.
   public var displayText: String {
-    // Scalars, not Characters: "\r\n" is one Character, and an escape's bytes are not.
     var scalars = Array(text.unicodeScalars)
     if isTruncated {
       if let newline = scalars.firstIndex(of: "\n"), newline < scalars.count - 1 {
@@ -106,28 +104,7 @@ public struct TaskOutput: Sendable, Equatable {
         scalars = Array(scalars.drop { $0 == "\u{FFFD}" })
       }
     }
-    var shown = String.UnicodeScalarView()
-    var index = 0
-    while index < scalars.count {
-      let scalar = scalars[index]
-      if scalar == "\u{1B}", index + 1 < scalars.count, scalars[index + 1] == "[" {
-        // ESC [, parameter and intermediate bytes (0x20-0x3F), a final byte in @...~. One
-        // without its final byte, as a tail cut mid-escape ends, is kept as it is.
-        var end = index + 2
-        while end < scalars.count, (0x20...0x3F).contains(scalars[end].value) { end += 1 }
-        if end < scalars.count, (0x40...0x7E).contains(scalars[end].value) {
-          index = end + 1
-          continue
-        }
-      }
-      if scalar == "\r", index + 1 < scalars.count, scalars[index + 1] == "\n" {
-        index += 1
-        continue
-      }
-      shown.append(scalar)
-      index += 1
-    }
-    return String(shown)
+    return ToolOutput.cleaned(scalars)
   }
 
   /// "Showing the end of 12 kB" when truncated, else nil.
