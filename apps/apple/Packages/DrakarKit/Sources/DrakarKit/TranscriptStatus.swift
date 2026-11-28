@@ -44,11 +44,39 @@ extension Transcript {
     /// What the toolbar's agents pill shows.
     public var agents = AgentMap.Summary()
 
+    /// The main thread's tasks running in the background, oldest first: a command or a
+    /// subagent whose report starts a turn of its own once it ends. A subagent's own stay
+    /// inside its card.
+    public var backgroundWork: [AgentMap.Task] = []
+
     public init() {}
 
     public var isWaitingOnPerson: Bool {
       !pendingPermissions.isEmpty || !pendingElicitations.isEmpty
     }
+
+    /// A turn running, or a task the session will carry on from when it ends: what keeps
+    /// the Mac awake, counts as working, and holds back what waits for the session to be done.
+    public var isWorking: Bool { isRunning || !backgroundWork.isEmpty }
+  }
+
+  /// The main thread's calls whose task runs in the background, in the transcript's order:
+  /// what the session waits on once its turn ends. Read from each task's own lines, which
+  /// name its call; the few tasks a session starts are scanned, each looked up by its call.
+  public var backgroundWork: [AgentMap.Task] {
+    agentTasks.compactMap { call, task -> (Int, AgentMap.Task)? in
+      guard task.isBackgrounded, task.status == .running, let taskID = task.taskID,
+        let index = indexByID[call], entries[index].parentToolUseID == nil
+      else { return nil }
+      return (
+        index,
+        AgentMap.Task(
+          taskID: taskID, callID: call, taskType: task.taskType,
+          description: task.description, startedAt: task.startedAt)
+      )
+    }
+    .sorted { $0.0 < $1.0 }
+    .map(\.1)
   }
 
   /// Cheap enough to take after every change: each part is stored or kept as entries
@@ -87,6 +115,7 @@ extension Transcript {
     status.lastTurn = lastTurn
     status.costUSD = costUSD
     status.agents = agentSummary
+    status.backgroundWork = backgroundWork
     return status
   }
 }

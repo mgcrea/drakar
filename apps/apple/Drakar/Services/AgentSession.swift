@@ -85,7 +85,11 @@ final class AgentSession {
   private func transcriptChanged() {
     let status = transcript.status
     let changed = status != self.status
-    if changed { self.status = status }
+    if changed {
+      let tasksEnded = !self.status.backgroundWork.isEmpty && status.backgroundWork.isEmpty
+      self.status = status
+      if tasksEnded, !status.isRunning, !isReplaying { backgroundTasksEnded() }
+    }
     if transcript.suggestedPrompt != suggestedPrompt {
       suggestedPrompt = transcript.suggestedPrompt
     }
@@ -103,6 +107,17 @@ final class AgentSession {
         guard !Task.isCancelled else { return }
         self?.display()
       }
+    }
+  }
+
+  /// The last background task ended with no turn running. The report a task's end sends
+  /// usually starts one at once; only once none has does the session read as done.
+  private func backgroundTasksEnded() {
+    settling?.cancel()
+    settling = Task { @MainActor [weak self, settleInterval] in
+      try? await Task.sleep(for: settleInterval)
+      guard !Task.isCancelled, let self, !self.status.isWorking else { return }
+      self.onBackgroundTasksEnded?()
     }
   }
 
@@ -219,6 +234,11 @@ final class AgentSession {
   @ObservationIgnored var onInitialized: ((JSONValue?) -> Void)?
   /// The commands and skills changed mid-session: the new list, as `initialize` lists them.
   @ObservationIgnored var onCommandsChanged: ((JSONValue) -> Void)?
+  /// The session's last background task ended and no turn followed it within
+  /// `settleInterval`: a turn its report starts is said by its own end instead.
+  @ObservationIgnored var onBackgroundTasksEnded: (() -> Void)?
+  @ObservationIgnored var settleInterval = Duration.seconds(3)
+  @ObservationIgnored private var settling: Task<Void, Never>?
   /// A turn ended with prompts queued, and nobody was told yet: the next lifecycle line says
   /// whether one starts a turn or the queue empties without one.
   @ObservationIgnored private var turnEndDeferred = false
@@ -648,8 +668,9 @@ final class AgentSession {
     return minor < 3
   }
 
-  /// Mid-turn, or waiting on the person: what a quit hands to the host rather than ends.
-  var isAtWork: Bool { status.isRunning || status.isWaitingOnPerson }
+  /// Mid-turn, with a task running in the background, or waiting on the person: what a quit
+  /// hands to the host rather than ends.
+  var isAtWork: Bool { status.isWorking || status.isWaitingOnPerson }
 
   /// The record a relaunched app rebuilds the session from, for its last process; nil before
   /// one was launched.
@@ -1261,11 +1282,12 @@ final class AgentSession {
   }
 
   /// The idle timer went off: compacts, unless Settings, the session or its cache says not
-  /// to. The CLI's own rules (`IdleCompaction`), and nothing waiting on the person.
+  /// to. The CLI's own rules (`IdleCompaction`), nothing waiting on the person, and no task
+  /// in the background, whose report starts a turn of its own.
   func compactIfIdle(at now: Date, floor: Int) {
     let cache = transcript.promptCache
     guard compactsIdle, agent == .claude, process != nil, phase == .ready,
-      canSend, compaction == nil, !status.isWaitingOnPerson,
+      canSend, compaction == nil, !status.isWaitingOnPerson, status.backgroundWork.isEmpty,
       transcript.queuedPrompts.isEmpty, let due = IdleCompaction.due(cache),
       let anchor = cache.anchor,
       IdleCompaction.refusal(

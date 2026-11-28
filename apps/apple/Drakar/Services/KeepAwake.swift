@@ -70,13 +70,15 @@ final class KeepAwake {
     hold(here)
   }
 
-  /// The sessions of every window at work, with their pauses: in a turn and asking nothing.
-  /// Those that follow another app's are not Drakar's to keep awake for.
+  /// The sessions of every window at work, with their pauses: in a turn and asking nothing,
+  /// or with a task running in the background, which asks no one. Those that follow another
+  /// app's are not Drakar's to keep awake for.
   static func working() -> [ObjectIdentifier: Int] {
     var working: [ObjectIdentifier: Int] = [:]
     for session in OpenSessions.shared.projects.values.flatMap(\.sessions).map(\.session)
-    where session.status.isRunning && !session.status.isWaitingOnPerson
-      && !session.isReadOnly
+    where
+      ((session.status.isRunning && !session.status.isWaitingOnPerson)
+      || !session.status.backgroundWork.isEmpty) && !session.isReadOnly
     {
       working[ObjectIdentifier(session)] = session.status.pauses
     }

@@ -229,7 +229,7 @@ public struct Transcript: Sendable, Equatable {
   /// session host lets the Mac sleep at each, so work that goes on after one is marked again.
   public private(set) var pauses = 0
 
-  private var indexByID: [String: Int] = [:]
+  private(set) var indexByID: [String: Int] = [:]
   private var promptCount = 0
   private var lastPromptID: String?
   /// Where the first prompt stands, kept as entries arrive: `status` reads it after every

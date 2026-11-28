@@ -9,6 +9,8 @@ nonisolated enum TabStatus: Equatable {
   case needsYou
   /// A turn running.
   case working
+  /// No turn running, but a task in the background, whose report starts the next.
+  case background
   /// Finished while another tab was shown.
   case unread
   case none
@@ -20,6 +22,7 @@ nonisolated enum TabStatus: Equatable {
     let counts = item.urgency.map { AttentionChoice.isOn($0, .counts) } ?? false
     if counts || status.isWaitingOnPerson { return .needsYou }
     if status.isRunning { return .working }
+    if !status.backgroundWork.isEmpty { return .background }
     return item.isUnread ? .unread : .none
   }
 }
@@ -391,6 +394,8 @@ struct SessionTab: View, Equatable {
       Image(systemName: "circle.dotted")
         .font(.system(size: 9, weight: .bold))
         .foregroundStyle(RowState.working.tint)
+    case .background:
+      Circle().strokeBorder(RowState.background.tint, lineWidth: 1.5).frame(width: 7, height: 7)
     case .unread:
       Circle().fill(.secondary).frame(width: 6, height: 6)
     case .none:
@@ -429,6 +434,7 @@ struct SessionTab: View, Equatable {
       switch status {
       case .needsYou: String(localized: "Needs you")
       case .working: String(localized: "Working")
+      case .background: String(localized: "Waiting on a background task")
       case .unread: String(localized: "Unread")
       case .none: nil
       }

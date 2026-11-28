@@ -81,6 +81,14 @@ struct TranscriptView: View {
         // then.
         if transcript.isRunning && !transcript.isWaitingOnPerson {
           WorkingIndicator(agent: agent, status: workingStatus)
+        } else if !transcript.isRunning {
+          let tasks = transcript.backgroundWork
+          if !tasks.isEmpty {
+            BackgroundTasksIndicator(tasks: tasks) { id in
+              isFollowing = false
+              position.scrollTo(id: id, anchor: .center)
+            }
+          }
         }
         // Below the turn they wait behind, until the CLI takes each into the conversation.
         // Send now on the first only: the queue goes whole and in order, so one further down

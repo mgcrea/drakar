@@ -23,7 +23,8 @@ struct IdleCompactionSessionTests {
       path: "drakar-idle-\(UUID().uuidString)", directoryHint: .isDirectory)
     try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
     script = folder.appending(path: "claude")
-    // A prompt reading `/ask` asks to run a tool, and its turn ends once that is answered.
+    // A prompt reading `/ask` asks to run a tool, and its turn ends once that is answered;
+    // one reading `/bg` ends its turn with a command left running in the background.
     let fake = """
       #!/bin/sh
       n=0
@@ -39,6 +40,10 @@ struct IdleCompactionSessionTests {
             [ $n -eq 1 ] && echo '{"type":"system","subtype":"init","cwd":"/tmp","session_id":"s-idle","model":"m","permissionMode":"default"}'
             case "$line" in
               *'/ask'*) echo '{"type":"control_request","request_id":"r1","request":{"subtype":"can_use_tool","tool_name":"Bash","input":{"command":"ls"},"tool_use_id":"toolu_1"}}' ;;
+              *'/bg'*)
+                echo '{"type":"assistant","message":{"id":"mbg","type":"message","role":"assistant","model":"m","content":[{"type":"tool_use","id":"bg1","name":"Bash","input":{"command":"sleep 600","run_in_background":true}}]},"parent_tool_use_id":null,"session_id":"s-idle"}'
+                echo '{"type":"system","subtype":"task_started","task_id":"b1","tool_use_id":"bg1","description":"sleep 600","is_backgrounded":true,"task_type":"local_bash","session_id":"s-idle"}'
+                finish ;;
               *) finish ;;
             esac
             ;;
@@ -76,15 +81,15 @@ struct IdleCompactionSessionTests {
   }
 
   /// One turn ended, its usage and the CLI's context reply in.
-  private func idleSession(first: String? = nil, compacts: Bool = true) async throws
-    -> AgentSession
+  private func idleSession(first: String? = nil, compacts: Bool = true, prompt: String = "hi")
+    async throws -> AgentSession
   {
     let defaults = try #require(UserDefaults(suiteName: suite))
     defaults.set(compacts, forKey: PreferenceKey.compactsIdle)
     defaults.set(first ?? "", forKey: PreferenceKey.compactionFirst)
     let session = AgentSession(folder: folder)
     session.executableOverride = script
-    session.send("hi")
+    session.send(prompt)
     try await waitFor { !session.status.isRunning && session.reportedContext != nil }
     #expect(session.reportedContext?.autoCompactThreshold == 967_000)
     return session
@@ -114,6 +119,17 @@ struct IdleCompactionSessionTests {
           false
         }
       })
+  }
+
+  /// A task left running in the background will start a turn with its report: the session
+  /// is not idle, and neither the command first nor the compaction is sent.
+  @Test func notWhileATaskRunsInTheBackground() async throws {
+    let session = try await idleSession(first: "/distill", prompt: "/bg")
+    defer { session.stop() }
+    #expect(session.status.backgroundWork.map(\.callID) == ["bg1"])
+    await fire(session, at: try due(session))
+    try await Task.sleep(for: .milliseconds(300))
+    #expect(prompts() == ["/bg"])
   }
 
   @Test func runsTheCommandFirstThenCompacts() async throws {

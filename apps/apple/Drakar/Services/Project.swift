@@ -102,6 +102,9 @@ final class ProjectSession: Identifiable {
   var armedAutoClose = false
   /// Closes this tab once its running turn ends cleanly.
   var closesAfterTurn = false
+  /// Its last turn ended with tasks still running in the background: the session is done
+  /// only once they are.
+  var turnEndAwaitsTasks = false
   /// The images and files going with the next prompt, kept as the draft is.
   var attachments: [Attachment] = []
   /// Why the last things offered were not all attached, until the next are.
@@ -859,6 +862,11 @@ final class Project {
     }
     if item.session.status.isRunning {
       return String(localized: "Finish or stop the current turn before moving to another provider.")
+    }
+    if !item.session.status.backgroundWork.isEmpty {
+      return String(
+        localized:
+          "Wait for the background task to finish, or stop it, before moving to another provider.")
     }
     if !isUnstarted(item), !EntitlementMonitor.allowsWorkNow {
       return String(
@@ -2670,8 +2678,8 @@ final class Project {
       + groups.elsewhere.count { urgency(of: $0).map(counts) ?? false }
   }
 
-  /// Sessions mid-turn.
-  var runningCount: Int { sessions.count { $0.session.status.isRunning } }
+  /// Sessions mid-turn, or with a task running in the background.
+  var runningCount: Int { sessions.count { $0.session.status.isWorking } }
 
   /// Sessions mid-turn that closing the window would interrupt: the session host keeps the
   /// others working.
@@ -2737,6 +2745,28 @@ final class Project {
     return true
   }
 
+  /// A turn ended. One that left tasks running in the background did not leave the session
+  /// done: each task's report starts a turn of its own, so its batch slot, its auto-close and
+  /// "Finished" wait for the turn after the last, or, should none come, for the tasks to end.
+  /// What it asked is said at once.
+  private func turnEnded(_ item: ProjectSession) {
+    // A moved session has its id by the end of its first turn.
+    linkEarlier(item)
+    if !item.session.status.backgroundWork.isEmpty {
+      item.turnEndAwaitsTasks = true
+      guard item.urgency != nil else { return Attention.shared.refresh() }
+      if item.id != selectedID { item.isUnread = true }
+      Attention.shared.turnEnded(item, in: self)
+      return
+    }
+    item.turnEndAwaitsTasks = false
+    fanOutFinished(item)
+    if autoCloseIfNeeded(item) { return }
+    if item.id != selectedID { item.isUnread = true }
+    readRolloutDate(item)
+    Attention.shared.turnEnded(item, in: self)
+  }
+
   private func make(_ session: AgentSession) -> ProjectSession {
     if let executableOverride { session.executableOverride = executableOverride }
     session.windowFolder = folder
@@ -2747,13 +2777,11 @@ final class Project {
     let item = ProjectSession(session: session)
     session.onTurnEnded = { [weak self, weak item] in
       guard let self, let item else { return }
-      self.fanOutFinished(item)
-      // A moved session has its id by the end of its first turn.
-      self.linkEarlier(item)
-      if self.autoCloseIfNeeded(item) { return }
-      if item.id != self.selectedID { item.isUnread = true }
-      self.readRolloutDate(item)
-      Attention.shared.turnEnded(item, in: self)
+      self.turnEnded(item)
+    }
+    session.onBackgroundTasksEnded = { [weak self, weak item] in
+      guard let self, let item, item.turnEndAwaitsTasks else { return }
+      self.turnEnded(item)
     }
     // A start that failed reports no stop: its slot in a batch is freed all the same.
     session.onFailed = { [weak self, weak item] in
@@ -2782,6 +2810,8 @@ final class Project {
       Attention.shared.refresh()
       guard let self, let item else { return }
       item.closesAfterTurn = false
+      // Its background tasks went with it: their end is not a turn's.
+      item.turnEndAwaitsTasks = false
       self.fanOutFinished(item)
       guard item.id != self.selectedID, item.hasStopped else { return }
       item.isUnread = true

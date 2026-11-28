@@ -555,6 +555,9 @@ private struct SidebarProviderIcon: View {
 enum RowState {
   case working, runningTool, waiting, choosing, asked, offered, idle, notStarted, stopped, ended,
     elsewhere
+  /// No turn running, but a task the session started runs in the background: its report
+  /// starts the next turn on its own.
+  case background
 
   /// What a session that wants the person shows.
   init(_ urgency: Urgency) {
@@ -574,6 +577,8 @@ enum RowState {
       self.init(urgency)
     } else if session.status.isRunning {
       self = .working
+    } else if !session.status.backgroundWork.isEmpty {
+      self = .background
     } else if item.hasStopped {
       self = .stopped
     } else if session.isReadOnly {
@@ -614,7 +619,7 @@ enum RowState {
     case .offered: 3
     case .idle: 4
     case .stopped: 5
-    case .working, .runningTool: 6
+    case .working, .runningTool, .background: 6
     case .notStarted, .ended, .elsewhere: 7
     }
   }
@@ -623,6 +628,7 @@ enum RowState {
     switch self {
     case .working: String(localized: "Working")
     case .runningTool: String(localized: "Probably running a tool")
+    case .background: String(localized: "Waiting on a background task")
     case .waiting: String(localized: "Waiting for you")
     case .choosing: String(localized: "Asks you to choose")
     case .asked: String(localized: "Asked you")
@@ -637,7 +643,7 @@ enum RowState {
 
   var tint: Color {
     switch self {
-    case .working: .green
+    case .working, .background: .green
     case .runningTool: .orange
     case .waiting, .choosing, .asked: .blue
     case .stopped: .red
@@ -646,14 +652,15 @@ enum RowState {
   }
 }
 
-/// A row's state as a dot: filled, or a ring for what a finished turn asked, so that a
-/// blocked tool and a question read apart at a glance. Same size either way.
+/// A row's state as a dot: filled, or a ring for what a finished turn asked or a task in the
+/// background, so that a blocked tool and a question, a turn and its wait, read apart at a
+/// glance. Same size either way.
 struct StateDot: View {
   let state: RowState
 
   var body: some View {
     Group {
-      if state == .asked || state == .offered {
+      if state == .asked || state == .offered || state == .background {
         Circle().strokeBorder(state.tint, lineWidth: 1.5)
       } else {
         Circle().fill(state.tint)

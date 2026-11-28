@@ -136,6 +136,62 @@ struct AgentTaskTests {
     #expect(transcript.agentTasks["bg"]?.status == .failed)
   }
 
+  /// A command sent to the background outlives the turn that started it: the status lists it,
+  /// from when it started, until its notification ends it (as session 493d9ee2's test run).
+  @Test func aBackgroundCommandOutlivesItsTurn() throws {
+    var transcript = ClaudeFeed()
+    transcript.addPrompt("Run the gate")
+    let started = Date(timeIntervalSince1970: 1_000)
+    let lines = [
+      #"{"type":"assistant","message":{"id":"m1","role":"assistant","content":[{"type":"tool_use","id":"gate","name":"Bash","input":{"command":"make test-all","description":"Run every suite","run_in_background":true}}]},"parent_tool_use_id":null,"session_id":"s"}"#,
+      #"{"type":"system","subtype":"task_started","task_id":"b8fk67x74","tool_use_id":"gate","description":"Run every suite","is_backgrounded":true,"task_type":"local_bash","session_id":"s"}"#,
+      #"{"type":"user","message":{"role":"user","content":[{"tool_use_id":"gate","type":"tool_result","content":"Command running in background with ID: b8fk67x74."}]},"parent_tool_use_id":null,"session_id":"s"}"#,
+      #"{"type":"result","subtype":"success","is_error":false,"result":"I'll pick up when it finishes.","session_id":"s"}"#,
+    ]
+    for line in lines { transcript.apply(try StreamMessage(line: Data(line.utf8)), at: started) }
+    let status = transcript.status
+    #expect(!status.isRunning)
+    #expect(status.isWorking)
+    #expect(
+      status.backgroundWork == [
+        AgentMap.Task(
+          taskID: "b8fk67x74", callID: "gate", taskType: "local_bash",
+          description: "Run every suite", startedAt: started)
+      ])
+    transcript.apply(
+      try StreamMessage(
+        line: Data(
+          #"{"type":"system","subtype":"task_notification","task_id":"b8fk67x74","tool_use_id":"gate","status":"completed","output_file":"/p/b8fk67x74.output","summary":"done","session_id":"s"}"#
+            .utf8)))
+    #expect(transcript.status.backgroundWork.isEmpty)
+    #expect(!transcript.status.isWorking)
+  }
+
+  /// Only the main thread's background tasks are listed: a subagent's own stays in its card,
+  /// and a task in the foreground is its turn's.
+  @Test func onlyTheMainThreadsBackgroundTasksAreListed() throws {
+    #expect(try taskControls(upTo: 4).status.backgroundWork.isEmpty)
+    let moved = try taskControls(upTo: 5).status.backgroundWork
+    #expect(moved.map(\.callID) == ["toolu_01Hriqem1KWjxUocjn2j6NJC"])
+    var transcript = ClaudeFeed()
+    transcript.addPrompt("Run it")
+    let lines = [
+      #"{"type":"assistant","message":{"id":"m1","role":"assistant","content":[{"type":"tool_use","id":"agent","name":"Agent","input":{"description":"Look","prompt":"Look"}}]},"parent_tool_use_id":null,"session_id":"s"}"#,
+      #"{"type":"assistant","message":{"id":"m2","role":"assistant","content":[{"type":"tool_use","id":"inner","name":"Bash","input":{"command":"sleep 90","run_in_background":true}}]},"parent_tool_use_id":"agent","session_id":"s"}"#,
+      #"{"type":"system","subtype":"task_started","task_id":"b1","tool_use_id":"inner","description":"sleep 90","is_backgrounded":true,"task_type":"local_bash","owned_by_subagent":true,"session_id":"s"}"#,
+    ]
+    for line in lines { transcript.apply(try StreamMessage(line: Data(line.utf8))) }
+    #expect(transcript.agentTasks["inner"]?.isBackgrounded == true)
+    #expect(transcript.status.backgroundWork.isEmpty)
+  }
+
+  /// The process ending ends its background tasks with it: none is left listed.
+  @Test func anEndedProcessListsNoBackgroundTask() throws {
+    var transcript = try taskControls(upTo: 5)
+    transcript.processExited()
+    #expect(transcript.status.backgroundWork.isEmpty)
+  }
+
   /// `task-controls`, folded up to its `count`th line, the prompt sent first.
   private func taskControls(upTo count: Int? = nil) throws -> ClaudeFeed {
     var transcript = ClaudeFeed()

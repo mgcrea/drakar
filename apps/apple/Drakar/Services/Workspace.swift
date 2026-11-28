@@ -514,10 +514,10 @@ enum RunningSessions {
     }
   }
 
-  /// Of `sessions`, those mid-turn that closing their window or quitting stops: the session
-  /// host keeps the others working.
+  /// Of `sessions`, those mid-turn or with a background task that closing their window or
+  /// quitting stops: the session host keeps the others working.
   static func stoppedByLeaving(_ sessions: [AgentSession]) -> Int {
-    sessions.count { $0.status.isRunning && !$0.isHosted }
+    sessions.count { $0.status.isWorking && !$0.isHosted }
   }
 
   static func alert(count: Int, action: Action = .close) -> NSAlert {

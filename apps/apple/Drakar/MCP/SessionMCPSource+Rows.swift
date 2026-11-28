@@ -57,7 +57,7 @@ extension SessionMCPSource {
     if session.isReconnecting { return .reconnecting }
     if session.isOutOfReach || session.isGoneOnRunner { return .unreachable }
     if session.status.isWaitingOnPerson { return .waiting }
-    if session.status.isRunning { return .working }
+    if session.status.isWorking { return .working }
     return .idle
   }
 

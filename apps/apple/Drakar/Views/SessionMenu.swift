@@ -111,7 +111,7 @@ struct SessionMenu: View {
   /// As for one tab, once for the marked tabs still working. A runner's is let go, not
   /// stopped, by any stop but End Session's, so it does not count.
   static func confirmIfRunning(_ items: [ProjectSession], then action: @escaping () -> Void) {
-    let working = items.filter { $0.session.status.isRunning && !$0.session.isOnRunner }
+    let working = items.filter { $0.session.status.isWorking && !$0.session.isOnRunner }
       .count
     guard working > 0 else { return action() }
     let alert = NSAlert()
@@ -127,7 +127,7 @@ struct SessionMenu: View {
 
   /// Mid-turn, stopping loses the turn: ask first. A runner's is let go instead, as above.
   static func confirmIfRunning(_ item: ProjectSession, then action: @escaping () -> Void) {
-    guard item.session.status.isRunning, !item.session.isOnRunner else { return action() }
+    guard item.session.status.isWorking, !item.session.isOnRunner else { return action() }
     if stopsTurnAlert(for: item).runModal() == .alertFirstButtonReturn { action() }
   }
 
@@ -135,7 +135,10 @@ struct SessionMenu: View {
   static func stopsTurnAlert(for item: ProjectSession) -> NSAlert {
     let alert = NSAlert()
     alert.messageText = String(localized: "“\(item.displayTitle)” is still working.")
-    alert.informativeText = String(localized: "Stopping it now ends the turn part-way.")
+    alert.informativeText =
+      item.session.status.isRunning
+      ? String(localized: "Stopping it now ends the turn part-way.")
+      : String(localized: "Stopping it now stops what it runs in the background.")
     alert.addButton(withTitle: String(localized: "Stop"))
     alert.addButton(withTitle: String(localized: "Cancel"))
     return alert
