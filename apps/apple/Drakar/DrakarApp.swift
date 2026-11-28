@@ -240,8 +240,9 @@ private struct SessionCommands: View {
 }
 
 /// Session > Select Tab 1 to 8 (⌘1 to ⌘8), Select Last Tab (⌘9), and Show Next and Previous
-/// Tab, wrapping as Next and Previous Session do: ⌃Tab and ⌃⇧Tab, as in Safari, and ⇧⌘] and
-/// ⇧⌘[, as in Xcode. A menu item has one shortcut, so each has two items. Apart so that only
+/// Tab, wrapping as Next and Previous Session do: ⌃Tab and ⌃⇧Tab, as in Safari, ⇧⌘] and ⇧⌘[,
+/// as in Xcode, and ⌥⌘→ and ⌥⌘←, as in Chrome, along the strip as ⌥⌘↓ and ⌥⌘↑ go down the
+/// sidebar. A menu item has one shortcut, so each has three items. Apart so that only
 /// they redraw as the tabs come and go.
 private struct TabCommands: View {
   let project: Project?
@@ -271,6 +272,12 @@ private struct TabCommands: View {
       .disabled(count == 0)
     Button("Show Previous Tab") { project?.step(-1, wrapping: true) }
       .keyboardShortcut("[", modifiers: [.command, .shift])
+      .disabled(count == 0)
+    Button("Show Next Tab") { project?.step(1, wrapping: true) }
+      .keyboardShortcut(.rightArrow, modifiers: [.command, .option])
+      .disabled(count == 0)
+    Button("Show Previous Tab") { project?.step(-1, wrapping: true) }
+      .keyboardShortcut(.leftArrow, modifiers: [.command, .option])
       .disabled(count == 0)
     Divider()
   }
