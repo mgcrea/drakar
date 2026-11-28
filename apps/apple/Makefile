@@ -72,19 +72,24 @@ $(SPARKLE_STAMP):
 
 # ── Build ─────────────────────────────────────────────────────────────────────
 
-build: sparkle ## Build the app in Debug
-	xcodebuild build $(XCODE_PLUGIN_FLAGS) -project $(PROJECT) -scheme $(SCHEME) \
-		-configuration Debug -destination '$(DESTINATION)' -derivedDataPath $(DERIVED_DATA)
-
 # XCARGS reaches xcodebuild as extra build settings. The root's `bundle` switches signing off
 # through it (the root's `sign` signs, in one identity and one order), and CI's release job
 # sets MARKETING_VERSION and CURRENT_PROJECT_VERSION through it, as armada's does.
 XCARGS ?=
 
+# Use the whole repository's commit count, like Bastion, Cupertino and release CI.
+APP_BUILD := $(shell git rev-list --count HEAD 2>/dev/null)
+VERSION_ARGS := $(if $(filter CURRENT_PROJECT_VERSION=%,$(XCARGS)),,$(if $(APP_BUILD),CURRENT_PROJECT_VERSION=$(APP_BUILD)))
+
+build: sparkle ## Build the app in Debug
+	xcodebuild build $(XCODE_PLUGIN_FLAGS) -project $(PROJECT) -scheme $(SCHEME) \
+		-configuration Debug -destination '$(DESTINATION)' -derivedDataPath $(DERIVED_DATA) \
+		$(VERSION_ARGS) $(XCARGS)
+
 build-release: sparkle ## Build the app in Release (the root's build-release is the signed, shippable one)
 	xcodebuild build $(XCODE_PLUGIN_FLAGS) -project $(PROJECT) -scheme $(SCHEME) \
 		-configuration Release -destination '$(DESTINATION)' -derivedDataPath $(DERIVED_DATA) \
-		$(XCARGS)
+		$(VERSION_ARGS) $(XCARGS)
 
 # ── Tests ─────────────────────────────────────────────────────────────────────
 #
@@ -116,7 +121,7 @@ hosted-windows-check: ## Fail on a hosted test that would draw on screen
 # silently stops running is worse than one that fails.
 test-app: sparkle hosted-windows-check ## Run the app target's tests
 	xcodebuild test $(XCODE_PLUGIN_FLAGS) -project $(PROJECT) -scheme $(SCHEME) -destination 'platform=macOS' \
-		-derivedDataPath $(DERIVED_DATA)
+		-derivedDataPath $(DERIVED_DATA) $(VERSION_ARGS) $(XCARGS)
 
 test-all: test test-app ## Every suite
 
@@ -134,6 +139,7 @@ bench: sparkle ## Main-thread cost of a session streaming on screen (prints BENC
 	TEST_RUNNER_DRAKAR_BENCH=1 xcodebuild test $(XCODE_PLUGIN_FLAGS) -project $(PROJECT) -scheme $(SCHEME) \
 		-configuration Release ENABLE_TESTABILITY=YES -destination '$(DESTINATION)' \
 		-derivedDataPath $(DERIVED_DATA)/bench -only-testing:DrakarTests/SessionStreamingBench \
+		$(VERSION_ARGS) $(XCARGS) \
 		| grep -E 'BENCH|error:|failed|TEST (SUCCEEDED|FAILED)'
 
 # ── Build and relaunch ────────────────────────────────────────────────────────

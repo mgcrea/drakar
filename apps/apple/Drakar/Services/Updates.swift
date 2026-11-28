@@ -61,11 +61,10 @@ final class UpdateController: NSObject {
 
   /// Whether this is a development build, which never builds an updater and never asks.
   ///
-  /// DIVERGES from armada. Debug and Release share the bundle id, `SUFeedURL` and
-  /// `SUPublicEDKey`, and a Debug build's `CURRENT_PROJECT_VERSION` is 1 where a release's
-  /// is the commit count, so an updater in the owner's own `make run` copy would offer to
-  /// replace it with the release. A parameter rather than an `#if` at each use, so the tests,
-  /// which run in the Debug host, can still build a controller that behaves as a release.
+  /// Debug and Release share the bundle id, feed URL and signing key for updates.
+  /// Disabling the updater in Debug keeps Sparkle from replacing a local build when
+  /// a newer release is available. The parameter lets tests exercise release behavior
+  /// in the Debug host.
   let isDevelopmentBuild: Bool
 
   /// What a build that is not passed one is: a Debug build is a development build.
