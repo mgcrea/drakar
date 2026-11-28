@@ -268,21 +268,6 @@ struct ClaudeVersionTests {
     #expect(ClaudeVersion("2..1") == nil)
   }
 
-  @Test func comparesNumbersNotText() throws {
-    let v = { (text: String) in ClaudeVersion(text)! }
-    #expect(v("2.1.288") < v("2.1.1000"))
-    #expect(v("2.1.288") < v("2.2"))
-    #expect(v("2.1") == v("2.1.0"))
-  }
-
-  @Test func saysWhichSideOfTheTestedRange() throws {
-    #expect(ClaudeVersion("2.1.222")?.drift == .older)
-    #expect(ClaudeVersion("2.1.284")?.drift == nil)
-    #expect(ClaudeVersion("2.1.312")?.drift == nil)
-    #expect(ClaudeVersion("2.1.313")?.drift == .newer)
-    #expect(ClaudeVersion("3.0.0")?.drift == .newer)
-  }
-
   @Test func asksTheBinary() async throws {
     let folder = FileManager.default.temporaryDirectory.appending(
       path: "drakar-version-\(UUID().uuidString)", directoryHint: .isDirectory)

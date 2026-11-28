@@ -139,10 +139,6 @@ private struct ClaudeSection: View {
         }
       }
       .accessibilityIdentifier("settings.claudePath")
-      if let version = running?.version, let drift = version.drift {
-        Label(warning(version, drift), systemImage: "exclamationmark.triangle.fill")
-          .foregroundStyle(.orange)
-      }
       Picker("Account for new sessions", selection: $accountPath) {
         Text("As the shell sets it: \(shellAccount)").tag("")
         ForEach(accounts, id: \.self) { account in
@@ -228,30 +224,9 @@ private struct ClaudeSection: View {
       }
   }
 
-  /// The install sessions will run: the one picked while it is there, else the first.
-  private var running: Install? {
-    installs.first { $0.path == claudePath } ?? (claudePath.isEmpty ? installs.first : nil)
-  }
-
   private func label(_ install: Install) -> String {
     let path = abbreviated(install.path)
     return install.version.map { "\(path), \($0)" } ?? path
-  }
-
-  private func warning(_ version: ClaudeVersion, _ drift: ClaudeVersion.Drift) -> String {
-    let tested = ClaudeVersion.tested
-    return switch drift {
-    case .older:
-      String(
-        localized:
-          "\(version.description) is older than the versions Drakar was tested with (\(tested.lowerBound.description) to \(tested.upperBound.description)): it may not understand everything Drakar sends."
-      )
-    case .newer:
-      String(
-        localized:
-          "\(version.description) is newer than the versions Drakar was tested with (\(tested.lowerBound.description) to \(tested.upperBound.description)): some of what it says may not show."
-      )
-    }
   }
 
   private func abbreviated(_ path: String) -> String {

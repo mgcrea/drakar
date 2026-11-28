@@ -573,8 +573,6 @@ private struct ReadOnlyBanner: View {
   }
 }
 
-/// The CLI's version, in orange outside the range Drakar was tested with: the stream
-/// protocol is undocumented, and a newer CLI can change it under the app.
 /// A session another process runs, as its footer says it: from that process's own record in
 /// the account's `sessions` folder.
 enum ElsewhereStatus: Equatable {
@@ -601,50 +599,6 @@ enum ElsewhereStatus: Equatable {
     case .ready: String(localized: "Ready in \(host)")
     case .waiting: String(localized: "Waiting in \(host)")
     case .open: String(localized: "Open in \(host)")
-    }
-  }
-}
-
-private struct VersionLabel: View {
-  let version: String
-  let executable: URL?
-  let agent: AgentKind
-  /// The runner it runs on, by name: its `claude` is the runner's, which no Settings pick of
-  /// this Mac's chooses.
-  var runner: String? = nil
-
-  var body: some View {
-    let path = executable.map { ContentView.abbreviated($0) } ?? ""
-    switch agent {
-    case .codex: Text("Codex \(version)").help(path)
-    case .grok: Text("Grok \(version)").help(path)
-    case .agy: Text("Antigravity \(version)").help(path)
-    case .claude: claudeBody(path: path)
-    }
-  }
-
-  /// Claude Code's version against the range Drakar was tested with.
-  @ViewBuilder private func claudeBody(path: String) -> some View {
-    let tested = ClaudeVersion.tested
-    let range = "\(tested.lowerBound.description) to \(tested.upperBound.description)"
-    let other =
-      runner.map { String(localized: "Install another on \($0).") }
-      ?? String(localized: "Pick another in Settings.")
-    switch ClaudeVersion(version)?.drift {
-    case nil:
-      Text("Claude Code \(version)").help(path)
-    case .older?:
-      Label("Claude Code \(version)", systemImage: "exclamationmark.triangle.fill")
-        .foregroundStyle(.orange)
-        .help(
-          "Older than the versions Drakar was tested with (\(range)): it may not understand everything Drakar sends. \(other) \(path)"
-        )
-    case .newer?:
-      Label("Claude Code \(version)", systemImage: "exclamationmark.triangle.fill")
-        .foregroundStyle(.orange)
-        .help(
-          "Newer than the versions Drakar was tested with (\(range)): some of what it says may not show. \(path)"
-        )
     }
   }
 }
@@ -703,11 +657,9 @@ private struct SessionFooter: View {
         account
       }
       if let version = session.status.session?.agentVersion {
-        VersionLabel(
-          version: version, executable: session.executable, agent: session.agent,
-          runner: session.runnerName)
+        Text("\(session.agent.name) \(version)")
+          .help(session.executable.map { ContentView.abbreviated($0) } ?? "")
       } else if let version = session.status.writerVersion {
-        // Not Drakar's process: how its version compares to Drakar's is not this session's.
         Text("\(session.agent.name) \(version)").help("The version that last wrote this session")
       }
       if let cost = session.status.lastTurn?.costUSD {

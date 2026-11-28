@@ -878,7 +878,7 @@ The captures this was written from are trimmed into
 `apps/apple/Packages/DrakarKit/Tests/DrakarKitTests/Fixtures/`. Signatures, the init
 payload's tool and server lists, and local paths were cut; the shapes were not.
 
-Checking a new release before raising `ClaudeVersion.tested` (done for 2.1.296 on
+Checking a new release (done for 2.1.296 on
 2026-10-12, 2.1.308 on 2026-10-22 and 2.1.312 on 2026-10-28): the installer keeps earlier versions in `~/.local/share/claude/versions/`, so
 `strings` the old and new binaries and diff their `subtype:"…"` and `type:"…"` literals for
 what is new. Then run the same scripted scenarios on both with `ClaudeCommand`'s arguments

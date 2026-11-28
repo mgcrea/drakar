@@ -271,10 +271,8 @@ armada's did.
    not the default. Still open: picking per session rather than app-wide, which belongs to
    the project window's new-session control.
 3. **Protocol drift.** Each fixture's version is in its own lines (2.1.284 for the
-   stream captures, 2.1.288 for history and the IDE bridge), and `ClaudeVersion.tested`
-   holds that range: the footer's version turns orange outside it, and Settings says why
-   beside the install it would run. Still open: the habit of re-capturing on every minor,
-   and raising the range only after.
+   stream captures, 2.1.288 for history and the IDE bridge). The footer names the CLI's
+   version, with no range check. Still open: the habit of re-capturing on every minor.
 4. **The Sparkle key.** _Decided 2026-10-28: Drakar's own._ The trio share one EdDSA key,
    and one leak updates all three. A new app has no installed base, so its own key costs
    nothing today and a rotation later. Every `generate_keys` and `sign_update` call in the

@@ -39,8 +39,8 @@ lost against the extension (thinking, tools, subagents, permissions, plan mode, 
    --accept)". Don't: accepting there marks the extension's current version as reviewed. Run it
    from the main checkout, or link that folder into the worktree for the run.
 
-Protocol changes are the other half and have their own procedure (raising
-`ClaudeVersion.tested`, end of `docs/claude-stream-json.md`); do both in one pass.
+Protocol changes are the other half and have their own procedure (end of
+`docs/claude-stream-json.md`); do both in one pass.
 
 ## Conversation
 
