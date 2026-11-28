@@ -203,6 +203,9 @@ public struct Transcript: Sendable, Equatable {
   /// Prompts sent while a turn ran, oldest first, until the CLI takes each into a turn
   /// (`command_lifecycle` `started`), where it joins the conversation, or drops it.
   public private(set) var queuedPrompts: [QueuedPrompt] = []
+  /// The agent's guess at the next prompt (`AgentEvent.promptSuggested`), until a prompt or
+  /// a turn starts.
+  public private(set) var suggestedPrompt: String?
   /// The newest list the main thread's `TodoWrite` wrote.
   public private(set) var todos: [Todo]?
   /// Subagents, by the `Agent` call that started each.
@@ -280,6 +283,7 @@ public struct Transcript: Sendable, Equatable {
     lastPromptID = id
     isRunning = running
     turnEnd = nil
+    suggestedPrompt = nil
     earlierClosingTexts.removeAll()
   }
 
@@ -429,6 +433,7 @@ public struct Transcript: Sendable, Equatable {
     case .turnStarted:
       isRunning = true
       turnEnd = nil
+      suggestedPrompt = nil
     case .turnEnded(let summary):
       pauses += 1
       lastTurn = summary
@@ -523,6 +528,10 @@ public struct Transcript: Sendable, Equatable {
       historyPermissionMode = mode
     case .historyMeta(.effort(let effort)):
       historyEffort = effort
+    case .promptSuggested(let text):
+      let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+      // A guess that comes in after the next turn began is about the one before.
+      suggestedPrompt = text.isEmpty || isRunning ? nil : text
     }
   }
 

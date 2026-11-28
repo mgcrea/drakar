@@ -52,6 +52,7 @@ Protocol changes are the other half and have their own procedure (end of
 | `persist_session_permission_mode` | has | Remember a session's permission mode | `apps/apple/Drakar/Services/SessionMeta.swift:11` | |
 | `set_thinking_level` | partial | Turn extended thinking on or off (Drakar: an effort level picker) | `apps/apple/Drakar/Views/SessionPills.swift:98` | differ: the effort picker |
 | `get_context_usage` | has | Context window usage breakdown (/context) | `apps/apple/Drakar/Services/ClaudeBackend.swift:153` | |
+| `prompt_draft_activity` | no | Tells the CLI the person is typing in the idle composer, so a guessed next prompt can wait (2.1.332; 2.1.325 does not know it) | | adopt later: with prompt suggestions, once the CLI that takes it is the usual one |
 | `side_question` | no | Ask a side question without derailing the session | | adopt: one CLI request each |
 | `run_in_background` | has | Move a running tool call to the background (Drakar: a line on the call's card) | `apps/apple/Drakar/Views/TaskControlViews.swift:114` | adopt: `background_tasks` |
 | `stop_subagent` | has | Stop a running subagent or background task (Drakar: on the task's card, not an agent map) | `apps/apple/Drakar/Views/TaskControlViews.swift:80` | adopt: subagents promise |
@@ -295,6 +296,7 @@ the SDK sends outside this path.
 | `mcp_status` | sends | `get_mcp_servers`, `authenticate_mcp_server`, `clear_mcp_server_auth` | | |
 | `mcp_toggle` | no | `set_mcp_server_enabled` | | |
 | `message_rated` | no | `message_rated` | | |
+| `prompt_draft_activity` | no | `prompt_draft_activity` | New in 2.1.332, see the Conversation row | |
 | `read_file` | no | unused | | |
 | `reload_output_styles` | no | `create_output_style` | | |
 | `reload_plugins` | no | `reload_plugins` | | |
@@ -310,7 +312,7 @@ the SDK sends outside this path.
 | `set_mcp_permission_mode_override` | no | `ensure_chrome_mcp_enabled` | | |
 | `set_model` | sends | `set_model` | | |
 | `set_permission_mode` | sends | `set_permission_mode` | | |
-| `set_prompt_suggestions_paused` | no | unused | | |
+| `set_prompt_suggestions_paused` | sends | host `syncPromptSuggestionPauses` | Suggestions are asked for in `initialize` (`promptSuggestions`) and shown in the empty composer, Tab to take one (`apps/apple/Drakar/Views/ComposerView.swift`); paused while the session's tab or window is out of sight (`AgentSession.setComposerOnScreen`). 2.1.332 acknowledges the pause but keeps guessing | adopt: the extension's next-prompt suggestions |
 | `side_question` | no | `side_question` | | |
 | `stop_task` | sends | `stop_subagent` | Takes a `task_id` | |
 | `submit_feedback` | no | `submit_feedback` | | |

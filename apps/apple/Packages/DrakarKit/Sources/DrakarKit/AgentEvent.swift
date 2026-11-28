@@ -42,6 +42,9 @@ public enum AgentEvent: Sendable, Equatable {
   case queue(id: String, QueueChange)
   case title(Title)
   case historyMeta(HistoryMeta)
+  /// What the person may want to send next, guessed by the agent once a turn ended: offered
+  /// in the empty composer until a prompt or a turn starts.
+  case promptSuggested(String)
 
   public struct Item: Sendable, Equatable {
     public var id: String

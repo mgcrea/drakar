@@ -24,6 +24,9 @@ public enum StreamMessage: Sendable, Equatable {
   /// Where a prompt sent with a `uuid` has got to: `queued`, `started` once the CLI takes
   /// it into a turn, `completed`, or `cancelled`, `discarded`, `refused`.
   case commandLifecycle(commandUUID: String, state: String)
+  /// The CLI's guess at the person's next prompt, after a turn ended, under `initialize`'s
+  /// `promptSuggestions` (docs/claude-stream-json.md, "Prompt suggestions").
+  case promptSuggestion(String)
   case unknown(type: String, raw: JSONValue)
 
   public init(line: Data) throws {
@@ -51,6 +54,7 @@ public enum StreamMessage: Sendable, Equatable {
         json["command_uuid"]?.stringValue.flatMap { id in
           json["state"]?.stringValue.map { .commandLifecycle(commandUUID: id, state: $0) }
         }
+      case "prompt_suggestion": json["suggestion"]?.stringValue.map(StreamMessage.promptSuggestion)
       default: nil
       }
     self = decoded ?? .unknown(type: type, raw: json)

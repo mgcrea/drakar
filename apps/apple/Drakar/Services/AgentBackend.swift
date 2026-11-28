@@ -85,6 +85,10 @@ enum AgentCommand: Codable, Equatable {
   /// for the Skills & MCP tab: sent without a note, as the reads above.
   case readServers
   case reconnectServer(name: String)
+  /// Stop or start again the agent's guesses at the next prompt, as the composer leaves or
+  /// comes back on screen (`AgentFeatures.suggestsPrompts`). Sent without a note: a replay
+  /// tells the process afresh where the composer is.
+  case pauseSuggestions(Bool)
 }
 
 /// How a running process answered for its permission rules.

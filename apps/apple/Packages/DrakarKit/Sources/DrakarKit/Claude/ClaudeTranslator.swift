@@ -34,7 +34,7 @@ public struct ClaudeTranslator: Sendable {
   public mutating func translate(_ message: StreamMessage, at time: Date?) -> [AgentEvent] {
     var events: [AgentEvent] = []
     switch message {
-    case .system(.apiRetry), .rateLimit, .controlResponse: break
+    case .system(.apiRetry), .rateLimit, .controlResponse, .promptSuggestion: break
     default: events.append(.retrying(nil))
     }
     switch message {
@@ -93,6 +93,8 @@ public struct ClaudeTranslator: Sendable {
             outcome: result.wasInterrupted ? .interrupted : result.isError ? .failed : .completed,
             failureText: result.failureText, text: result.text, costUSD: result.totalCostUSD,
             durationMS: result.durationMS)))
+    case .promptSuggestion(let text):
+      events.append(.promptSuggested(text))
     case .system, .controlResponse, .rateLimit, .unknown:
       break
     }

@@ -208,6 +208,35 @@ The server's tools are the model's from the next prompt on: the turn's `system`/
 lists the server `connected` and its `mcp__<server>__*` tools, and the model called one.
 Checked against a stdio server that exits until a flag file exists; no fixture.
 
+## Prompt suggestions (verified 2026-11-28, 2.1.332)
+
+`initialize` with `"promptSuggestions": true` asks the CLI to guess the person's next prompt
+once each turn ends. It writes the guess as a line of its own, after the turn's `result`:
+
+```json
+{"type":"prompt_suggestion","suggestion":"fix the bug in calc.py","uuid":"…","session_id":"…"}
+```
+
+The extension shows it as the empty composer's placeholder; Tab writes it in, and sending
+anything, or a new turn, drops it. Drakar does the same (`Transcript.suggestedPrompt`).
+
+- 2.1.332 wrote one after each turn of a two-turn session reading a file. 2.1.325 wrote none,
+  even with `CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=1`: the line needs a newer CLI.
+- Whether it guesses at all is the CLI's call: a server-side flag
+  (`tengu_chomp_inflection`) unless `CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION` is set, then the
+  user's `promptSuggestionEnabled` setting. It skips a turn in plan mode, with a permission
+  or an elicitation pending, or near a rate limit, and after 20 guesses in a row went unused
+  it shows fewer ("Showing fewer prompt suggestions").
+- `{"subtype":"set_prompt_suggestions_paused","paused":true}` stops the guessing for a host
+  whose composer is out of sight; `false` starts it again from the next turn end. One flag
+  in the process, which starts unpaused, so a new or reattached process is told again.
+  2.1.332 answers it with an empty success and still guessed after the next turn: its own
+  schema says a build where the pause is not yet enabled acknowledges it and keeps going.
+  2.1.325 answers it with an empty success too.
+- 2.1.332 also takes `{"subtype":"prompt_draft_activity"}`, which the extension sends at
+  most every few seconds while the person types in an idle composer. Drakar does not send it
+  yet; 2.1.325 does not know it.
+
 ## Mode and model (verified 2026-10-06, 2.1.288)
 
 Before any prompt, no API call:

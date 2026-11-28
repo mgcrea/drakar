@@ -60,7 +60,7 @@ final class ClaudeBackend: AgentBackend {
     taskRequests.removeAll()
     rewindRequests.removeAll()
     readRequests.removeAll()
-    try process.send(.initialize(requestID: nextRequestID("init")))
+    try process.send(.initialize(requestID: nextRequestID("init"), promptSuggestions: true))
     askAppliedSettings(process)
     if let first { try send(first, to: process) }
   }
@@ -131,6 +131,12 @@ final class ClaudeBackend: AgentBackend {
       let id = "reconnect-\(UUID().uuidString)"
       readRequests.insert(id)
       return (.reconnectServer(requestID: id, name: name), id)
+    case .pauseSuggestions(let paused):
+      // Off `requestCount`, as the task controls are: never noted, so never replayed.
+      return (
+        .setPromptSuggestionsPaused(
+          requestID: "suggestions-\(UUID().uuidString)", paused: paused), nil
+      )
     }
   }
 
@@ -174,6 +180,10 @@ final class ClaudeBackend: AgentBackend {
             model: ModelName.applied(fromSettings: response.response),
             autoModeDisabled: AutoMode.isDisabled(bySettings: response.response)))
       }
+      return output
+    case .controlResponse(let response) where response.requestID.hasPrefix("suggestions-"):
+      // Nothing to learn: a CLI that has not enabled the pause yet acknowledges it and keeps
+      // guessing (2.1.332 did), which only costs what an unpaused one does.
       return output
     case .controlResponse(let response) where response.requestID.hasPrefix("context-"):
       if response.isSuccess, let reply = ContextUsageReply(response.response) {

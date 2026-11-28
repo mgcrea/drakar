@@ -142,7 +142,7 @@ final class AgyBackend: AgentBackend {
     case .rename:
       nil
     case .stopTask, .backgroundCall, .taskOutput, .rewindFiles, .listPermissionRules, .getPlan,
-      .readServers, .reconnectServer:
+      .readServers, .reconnectServer, .pauseSuggestions:
       nil
     }
   }

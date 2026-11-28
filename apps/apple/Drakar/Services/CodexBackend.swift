@@ -178,6 +178,8 @@ final class CodexBackend: AgentBackend {
     case .listPermissionRules, .getPlan: nil
     // Claude Code's only: the Skills & MCP tab lists Claude Code's servers.
     case .readServers, .reconnectServer: nil
+    // `features.suggestsPrompts` is false: nothing sends it.
+    case .pauseSuggestions: nil
     }
   }
 }

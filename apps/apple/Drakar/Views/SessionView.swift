@@ -55,6 +55,7 @@ struct SessionView: View {
     }
     // What a moved session continues: remembered once it has an id, read once shown.
     .task(id: item.sessionID) { await project.loadEarlier(item) }
+    .composerOnScreen(of: session, isSelected: project.selectedID == item.id)
     .environment(\.askedElicitation, askedElicitation)
     // The same for a server's question, in its call's card or in the composer's place, and
     // again when it moves from one to the other.
@@ -216,7 +217,8 @@ struct SessionView: View {
               attach: item.attach,
               broadcast: project.broadcastLabel.map { label in
                 BroadcastChip(label: label) { project.clearMarks() }
-              }
+              },
+              suggestion: toMarked ? nil : session.suggestedPrompt
             )
             // The menu's list comes from a short probe, read once the first `/` is typed.
             .onChange(of: item.draft.hasPrefix("/")) { _, typed in

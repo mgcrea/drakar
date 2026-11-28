@@ -3,8 +3,10 @@ import Foundation
 /// One line Drakar writes to Claude Code's stdin under `--input-format stream-json`.
 public enum ClientMessage: Sendable, Equatable {
   /// First, before any prompt. The answer is a `control_response` carrying the slash
-  /// commands, skills and models.
-  case initialize(requestID: String)
+  /// commands, skills and models. With `promptSuggestions`, the CLI guesses the person's next
+  /// prompt after each turn (`StreamMessage.promptSuggestion`), unless their settings turn
+  /// that off (`promptSuggestionEnabled: false`).
+  case initialize(requestID: String, promptSuggestions: Bool = false)
   /// A user turn. `context` blocks go ahead of the text, as the extension's chat sends
   /// the open file or the selection (`EditorSelection.promptContext`). A `uuid` makes the
   /// CLI report where the prompt has got to (`command_lifecycle`), and names it to cancel.
@@ -65,13 +67,26 @@ public enum ClientMessage: Sendable, Equatable {
   /// closed", "Server not found: x") (docs/claude-stream-json.md, "Reconnecting an MCP
   /// server").
   case reconnectServer(requestID: String, name: String)
+  /// Stop (`paused`) or start again guessing the next prompt at the end of each turn, for a
+  /// session whose composer nobody can see. One flag of the process's, which starts
+  /// unpaused: a new or reattached process must be told again. Answered with an empty
+  /// success, also by a CLI that keeps guessing regardless (docs/claude-stream-json.md,
+  /// "Prompt suggestions").
+  case setPromptSuggestionsPaused(requestID: String, paused: Bool)
   /// The answer to a request Drakar cannot serve, so that the CLI stops waiting on it.
   case refuse(requestID: String, error: String)
 
   public var json: JSONValue {
     switch self {
-    case .initialize(let id):
-      Self.controlRequest(id, ["subtype": .string("initialize"), "hooks": .null])
+    case .initialize(let id, let promptSuggestions):
+      Self.controlRequest(
+        id,
+        ["subtype": .string("initialize"), "hooks": .null].merging(
+          promptSuggestions ? ["promptSuggestions": .bool(true)] : [:]
+        ) { first, _ in first })
+    case .setPromptSuggestionsPaused(let id, let paused):
+      Self.controlRequest(
+        id, ["subtype": .string("set_prompt_suggestions_paused"), "paused": .bool(paused)])
     case .prompt(let text, let context, let uuid, let attachments):
       .object(
         [

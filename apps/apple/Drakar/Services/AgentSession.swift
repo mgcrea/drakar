@@ -59,6 +59,17 @@ final class AgentSession {
   /// attention, keep-awake. Assigned after every change but only observed to change when it
   /// does, so readers are not redrawn per token as readers of `transcript` are.
   private(set) var status = Transcript.Status()
+  /// The agent's guess at the next prompt, for the empty composer: the transcript's, kept
+  /// apart as `status` is, so that the composer is not redrawn per token.
+  private(set) var suggestedPrompt: String?
+  /// Whether this session's composer is where the person can see it (`setComposerOnScreen`):
+  /// out of sight, the agent is told to stop guessing the next prompt. Nil until a view said,
+  /// which leaves the process as it starts, guessing: a tab never built costs a guess per
+  /// turn rather than a pause written into every start.
+  @ObservationIgnored private var composerOnScreen: Bool?
+  /// The pause the process was last told; nil while unknown, as for a process reattached,
+  /// which an earlier launch of the app may have paused.
+  @ObservationIgnored private var toldSuggestionsPaused: Bool?
   /// What the transcript view draws: `transcript`, with text growing in an entry taken at most
   /// every `displayInterval` (20 times a second) rather than per token, since each redraw lays
   /// the transcript out again. A new entry or a change of `status` (a turn starting or
@@ -75,6 +86,9 @@ final class AgentSession {
     let status = transcript.status
     let changed = status != self.status
     if changed { self.status = status }
+    if transcript.suggestedPrompt != suggestedPrompt {
+      suggestedPrompt = transcript.suggestedPrompt
+    }
     // Displaying keeps a second reference to the entries, so the next change copies them all:
     // at most every `displayInterval` while a log replays, a new entry on every line.
     // A prompt queued mid-turn leaves the composer, and is drawn in its place at once.
@@ -221,6 +235,7 @@ final class AgentSession {
       releasingUntil = nil
       // A new process has said nothing about rewinding yet.
       rewindNotEnabled = false
+      toldSuggestionsPaused = nil
       // What the one before was asked will not be answered.
       if oldValue != nil {
         tasks.processEnded()
@@ -288,7 +303,10 @@ final class AgentSession {
   @ObservationIgnored private var replayedStart = false
   /// The connection to the session host ended under the running process: nothing is sent
   /// until a new one is up and the process attached again (spec §5).
-  private(set) var isReconnecting = false
+  private(set) var isReconnecting = false {
+    // What changed on screen meanwhile was not sent.
+    didSet { if !isReconnecting { syncSuggestionsPause() } }
+  }
   /// Until when a runner's refusal to attach the process again, as attached to another app,
   /// is taken for this Mac's own stale relay still releasing it (remote sessions spec §3).
   /// Set as a connection to a runner is lost; cleared once the host takes the attach, or the
@@ -559,10 +577,34 @@ final class AgentSession {
     if !replayedStart {
       note(.started(first: nil, effect: .none), to: hosted)
       try? backend.started(hosted, then: nil)
+      toldSuggestionsPaused = false
     }
     for line in owed { try? hosted.send(line: line) }
+    syncSuggestionsPause()
     sendMeta()
     follow(hosted.live(), of: hosted)
+  }
+
+  /// The window shows this session's composer, or stopped showing it: a hidden tab, a window
+  /// covered or minimised. The agent guesses the next prompt only while it is shown, as the
+  /// extension's panel does.
+  func setComposerOnScreen(_ shown: Bool) {
+    guard composerOnScreen != shown else { return }
+    composerOnScreen = shown
+    syncSuggestionsPause()
+  }
+
+  /// Tells the process whether to guess the next prompt, when that changed since it was last
+  /// told. Not `write`: a note would have a replay send it again, and a replay's transport
+  /// would only keep it.
+  private func syncSuggestionsPause() {
+    guard features.suggestsPrompts, !isReplaying, !isReconnecting, let process,
+      !(process is ReplayTransport), let composerOnScreen
+    else { return }
+    let paused = !composerOnScreen
+    guard toldSuggestionsPaused != paused else { return }
+    toldSuggestionsPaused = paused
+    _ = try? backend.send(.pauseSuggestions(paused), to: process)
   }
 
   /// The skills and commands a replayed process listed, which the replay told nobody: said
@@ -1307,6 +1349,9 @@ final class AgentSession {
       codexTurnsBeforeProcess = codexTurns
       note(.started(first: pendingPrompt, effect: pendingEffect), to: process)
       try backend.started(process, then: pendingPrompt)
+      // A process starts guessing; one started out of sight is told to stop.
+      toldSuggestionsPaused = false
+      syncSuggestionsPause()
       pendingPrompt = nil
       pendingEffect = .none
       phase = .ready

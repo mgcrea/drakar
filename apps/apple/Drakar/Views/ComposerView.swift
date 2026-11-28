@@ -8,6 +8,9 @@ import SwiftUI
 /// move, Return runs the highlighted command, Tab fills it in for editing, and Esc closes
 /// the list until the draft changes.
 ///
+/// Between turns, the empty field shows the agent's guess at the next prompt in place of its
+/// placeholder, as the extension's does; Tab writes it in, to send or edit.
+///
 /// The editor's open file or selection goes with the prompt, as the extension's
 /// `attachOpenFile` does by default; a click on it leaves it out of this one. Selections
 /// pinned with ⌥K go too, until a click takes one off.
@@ -51,6 +54,8 @@ struct ComposerView: View {
   var attach: ([AttachmentSource]) -> Void = { _ in }
   /// Several sessions are marked: what the prompt goes to, and how to unmark them.
   var broadcast: BroadcastChip? = nil
+  /// The agent's guess at the next prompt (`AgentSession.suggestedPrompt`).
+  var suggestion: String? = nil
 
   @AppStorage(PreferenceKey.composerShortcuts) private var shortcutsData = Data()
   @AppStorage(PreferenceKey.favoriteComposerShortcut) private var toolbarPins = ""
@@ -178,10 +183,12 @@ struct ComposerView: View {
       if needsCommands { loadCommands() }
     }
     // ⌘V with files or a screenshot on the clipboard attaches them; text pastes as usual.
-    .background(WindowReader {
-      pasteMonitor.window = $0
-      shortcutMonitor.window = $0
-    })
+    .background(
+      WindowReader {
+        pasteMonitor.window = $0
+        shortcutMonitor.window = $0
+      }
+    )
     .background {
       ShortcutMonitorBinder(monitor: shortcutMonitor) { self.performShortcut($0) }
     }
@@ -229,37 +236,52 @@ struct ComposerView: View {
     return context
   }
 
-  private var field: some View {
-    TextField(
-      isRunning && canSend ? "Queue another message…" : "Ask \(agentName) to do something…",
-      text: $text,
-      axis: .vertical
-    )
-    .textFieldStyle(.plain)
-    .lineLimit(1...10)
-    .focused($isFocused)
-    .onSubmit(submit)
-    .onKeyPress(.upArrow) { moveHighlight(-1) }
-    .onKeyPress(.downArrow) { moveHighlight(1) }
-    .onKeyPress(.escape) {
-      guard !menu.isEmpty else { return .ignored }
-      menuClosedOn = text
-      return .handled
+  /// Offered while the field is empty and no turn runs.
+  private var offeredSuggestion: String? {
+    guard let suggestion, canSend, !isRunning, text.isEmpty, attachments.isEmpty else {
+      return nil
     }
-    // ⇧Tab arrives as backtab: the next mode. Plain Tab writes the menu's pick in, else is
-    // left to focus traversal.
-    .onKeyPress(keys: [.tab, KeyEquivalent("\u{19}")]) { press in
-      if press.modifiers.contains(.shift) || press.key == KeyEquivalent("\u{19}") {
-        guard let cycleMode else { return .ignored }
-        cycleMode()
+    return suggestion
+  }
+
+  private var placeholder: String {
+    if let offeredSuggestion { return offeredSuggestion }
+    return isRunning && canSend
+      ? String(localized: "Queue another message…")
+      : String(localized: "Ask \(agentName) to do something…")
+  }
+
+  private var field: some View {
+    TextField(placeholder, text: $text, axis: .vertical)
+      .textFieldStyle(.plain)
+      .lineLimit(1...10)
+      .focused($isFocused)
+      .onSubmit(submit)
+      .onKeyPress(.upArrow) { moveHighlight(-1) }
+      .onKeyPress(.downArrow) { moveHighlight(1) }
+      .onKeyPress(.escape) {
+        guard !menu.isEmpty else { return .ignored }
+        menuClosedOn = text
         return .handled
       }
-      let menu = menu
-      guard menu.indices.contains(highlighted) else { return .ignored }
-      choose(menu[highlighted])
-      return .handled
-    }
-    .accessibilityIdentifier("composer.field")
+      // ⇧Tab arrives as backtab: the next mode. Plain Tab writes the menu's pick in, or the
+      // suggestion shown in the empty field, else is left to focus traversal.
+      .onKeyPress(keys: [.tab, KeyEquivalent("\u{19}")]) { press in
+        if press.modifiers.contains(.shift) || press.key == KeyEquivalent("\u{19}") {
+          guard let cycleMode else { return .ignored }
+          cycleMode()
+          return .handled
+        }
+        if let offeredSuggestion {
+          text = offeredSuggestion
+          return .handled
+        }
+        let menu = menu
+        guard menu.indices.contains(highlighted) else { return .ignored }
+        choose(menu[highlighted])
+        return .handled
+      }
+      .accessibilityIdentifier("composer.field")
   }
 
   /// Padding of a shortcut icon. A shortcut that shows its label keeps the wider pill.
@@ -383,7 +405,8 @@ struct ComposerView: View {
       return event
     }
     let shiftHeld = event.modifierFlags.contains(.shift)
-    let shortcut = shortcut(matching: event, allowingExtraShift: false)
+    let shortcut =
+      shortcut(matching: event, allowingExtraShift: false)
       ?? (shiftHeld ? shortcut(matching: event, allowingExtraShift: true) : nil)
     guard let shortcut else { return event }
     insert(shortcut, shiftHeld: shiftHeld)

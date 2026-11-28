@@ -74,13 +74,16 @@ struct AgentFeatures: Equatable {
   /// A running task can be stopped, a foreground call moved to the background, and a shell
   /// task's output read (`TaskControls`).
   var controlsTasks: Bool
+  /// The agent guesses the next prompt once a turn ends (`AgentEvent.promptSuggested`), and
+  /// can be told to stop while nobody sees the composer (`AgentCommand.pauseSuggestions`).
+  var suggestsPrompts = false
 
   var name: String { agent.name }
 
   static let claude = AgentFeatures(
     agent: .claude, cancelsQueued: true, slashCommands: true, forks: true, moves: true,
     showsAccount: true, showsPromptCache: true, acceptsPDF: true, usesSettingsDefaults: true,
-    picksApplyAtOnce: true, controlsTasks: true)
+    picksApplyAtOnce: true, controlsTasks: true, suggestsPrompts: true)
 
   static let codex = AgentFeatures(
     agent: .codex, cancelsQueued: false, slashCommands: true, forks: false, moves: false,
