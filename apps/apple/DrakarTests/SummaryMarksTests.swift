@@ -111,6 +111,52 @@ struct SummaryMarksTests {
     #expect(!project.hasMarks)
   }
 
+  private func preview(in project: Project) -> [String?] {
+    project.tabs.filter(\.isWatching).map(\.sessionID)
+  }
+
+  /// ⌘⌫ with nothing marked archives the previewed row of Ended, and the preview moves on to
+  /// the next row, then to the one before at the end, and closes once Ended is empty.
+  @Test func commandDeleteArchivesThePreviewAndMovesOn() async throws {
+    let (project, rows) = try await project(ended: ["a", "b", "c"])
+    project.openEnded(rows[1])
+    #expect(project.archiveFromKeyboard())
+    #expect(ids(project.archivedEnded) == [rows[1].sessionID])
+    #expect(preview(in: project) == [rows[2].sessionID])
+    #expect(project.archiveFromKeyboard())
+    #expect(preview(in: project) == [rows[0].sessionID])
+    #expect(project.archiveFromKeyboard())
+    #expect(project.listedGroups.ended.isEmpty)
+    #expect(project.tabs.isEmpty)
+    #expect(!project.archiveFromKeyboard())
+  }
+
+  /// ⌘⌫ archives the marked rows of Ended; the preview, among them, moves to the first row
+  /// left after it.
+  @Test func commandDeleteArchivesTheMarkedRows() async throws {
+    let (project, rows) = try await project(ended: ["a", "b", "c", "d"])
+    project.openEnded(rows[1])
+    project.click(rows[2], in: .ended, .toggle)
+    #expect(ids(project.markedSummaryRows) == ids(Array(rows[1...2])))
+    #expect(project.archiveFromKeyboard())
+    #expect(Set(ids(project.archivedEnded)) == Set(ids(Array(rows[1...2]))))
+    #expect(preview(in: project) == [rows[3].sessionID])
+    #expect(project.markedSummaries.isEmpty)
+  }
+
+  /// ⌘⌫ only puts sessions away: in Archived it does nothing, marked or previewed.
+  @Test func commandDeleteNeverUnarchives() async throws {
+    let (project, rows) = try await project(ended: ["a", "b"])
+    project.monitor.setArchived(rows, to: true)
+    project.showsArchived = true
+    let archived = project.rows(of: .archived)
+    project.openEnded(archived[0])
+    #expect(!project.archiveFromKeyboard())
+    for row in archived { project.click(row, in: .archived, .toggle) }
+    #expect(!project.archiveFromKeyboard())
+    #expect(project.archivedEnded.count == 2)
+  }
+
   /// A plain click on an ended row opens it and leaves the tabs' marks, where the composer
   /// sends, as they were.
   @Test func aPlainClickKeepsTheTabsMarks() async throws {

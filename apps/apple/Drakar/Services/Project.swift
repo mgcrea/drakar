@@ -1318,6 +1318,40 @@ final class Project {
     return true
   }
 
+  /// ⌘⌫ in the sidebar: archives the marked rows of Ended, else the row of Ended the preview
+  /// shows. It only puts sessions away: with Archived's rows marked it does nothing, Unarchive
+  /// being the menu's. When the preview's row goes, the preview moves to the next row of
+  /// Ended left, else the one before, as Mail moves on from a deleted message, the keys
+  /// staying in the list; with none left it closes. False when nothing was archived.
+  @discardableResult func archiveFromKeyboard() -> Bool {
+    let markedRows = markedSummaryRows
+    guard markedRows.isEmpty || markedSection == .ended else { return false }
+    let shown = selected.flatMap { $0.isWatching ? $0.sessionID : nil }
+    let going =
+      markedRows.isEmpty
+      ? Array(rows(of: .ended).filter { $0.sessionID == shown }.prefix(1)) : markedRows
+    guard !going.isEmpty else { return false }
+    let gone = Set(going.map(\.id))
+    // Ended whole, past the 20 listed: the row after the last listed slides into view.
+    let all = listedGroups.ended
+    let shownIndex = all.firstIndex { $0.sessionID == shown && gone.contains($0.id) }
+    let next = shownIndex.flatMap { index in
+      all[(index + 1)...].first { !gone.contains($0.id) }
+        ?? all[..<index].last { !gone.contains($0.id) }
+    }
+    monitor.setArchived(going, to: true)
+    markedSummaries = []
+    summaryAnchor = nil
+    if shownIndex != nil {
+      if let next {
+        openEnded(next, focusingComposer: false)
+      } else if let preview = selected, preview.isWatching {
+        remove(preview)
+      }
+    }
+    return true
+  }
+
   /// Archives every ended row, those past the first 20 too.
   func archiveAllEnded() {
     monitor.setArchived(listedGroups.ended, to: true)

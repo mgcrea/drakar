@@ -234,11 +234,11 @@ struct SessionListView: View {
       project.clearMarks()
       return .handled
     }
-    // ⌘⌫ archives the marked rows of Ended, or unarchives those of Archived.
+    // ⌘⌫ archives the marked rows of Ended, else the one in the preview; never unarchives.
     // ⌫ arrives as U+007F, which `.delete` (U+0008) may not match.
     .onKeyPress(keys: [.delete, KeyEquivalent("\u{7F}")]) { press in
       guard press.modifiers.subtracting(.capsLock) == .command else { return .ignored }
-      return project.archiveMarked() ? .handled : .ignored
+      return project.archiveFromKeyboard() ? .handled : .ignored
     }
     .onKeyPress(characters: ["a"]) { press in
       guard press.modifiers == .command else { return .ignored }
@@ -275,10 +275,12 @@ struct SessionListView: View {
 
   /// What a right-click on one of several marked rows of Ended or Archived does to them all.
   @ViewBuilder private func markedMenu(_ rows: [SessionSummary], archived: Bool) -> some View {
-    Button(archived ? "Unarchive \(rows.count) Sessions" : "Archive \(rows.count) Sessions") {
-      project.archiveMarked()
+    if archived {
+      Button("Unarchive \(rows.count) Sessions") { project.archiveMarked() }
+    } else {
+      Button("Archive \(rows.count) Sessions") { project.archiveMarked() }
+        .keyboardShortcut(.delete, modifiers: .command)
     }
-    .keyboardShortcut(.delete, modifiers: .command)
     Button("Unmark All") { project.clearMarks() }
     Divider()
     Button("Copy \(rows.count) Session IDs") {
