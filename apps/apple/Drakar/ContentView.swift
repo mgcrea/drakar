@@ -175,6 +175,15 @@ struct ContentView: View {
     if let project {
       projectToolbar(project)
     }
+    // Beside Keep on Top, which stays the corner control. A runner's window opens the
+    // Skills window on no project: its skills are the runner's, as Window › Skills does.
+    ToolbarItem(placement: .primaryAction) {
+      Button("Skills", systemImage: "sparkles") {
+        SkillsManager.shared.show(project: SkillsManager.folder(of: project)) { openWindow(id: $0) }
+      }
+      .help("Open the Skills window")
+      .accessibilityIdentifier("window.skills")
+    }
     ToolbarItem(placement: .primaryAction) {
       Toggle(isOn: $keepsOnTop) {
         Label("Keep on Top", systemImage: keepsOnTop ? "pin.fill" : "pin")

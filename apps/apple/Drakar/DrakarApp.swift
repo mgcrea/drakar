@@ -61,9 +61,9 @@ struct DrakarApp: App {
         .themed()
     }
 
-    // The Skills window: one for the app, opened from Window › Skills or the inspector's
-    // Manage…, on the project of the window it came from. Its own menu item is replaced by
-    // `SkillsCommand`, which knows that project; it is not reopened at launch.
+    // The Skills window: one for the app, opened from the toolbar, Window › Skills or the
+    // inspector's Manage…, on the project of the window it came from. Its own menu item is
+    // replaced by `SkillsCommand`, which knows that project; it is not reopened at launch.
     Window("Skills", id: SkillsManager.windowID) {
       SkillsWindow(manager: .shared)
         .themed()
